@@ -312,26 +312,33 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
         const uBeat = m.uniforms.uBeat.value;
         const st = loopRef.current;
         
-        // Tapdelay Stutter Mode
-        if (type === 'tapdelay' && videoRef.current && Math.round(m.uniforms.uP0.value.x) === 1 && m.uniforms.uHasVideo.value > 0.5) {
+        // Tapdelay Stutter Mode (applied across all types for video fx)
+        if (type === 'tapdelay' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
           const timeP = m.uniforms.uP1.value.x; // STUTTER TIME (0 to 1)
-          const feedbackP = m.uniforms.uP1.value.y; // FEEDBACK (0 to 1)
-          const freqP = m.uniforms.uP0.value.z; // Use END knob as a frequency for random trigger chance
+          const freqP = m.uniforms.uP0.value.z; // CHANCE (0 to 1)
           
-          let stutterLen = 1;
-          if (timeP < 0.2) stutterLen = 0.25;      // quarter note (1/4 beat / 16thnote?) Wait, confusing, 0.25 beat is 1/16th note. 1 beat is quarter note.
-          else if (timeP < 0.4) stutterLen = 0.5;  // 8th note
-          else if (timeP < 0.6) stutterLen = 1.0;  // quarter note (1 beat)
-          else if (timeP < 0.8) stutterLen = 2.0;  // half note (2 beats)
-          else stutterLen = 4.0;                   // full measure (4 beats)
+          let stutterLen = 1.0;
+          if (timeP < 0.2) stutterLen = 0.125;      // 1/32 note
+          else if (timeP < 0.4) stutterLen = 0.25;  // 1/16 note
+          else if (timeP < 0.6) stutterLen = 0.3333; // 1/8 note triplet
+          else if (timeP < 0.8) stutterLen = 0.5;   // 1/8 note
+          else stutterLen = 1.0;                    // 1/4 note (1 beat)
 
           if (!st.isStuttering) {
-            // Trigger chance on a beat boundary
-            if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP * 0.3) {
+            // Evaluate CHANCE on every beat boundary
+            if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP) {
+              const bpm = m.uniforms.uBPM.value || 128;
+              const beatDuration = 60.0 / bpm;
+              const stutterSeconds = stutterLen * beatDuration;
+              
               st.isStuttering = true;
-              st.stutterVideoTime = videoRef.current.currentTime;
+              st.stutterVideoTime = Math.max(0, videoRef.current.currentTime - stutterSeconds);
+              videoRef.current.currentTime = st.stutterVideoTime;
+              
               st.stutterStartBeat = uBeat;
-              st.remRepeats = 1 + Math.floor(feedbackP * 7); // 1 up to 8 repeats
+              // Read repeats directly from velCrv param (stored as integer 1-8)
+              const repeatsRaw = m.uniforms.uP0.value.y;
+              st.remRepeats = Math.max(1, Math.round(repeatsRaw * 8));
             }
           } else {
             if (uBeat - st.stutterStartBeat >= stutterLen) {
@@ -391,7 +398,18 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
       renderer.dispose();
       mat.dispose();
     };
-  }, [type, color, mode, getUniforms]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, color, mode]);
+
+  useEffect(() => {
+    if (videoRef.current) {
+      if (audioState.playing) {
+        videoRef.current.play().catch(() => {});
+      } else {
+        videoRef.current.pause();
+      }
+    }
+  }, [audioState.playing]);
 
   useEffect(() => {
     const m = materialRef.current;
@@ -600,7 +618,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer }: {
     <div style={{ display:'flex', flexDirection:'column', flexShrink:0, background:'#000', borderBottom:'2px solid #0d0e0f' }}>
       <VideoPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} />
       <FFTStrip color={color} />
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', background:'#000', borderBottom:'1px solid #111' }}>
+      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', borderBottom:'1px solid #111', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} />
         <ScreenOverlay/>
         <ScreenBadge text="EFFECT ▶ CURVE / FILTER" color={color}/>
@@ -612,7 +630,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer }: {
           <div style={{ position:'absolute', inset:0, zIndex:4, pointerEvents:'none', border:`1px solid ${color}44`, borderRadius:0, boxShadow:`inset 0 0 12px ${color}22` }}/>
         )}
       </div>
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', background:'#000' }}>
+      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} />
         <ScreenOverlay/>
         <ScreenBadge text="OUTPUT ◼ PROCESSED CLIP" color={color}/>
@@ -736,6 +754,9 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
     onUpdate('time', Math.max(0, Math.min(100, (60000/audioState.bpm)/2000*100)));
   }, [tapTempo, onUpdate, audioState.bpm]);
 
+  const stutterMode = Math.round(params.type ?? 0) === 1;
+  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
+
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="TYPE" color={color}>
@@ -759,24 +780,72 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
           display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
         }}>
           TAP
-          <span style={{ fontSize:7, letterSpacing:'0.05em', color:tapFlash?'#3b82f688':'#2a3040', fontFamily:'Rajdhani,sans-serif' }}>
+          <span style={{ fontSize:8, letterSpacing:'0.05em', color:tapFlash?'#3b82f688':'#2a3040', fontFamily:'Rajdhani,sans-serif' }}>
             {Math.round(audioState.bpm)} BPM
           </span>
         </button>
       </div>
-      <Section label="TIME" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <HSlider value={params.time??60} onChange={v=>onUpdate('time',v)} color={color} label="STUTTER TIME"/>
-          <HSlider value={params.feedback??50} onChange={v=>onUpdate('feedback',v)} color={color} label="FEEDBACK"/>
-        </div>
-      </Section>
-      <Section label="ENV" color={color} noBorder>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <Knob label="VEL" value={params.velCrv??55} onChange={v=>onUpdate('velCrv',v)} size="sm" color={color}/>
-          <Knob label="START" value={params.start??25} onChange={v=>onUpdate('start',v)} size="sm" color={color}/>
-          <Knob label="END" value={params.end??70} onChange={v=>onUpdate('end',v)} size="sm" color={color}/>
-        </div>
-      </Section>
+
+      {stutterMode ? (
+        <>
+          <Section label="LEN" color={color}>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              <div style={labelStyle}>STUTTER LENGTH</div>
+              <div style={{ display:'flex', gap:2 }}>
+                {[
+                  { l: '1/32', val: 10 },
+                  { l: '1/16', val: 30 },
+                  { l: '1/8T', val: 50 },
+                  { l: '1/8', val: 70 },
+                  { l: '1/4', val: 90 },
+                ].map((v) => {
+                   const isActive = Math.abs((params.time??60) - v.val) <= 10;
+                   return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('time',v.val)} width={28}/>;
+                })}
+              </div>
+            </div>
+          </Section>
+
+          <Section label="RPT" color={color}>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              <div style={labelStyle}>REPEATS</div>
+              <div style={{ display:'flex', gap:2 }}>
+                {[1, 2, 4, 6, 8].map((n) => {
+                  const currentRepeats = Math.round((params.velCrv ?? 25) / 100 * 8) || 1;
+                  const isActive = currentRepeats === n;
+                  return <RackBtn key={n} label={`${n}×`} active={isActive} color={color} onClick={()=>onUpdate('velCrv', (n / 8) * 100)} width={28}/>;
+                })}
+              </div>
+            </div>
+          </Section>
+
+          <Section label="TRIG" color={color} noBorder>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              <div style={labelStyle}>CHANCE</div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ flex:1 }}>
+                  <HSlider value={params.end??70} onChange={v=>onUpdate('end',v)} color={color}/>
+                </div>
+                <MiniDisplay value={`${Math.round(params.end??70)}%`} width={36}/>
+              </div>
+            </div>
+          </Section>
+        </>
+      ) : (
+        <>
+          <Section label="TIME" color={color}>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              <HSlider value={params.time??60} onChange={v=>onUpdate('time',v)} color={color} label="DELAY TIME"/>
+              <HSlider value={params.feedback??50} onChange={v=>onUpdate('feedback',v)} color={color} label="FEEDBACK"/>
+            </div>
+          </Section>
+          <Section label="TRIG" color={color} noBorder>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <Knob label="CHANCE" value={params.end??70} onChange={v=>onUpdate('end',v)} size="sm" color={color}/>
+            </div>
+          </Section>
+        </>
+      )}
     </div>
   );
 }
