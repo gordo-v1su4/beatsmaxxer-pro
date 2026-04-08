@@ -1,9 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { Upload, X, Film, AudioLines } from 'lucide-react';
-import type { ModuleType, ModuleConfig, VideoLayer } from '../App';
+import { Upload, X, Film, AudioLines, Music } from 'lucide-react';
+import type { ModuleType, ModuleConfig, VideoLayer, MidiLayer } from '../App';
 import { Knob } from './Knob';
 import { useAudio } from '../audio/AudioContext';
+import { audioEngine } from '../audio/AudioEngine';
 
 interface EffectModuleProps {
   config: ModuleConfig;
@@ -15,6 +16,8 @@ interface EffectModuleProps {
   onToggleMute: () => void;
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
+  midiLayer: MidiLayer | null;
+  onSetMidiLayer: (file: File | null) => void;
 }
 
 function Screw() {
@@ -176,6 +179,23 @@ function VUMeter({ value, color }: { value: number; color: string }) {
   );
 }
 
+/** True if transport moved from tPrev to tNow across any MIDI note-on time (looping by loopDur). */
+function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number, loopDur: number): boolean {
+  if (notes.length === 0 || loopDur <= 0) return false;
+  const tp = ((tPrev % loopDur) + loopDur) % loopDur;
+  const tn = ((tNow % loopDur) + loopDur) % loopDur;
+  const eps = 1e-4;
+  for (const n of notes) {
+    const nt = ((n.time % loopDur) + loopDur) % loopDur;
+    if (tn > tp) {
+      if (nt > tp + eps && nt <= tn + eps) return true;
+    } else if (tn < tp - eps) {
+      if (nt > tp + eps || nt <= tn + eps) return true;
+    }
+  }
+  return false;
+}
+
 function createFallbackVideoDataURL(accent: string) {
   const svg = `
   <svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
@@ -201,8 +221,9 @@ function createFallbackVideoDataURL(accent: string) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
+function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
   type: ModuleType; color: string; params: Record<string,number>; mode: 'effect'|'output'; videoUrl?: string | null;
+  midiLayer?: MidiLayer | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer|null>(null);
@@ -212,8 +233,28 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
   const imageTextureRef = useRef<THREE.Texture | null>(null);
-  const loopRef = useRef({ lastBeat: 0, isStuttering: false, stutterVideoTime: 0, stutterStartBeat: 0, remRepeats: 0, beatsPassed: 0 });
+  const midiLayerRef = useRef<MidiLayer | null>(null);
+  const playingRef = useRef(false);
+  const loopRef = useRef({
+    lastBeat: 0,
+    isStuttering: false,
+    stutterVideoTime: 0,
+    stutterStartBeat: 0,
+    remRepeats: 0,
+    beatsPassed: 0,
+    lastTransportSec: -1,
+    stutterAnchor: 0,
+    scratchPongAtBack: true,
+  });
   const { state: audioState } = useAudio();
+
+  useEffect(() => {
+    midiLayerRef.current = midiLayer ?? null;
+  }, [midiLayer]);
+
+  useEffect(() => {
+    playingRef.current = audioState.playing;
+  }, [audioState.playing]);
 
   const getUniforms = useCallback(() => {
     const p = (k: string, def = 50) => ((params[k] ?? def) / 100);
@@ -230,7 +271,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
     if (type === 'tapdelay') return {
       uP0: new THREE.Vector4(params.type ?? 0, p('velCrv', 55), p('end', 70), p('start', 25)),
       uP1: new THREE.Vector4(p('time', 60), p('feedback', 50), p('mix', 55), p('filterSlider', 60)),
-      uP2: new THREE.Vector4(0, 0, 0, 0),
+      uP2: new THREE.Vector4(p('scratchDepth', 45), params.scratchMode ?? 0, 0, 0),
     };
     return {
       uP0: new THREE.Vector4(params.sync ?? 0, p('notes', 50), p('div', 30), params.engine ?? 2),
@@ -279,6 +320,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
         uVideoRes:   { value: new THREE.Vector2(16, 9) },
         uVideoTex:   { value: fallbackTexture },
         uHasVideo:   { value: 0.0 },
+        uTransportSec: { value: 0.0 },
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position,1.0); }`,
       fragmentShader: getFragmentShader(type),
@@ -315,7 +357,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
         // Tapdelay Stutter Mode (applied across all types for video fx)
         if (type === 'tapdelay' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
           const timeP = m.uniforms.uP1.value.x; // STUTTER TIME (0 to 1)
-          const freqP = m.uniforms.uP0.value.z; // CHANCE (0 to 1)
+          const freqP = m.uniforms.uP0.value.z; // CHANCE (0 to 1) when not using MIDI
           
           let stutterLen = 1.0;
           if (timeP < 0.2) stutterLen = 0.125;      // 1/32 note
@@ -324,27 +366,82 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
           else if (timeP < 0.8) stutterLen = 0.5;   // 1/8 note
           else stutterLen = 1.0;                    // 1/4 note (1 beat)
 
+          const tNow = audioEngine.getState().time;
+          const tPrev = st.lastTransportSec;
+          const beatReset = uBeat < st.lastBeat - 0.5;
+          const timeBack = tPrev >= 0 && tNow < tPrev - 0.25;
+          if (beatReset || timeBack) {
+            st.isStuttering = false;
+            st.remRepeats = 0;
+            st.beatsPassed = 0;
+          }
+
+          const midi = midiLayerRef.current;
+          const useMidi = !!(midi?.notes?.length);
+          let midiHit = false;
+          if (!beatReset && !timeBack && useMidi && playingRef.current) {
+            const lastT = midi!.notes[midi!.notes.length - 1]!.time;
+            const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
+            const jump = tPrev >= 0 && Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
+            if (!jump && tPrev >= 0) {
+              midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
+            }
+          }
+          st.lastTransportSec = tNow;
+
+          const scratchMode = Math.min(3, Math.max(0, Math.round(m.uniforms.uP2.value.y)));
+          const pDepth = m.uniforms.uP2.value.x;
+          const scratchSec = Math.max(1 / 60, Math.min(0.85, (1 + pDepth * 23) / 30));
+
+          const video = videoRef.current;
+          const dur = Number.isFinite(video.duration) && video.duration > 0.05 ? video.duration : 1e6;
+
+          const startStutter = () => {
+            const bpm = m.uniforms.uBPM.value || 128;
+            const beatDuration = 60.0 / bpm;
+            const stutterSeconds = stutterLen * beatDuration;
+            st.isStuttering = true;
+            st.stutterStartBeat = uBeat;
+            const repeatsRaw = m.uniforms.uP0.value.y;
+            st.remRepeats = Math.max(1, Math.round(repeatsRaw * 8));
+            st.stutterAnchor = video.currentTime;
+
+            if (scratchMode === 3) {
+              const coin = Math.random() < 0.5 ? -1 : 1;
+              st.stutterVideoTime = Math.max(0, Math.min(dur - 0.02, st.stutterAnchor + coin * scratchSec));
+              video.currentTime = st.stutterVideoTime;
+            } else if (scratchMode === 1 || scratchMode === 2) {
+              st.stutterVideoTime = Math.max(0, st.stutterAnchor - scratchSec);
+              video.currentTime = st.stutterVideoTime;
+              st.scratchPongAtBack = true;
+            } else {
+              st.stutterVideoTime = Math.max(0, st.stutterAnchor - stutterSeconds);
+              video.currentTime = st.stutterVideoTime;
+            }
+          };
+
           if (!st.isStuttering) {
-            // Evaluate CHANCE on every beat boundary
-            if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP) {
-              const bpm = m.uniforms.uBPM.value || 128;
-              const beatDuration = 60.0 / bpm;
-              const stutterSeconds = stutterLen * beatDuration;
-              
-              st.isStuttering = true;
-              st.stutterVideoTime = Math.max(0, videoRef.current.currentTime - stutterSeconds);
-              videoRef.current.currentTime = st.stutterVideoTime;
-              
-              st.stutterStartBeat = uBeat;
-              // Read repeats directly from velCrv param (stored as integer 1-8)
-              const repeatsRaw = m.uniforms.uP0.value.y;
-              st.remRepeats = Math.max(1, Math.round(repeatsRaw * 8));
+            if (useMidi) {
+              if (midiHit) startStutter();
+            } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP) {
+              startStutter();
             }
           } else {
             if (uBeat - st.stutterStartBeat >= stutterLen) {
               st.remRepeats--;
               if (st.remRepeats > 0) {
-                videoRef.current.currentTime = st.stutterVideoTime;
+                if (scratchMode === 1) {
+                  video.currentTime = st.stutterVideoTime;
+                } else if (scratchMode === 2) {
+                  st.scratchPongAtBack = !st.scratchPongAtBack;
+                  video.currentTime = st.scratchPongAtBack ? st.stutterVideoTime : st.stutterAnchor;
+                } else if (scratchMode === 3) {
+                  const spread = scratchSec * (2 + Math.random() * 5);
+                  st.stutterVideoTime = Math.max(0, Math.min(dur - 0.02, st.stutterAnchor + (Math.random() * 2 - 1) * spread));
+                  video.currentTime = st.stutterVideoTime;
+                } else {
+                  video.currentTime = st.stutterVideoTime;
+                }
                 st.stutterStartBeat = uBeat;
               } else {
                 st.isStuttering = false;
@@ -354,6 +451,17 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
           st.lastBeat = uBeat;
         } 
         else if (type === 'bubblegrains' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
+          const tNowBg = audioEngine.getState().time;
+          const tPrevBg = st.lastTransportSec;
+          const beatResetBg = uBeat < st.lastBeat - 0.5;
+          const timeBackBg = tPrevBg >= 0 && tNowBg < tPrevBg - 0.25;
+          if (beatResetBg || timeBackBg) {
+            st.isStuttering = false;
+            st.remRepeats = 0;
+            st.beatsPassed = 0;
+          }
+          st.lastTransportSec = tNowBg;
+
           const floorBeat = Math.floor(uBeat);
           const lastFloorBeat = Math.floor(st.lastBeat);
           if (floorBeat > lastFloorBeat) {
@@ -428,6 +536,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
     m.uniforms.uBPM.value = audioState.bpm;
     m.uniforms.uBeat.value = audioState.beat;
     m.uniforms.uBeatPhase.value = audioState.beatPhase;
+    m.uniforms.uTransportSec.value = audioState.time;
     m.uniforms.uAmplitude.value = audioState.amplitude;
     m.uniforms.uBassAmp.value = audioState.bassAmp;
     m.uniforms.uHighAmp.value = audioState.highAmp;
@@ -494,64 +603,57 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl }: {
   return <div ref={containerRef} style={{ width:'100%', height:'100%' }}/>;
 }
 
-function VideoPatchBay({ color, videoLayer, onSetVideoLayer }: {
+function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
   color: string;
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
+  midiLayer: MidiLayer | null;
+  onSetMidiLayer: (file: File | null) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+  const midiInputRef = useRef<HTMLInputElement>(null);
+
+  const uploadBtnStyle = (active: boolean) => ({
+    height:18, paddingInline:5,
+    background:'linear-gradient(180deg,#191d22,#121519)',
+    border:`1px solid ${active ? color+'44' : '#1a1d22'}`,
+    borderTop:'1px solid #252a30',
+    borderRadius:2,
+    color: active ? color : '#445060',
+    display:'flex' as const, alignItems:'center' as const, gap:3,
+    cursor:'pointer' as const,
+    fontFamily:'Rajdhani,sans-serif', fontSize:7, fontWeight:700, letterSpacing:'0.08em',
+    boxShadow: active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)',
+  });
+
   return (
     <div style={{
-      display:'flex', alignItems:'center', gap:5,
-      padding:'4px 5px',
+      display:'flex', alignItems:'center', gap:3,
+      padding:'3px 5px',
       background:'linear-gradient(180deg,#111315,#0d0f11)',
       borderBottom:'1px solid #0d0e0f',
       flexShrink:0,
     }}>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="video/*"
-        onChange={(e) => {
-          const file = e.target.files?.[0] ?? null;
-          onSetVideoLayer(file);
-          e.currentTarget.value = '';
-        }}
+      {/* Video upload */}
+      <input ref={videoInputRef} type="file" accept="video/*"
+        onChange={(e) => { onSetVideoLayer(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
         style={{ display:'none' }}
       />
-      <button
-        onClick={() => inputRef.current?.click()}
-        style={{
-          height:20, paddingInline:7,
-          background:'linear-gradient(180deg,#191d22,#121519)',
-          border:`1px solid ${videoLayer ? color+'44' : '#1a1d22'}`,
-          borderTop:'1px solid #252a30',
-          borderRadius:2,
-          color: videoLayer ? color : '#445060',
-          display:'flex', alignItems:'center', gap:4,
-          cursor:'pointer',
-          fontFamily:'Rajdhani,sans-serif', fontSize:8, fontWeight:700, letterSpacing:'0.08em',
-          boxShadow: videoLayer ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)',
-        }}
-      >
-        <Upload size={9} />
-        CLIP
+      <button onClick={() => videoInputRef.current?.click()} style={uploadBtnStyle(!!videoLayer)}>
+        <Upload size={8} /> CLIP
       </button>
+
+      {/* Video name display */}
       <div style={{
-        flex:1,
-        minWidth:0,
-        height:20,
+        flex:1, minWidth:0, height:18,
         background:'#0a0b0c',
-        border:'1px solid #171a1d',
-        borderTop:'1px solid #101214',
-        borderRadius:2,
-        display:'flex', alignItems:'center', gap:5,
-        paddingInline:6,
+        border:'1px solid #171a1d', borderTop:'1px solid #101214', borderRadius:2,
+        display:'flex', alignItems:'center', gap:4, paddingInline:5,
         boxShadow:'inset 0 2px 5px rgba(0,0,0,0.75)',
       }}>
-        <Film size={9} color={videoLayer ? color : '#3a4050'} />
+        <Film size={8} color={videoLayer ? color : '#3a4050'} />
         <span style={{
-          fontFamily:'Share Tech Mono,monospace', fontSize:8, letterSpacing:'0.03em',
+          fontFamily:'Share Tech Mono,monospace', fontSize:7, letterSpacing:'0.03em',
           color: videoLayer ? '#c0d7ff' : '#4a5260',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
         }}>
@@ -559,20 +661,147 @@ function VideoPatchBay({ color, videoLayer, onSetVideoLayer }: {
         </span>
       </div>
       {videoLayer && (
-        <button
-          onClick={() => onSetVideoLayer(null)}
-          style={{
-            width:20, height:20,
-            background:'linear-gradient(180deg,#241919,#1b1212)',
-            border:'1px solid #342020',
-            borderRadius:2,
-            color:'#c46b6b', cursor:'pointer',
-            display:'flex', alignItems:'center', justifyContent:'center',
-          }}
-        >
-          <X size={9} />
-        </button>
+        <button onClick={() => onSetVideoLayer(null)} style={{
+          width:18, height:18,
+          background:'linear-gradient(180deg,#241919,#1b1212)', border:'1px solid #342020', borderRadius:2,
+          color:'#c46b6b', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+        }}><X size={8} /></button>
       )}
+
+      {/* Separator */}
+      <div style={{ width:1, height:14, background:'#1a1d22', flexShrink:0 }}/>
+
+      {/* MIDI upload */}
+      <input ref={midiInputRef} type="file" accept=".mid,.midi"
+        onChange={(e) => { onSetMidiLayer(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
+        style={{ display:'none' }}
+      />
+      <button onClick={() => midiInputRef.current?.click()} style={uploadBtnStyle(!!midiLayer)}>
+        <Music size={8} /> MIDI
+      </button>
+
+      {/* MIDI name display */}
+      <div style={{
+        flex:1, minWidth:0, height:18,
+        background:'#0a0b0c',
+        border:'1px solid #171a1d', borderTop:'1px solid #101214', borderRadius:2,
+        display:'flex', alignItems:'center', gap:4, paddingInline:5,
+        boxShadow:'inset 0 2px 5px rgba(0,0,0,0.75)',
+      }}>
+        <Music size={8} color={midiLayer ? color : '#3a4050'} />
+        <span style={{
+          fontFamily:'Share Tech Mono,monospace', fontSize:7, letterSpacing:'0.03em',
+          color: midiLayer ? '#c0d7ff' : '#4a5260',
+          whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
+        }}>
+          {midiLayer ? `${midiLayer.name}` : 'No MIDI'}
+        </span>
+      </div>
+      {midiLayer && (
+        <button onClick={() => onSetMidiLayer(null)} style={{
+          width:18, height:18,
+          background:'linear-gradient(180deg,#241919,#1b1212)', border:'1px solid #342020', borderRadius:2,
+          color:'#c46b6b', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center',
+        }}><X size={8} /></button>
+      )}
+    </div>
+  );
+}
+
+function MidiTimeline({ color, midiLayer }: {
+  color: string;
+  midiLayer: MidiLayer;
+}) {
+  const { state } = useAudio();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const currentTime = state.time;
+
+  // Visible window: show 8 seconds of the timeline, centered on current playhead
+  const windowSize = 8;
+  const windowStart = currentTime - windowSize / 2;
+  const windowEnd = currentTime + windowSize / 2;
+
+  // Filter notes in visible window
+  const visibleNotes = midiLayer.notes.filter(
+    n => n.time >= windowStart - 0.1 && n.time <= windowEnd + 0.1
+  );
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        position:'relative',
+        height: 28,
+        background:'#08090a',
+        borderBottom:'1px solid #0d0e0f',
+        overflow:'hidden',
+        flexShrink:0,
+        boxShadow:'inset 0 2px 6px rgba(0,0,0,0.8)',
+      }}
+    >
+      {/* Playhead - fixed center line */}
+      <div style={{
+        position:'absolute',
+        left:'50%',
+        top:0,
+        bottom:0,
+        width:1,
+        background: color,
+        boxShadow:`0 0 6px ${color}88, 0 0 12px ${color}44`,
+        zIndex:5,
+      }}/>
+
+      {/* Dim center glow */}
+      <div style={{
+        position:'absolute',
+        left:'calc(50% - 12px)',
+        top:0,
+        bottom:0,
+        width:24,
+        background:`radial-gradient(ellipse at center, ${color}15, transparent 70%)`,
+        zIndex:1,
+        pointerEvents:'none',
+      }}/>
+
+      {/* Note markers */}
+      {visibleNotes.map((note, i) => {
+        const pct = ((note.time - windowStart) / windowSize) * 100;
+        const opacity = Math.min(1, note.velocity / 127);
+        // Brightness based on proximity to playhead
+        const dist = Math.abs(note.time - currentTime);
+        const glow = dist < 0.05;
+
+        return (
+          <div
+            key={`${note.time}-${note.note}-${i}`}
+            style={{
+              position:'absolute',
+              left:`${pct}%`,
+              top: 2,
+              bottom: 2,
+              width: glow ? 2 : 1,
+              background: color,
+              opacity: glow ? 1 : opacity * 0.7 + 0.15,
+              boxShadow: glow ? `0 0 6px ${color}, 0 0 10px ${color}88` : `0 0 3px ${color}44`,
+              borderRadius: 1,
+              zIndex: glow ? 4 : 2,
+              transition:'opacity 0.03s',
+            }}
+          />
+        );
+      })}
+
+      {/* Label */}
+      <div style={{
+        position:'absolute', right:5, top:'50%', transform:'translateY(-50%)',
+        zIndex:6, pointerEvents:'none',
+        display:'flex', alignItems:'center', gap:3,
+      }}>
+        <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:7, color:'#566070' }}>
+          MIDI
+        </span>
+      </div>
     </div>
   );
 }
@@ -610,16 +839,17 @@ function FFTStrip({ color }: { color: string }) {
   );
 }
 
-function DualScreen({ type, color, params, videoLayer, onSetVideoLayer }: {
-  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void;
+function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
+  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void;
 }) {
   const { state } = useAudio();
   return (
     <div style={{ display:'flex', flexDirection:'column', flexShrink:0, background:'#000', borderBottom:'2px solid #0d0e0f' }}>
-      <VideoPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} />
+      <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
+      {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
       <FFTStrip color={color} />
       <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', borderBottom:'1px solid #111', flexShrink:0 }}>
-        <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} />
+        <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} />
         <ScreenOverlay/>
         <ScreenBadge text="EFFECT ▶ CURVE / FILTER" color={color}/>
         <div style={{ position:'absolute', top:4, right:5, zIndex:8, display:'flex', gap:2, alignItems:'flex-end' }}>
@@ -631,7 +861,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer }: {
         )}
       </div>
       <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
-        <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} />
+        <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} midiLayer={midiLayer} />
         <ScreenOverlay/>
         <ScreenBadge text="OUTPUT ◼ PROCESSED CLIP" color={color}/>
       </div>
@@ -819,6 +1049,30 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
             </div>
           </Section>
 
+          <Section label="SCR" color={color}>
+            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+              <div style={labelStyle}>MOTION</div>
+              <div style={{ display:'flex', gap:2, flexWrap:'wrap' }}>
+                {[
+                  { l: 'BEAT', v: 0 },
+                  { l: 'LOOP', v: 1 },
+                  { l: 'PONG', v: 2 },
+                  { l: 'RND', v: 3 },
+                ].map((o) => (
+                  <RackBtn
+                    key={o.l}
+                    label={o.l}
+                    active={Math.round(params.scratchMode ?? 0) === o.v}
+                    color={color}
+                    onClick={() => onUpdate('scratchMode', o.v)}
+                    width={30}
+                  />
+                ))}
+              </div>
+              <HSlider value={params.scratchDepth ?? 45} onChange={(v) => onUpdate('scratchDepth', v)} color={color} label="DEPTH (≈frames)" />
+            </div>
+          </Section>
+
           <Section label="TRIG" color={color} noBorder>
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
               <div style={labelStyle}>CHANCE</div>
@@ -914,7 +1168,7 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
   );
 }
 
-export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer }: EffectModuleProps) {
+export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: EffectModuleProps) {
   const { id, name, accentColor } = config;
   return (
     <div style={{
@@ -953,7 +1207,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
         <Screw/>
       </div>
 
-      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} />
+      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
 
       <div style={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
         {id==='shaper' && <ShaperControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}

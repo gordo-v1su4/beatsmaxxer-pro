@@ -21,6 +21,7 @@ const defaultState: AudioState = {
   fftBands: new Array(8).fill(0),
   playing: false,
   time: 0,
+  duration: 0,
   trackName: 'Internal Drum Loop',
   usingUploadedTrack: false,
 };

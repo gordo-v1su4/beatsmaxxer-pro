@@ -18,6 +18,7 @@ export interface AudioState {
   fftBands: number[];
   playing: boolean;
   time: number;
+  duration: number;
   trackName: string;
   usingUploadedTrack: boolean;
 }
@@ -217,6 +218,7 @@ export class AudioEngine {
       fftBands: this._fftBands,
       playing: this._playing,
       time: this.getTransportTime(),
+      duration: this.mediaElement?.duration || 0,
       trackName: this._trackName,
       usingUploadedTrack: this._usingUploadedTrack,
     };

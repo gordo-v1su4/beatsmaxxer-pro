@@ -3,6 +3,7 @@ import { TopBar } from './components/TopBar';
 import { PresetBrowser } from './components/PresetBrowser';
 import { EffectModule } from './components/EffectModule';
 import { AudioProvider } from './audio/AudioContext';
+import { parseMidi, type MidiNote } from './audio/MidiParser';
 
 export type ModuleType = 'shaper' | 'downsampler' | 'tapdelay' | 'bubblegrains';
 
@@ -17,6 +18,12 @@ export interface VideoLayer {
   name: string;
   url: string;
   file?: File;
+}
+
+export interface MidiLayer {
+  name: string;
+  notes: MidiNote[];
+  duration: number;
 }
 
 const MODULES: ModuleConfig[] = [
@@ -45,6 +52,7 @@ const MODULES: ModuleConfig[] = [
     params: {
       type: 1, velCrv: 55, end: 70, start: 25, filterSlider: 60,
       time: 60, feedback: 50,
+      scratchMode: 0, scratchDepth: 45,
       mix: 55, in_: 80, out: 65,
     },
   },
@@ -95,6 +103,9 @@ export function App() {
     shaper: false, downsampler: false, tapdelay: false, bubblegrains: false,
   });
   const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(DEFAULT_VIDEO_LAYERS);
+  const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>({
+    shaper: null, downsampler: null, tapdelay: null, bubblegrains: null,
+  });
 
   const objectUrlsRef = useRef<string[]>([]);
 
@@ -137,6 +148,23 @@ export function App() {
         },
       };
     });
+  }, []);
+
+  const setModuleMidi = useCallback(async (moduleId: ModuleType, file: File | null) => {
+    if (!file) {
+      setMidiLayers(prev => ({ ...prev, [moduleId]: null }));
+      return;
+    }
+    try {
+      const buffer = await file.arrayBuffer();
+      const data = parseMidi(buffer);
+      setMidiLayers(prev => ({
+        ...prev,
+        [moduleId]: { name: file.name, notes: data.notes, duration: data.duration },
+      }));
+    } catch (err) {
+      console.error('Failed to parse MIDI file:', err);
+    }
   }, []);
 
   const randomize = useCallback(() => {
@@ -232,6 +260,8 @@ export function App() {
                 onToggleMute={() => toggleMute(module.id)}
                 videoLayer={videoLayers[module.id]}
                 onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
+                midiLayer={midiLayers[module.id]}
+                onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
               />
             ))}
           </div>
