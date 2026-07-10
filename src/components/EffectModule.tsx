@@ -153,6 +153,7 @@ function ScreenOverlay() {
   return (
     <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:5 }}>
       <div style={{ position:'absolute', inset:0, backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 1px,rgba(0,0,0,0.15) 1px,rgba(0,0,0,0.15) 2px)', zIndex:2 }}/>
+      <div style={{ position:'absolute', left:0, right:0, top:0, height:'30%', background:'linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0))', zIndex:2 }}/>
       <div style={{ position:'absolute', inset:0, boxShadow:'inset 0 0 24px rgba(0,0,0,0.85),inset 2px 2px 5px rgba(0,0,0,0.5),inset -2px -2px 5px rgba(0,0,0,0.4)', zIndex:3 }}/>
     </div>
   );
@@ -196,34 +197,9 @@ function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number,
   return false;
 }
 
-function createFallbackVideoDataURL(accent: string) {
-  const svg = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-    <defs>
-      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-        <stop offset="0%" stop-color="#121418"/>
-        <stop offset="100%" stop-color="#050608"/>
-      </linearGradient>
-    </defs>
-    <rect width="640" height="360" fill="url(#bg)"/>
-    <rect x="20" y="20" width="600" height="320" rx="8" fill="#0b0d10" stroke="#23272c"/>
-    <g opacity="0.9">
-      <rect x="44" y="46" width="552" height="72" fill="#d4d4d4"/>
-      <rect x="44" y="118" width="552" height="72" fill="#9d7bff"/>
-      <rect x="44" y="190" width="552" height="72" fill="#4fd1c5"/>
-      <rect x="44" y="262" width="552" height="52" fill="${accent}"/>
-    </g>
-    <line x1="320" y1="46" x2="320" y2="314" stroke="#fff" opacity="0.4"/>
-    <line x1="44" y1="180" x2="596" y2="180" stroke="#fff" opacity="0.4"/>
-    <circle cx="320" cy="180" r="40" fill="none" stroke="#fff" opacity="0.45"/>
-    <text x="50%" y="328" fill="#94a3b8" font-size="20" text-anchor="middle" font-family="monospace">UPLOAD CLIP TO REPLACE DEMO SOURCE</text>
-  </svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
+function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypassed }: {
   type: ModuleType; color: string; params: Record<string,number>; mode: 'effect'|'output'; videoUrl?: string | null;
-  midiLayer?: MidiLayer | null;
+  midiLayer?: MidiLayer | null; bypassed?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer|null>(null);
@@ -293,12 +269,29 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
     const scene = new THREE.Scene();
     const camera = new THREE.OrthographicCamera(-1,1,1,-1,0,1);
 
-    const fallbackTexture = new THREE.TextureLoader().load(createFallbackVideoDataURL(color));
-    fallbackTexture.minFilter = THREE.LinearFilter;
-    fallbackTexture.magFilter = THREE.LinearFilter;
-    fallbackTexture.wrapS = THREE.ClampToEdgeWrapping;
-    fallbackTexture.wrapT = THREE.ClampToEdgeWrapping;
+    // 1x1 black texture keeps uVideoTex bound while the in-shader test pattern is the source
+    const fallbackTexture = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+    fallbackTexture.needsUpdate = true;
     imageTextureRef.current = fallbackTexture;
+
+    // ping-pong buffers feed the previous output frame back in (real video feedback/trails)
+    const rtOpts = {
+      minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      depthBuffer: false, stencilBuffer: false,
+    };
+    const rtW = Math.max(1, container.clientWidth), rtH = Math.max(1, container.clientHeight);
+    const rtA = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
+    const rtB = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
+    let flip = false;
+
+    const copyMat = new THREE.ShaderMaterial({
+      uniforms: { uTex: { value: rtA.texture } },
+      vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position,1.0); }`,
+      fragmentShader: `precision mediump float; uniform sampler2D uTex; varying vec2 vUv; void main(){ gl_FragColor = texture2D(uTex, vUv); }`,
+    });
+    const copyScene = new THREE.Scene();
+    const copyGeo = new THREE.PlaneGeometry(2, 2);
+    copyScene.add(new THREE.Mesh(copyGeo, copyMat));
 
     const mat = new THREE.ShaderMaterial({
       uniforms: {
@@ -306,6 +299,8 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
         uResolution: { value: new THREE.Vector2(container.clientWidth, container.clientHeight) },
         uColor:      { value: new THREE.Color(color) },
         uMode:       { value: mode === 'output' ? 1.0 : 0.0 },
+        uBypass:     { value: bypassed ? 1.0 : 0.0 },
+        uPrevTex:    { value: rtB.texture },
         uBPM:        { value: 128.0 },
         uBeat:       { value: 0.0 },
         uBeatPhase:  { value: 0.0 },
@@ -335,8 +330,10 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
     mat.uniforms.uP2.value.copy(u.uP2);
 
     const onResize = () => {
-      const w = container.clientWidth, h = container.clientHeight;
+      const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
       renderer.setSize(w, h);
+      rtA.setSize(w, h);
+      rtB.setSize(w, h);
       mat.uniforms.uResolution.value.set(w, h);
     };
     window.addEventListener('resize', onResize);
@@ -492,7 +489,18 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
       }
 
       if (videoTextureRef.current) videoTextureRef.current.needsUpdate = true;
+
+      // render into the write buffer while feeding back the previous frame, then blit to screen
+      const rtWrite = flip ? rtA : rtB;
+      const rtRead = flip ? rtB : rtA;
+      mat.uniforms.uPrevTex.value = rtRead.texture;
+      renderer.setRenderTarget(rtWrite);
       renderer.render(scene, camera);
+      copyMat.uniforms.uTex.value = rtWrite.texture;
+      renderer.setRenderTarget(null);
+      renderer.render(copyScene, camera);
+      flip = !flip;
+
       frameRef.current = requestAnimationFrame(animate);
     };
     animate();
@@ -503,6 +511,10 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       videoTextureRef.current?.dispose();
       imageTextureRef.current?.dispose();
+      rtA.dispose();
+      rtB.dispose();
+      copyGeo.dispose();
+      copyMat.dispose();
       renderer.dispose();
       mat.dispose();
     };
@@ -528,6 +540,11 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer }: {
     m.uniforms.uP1.value.copy(u.uP1);
     m.uniforms.uP2.value.copy(u.uP2);
   }, [params, color, getUniforms]);
+
+  useEffect(() => {
+    const m = materialRef.current;
+    if (m) m.uniforms.uBypass.value = bypassed ? 1.0 : 0.0;
+  }, [bypassed]);
 
   useEffect(() => {
     const m = materialRef.current;
@@ -657,7 +674,7 @@ function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMid
           color: videoLayer ? '#c0d7ff' : '#4a5260',
           whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis',
         }}>
-          {videoLayer?.name ?? 'Demo source'}
+          {videoLayer?.name ?? 'Test pattern'}
         </span>
       </div>
       {videoLayer && (
@@ -839,19 +856,54 @@ function FFTStrip({ color }: { color: string }) {
   );
 }
 
-function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
-  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void;
+function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, bypassed }: {
+  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void; bypassed: boolean;
 }) {
   const { state } = useAudio();
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
+
+  const onDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current++;
+    setDragOver(true);
+  };
+  const onDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith('video/')) onSetVideoLayer(file);
+    else if (/\.midi?$/i.test(file.name)) onSetMidiLayer(file);
+  };
+
+  const mixPct = Math.round(params.mix ?? 50);
   return (
-    <div style={{ display:'flex', flexDirection:'column', flexShrink:0, background:'#000', borderBottom:'2px solid #0d0e0f' }}>
+    <div
+      onDragEnter={onDragEnter}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      style={{ position:'relative', display:'flex', flexDirection:'column', flexShrink:0, background:'#000', borderBottom:'2px solid #0d0e0f' }}
+    >
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
       <FFTStrip color={color} />
       <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', borderBottom:'1px solid #111', flexShrink:0 }}>
-        <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} />
+        <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
-        <ScreenBadge text="EFFECT ▶ CURVE / FILTER" color={color}/>
+        <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
+        <div style={{ position:'absolute', bottom:4, left:5, zIndex:10, background:'rgba(0,0,0,0.7)', borderRadius:2, padding:'0px 4px' }}>
+          <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#566070', letterSpacing:'0.08em' }}>
+            {videoLayer ? 'SRC · CLIP' : 'SRC · TEST PATTERN'}
+          </span>
+        </div>
         <div style={{ position:'absolute', top:4, right:5, zIndex:8, display:'flex', gap:2, alignItems:'flex-end' }}>
           <VUMeter value={(state.bassAmp * 100) || (params.in_ ?? 70)} color={color}/>
           <VUMeter value={(state.amplitude * 200) || (params.out ?? 55)} color={color}/>
@@ -861,10 +913,26 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
         )}
       </div>
       <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
-        <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} midiLayer={midiLayer} />
+        <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
-        <ScreenBadge text="OUTPUT ◼ PROCESSED CLIP" color={color}/>
+        <ScreenBadge
+          text={bypassed ? 'OUTPUT · BYPASSED' : `OUTPUT · MIX ${mixPct}%`}
+          color={bypassed ? '#ef4444' : color}
+        />
       </div>
+      {dragOver && (
+        <div style={{
+          position:'absolute', inset:3, zIndex:20, pointerEvents:'none',
+          border:`2px dashed ${color}`, borderRadius:4,
+          background:'rgba(0,0,0,0.55)', backdropFilter:'blur(1px)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:4,
+        }}>
+          <Upload size={18} color={color} />
+          <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:11, fontWeight:700, letterSpacing:'0.15em', color }}>
+            DROP CLIP / MIDI
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -1170,6 +1238,7 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
 
 export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: EffectModuleProps) {
   const { id, name, accentColor } = config;
+  const [collapsed, setCollapsed] = useState(false);
   return (
     <div style={{
       flex:1, minWidth:0,
@@ -1199,22 +1268,31 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
           fontFamily:'Rajdhani,sans-serif', fontSize:10, fontWeight:700,
           letterSpacing:'0.14em', textTransform:'uppercase', color:'#7a8090', flex:1, marginLeft:3,
         }}>{name}</span>
-        <div style={{ width:12, height:12, border:'1px solid #1e2226', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'linear-gradient(180deg,#1c1e22,#141618)' }}>
-          <svg width={7} height={4} viewBox="0 0 7 4"><path d="M0 0 L3.5 4 L7 0" fill="none" stroke="#3a4050" strokeWidth={1.2}/></svg>
-        </div>
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          title={collapsed ? 'Expand controls' : 'Collapse controls'}
+          style={{ width:12, height:12, border:'1px solid #1e2226', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'linear-gradient(180deg,#1c1e22,#141618)', padding:0 }}
+        >
+          <svg width={7} height={4} viewBox="0 0 7 4" style={{ transform: collapsed ? 'rotate(180deg)' : undefined, transition:'transform 0.15s' }}>
+            <path d="M0 0 L3.5 4 L7 0" fill="none" stroke={collapsed ? accentColor : '#3a4050'} strokeWidth={1.2}/>
+          </svg>
+        </button>
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass}/>
         <HeaderBtn label="M" active={muted} activeColor="#eab308" onClick={onToggleMute}/>
         <Screw/>
       </div>
 
-      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
+      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} bypassed={bypassed} />
 
-      <div style={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
-        {id==='shaper' && <ShaperControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-        {id==='downsampler' && <DownsamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-        {id==='tapdelay' && <TapDelayControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-        {id==='bubblegrains' && <BubbleGrainsControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-      </div>
+      {!collapsed && (
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
+          {id==='shaper' && <ShaperControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='downsampler' && <DownsamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='tapdelay' && <TapDelayControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='bubblegrains' && <BubbleGrainsControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+        </div>
+      )}
+      {collapsed && <div style={{ flex:1 }}/>}
 
       <MixSection params={params} onUpdate={onUpdateParam} color={accentColor}/>
     </div>
@@ -1229,6 +1307,7 @@ function getFragmentShader(type: ModuleType): string {
     uniform vec2  uVideoRes;
     uniform vec3  uColor;
     uniform float uMode;
+    uniform float uBypass;
     uniform float uBPM;
     uniform float uBeat;
     uniform float uBeatPhase;
@@ -1241,6 +1320,7 @@ function getFragmentShader(type: ModuleType): string {
     uniform vec4 uP1;
     uniform vec4 uP2;
     uniform sampler2D uVideoTex;
+    uniform sampler2D uPrevTex;
     uniform float uHasVideo;
     varying vec2 vUv;
 
@@ -1248,14 +1328,17 @@ function getFragmentShader(type: ModuleType): string {
     #define TAU 6.28318530718
 
     float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
-    float noise(vec2 p){
-      vec2 i=floor(p), f=fract(p);
-      vec2 u=f*f*(3.0-2.0*f);
-      return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y);
-    }
-    float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<5;i++){v+=a*noise(p);p*=2.03;a*=0.5;} return v; }
     float beatPulse(float sharpness){ return exp(-uBeatPhase * sharpness); }
     float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+    vec3 rgb2hsv(vec3 c){
+      vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+      vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+      vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+      float d = q.x - min(q.w, q.y);
+      float e = 1.0e-10;
+      return vec3(abs(q.z + (q.w - q.y) / (6.0*d + e)), d / (q.x + e), q.x);
+    }
 
     vec3 sampleVideo(vec2 uv){
       float screenAspect = uResolution.x / uResolution.y;
@@ -1267,295 +1350,287 @@ function getFragmentShader(type: ModuleType): string {
          scale.x = videoAspect / screenAspect;
       }
       vec2 suv = (uv - 0.5) * scale + 0.5;
-      vec3 tex = texture2D(uVideoTex, clamp(suv, 0.0, 1.0)).rgb;
-      float vign = 1.0 - dot(uv - 0.5, uv - 0.5) * 0.95;
-      float scan = 0.95 + 0.05 * sin(uv.y * uResolution.y * 0.6);
-      return tex * vign * scan;
+      return texture2D(uVideoTex, clamp(suv, 0.0, 1.0)).rgb;
+    }
+
+    vec3 smpteBar(float i){
+      if(i < 0.5) return vec3(0.82);
+      if(i < 1.5) return vec3(0.82, 0.82, 0.0);
+      if(i < 2.5) return vec3(0.0, 0.82, 0.82);
+      if(i < 3.5) return vec3(0.0, 0.82, 0.0);
+      if(i < 4.5) return vec3(0.82, 0.0, 0.82);
+      if(i < 5.5) return vec3(0.82, 0.0, 0.0);
+      return vec3(0.0, 0.0, 0.82);
+    }
+
+    /* Animated broadcast-style test card, used as the source when no clip is loaded
+       so every effect previews on real picture content. */
+    vec3 testPattern(vec2 uv){
+      float t = uTime;
+      float aspect = uResolution.x / uResolution.y;
+      vec3 col;
+      if(uv.y > 0.60){
+        col = smpteBar(floor(uv.x * 7.0)) * 0.9;
+        col *= 0.82 + 0.18 * smoothstep(0.0, 0.03, abs(fract(uv.x * 7.0) - 0.5));
+      } else if(uv.y > 0.47){
+        col = vec3(floor(uv.x * 10.0) / 9.0);
+      } else if(uv.y > 0.40){
+        col = vec3(uv.x);
+      } else {
+        col = vec3(0.045, 0.05, 0.06);
+        vec2 g = fract(uv * vec2(aspect * 6.0, 6.0));
+        col += vec3(0.06, 0.07, 0.08) * step(0.95, max(g.x, g.y));
+        // beat-synced orbiting beacon
+        float ang = -uBeat * 0.25 * TAU;
+        vec2 c = vec2(0.5, 0.20);
+        vec2 op = c + vec2(cos(ang) * 0.30 / aspect, sin(ang) * 0.13);
+        float d = length(vec2((uv.x - op.x) * aspect, uv.y - op.y));
+        col += uColor * (smoothstep(0.045, 0.0, d) * 1.6 + smoothstep(0.15, 0.0, d) * 0.25);
+        // bouncing block
+        float bx = abs(fract(t * 0.11) * 2.0 - 1.0);
+        vec2 bp = vec2(mix(0.05, 0.95, bx), 0.20);
+        float blk = step(max(abs(uv.x - bp.x) * aspect, abs(uv.y - bp.y) * 3.0), 0.055);
+        col = mix(col, vec3(0.92), blk);
+      }
+      // full-height sweep bar (reads motion for delays/trails)
+      float sx = fract(t * 0.18);
+      col += vec3(1.0, 0.97, 0.9) * smoothstep(0.012, 0.0, abs(uv.x - sx)) * 0.85;
+      // beat flash marker, top-left
+      float mk = step(max(abs(uv.x - 0.035) * aspect, abs(uv.y - 0.945)), 0.045);
+      col = mix(col, uColor, mk * beatPulse(10.0) * 0.9);
+      return clamp(col, 0.0, 1.0);
+    }
+
+    vec3 sampleSource(vec2 uv){
+      uv = clamp(uv, 0.0, 1.0);
+      if(uHasVideo > 0.5) return sampleVideo(uv);
+      return testPattern(uv);
+    }
+
+    vec3 finishPx(vec3 col, vec2 uv){
+      float vign = 1.0 - dot(uv - 0.5, uv - 0.5) * 0.7;
+      float scan = 0.97 + 0.03 * sin(uv.y * uResolution.y * PI);
+      return col * vign * scan;
     }
   `;
 
   if (type === 'shaper') {
     return `${common}
+    /* Waveshaper as a video effect: a transfer curve applied to each color channel.
+       ALGO 1 sine fold (solarize), 2 triangle fold, 3 hard clip (contrast), 4 saw wrap. */
+    float shapeCurve(float x, float algo, float offset, float freq, float clip, float drive){
+      float v = (x - 0.5) * drive + (offset - 0.5) * 1.5;
+      float f = 1.0 + freq * 5.0;
+      float y;
+      if(algo < 1.5)      y = sin(v * f);
+      else if(algo < 2.5) y = abs(fract(v * f * 0.35 + 0.25) * 4.0 - 2.0) - 1.0;
+      else if(algo < 3.5) y = clamp(v * f, -1.0, 1.0);
+      else                y = fract(v * f * 0.35 + 0.5) * 2.0 - 1.0;
+      float c = mix(1.0, 0.18, clip);
+      return clamp(y, -c, c) / c * 0.5 + 0.5;
+    }
     void main(){
-      vec2 uv=vUv;
-      float t=uTime;
-      float algo=uP0.x;
-      float offset=uP0.y;
-      float freq=uP0.z;
-      float clip=uP0.w;
-      float amount=uP1.x;
-      float mix_=uP1.y;
-      float pulse=beatPulse(6.0);
-      float low=uFFT0.x;
-      float mid=uFFT0.z;
+      vec2 uv = vUv;
+      float algo   = floor(uP0.x + 0.5);
+      float offset = uP0.y;
+      float freq   = uP0.z;
+      float clip   = uP0.w;
+      float amount = uP1.x;
+      float mix_   = uP1.y;
+      float pulse  = beatPulse(6.0);
+      float drive  = 0.6 + amount * 3.2 + uBassAmp * 1.4;
+
+      vec3 dry = sampleSource(uv);
+      vec3 wet = vec3(
+        shapeCurve(dry.r, algo, offset, freq, clip, drive),
+        shapeCurve(dry.g, algo, offset, freq, clip, drive),
+        shapeCurve(dry.b, algo, offset, freq, clip, drive)
+      );
+      wet *= 1.0 + pulse * 0.08;
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 col = mix(dry, wet, wetAmt);
 
       if(uMode < 0.5){
-        vec2 grid=fract(uv*vec2(20.0,10.0));
-        float gx=step(0.97,grid.x), gy=step(0.95,grid.y);
-        vec3 col=vec3(gx+gy)*0.04;
-        float phase = t*(1.3+freq*2.5) + uBeatPhase*TAU*(1.0+freq*3.0);
-        float f = 2.0 + freq*14.0 + low*10.0;
-        float amp = amount*0.42 + uBassAmp*0.2;
-        float a2=floor(algo+0.5);
-        float wave=0.0;
-        if(a2<1.5) wave=sin(uv.x*f*TAU+phase)*amp;
-        else if(a2<2.5) wave=asin(sin(uv.x*f*TAU+phase))*(2.0/PI)*amp;
-        else if(a2<3.5) wave=sign(sin(uv.x*f*TAU+phase+offset*PI))*amp*0.8;
-        else wave=(fract(uv.x*f+phase*0.25)*2.0-1.0)*amp*0.8;
-        wave += (offset - 0.5) * 0.28;
-        float clipThr=0.02+clip*0.38;
-        float preCl=wave;
-        wave=clamp(wave,-clipThr,clipThr);
-        bool isClip=abs(preCl)>clipThr+0.01;
-        float wy=uv.y-0.5-wave;
-        float thick=0.006+amount*0.008+mid*0.01;
-        float line=exp(-abs(wy)/thick)*1.8;
-        float glow=exp(-abs(wy)/(thick*8.0))*0.4;
-        vec3 wc=isClip?vec3(1.0,0.25,0.05):uColor;
-        col+=line*wc*2.5*(1.0+pulse*0.8)+glow*uColor*0.6;
-        col += uColor * pulse * 0.15;
-        float rampX=uBeatPhase;
-        col += smoothstep(0.008,0.0,abs(uv.x-rampX))*vec3(1.0,0.8,0.1)*0.5;
-        gl_FragColor=vec4(col,1.0);
-      } else {
-        vec3 dry = sampleVideo(uv);
-        
-        // Lens bulge in Z depth + speed ramp
-        vec2 center = vec2(0.5, 0.5);
-        vec2 distVec = uv - center;
-        float dist = length(distVec);
-        float bulgeZ = (0.5 + uBassAmp * 0.5) * (amount * 0.5);
-        vec2 st = center + distVec * (1.0 - bulgeZ * exp(-dist * 2.0));
-        
-        // Speed ramp: time jumping based on BPM
-        float jump = floor(uBeatPhase * 4.0) / 4.0;
-        float jitterTime = (uBeatPhase + (sin(uBeatPhase * TAU) * 0.1)) * (1.0 + amount);
-        st.x += sin(jitterTime * TAU) * 0.05;
-        
-        vec3 wet = sampleVideo(clamp(st, 0.0, 1.0));
-        
-        // Lens aberration
-        wet.r = sampleVideo(clamp(st + vec2(0.005 + bulgeZ*0.05, 0.0), 0.0, 1.0)).r;
-        wet.b = sampleVideo(clamp(st - vec2(0.005 + bulgeZ*0.05, 0.0), 0.0, 1.0)).b;
-        
-        wet *= 1.0 + pulse * 0.2;
-        gl_FragColor=vec4(mix(dry, wet, mix_), 1.0);
+        // live transfer-curve scope inset (in = x, out = y)
+        vec2 s = (uv - vec2(0.035, 0.06)) / vec2(0.30, 0.42);
+        if(s.x > 0.0 && s.x < 1.0 && s.y > 0.0 && s.y < 1.0){
+          col *= 0.30;
+          float box = max(abs(s.x - 0.5), abs(s.y - 0.5));
+          col += uColor * (step(box, 0.5) - step(box, 0.47)) * 0.35;
+          col += vec3(0.5) * smoothstep(0.02, 0.0, abs(s.y - s.x)) * 0.35;
+          float cy = shapeCurve(s.x, algo, offset, freq, clip, drive);
+          col += uColor * smoothstep(0.05, 0.0, abs(s.y - cy)) * 1.3;
+        }
       }
+      gl_FragColor = vec4(finishPx(col, uv), 1.0);
     }`;
   }
 
   if (type === 'downsampler') {
     return `${common}
+    /* Sample-rate + bit-depth reduction as video: RATE = spatial resolution (pixelate),
+       BITS = color depth (posterize), JITTER = analog line glitch.
+       PIX = dithered pixelate, BIT = harsh posterize, GLT = glitch (RGB split + block corruption). */
     void main(){
-      vec2 uv=vUv;
-      float t=uTime;
-      float jitter=uP0.x;
-      float crushType=uP0.y;
-      float rate=uP0.z;
-      float bits=uP0.w;
-      float mix_=uP1.x;
-      float pulse=beatPulse(8.0);
-      float hats=uFFT1.z;
-      float bass=uFFT0.x;
+      vec2 uv = vUv;
+      float t = uTime;
+      float jitter    = uP0.x;
+      float crushType = floor(uP0.y + 0.5);
+      float rate      = uP0.z;
+      float bits      = uP0.w;
+      float mix_      = uP1.x;
+      float pulse = beatPulse(8.0);
+      float bass  = uFFT0.x;
+      float aspect = uResolution.x / uResolution.y;
 
-      if(uMode < 0.5){
-        float pixSize = mix(52.0, 3.0, jitter + bass*0.3);
-        vec2 pUv=floor(uv*pixSize)/pixSize;
-        float band=step(1.0-jitter*0.45-pulse*0.2, noise(vec2(uv.y*35.0, floor(t*24.0))));
-        float disp=(hash(vec2(floor(uv.y*80.0), floor(t*18.0)))-0.5)*jitter*0.4*band;
-        pUv.x = fract(pUv.x + disp);
-        float cellV=hash(vec2(floor(pUv.x*pixSize), floor(pUv.y*pixSize+t*5.0)));
-        vec3 col=vec3(0.0);
-        if(crushType<0.5){
-          float bright=step(0.45,cellV)*(0.4+noise(pUv*6.0+t*0.4)*0.7);
-          bright *= 1.0 + pulse * 0.6;
-          col=uColor*bright;
-        } else if(crushType<1.5){
-          float bitsN=1.0+bits*6.0;
-          float quantV=floor(cellV*bitsN)/bitsN;
-          col=uColor*quantV*1.6*(1.0+pulse*0.4);
-        } else {
-          float gBand=step(0.8-pulse*0.2, hash(vec2(floor(uv.y*80.0),floor(t*30.0))));
-          col=uColor*cellV*0.8;
-          col+=vec3(1.0,0.1,0.3)*gBand*(jitter+pulse*0.8);
-          col+=vec3(0.1,1.0,0.9)*step(0.95,hash(vec2(uv.y*10.0,t*5.0+hats)))*0.9;
+      // pixelate: RATE up = coarser sampling, bass momentarily crunches harder
+      float pxCount = mix(240.0, 10.0, clamp(rate + bass * 0.15 + pulse * rate * 0.1, 0.0, 1.0));
+      vec2 grid = vec2(pxCount, max(4.0, pxCount / aspect));
+      vec2 pUv = (floor(uv * grid) + 0.5) / grid;
+
+      // analog jitter: random scanline bands displace horizontally
+      float row = floor(uv.y * 64.0);
+      float band = step(1.0 - jitter * 0.35 - pulse * 0.12, hash(vec2(row, floor(t * 12.0))));
+      float disp = (hash(vec2(row + 7.0, floor(t * 12.0))) - 0.5) * band * jitter * (crushType > 1.5 ? 0.35 : 0.10);
+      vec2 st = pUv + vec2(disp, 0.0);
+
+      vec3 wet;
+      if(crushType > 1.5){
+        float split = jitter * 0.02 + pulse * 0.012;
+        wet.r = sampleSource(st + vec2(split, 0.0)).r;
+        wet.g = sampleSource(st).g;
+        wet.b = sampleSource(st - vec2(split, 0.0)).b;
+        // block corruption on random macro-cells
+        vec2 bc = floor(uv * vec2(8.0, 6.0));
+        float bh = hash(bc + floor(t * 6.0));
+        if(bh > 1.0 - jitter * 0.3){
+          wet = sampleSource(fract(st + vec2(bh * 0.3, -bh * 0.2))).brg;
         }
-        gl_FragColor=vec4(col,1.0);
       } else {
-        vec3 dry = sampleVideo(uv);
-        float frameRate = max(1.0, mix(1.0, 30.0, rate));
-        float quantTime = floor(t * frameRate * (1.0 + bass*1.2)) / max(1.0, frameRate * (1.0 + bass*1.2));
-        float pixSize2=mix(64.0,4.0,jitter+bass*0.35);
-        vec2 pUv2=floor(uv*pixSize2)/pixSize2;
-        float dx=(hash(vec2(floor(uv.y*42.0), floor(quantTime*15.0)))-0.5)*jitter*0.3;
-        dx += pulse * jitter * 0.08 * sign(hash(vec2(floor(uv.y*20.0),uBeat))-0.5);
-        vec2 st=clamp(pUv2+vec2(dx,0.0),0.0,1.0);
-        vec3 wet=sampleVideo(st);
-        if(crushType<1.5){
-          float bitsN2=max(1.0, 1.0 + bits*5.0 - pulse*4.0*(1.0-bits));
-          wet = floor(wet * bitsN2) / bitsN2;
-        } else {
-          float splitAmt=jitter*0.04+pulse*jitter*0.04;
-          float rC=sampleVideo(clamp(st+vec2(splitAmt,0),0.0,1.0)).r;
-          float gC=sampleVideo(clamp(st+vec2(0,pulse*0.03),0.0,1.0)).g;
-          float bC=sampleVideo(clamp(st-vec2(splitAmt,0),0.0,1.0)).b;
-          wet=vec3(rC,gC,bC);
-        }
-        wet *= 1.0 + pulse*0.14;
-        gl_FragColor=vec4(mix(dry, wet, mix_),1.0);
+        wet = sampleSource(st);
       }
+
+      // posterize: BITS up = more levels (cleaner); beat drops levels for a crush hit
+      float levels = crushType < 0.5 ? mix(6.0, 32.0, bits) : mix(2.0, 14.0, bits);
+      levels = max(2.0, levels - pulse * 5.0 * (1.0 - bits));
+      float dith = crushType < 0.5 ? (hash(floor(uv * grid)) - 0.5) / levels : 0.0;
+      wet = clamp(floor((wet + dith) * levels) / (levels - 1.0), 0.0, 1.0);
+
+      wet *= 1.0 + pulse * 0.1;
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 dry = sampleSource(uv);
+      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
     }`;
   }
 
   if (type === 'tapdelay') {
     return `${common}
+    /* Real video echo: the previous OUTPUT frame is fed back in (uPrevTex ping-pong),
+       so trails/feedback behave like an actual video delay line.
+       PAN = directional smear, STUTTER = zoom feedback tunnel, FILTER = luma-keyed tinted trails. */
     void main(){
-      vec2 uv=vUv;
-      float t=uTime;
-      float typeIdx=uP0.x;
-      float vel=uP0.y;
-      float endP=uP0.z;
-      float startP=uP0.w;
-      float delayT=uP1.x;
-      float feedback=uP1.y;
-      float mix_=uP1.z;
-      float filtPos=uP1.w;
-      float pulse=beatPulse(6.0);
-      float vocal=uFFT0.y + uFFT0.z;
-      float hats=uFFT1.z;
-      float beatInterval = 60.0 / max(1.0, uBPM);
-      float tapInterval = mix(beatInterval*0.125, beatInterval*2.0, delayT);
+      vec2 uv = vUv;
+      float typeIdx  = floor(uP0.x + 0.5);
+      float delayT   = uP1.x;
+      float feedback = uP1.y;
+      float mix_     = uP1.z;
+      float filtPos  = uP1.w;
+      float pulse = beatPulse(6.0);
 
-      if(uMode < 0.5){
-        vec3 col=vec3(0.0);
-        int nTaps=3+int(endP*5.0);
-        for(int i=0;i<8;i++){
-          if(i>=nTaps) break;
-          float fi=float(i);
-          float xPos=fract(t/tapInterval * 0.5 + fi/float(nTaps));
-          float bw=0.018+vel*0.03+fi*0.004 + hats*0.01;
-          float fade=pow(max(0.0,feedback),fi);
-          float band=smoothstep(bw,0.0,abs(uv.x-xPos))*(1.0+(i==0?pulse*1.5:0.0));
-          vec3 tapCol=uColor;
-          if(typeIdx>0.5 && typeIdx<1.5){
-            float chop=step(0.5,fract(uv.y*5.0+fi*0.7+uBeatPhase*4.0));
-            band*=chop;
-            tapCol=mix(uColor,vec3(0.8,0.9,1.0),0.35);
-          } else if(typeIdx>1.5){
-            float fmask=smoothstep(filtPos-0.1,filtPos+0.1,uv.y);
-            band*=fmask;
-            tapCol=mix(uColor,vec3(0.3,0.5,1.0),0.4);
-          }
-          col += tapCol * band * fade * 2.3;
-        }
-        col += vec3(vocal*0.25, vocal*0.18, vocal*0.35);
-        gl_FragColor=vec4(col,1.0);
+      // where the echo image drifts each frame
+      float amt = mix(0.004, 0.045, delayT);
+      vec2 pUv;
+      if(typeIdx < 0.5){
+        float dir = sin(uBeat * PI * 0.5 + uv.y * 2.0);
+        pUv = uv + vec2(dir * amt, 0.0);
+      } else if(typeIdx < 1.5){
+        pUv = (uv - 0.5) * (1.0 - amt * 1.6) + 0.5;
+        pUv.x += sin(uBeat * PI * 0.5) * amt * 0.3;
       } else {
-        vec3 dry = sampleVideo(uv);
-        vec3 accum = dry;
-        int nTaps2=2+int(endP*4.0);
-        for(int i=1;i<=6;i++){
-          if(i>nTaps2) break;
-          float fi=float(i);
-          float xOff=0.0, yOff=0.0;
-          float phase = fract((uBeatPhase * (2.0 + fi)) + startP * 0.5);
-          if(typeIdx<0.5){
-            xOff=sin(fi*1.3+uBeat)*vel*0.05;
-          } else if(typeIdx<1.5){
-            if(phase>0.42 && phase<0.74){
-              xOff=(mod(fi,2.0)<1.0?1.0:-1.0)*(0.02+vel*0.06);
-            }
-          } else {
-            yOff = (filtPos - 0.5) * fi * 0.06;
-          }
-          vec2 st = clamp(uv + vec2(xOff, yOff), 0.0, 1.0);
-          vec3 echo = sampleVideo(st);
-          if(typeIdx<1.5){
-            float gate = smoothstep(0.06, 0.0, abs(phase - 0.2)) + smoothstep(0.06, 0.0, abs(phase - 0.6));
-            echo *= clamp(gate, 0.0, 1.0);
-          } else {
-            float lum = luma(echo);
-            echo = mix(echo, vec3(lum) * uColor * 1.4, (1.0 - filtPos) * 0.65);
-          }
-          float fade=pow(max(0.0,feedback),fi) * (1.0 + (i==1?pulse*0.4:0.0));
-          accum += echo * fade;
-        }
-        accum = clamp(accum / (1.0 + float(nTaps2) * 0.6), 0.0, 1.0);
-        accum *= 1.0 + pulse * 0.18;
-        gl_FragColor=vec4(mix(dry, accum, mix_),1.0);
+        pUv = uv + vec2(0.0, (filtPos - 0.5) * amt * 2.0);
       }
+      vec3 prev = texture2D(uPrevTex, clamp(pUv, 0.0, 1.0)).rgb;
+
+      float fb = clamp(feedback * 0.93 + pulse * 0.03, 0.0, 0.97);
+      vec3 cur = sampleSource(uv);
+      vec3 wet;
+      if(typeIdx > 1.5){
+        float k = smoothstep(filtPos * 0.9, filtPos * 0.9 + 0.2, luma(prev));
+        wet = max(cur, prev * fb * mix(vec3(1.0), uColor * 1.5, 0.4) * (0.35 + k * 0.65));
+      } else {
+        wet = max(cur, prev * fb);
+      }
+      wet *= 1.0 + pulse * 0.08;
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      gl_FragColor = vec4(finishPx(mix(cur, wet, wetAmt), uv), 1.0);
     }`;
   }
 
   return `${common}
+  /* Granular video: the frame is cut into grains that re-sample the source at shuffled
+     offsets. SPD = re-trigger rate (SYNC quantizes to beat DIVisions), PAT = grain count,
+     DFT = shuffle distance, MOD = fraction of grains active, ENGINE = grain geometry.
+     FREQ/Q = hue-isolation filter (band-pass for color). */
   void main(){
-    vec2 uv=vUv;
-    float t=uTime;
-    float sync=uP0.x;
-    float notes=uP0.y;
-    float div=uP0.z;
-    float engine=uP0.w;
-    float speed=uP1.x;
-    float pattern=uP1.y;
-    float drift=uP1.z;
-    float freq=uP1.w;
-    float q=uP2.x;
-    float mix_=uP2.y;
-    float pulse=beatPulse(5.0);
-    float bass=uFFT0.x;
-    float highs=uFFT1.w;
-    float ts=t*(0.15+speed*1.8)*(uBPM/120.0);
-    if(sync>0.5){
+    vec2 uv = vUv;
+    float sync    = uP0.x;
+    float notes   = uP0.y;
+    float div     = uP0.z;
+    float engine  = floor(uP0.w + 0.5);
+    float speed   = uP1.x;
+    float pattern = uP1.y;
+    float drift   = uP1.z;
+    float freq    = uP1.w;
+    float q       = uP2.x;
+    float mix_    = uP2.y;
+    float pulse = beatPulse(5.0);
+    float aspect = uResolution.x / uResolution.y;
+
+    // grain clock: free-running, or quantized to beat divisions when SYNC is on
+    float ts = uTime * (0.5 + speed * 6.0);
+    if(sync > 0.5){
       float divs = 1.0 + floor(div * 7.0);
-      float quantPhase = floor(uBeatPhase*divs)/divs;
-      ts = (floor(t*uBPM/60.0) + quantPhase) * (0.15+speed*1.8);
+      ts = (floor(uBeat) + floor(uBeatPhase * divs) / divs) * (1.0 + speed * 4.0);
+    }
+    float seed = floor(ts);
+
+    float cells = mix(4.0, 16.0, pattern);
+    vec2 gv = vec2(cells, max(2.0, floor(cells / aspect)));
+    vec2 cellId;
+    if(engine < 1.5)      cellId = floor(uv * gv);                        // 0/1: blocks
+    else if(engine < 2.5) cellId = vec2(0.0, floor(uv.y * gv.y * 1.5));   // 2: h-slices
+    else                  cellId = vec2(floor(uv.x * gv.x * 1.5), 0.0);   // 3: v-slices
+
+    float act = step(1.0 - notes * 0.85, hash(cellId + vec2(seed * 0.13, seed * 0.71)));
+    vec2 offs = (vec2(
+      hash(cellId + vec2(seed * 0.31 + 1.7, 2.3)),
+      hash(cellId + vec2(4.1, seed * 0.17 + 8.9))
+    ) - 0.5) * drift * (0.55 + pulse * 0.2);
+    vec3 wet = sampleSource(uv + offs * act);
+    if(engine > 0.5 && engine < 1.5){
+      // soft grains: round falloff inside each cell
+      vec2 lc = fract(uv * gv) - 0.5;
+      wet = mix(sampleSource(uv), wet, smoothstep(0.5, 0.15, length(lc)));
     }
 
-    if(uMode < 0.5){
-      vec2 uvc=uv-0.5;
-      float aspect=uResolution.x/uResolution.y;
-      uvc.x*=aspect;
-      float r=length(uvc);
-      float a=atan(uvc.y,uvc.x);
-      float numLobes=2.0+floor(engine)*1.5+pattern*2.5;
-      float d1=sin(a*numLobes+ts)*(0.05+drift*0.11)*(1.0+pulse*0.25+bass*0.3);
-      float d2=sin(a*(numLobes*2.0+1.0)-ts*1.4)*0.035;
-      float d3=fbm(uvc*(2.5+freq*5.0)+ts*0.18)*drift*0.07;
-      float blobR=(0.22+(notes-0.5)*0.1+d1+d2+d3)*(1.0+pulse*0.14);
-      float blob=smoothstep(blobR+0.018,blobR-0.012,r);
-      float grain=fbm(uvc*(7.0+q*18.0)+ts*0.45);
-      vec3 col=uColor*(mix(0.45,1.0,grain)*blob);
-      col += uColor * pulse * 0.18;
-      for(int i=0;i<10;i++){
-        float fi=float(i);
-        float ang=TAU*(fi/10.0)+ts*(0.35+bass*0.5)*(1.0+fi*0.04);
-        vec2 pp=vec2(cos(ang),sin(ang))*(blobR*1.35 + fi*0.03);
-        float pd=length(uvc-pp);
-        col += smoothstep(0.015,0.0,pd) * mix(uColor, vec3(1.0,1.0,0.7), fi/10.0) * (1.0 + highs*0.8);
-      }
-      gl_FragColor=vec4(max(col,vec3(0.0)),1.0);
-    } else {
-      vec3 dry = sampleVideo(uv);
-      vec2 uvc2=uv-0.5;
-      float a2=atan(uvc2.y,uvc2.x);
-      float numLobes2=2.0+floor(engine)*1.5+pattern*2.5;
-      float warpBeat = drift*0.08 + pulse*(drift*0.06+bass*0.05);
-      float warpX=sin(a2*numLobes2+ts)*warpBeat+fbm(uv*(3.0+freq*4.0)+ts*0.2)*drift*0.05;
-      float warpY=cos(a2*numLobes2+ts)*warpBeat*0.7;
-      vec2 st=clamp(uv+vec2(warpX,warpY),0.0,1.0);
-      vec3 wet=sampleVideo(st);
-      float gr=fbm(uv*(8.0+q*20.0)+ts*0.5);
-      wet += uColor * gr * drift * 0.18;
-      vec3 prev=sampleVideo(clamp(uv+vec2(pulse*0.02,0.0),0.0,1.0));
-      wet=mix(wet, prev, speed*0.25 + pulse*0.1);
-      if(sync>0.5){
-        float blockSize=mix(16.0,64.0,div);
-        vec2 bUv=floor(uv*blockSize)/blockSize;
-        vec3 blockSrc=sampleVideo(bUv);
-        wet = mix(wet, blockSrc, notes*(0.25+pulse*0.25));
-      }
-      wet *= 1.0 + pulse*0.18;
-      gl_FragColor=vec4(mix(dry, wet, mix_),1.0);
-    }
+    // hue isolation: keep hues near FREQ, desaturate the rest; Q sets band width/strength
+    vec3 hsv = rgb2hsv(wet);
+    float hd = abs(hsv.x - freq);
+    hd = min(hd, 1.0 - hd);
+    float bw = mix(0.5, 0.05, q);
+    float keep = smoothstep(bw, bw * 0.4, hd);
+    vec3 mono = vec3(luma(wet)) * 0.55;
+    wet = mix(wet, mix(mono, wet, keep), q);
+
+    wet *= 1.0 + pulse * 0.1;
+    float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+    if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+    vec3 dry = sampleSource(uv);
+    gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
   }`;
 }

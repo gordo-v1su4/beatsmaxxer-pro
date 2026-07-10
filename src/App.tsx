@@ -38,7 +38,7 @@ const MODULES: ModuleConfig[] = [
   },
   {
     id: 'downsampler',
-    name: 'DOWNSAMP...',
+    name: 'DOWNSAMPLER',
     accentColor: '#f59e0b',
     params: {
       jitter: 40, crushType: 0, rate: 50, bits: 70,
