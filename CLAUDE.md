@@ -29,7 +29,7 @@ Beat Surfer Pro is a browser-based audio-reactive effects rack with realtime 3D 
 
 - **`TopBar.tsx`** — Transport controls: play/stop, BPM display, tap tempo, audio file upload, randomize, clear.
 - **`PresetBrowser.tsx`** — 11 hardcoded presets; 4 macro knobs (macro1–4, range 0–100) with color-coded sliders.
-- **`EffectModule.tsx`** — The core component (~600 lines). Renders one of four modules (SHAPER, DOWNSAMPLER, TAPDELAY, BUBBLEGRAINS) including: parameter knobs, bypass/mute, video/MIDI upload slots, and an embedded Three.js canvas driven by audio analysis + module params.
+- **`EffectModule.tsx`** — The core component. Renders one of four modules (SHAPER, DOWNSAMPLER, TAPDELAY, TIMESAMPLER) including: parameter knobs, bypass/mute, video/MIDI upload slots, and two embedded Three.js canvases (FX preview at 100% wet + mixed output) driven by audio analysis + module params. Each canvas has ping-pong feedback buffers for real video trails; with no clip loaded, an in-shader animated test card is the source.
 - **`Knob.tsx`** — Reusable SVG rotary knob; drag-to-adjust; supports xs/sm/md/lg sizes.
 
 ### App State (`src/App.tsx`)
@@ -43,7 +43,7 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 | SHAPER | Green (`#22c55e`) | algo, offset, freq, clip, amount, mix, in, out |
 | DOWNSAMPLER | Amber (`#f59e0b`) | jitter, crushType, rate, bits, mix, in, out |
 | TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end, start, filterSlider, time, feedback, mix, in, out |
-| BUBBLEGRAINS | Yellow (`#eab308`) | sync, notes, div, engine, speed, pattern, drift, freq, q, mix, in, out |
+| TIMESAMPLER | Yellow (`#eab308`) | mode (LOOP/REV/PONG/RAND), size, repeats, chance, rate, mix, in, out |
 
 ### Tech Stack
 

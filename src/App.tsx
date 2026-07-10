@@ -5,7 +5,7 @@ import { EffectModule } from './components/EffectModule';
 import { AudioProvider } from './audio/AudioContext';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 
-export type ModuleType = 'shaper' | 'downsampler' | 'tapdelay' | 'bubblegrains';
+export type ModuleType = 'shaper' | 'downsampler' | 'tapdelay' | 'timesampler';
 
 export interface ModuleConfig {
   id: ModuleType;
@@ -57,14 +57,12 @@ const MODULES: ModuleConfig[] = [
     },
   },
   {
-    id: 'bubblegrains',
-    name: 'BUBBLEGRAINS',
+    id: 'timesampler',
+    name: 'TIMESAMPLER',
     accentColor: '#eab308',
     params: {
-      sync: 0, notes: 50, div: 30, engine: 2,
-      speed: 40, pattern: 60, drift: 25,
-      freq: 45, q: 35,
-      mix: 50, in_: 80, out: 60,
+      mode: 0, size: 50, repeats: 50, chance: 60, rate: 43,
+      mix: 60, in_: 80, out: 60,
     },
   },
 ];
@@ -87,7 +85,7 @@ const DEFAULT_VIDEO_LAYERS: Record<ModuleType, VideoLayer | null> = {
   shaper: null,
   downsampler: null,
   tapdelay: null,
-  bubblegrains: null,
+  timesampler: null,
 };
 
 export function App() {
@@ -97,14 +95,14 @@ export function App() {
     Object.fromEntries(MODULES.map(m => [m.id, { ...m.params }])) as Record<ModuleType, Record<string, number>>
   );
   const [bypassed, setBypassed] = useState<Record<ModuleType, boolean>>({
-    shaper: false, downsampler: false, tapdelay: false, bubblegrains: false,
+    shaper: false, downsampler: false, tapdelay: false, timesampler: false,
   });
   const [muted, setMuted] = useState<Record<ModuleType, boolean>>({
-    shaper: false, downsampler: false, tapdelay: false, bubblegrains: false,
+    shaper: false, downsampler: false, tapdelay: false, timesampler: false,
   });
   const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(DEFAULT_VIDEO_LAYERS);
   const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>({
-    shaper: null, downsampler: null, tapdelay: null, bubblegrains: null,
+    shaper: null, downsampler: null, tapdelay: null, timesampler: null,
   });
 
   const objectUrlsRef = useRef<string[]>([]);

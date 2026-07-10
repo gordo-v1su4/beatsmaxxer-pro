@@ -221,6 +221,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
     lastTransportSec: -1,
     stutterAnchor: 0,
     scratchPongAtBack: true,
+    srcTime: 0,
   });
   const { state: audioState } = useAudio();
 
@@ -250,9 +251,9 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
       uP2: new THREE.Vector4(p('scratchDepth', 45), params.scratchMode ?? 0, 0, 0),
     };
     return {
-      uP0: new THREE.Vector4(params.sync ?? 0, p('notes', 50), p('div', 30), params.engine ?? 2),
-      uP1: new THREE.Vector4(p('speed', 40), p('pattern', 60), p('drift', 25), p('freq', 45)),
-      uP2: new THREE.Vector4(p('q', 35), p('mix', 50), p('in_', 80), p('out', 60)),
+      uP0: new THREE.Vector4(params.mode ?? 0, p('size', 50), p('repeats', 50), p('chance', 60)),
+      uP1: new THREE.Vector4(p('rate', 43), p('mix', 60), p('in_', 80), p('out', 60)),
+      uP2: new THREE.Vector4(0, 0, 0, 0),
     };
   }, [params, type]);
 
@@ -301,6 +302,9 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
         uMode:       { value: mode === 'output' ? 1.0 : 0.0 },
         uBypass:     { value: bypassed ? 1.0 : 0.0 },
         uPrevTex:    { value: rtB.texture },
+        uSrcTime:    { value: 0 },
+        uStut:       { value: 0 },
+        uChunkPhase: { value: 0 },
         uBPM:        { value: 128.0 },
         uBeat:       { value: 0.0 },
         uBeatPhase:  { value: 0.0 },
@@ -341,13 +345,15 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
     let last = performance.now();
     const animate = () => {
       const now = performance.now();
-      timeRef.current += (now - last) * 0.001;
+      const dt = (now - last) * 0.001;
+      timeRef.current += dt;
       last = now;
-      
+
       const m = materialRef.current;
       if (m) {
         m.uniforms.uTime.value = timeRef.current;
-        
+        m.uniforms.uSrcTime.value = timeRef.current;
+
         const uBeat = m.uniforms.uBeat.value;
         const st = loopRef.current;
         
@@ -447,44 +453,100 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
           }
           st.lastBeat = uBeat;
         } 
-        else if (type === 'bubblegrains' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
-          const tNowBg = audioEngine.getState().time;
-          const tPrevBg = st.lastTransportSec;
-          const beatResetBg = uBeat < st.lastBeat - 0.5;
-          const timeBackBg = tPrevBg >= 0 && tNowBg < tPrevBg - 0.25;
-          if (beatResetBg || timeBackBg) {
+        else if (type === 'timesampler') {
+          // Time-remap sampler: chops source time into beat-synced chunks.
+          // Drives video.currentTime for loaded clips and uSrcTime for the test pattern.
+          const mode = Math.round(m.uniforms.uP0.value.x);
+          const sizeP = m.uniforms.uP0.value.y;
+          const repeatsP = m.uniforms.uP0.value.z;
+          const chance = m.uniforms.uP0.value.w;
+          const rate = 0.25 + m.uniforms.uP1.value.x * 1.75;
+          const bypass = m.uniforms.uBypass.value > 0.5;
+          const chunkBeats = sizeP < 0.2 ? 0.25 : sizeP < 0.4 ? 0.5 : sizeP < 0.6 ? 1 : sizeP < 0.8 ? 2 : 4;
+          const bpm = m.uniforms.uBPM.value || 128;
+          const chunkSec = chunkBeats * (60 / bpm);
+
+          const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
+          const dur = video && Number.isFinite(video.duration) && video.duration > 0.05 ? video.duration : 1e6;
+          if (video && Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
+
+          const tNow = audioEngine.getState().time;
+          const tPrev = st.lastTransportSec;
+          const beatReset = uBeat < st.lastBeat - 0.5;
+          const timeBack = tPrev >= 0 && tNow < tPrev - 0.25;
+          if (beatReset || timeBack || bypass) {
             st.isStuttering = false;
             st.remRepeats = 0;
-            st.beatsPassed = 0;
           }
-          st.lastTransportSec = tNowBg;
 
-          const floorBeat = Math.floor(uBeat);
-          const lastFloorBeat = Math.floor(st.lastBeat);
-          if (floorBeat > lastFloorBeat) {
-            const freq = m.uniforms.uP1.value.w;
-            const engine = Math.round(m.uniforms.uP0.value.w);
-            const stutterLen = engine + 1;
-            
-            if (st.isStuttering) {
-              st.beatsPassed++;
-              if (st.beatsPassed >= stutterLen) {
-                st.remRepeats--;
-                if (st.remRepeats > 0) {
-                  videoRef.current.currentTime = st.stutterVideoTime;
-                  st.beatsPassed = 0;
-                } else {
-                  st.isStuttering = false;
-                }
+          const midi = midiLayerRef.current;
+          const useMidi = !!(midi?.notes?.length);
+          let midiHit = false;
+          if (!beatReset && !timeBack && !bypass && useMidi && playingRef.current) {
+            const lastT = midi!.notes[midi!.notes.length - 1]!.time;
+            const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
+            const jump = tPrev >= 0 && Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
+            if (!jump && tPrev >= 0) {
+              midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
+            }
+          }
+          st.lastTransportSec = tNow;
+
+          // the remapped source clock: follows the clip when loaded, free-runs otherwise
+          if (video) st.srcTime = video.currentTime;
+          else st.srcTime += dt * rate;
+
+          const seek = (tSec: number) => {
+            st.srcTime = tSec;
+            if (video) video.currentTime = Math.max(0, Math.min(dur - 0.02, ((tSec % dur) + dur) % dur));
+          };
+          const startChunk = () => {
+            st.isStuttering = true;
+            st.stutterAnchor = st.srcTime;
+            st.stutterStartBeat = uBeat;
+            st.remRepeats = Math.max(1, Math.round(repeatsP * 8));
+            st.scratchPongAtBack = false;
+            st.beatsPassed = 0;
+          };
+
+          if (!st.isStuttering) {
+            if (!bypass) {
+              if (useMidi) {
+                if (midiHit) startChunk();
+              } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < chance) {
+                startChunk();
               }
-            } else if (Math.random() < freq * 0.35) {
-              st.isStuttering = true;
-              st.stutterVideoTime = videoRef.current.currentTime;
-              st.beatsPassed = 0;
-              st.remRepeats = Math.floor(Math.random() * 3) + 1;
+            }
+          } else if (uBeat - st.stutterStartBeat >= chunkBeats) {
+            st.remRepeats--;
+            if (st.remRepeats > 0) {
+              st.beatsPassed++;
+              if (mode === 1) {
+                // REV: each repeat steps a chunk further back
+                seek(st.stutterAnchor - st.beatsPassed * chunkSec);
+              } else if (mode === 2) {
+                // PONG: alternate chunk start / chunk end
+                st.scratchPongAtBack = !st.scratchPongAtBack;
+                seek(st.scratchPongAtBack ? st.stutterAnchor + chunkSec : st.stutterAnchor);
+              } else if (mode === 3) {
+                // RAND: jump to a random nearby position
+                seek(st.stutterAnchor + (Math.random() * 2 - 1) * chunkSec * 4.0);
+              } else {
+                // LOOP: classic beat repeat
+                seek(st.stutterAnchor);
+              }
+              st.stutterStartBeat = uBeat;
+            } else {
+              st.isStuttering = false;
             }
           }
           st.lastBeat = uBeat;
+
+          m.uniforms.uSrcTime.value = st.srcTime;
+          m.uniforms.uStut.value = st.isStuttering ? 1.0 : 0.0;
+          m.uniforms.uChunkPhase.value = st.isStuttering
+            ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / chunkBeats))
+            : 0.0;
         }
       }
 
@@ -1172,41 +1234,74 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
   );
 }
 
-function BubbleGrainsControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+function TimeSamplerControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
+  const rate = 0.25 + ((params.rate ?? 43) / 100) * 1.75;
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
-      <Section label="TIME" color={color}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:3 }}>
-          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-              <span style={{ fontSize:7, fontWeight:700, color:'#3a4050', letterSpacing:'0.1em', fontFamily:'Rajdhani,sans-serif' }}>SYNC</span>
-              <RackBtn label="ON" active={!!params.sync} color={color} onClick={()=>onUpdate('sync',params.sync?0:1)} width={24}/>
-            </div>
-            <MiniDisplay value={params.sync?'SYNC':'FREE'} width={52}/>
+      <Section label="MODE" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>CHUNK MODE</div>
+          <div style={{ display:'flex', gap:2 }}>
+            {[
+              { l: 'LOOP', v: 0 },
+              { l: 'REV', v: 1 },
+              { l: 'PONG', v: 2 },
+              { l: 'RAND', v: 3 },
+            ].map(o => (
+              <RackBtn key={o.l} label={o.l} active={Math.round(params.mode??0)===o.v} color={color} onClick={()=>onUpdate('mode',o.v)} width={34}/>
+            ))}
           </div>
-          <Knob label="MOD" value={params.notes??50} onChange={v=>onUpdate('notes',v)} size="sm" color={color}/>
-          <Knob label="DIV" value={params.div??30} onChange={v=>onUpdate('div',v)} size="sm" color={color}/>
         </div>
       </Section>
-      <Section label="ENG" color={color}>
-        <div style={{ display:'flex', gap:2, alignItems:'center' }}>
-          <span style={{ fontSize:7, fontWeight:700, color:'#3a4050', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' }}>ENGINE</span>
-          {[0,1,2,3].map(n => (
-            <RackBtn key={n} label={String(n)} active={Math.round(params.engine??2)===n} color={color} onClick={()=>onUpdate('engine',n)}/>
-          ))}
+      <Section label="LEN" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>CHUNK LENGTH</div>
+          <div style={{ display:'flex', gap:2 }}>
+            {[
+              { l: '1/16', val: 10 },
+              { l: '1/8', val: 30 },
+              { l: '1/4', val: 50 },
+              { l: '1/2', val: 70 },
+              { l: 'BAR', val: 90 },
+            ].map(v => {
+              const isActive = Math.abs((params.size??50) - v.val) <= 10;
+              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('size',v.val)} width={28}/>;
+            })}
+          </div>
         </div>
       </Section>
-      <Section label="SHPE" color={color}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <Knob label="SPD" value={params.speed??40} onChange={v=>onUpdate('speed',v)} size="sm" color={color}/>
-          <Knob label="PAT" value={params.pattern??60} onChange={v=>onUpdate('pattern',v)} size="sm" color={color}/>
-          <Knob label="DFT" value={params.drift??25} onChange={v=>onUpdate('drift',v)} size="sm" color={color}/>
+      <Section label="RPT" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>REPEATS</div>
+          <div style={{ display:'flex', gap:2 }}>
+            {[1, 2, 4, 6, 8].map(n => {
+              const currentRepeats = Math.round((params.repeats ?? 50) / 100 * 8) || 1;
+              return <RackBtn key={n} label={`${n}×`} active={currentRepeats===n} color={color} onClick={()=>onUpdate('repeats', (n / 8) * 100)} width={28}/>;
+            })}
+          </div>
         </div>
       </Section>
-      <Section label="FILT" color={color} noBorder>
-        <div style={{ display:'flex', justifyContent:'space-around', alignItems:'center' }}>
-          <Knob label="FREQ" value={params.freq??45} onChange={v=>onUpdate('freq',v)} size="sm" color={color}/>
-          <Knob label="Q" value={params.q??35} onChange={v=>onUpdate('q',v)} size="sm" color={color}/>
+      <Section label="SPD" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>PLAYBACK RATE</div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ flex:1 }}>
+              <HSlider value={params.rate??43} onChange={v=>onUpdate('rate',v)} color={color}/>
+            </div>
+            <MiniDisplay value={`${rate.toFixed(2)}×`} width={44}/>
+          </div>
+        </div>
+      </Section>
+      <Section label="TRIG" color={color} noBorder>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>CHANCE</div>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ flex:1 }}>
+              <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
+            </div>
+            <MiniDisplay value={`${Math.round(params.chance??60)}%`} width={36}/>
+          </div>
         </div>
       </Section>
     </div>
@@ -1289,7 +1384,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
           {id==='shaper' && <ShaperControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='downsampler' && <DownsamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='tapdelay' && <TapDelayControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-          {id==='bubblegrains' && <BubbleGrainsControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='timesampler' && <TimeSamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
         </div>
       )}
       {collapsed && <div style={{ flex:1 }}/>}
@@ -1322,6 +1417,9 @@ function getFragmentShader(type: ModuleType): string {
     uniform sampler2D uVideoTex;
     uniform sampler2D uPrevTex;
     uniform float uHasVideo;
+    uniform float uSrcTime;
+    uniform float uStut;
+    uniform float uChunkPhase;
     varying vec2 vUv;
 
     #define PI  3.14159265359
@@ -1330,15 +1428,6 @@ function getFragmentShader(type: ModuleType): string {
     float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
     float beatPulse(float sharpness){ return exp(-uBeatPhase * sharpness); }
     float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
-
-    vec3 rgb2hsv(vec3 c){
-      vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
-      vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-      vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-      float d = q.x - min(q.w, q.y);
-      float e = 1.0e-10;
-      return vec3(abs(q.z + (q.w - q.y) / (6.0*d + e)), d / (q.x + e), q.x);
-    }
 
     vec3 sampleVideo(vec2 uv){
       float screenAspect = uResolution.x / uResolution.y;
@@ -1364,9 +1453,10 @@ function getFragmentShader(type: ModuleType): string {
     }
 
     /* Animated broadcast-style test card, used as the source when no clip is loaded
-       so every effect previews on real picture content. */
+       so every effect previews on real picture content. Runs on uSrcTime so the
+       TIMESAMPLER's chunk remapping is visible without a clip. */
     vec3 testPattern(vec2 uv){
-      float t = uTime;
+      float t = uSrcTime;
       float aspect = uResolution.x / uResolution.y;
       vec3 col;
       if(uv.y > 0.60){
@@ -1572,65 +1662,41 @@ function getFragmentShader(type: ModuleType): string {
   }
 
   return `${common}
-  /* Granular video: the frame is cut into grains that re-sample the source at shuffled
-     offsets. SPD = re-trigger rate (SYNC quantizes to beat DIVisions), PAT = grain count,
-     DFT = shuffle distance, MOD = fraction of grains active, ENGINE = grain geometry.
-     FREQ/Q = hue-isolation filter (band-pass for color). */
+  /* Time-remap sampler: the JS transport chops source time into beat-synced chunks
+     (LOOP / REV / PONG / RAND). uSrcTime drives the test pattern and video.currentTime
+     is scrubbed for loaded clips, so the remap itself happens upstream — this shader
+     adds stutter ghosting, a retrigger flash, tape wobble off-1x, and a chunk readout. */
   void main(){
     vec2 uv = vUv;
-    float sync    = uP0.x;
-    float notes   = uP0.y;
-    float div     = uP0.z;
-    float engine  = floor(uP0.w + 0.5);
-    float speed   = uP1.x;
-    float pattern = uP1.y;
-    float drift   = uP1.z;
-    float freq    = uP1.w;
-    float q       = uP2.x;
-    float mix_    = uP2.y;
-    float pulse = beatPulse(5.0);
-    float aspect = uResolution.x / uResolution.y;
+    float rate  = 0.25 + uP1.x * 1.75;
+    float mix_  = uP1.y;
+    float pulse = beatPulse(6.0);
 
-    // grain clock: free-running, or quantized to beat divisions when SYNC is on
-    float ts = uTime * (0.5 + speed * 6.0);
-    if(sync > 0.5){
-      float divs = 1.0 + floor(div * 7.0);
-      ts = (floor(uBeat) + floor(uBeatPhase * divs) / divs) * (1.0 + speed * 4.0);
-    }
-    float seed = floor(ts);
+    // tape-style line wobble when playback rate is away from 1x
+    float wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
+    vec2 st = uv;
+    st.x += sin(uv.y * 60.0 + uTime * 9.0) * wob * 0.004;
+    vec3 wet = sampleSource(st);
 
-    float cells = mix(4.0, 16.0, pattern);
-    vec2 gv = vec2(cells, max(2.0, floor(cells / aspect)));
-    vec2 cellId;
-    if(engine < 1.5)      cellId = floor(uv * gv);                        // 0/1: blocks
-    else if(engine < 2.5) cellId = vec2(0.0, floor(uv.y * gv.y * 1.5));   // 2: h-slices
-    else                  cellId = vec2(floor(uv.x * gv.x * 1.5), 0.0);   // 3: v-slices
+    // stutter ghosting from the feedback buffer while a chunk repeats
+    vec3 prev = texture2D(uPrevTex, clamp(uv + vec2(0.006, 0.0), 0.0, 1.0)).rgb;
+    wet = max(wet, prev * (uStut * 0.5));
 
-    float act = step(1.0 - notes * 0.85, hash(cellId + vec2(seed * 0.13, seed * 0.71)));
-    vec2 offs = (vec2(
-      hash(cellId + vec2(seed * 0.31 + 1.7, 2.3)),
-      hash(cellId + vec2(4.1, seed * 0.17 + 8.9))
-    ) - 0.5) * drift * (0.55 + pulse * 0.2);
-    vec3 wet = sampleSource(uv + offs * act);
-    if(engine > 0.5 && engine < 1.5){
-      // soft grains: round falloff inside each cell
-      vec2 lc = fract(uv * gv) - 0.5;
-      wet = mix(sampleSource(uv), wet, smoothstep(0.5, 0.15, length(lc)));
-    }
+    // retrigger flash at each chunk start
+    float flash = uStut * exp(-uChunkPhase * 7.0);
+    wet *= 1.0 + flash * 0.22 + pulse * 0.05;
+    wet += uColor * flash * 0.04;
 
-    // hue isolation: keep hues near FREQ, desaturate the rest; Q sets band width/strength
-    vec3 hsv = rgb2hsv(wet);
-    float hd = abs(hsv.x - freq);
-    hd = min(hd, 1.0 - hd);
-    float bw = mix(0.5, 0.05, q);
-    float keep = smoothstep(bw, bw * 0.4, hd);
-    vec3 mono = vec3(luma(wet)) * 0.55;
-    wet = mix(wet, mix(mono, wet, keep), q);
-
-    wet *= 1.0 + pulse * 0.1;
     float wetAmt = uMode < 0.5 ? 1.0 : mix_;
     if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
     vec3 dry = sampleSource(uv);
-    gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+    vec3 col = mix(dry, wet, wetAmt);
+
+    if(uMode < 0.5 && uv.y < 0.045){
+      // chunk progress strip: fills as the current chunk plays out
+      col *= 0.25;
+      col += uColor * (0.12 + step(uv.x, uChunkPhase) * uStut * 0.9);
+    }
+    gl_FragColor = vec4(finishPx(col, uv), 1.0);
   }`;
 }
