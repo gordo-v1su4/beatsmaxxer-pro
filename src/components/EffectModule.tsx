@@ -162,8 +162,12 @@ export function ScreenOverlay() {
 
 export function ScreenBadge({ text, color }: { text: string; color: string }) {
   return (
-    <div style={{ position:'absolute', top:4, left:5, zIndex:10, background:'rgba(0,0,0,0.75)', border:`1px solid ${color}44`, borderRadius:2, padding:'1px 5px' }}>
-      <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:7, color, letterSpacing:'0.08em', opacity:0.85 }}>{text}</span>
+    <div style={{
+      position:'absolute', top:4, left:5, zIndex:10,
+      background:'rgba(0,0,0,0.75)', border:`1px solid ${color}44`, borderRadius:2,
+      height:13, paddingInline:4, display:'flex', alignItems:'center',
+    }}>
+      <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:7, lineHeight:1, color, letterSpacing:'0.08em', opacity:0.85 }}>{text}</span>
     </div>
   );
 }
@@ -1082,39 +1086,6 @@ function MidiTimeline({ color, midiLayer }: {
   );
 }
 
-function FFTStrip({ color }: { color: string }) {
-  const { state } = useAudio();
-  const bands = state.fftBands ?? new Array(8).fill(0);
-  return (
-    <div style={{
-      display:'flex', alignItems:'flex-end', gap:2,
-      height:26,
-      padding:'4px 5px 3px',
-      borderBottom:'1px solid #0d0e0f',
-      background:'linear-gradient(180deg,#0f1113,#0b0d0f)',
-      flexShrink:0,
-    }}>
-      <AudioLines size={9} color={color} style={{ marginRight: 2, alignSelf:'center' }} />
-      {bands.map((b, i) => (
-        <div key={i} style={{
-          flex:1,
-          height: `${Math.max(10, b * 100)}%`,
-          background: `linear-gradient(180deg, ${color}, ${color}55)`,
-          borderRadius:'1px 1px 0 0',
-          boxShadow:`0 0 6px ${color}33`,
-          minHeight: 4,
-          transition:'height 0.05s linear',
-        }} />
-      ))}
-      <div style={{ width:36, alignSelf:'center', textAlign:'right' }}>
-        <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:7, color:'#566070' }}>
-          FFT
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, bypassed }: {
   type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void; bypassed: boolean;
 }) {
@@ -1152,8 +1123,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     >
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
-      <FFTStrip color={color} />
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
+      <div style={{ position:'relative', width:'100%', height:158, background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
         <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
@@ -1161,10 +1131,6 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
           <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#566070', letterSpacing:'0.08em' }}>
             {videoLayer ? 'SRC · CLIP' : 'SRC · TEST PATTERN'}
           </span>
-        </div>
-        <div style={{ position:'absolute', top:4, right:5, zIndex:8, display:'flex', gap:2, alignItems:'flex-end' }}>
-          <VUMeter value={(state.bassAmp * 100) || (params.in_ ?? 70)} color={color}/>
-          <VUMeter value={(state.amplitude * 200) || (params.out ?? 55)} color={color}/>
         </div>
         {state.beatPhase < 0.08 && state.playing && (
           <div style={{ position:'absolute', inset:0, zIndex:4, pointerEvents:'none', border:`1px solid ${color}44`, borderRadius:0, boxShadow:`inset 0 0 12px ${color}22` }}/>
@@ -1562,14 +1528,14 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
   return (
     <div style={{
       background:'linear-gradient(180deg,#111214,#0f1012)',
-      borderTop:'2px solid #0d0e0f', padding:'5px 5px 5px 3px',
+      borderTop:'2px solid #0d0e0f', padding:'4px 5px 4px 3px',
       display:'flex', alignItems:'flex-end', gap:3, flexShrink:0,
     }}>
       <VertLabel text="MIX" color={color}/>
       <div style={{ flex:1, display:'flex', justifyContent:'space-around', alignItems:'flex-end' }}>
-        <Knob label="IN" value={params.in_??80} onChange={v=>onUpdate('in_',v)} size="sm" color={color}/>
-        <Knob label="MIX" value={params.mix??50} onChange={v=>onUpdate('mix',v)} size="sm" color={color}/>
-        <Knob label="OUT" value={params.out??60} onChange={v=>onUpdate('out',v)} size="sm" color={color}/>
+        <Knob label="IN" value={params.in_??80} onChange={v=>onUpdate('in_',v)} size="xs" color={color}/>
+        <Knob label="MIX" value={params.mix??50} onChange={v=>onUpdate('mix',v)} size="xs" color={color}/>
+        <Knob label="OUT" value={params.out??60} onChange={v=>onUpdate('out',v)} size="xs" color={color}/>
       </div>
       <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
         <RackBtn label="A" active={routeA} color={color} onClick={()=>setRouteA(v=>!v)} width={18} height={14}/>
@@ -2098,23 +2064,38 @@ function getFragmentShader(type: ModuleType): string {
   }`;
 }
 
-const COMPACT_KNOBS: Partial<Record<ModuleType, { param: string; label: string }[]>> = {
-  punch: [
-    { param: 'dir', label: 'DIR' }, { param: 'amt', label: 'AMT' },
-    { param: 'snap', label: 'SNAP' }, { param: 'mix', label: 'MIX' },
-  ],
-  shake: [
-    { param: 'hand', label: 'HAND' }, { param: 'impact', label: 'IMPCT' },
-    { param: 'sway', label: 'SWAY' }, { param: 'mix', label: 'MIX' },
-  ],
-  orbit: [
-    { param: 'spd', label: 'SPD' }, { param: 'drift', label: 'DRIFT' },
-    { param: 'nudge', label: 'NUDGE' }, { param: 'mix', label: 'MIX' },
-  ],
-  focus: [
-    { param: 'amt', label: 'AMT' }, { param: 'pulse', label: 'PULSE' },
-    { param: 'soft', label: 'SOFT' }, { param: 'mix', label: 'MIX' },
-  ],
+interface CompactSpec {
+  buttons: { label: string; value: number }[];
+  buttonParam: string;
+  slider: { param: string; label: string };
+  knobs: { param: string; label: string }[];
+}
+
+const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
+  punch: {
+    buttons: [{ label: 'IN', value: 10 }, { label: 'ALT', value: 50 }, { label: 'OUT', value: 90 }],
+    buttonParam: 'dir',
+    slider: { param: 'amt', label: 'AMOUNT' },
+    knobs: [{ param: 'snap', label: 'SNAP' }, { param: 'mix', label: 'MIX' }],
+  },
+  shake: {
+    buttons: [{ label: 'CALM', value: 20 }, { label: 'RUN', value: 50 }, { label: 'RIOT', value: 85 }],
+    buttonParam: 'impact',
+    slider: { param: 'hand', label: 'HANDHELD' },
+    knobs: [{ param: 'sway', label: 'SWAY' }, { param: 'mix', label: 'MIX' }],
+  },
+  orbit: {
+    buttons: [{ label: 'SLOW', value: 15 }, { label: 'MED', value: 45 }, { label: 'FAST', value: 80 }],
+    buttonParam: 'spd',
+    slider: { param: 'drift', label: 'DRIFT' },
+    knobs: [{ param: 'nudge', label: 'NUDGE' }, { param: 'mix', label: 'MIX' }],
+  },
+  focus: {
+    buttons: [{ label: 'SOFT', value: 25 }, { label: 'PULL', value: 55 }, { label: 'HARD', value: 85 }],
+    buttonParam: 'pulse',
+    slider: { param: 'amt', label: 'BASE BLUR' },
+    knobs: [{ param: 'soft', label: 'BLOOM' }, { param: 'mix', label: 'MIX' }],
+  },
 };
 
 /** Slim second-row module: header, FX-preview screen, and a single knob row. */
@@ -2133,7 +2114,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
 
-  const knobs = COMPACT_KNOBS[id] ?? [];
+  const spec = COMPACT_CONTROLS[id];
 
   return (
     <div
@@ -2205,22 +2186,47 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
       </div>
 
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, background: '#000' }}>
+      <div style={{ position: 'relative', width: '100%', height: 158, background: '#000', flexShrink: 0 }}>
         <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} />
         <ScreenOverlay />
         <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
       </div>
 
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
-        padding: '3px 4px', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 6px', flexShrink: 0,
         background: 'linear-gradient(180deg,#111214,#0f1012)',
         borderTop: '1px solid #0d0e0f',
       }}>
-        {knobs.map(k => (
-          <Knob key={k.param} label={k.label} value={params[k.param] ?? 50}
-            onChange={v => onUpdateParam(k.param, v)} size="sm" color={accentColor} />
-        ))}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', gap: 2 }}>
+            {spec?.buttons.map(btn => (
+              <RackBtn key={btn.label} label={btn.label}
+                active={Math.abs((params[spec.buttonParam] ?? 50) - btn.value) <= 17}
+                color={accentColor}
+                onClick={() => onUpdateParam(spec.buttonParam, btn.value)}
+                width={38} height={16} />
+            ))}
+          </div>
+          {spec && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                width: 44, flexShrink: 0, fontSize: 7, fontWeight: 700, color: '#3a4050',
+                fontFamily: 'Rajdhani,sans-serif', letterSpacing: '0.08em',
+              }}>{spec.slider.label}</span>
+              <div style={{ flex: 1 }}>
+                <HSlider value={params[spec.slider.param] ?? 50}
+                  onChange={v => onUpdateParam(spec.slider.param, v)} color={accentColor} />
+              </div>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0 }}>
+          {spec?.knobs.map(k => (
+            <Knob key={k.param} label={k.label} value={params[k.param] ?? 50}
+              onChange={v => onUpdateParam(k.param, v)} size="xs" color={accentColor} />
+          ))}
+        </div>
       </div>
 
       {dragOver && (

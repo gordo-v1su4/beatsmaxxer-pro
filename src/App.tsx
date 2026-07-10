@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { TopBar } from './components/TopBar';
-import { PresetBrowser } from './components/PresetBrowser';
 import { EffectModule, CompactModule } from './components/EffectModule';
-import { MainViewer } from './components/MainViewer';
+import { MainViewer, PgmRail } from './components/MainViewer';
 import { AudioProvider } from './audio/AudioContext';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 
@@ -114,24 +113,7 @@ function moduleRecord<T>(value: T): Record<ModuleType, T> {
   return Object.fromEntries(ALL_MODULES.map(m => [m.id, value])) as Record<ModuleType, T>;
 }
 
-const PRESETS = [
-  'Big head mode',
-  'Cascade Combo',
-  'Fog of War',
-  'Ghost Room',
-  'Lag Spike Delay',
-  'Noclip Phase',
-  'Overclocked',
-  'Resonant Mist',
-  'Sizzle Damage',
-  'Vortex Spell',
-  'World Map Chorus',
-];
-
-
 export function App() {
-  const [selectedPreset, setSelectedPreset] = useState('Cascade Combo');
-  const [macros, setMacros] = useState({ macro1: 50, macro2: 75, macro3: 30, macro4: 60 });
   const [moduleParams, setModuleParams] = useState<Record<ModuleType, Record<string, number>>>(
     Object.fromEntries(ALL_MODULES.map(m => [m.id, { ...m.params }])) as Record<ModuleType, Record<string, number>>
   );
@@ -148,10 +130,6 @@ export function App() {
       ...prev,
       [moduleId]: { ...prev[moduleId], [param]: value },
     }));
-  }, []);
-
-  const updateMacro = useCallback((macro: keyof typeof macros, value: number) => {
-    setMacros(prev => ({ ...prev, [macro]: value }));
   }, []);
 
   const toggleBypass = useCallback((moduleId: ModuleType) => {
@@ -222,7 +200,6 @@ export function App() {
       });
     });
     setModuleParams(resetParams);
-    setMacros({ macro1: 50, macro2: 75, macro3: 30, macro4: 60 });
   }, []);
 
   return (
@@ -265,12 +242,10 @@ export function App() {
             ))}
           </div>
 
-          <PresetBrowser
-            presets={PRESETS}
-            selectedPreset={selectedPreset}
-            onSelectPreset={setSelectedPreset}
-            macros={macros}
-            onUpdateMacro={updateMacro}
+          <PgmRail
+            modules={ALL_MODULES}
+            pgmSource={pgmSource}
+            onSelectSource={setPgmSource}
           />
 
           <div style={{ width: 3, background: '#0d0e0f', flexShrink: 0 }} />
@@ -286,13 +261,12 @@ export function App() {
             <MainViewer
               modules={ALL_MODULES}
               pgmSource={pgmSource}
-              onSelectSource={setPgmSource}
               moduleParams={moduleParams}
               videoLayers={videoLayers}
               midiLayers={midiLayers}
               bypassed={bypassed}
             />
-            <div style={{ height: 'clamp(430px, 55vh, 545px)', flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ height: 452, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
               {MODULES.map(module => (
                 <EffectModule
                   key={module.id}
@@ -311,7 +285,7 @@ export function App() {
                 />
               ))}
             </div>
-            <div style={{ flex: 1, minHeight: 130, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
+            <div style={{ height: 252, flexShrink: 0, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
               {MODULES_B.map(module => (
                 <CompactModule
                   key={module.id}
