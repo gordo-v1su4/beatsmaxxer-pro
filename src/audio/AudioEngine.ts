@@ -10,6 +10,7 @@
 
 export interface AudioState {
   bpm: number;
+  bpmLocked: boolean;
   beat: number;
   beatPhase: number;
   amplitude: number;
@@ -48,6 +49,7 @@ export class AudioEngine {
   private _playing = false;
   private _trackName = DEFAULT_TRACK_NAME;
   private _usingUploadedTrack = false;
+  private _bpmLocked = false;
 
   private beatInterval = 60 / DEFAULT_BPM;
   private onsetHistory: number[] = [];
@@ -202,14 +204,21 @@ export class AudioEngine {
     if (this.gainNode) this.gainNode.gain.value = v;
   }
 
+  /** Manual BPM (typed or tap tempo). Locks out the auto-estimator until unlockBPM(). */
   setBPM(bpm: number) {
     this._bpm = Math.max(60, Math.min(200, bpm));
     this.beatInterval = 60 / this._bpm;
+    this._bpmLocked = true;
+  }
+
+  unlockBPM() {
+    this._bpmLocked = false;
   }
 
   getState(): AudioState {
     return {
       bpm: this._bpm,
+      bpmLocked: this._bpmLocked,
       beat: this._beat,
       beatPhase: this._beatPhase,
       amplitude: this._amplitude,
@@ -325,19 +334,26 @@ export class AudioEngine {
 
     if (diff > 0.08 && energy > 0.12 && this.onsetCooldown === 0) {
       this.onsetHistory.push(elapsed);
-      if (this.onsetHistory.length > 12) this.onsetHistory.shift();
+      if (this.onsetHistory.length > 16) this.onsetHistory.shift();
 
-      if (this.onsetHistory.length >= 4) {
+      if (!this._bpmLocked && this.onsetHistory.length >= 4) {
         const intervals = this.onsetHistory
           .slice(1)
           .map((t, i) => t - this.onsetHistory[i])
-          .filter(v => v > 0.18 && v < 1.6);
+          .filter(v => v > 0.18 && v < 2.2)
+          // fold each inter-onset interval into the 90-180 BPM octave so
+          // half-time kicks (~1s apart) don't read as 60 BPM
+          .map(v => {
+            let b = 60 / v;
+            while (b < 90) b *= 2;
+            while (b >= 180) b /= 2;
+            return b;
+          });
 
         if (intervals.length >= 3) {
           const sorted = [...intervals].sort((a, b) => a - b);
           const med = sorted[Math.floor(sorted.length / 2)];
-          const detected = Math.round(60 / med);
-          const snapped = this.snapBPM(detected);
+          const snapped = this.snapBPM(Math.round(med));
           this._bpm = this._bpm * 0.88 + snapped * 0.12;
           this.beatInterval = 60 / this._bpm;
         }
@@ -369,7 +385,7 @@ export class AudioEngine {
   }
 
   private snapBPM(bpm: number): number {
-    const grids = [60, 70, 75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 124, 125, 126, 128, 130, 132, 135, 140, 145, 150, 160, 170, 180];
+    const grids = [90, 95, 100, 105, 110, 115, 120, 124, 125, 126, 128, 130, 132, 135, 140, 145, 150, 155, 160, 165, 170, 174, 178];
     return grids.reduce((a, b) => (Math.abs(b - bpm) < Math.abs(a - bpm) ? b : a));
   }
 

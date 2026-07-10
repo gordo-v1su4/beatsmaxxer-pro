@@ -1,16 +1,19 @@
 import { useState, useCallback, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { PresetBrowser } from './components/PresetBrowser';
-import { EffectModule } from './components/EffectModule';
+import { EffectModule, CompactModule } from './components/EffectModule';
 import { MainViewer } from './components/MainViewer';
 import { AudioProvider } from './audio/AudioContext';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 
-export type ModuleType = 'transition' | 'speedramp' | 'tapdelay' | 'timesampler';
+export type ModuleType =
+  | 'transition' | 'speedramp' | 'tapdelay' | 'timesampler'
+  | 'punch' | 'shake' | 'orbit' | 'focus';
 
 export interface ModuleConfig {
   id: ModuleType;
   name: string;
+  shortName: string;
   accentColor: string;
   params: Record<string, number>;
 }
@@ -31,29 +34,31 @@ const MODULES: ModuleConfig[] = [
   {
     id: 'transition',
     name: 'TRANSITION',
+    shortName: 'TRANS',
     accentColor: '#22c55e',
     params: {
-      type: 0, interval: 50, duration: 40, amount: 60,
+      type: 0, interval: 50, duration: 40, amount: 60, trig: 0,
       mix: 100, in_: 80, out: 75,
     },
   },
   {
     id: 'speedramp',
     name: 'SPEEDRAMP',
+    shortName: 'RAMP',
     accentColor: '#f59e0b',
     params: {
       len: 50, depth: 60,
-      curve0: 50, curve1: 65, curve2: 78, curve3: 87, curve4: 90, curve5: 87, curve6: 78, curve7: 65,
-      curve8: 50, curve9: 35, curve10: 22, curve11: 13, curve12: 10, curve13: 13, curve14: 22, curve15: 35,
+      bzY0: 80, bzX1: 35, bzY1: 5, bzX2: 65, bzY2: 5, bzY3: 80,
       mix: 100, in_: 80, out: 70,
     },
   },
   {
     id: 'tapdelay',
     name: 'TAPDELAY',
+    shortName: 'DELAY',
     accentColor: '#38bdf8',
     params: {
-      type: 1, velCrv: 55, end: 70, start: 25, filterSlider: 60,
+      type: 1, velCrv: 55, end: 60, start: 25, filterSlider: 60,
       time: 60, feedback: 50,
       scratchMode: 0, scratchDepth: 45,
       mix: 55, in_: 80, out: 65,
@@ -62,6 +67,7 @@ const MODULES: ModuleConfig[] = [
   {
     id: 'timesampler',
     name: 'TIMESAMPLER',
+    shortName: 'SMPLR',
     accentColor: '#eab308',
     params: {
       mode: 0, size: 50, repeats: 50, chance: 60, rate: 43,
@@ -69,6 +75,44 @@ const MODULES: ModuleConfig[] = [
     },
   },
 ];
+
+/** Second row: camera-language effects (crash zoom, handheld, dolly drift, rack focus). */
+const MODULES_B: ModuleConfig[] = [
+  {
+    id: 'punch',
+    name: 'PUNCH ZOOM',
+    shortName: 'PUNCH',
+    accentColor: '#fb7185',
+    params: { dir: 50, amt: 60, snap: 55, mix: 100 },
+  },
+  {
+    id: 'shake',
+    name: 'HANDHELD',
+    shortName: 'SHAKE',
+    accentColor: '#a78bfa',
+    params: { hand: 40, impact: 55, sway: 30, mix: 100 },
+  },
+  {
+    id: 'orbit',
+    name: 'DRIFT CAM',
+    shortName: 'DRIFT',
+    accentColor: '#2dd4bf',
+    params: { spd: 35, drift: 50, nudge: 40, mix: 100 },
+  },
+  {
+    id: 'focus',
+    name: 'RACK FOCUS',
+    shortName: 'FOCUS',
+    accentColor: '#e2c08d',
+    params: { amt: 35, pulse: 55, soft: 45, mix: 100 },
+  },
+];
+
+const ALL_MODULES: ModuleConfig[] = [...MODULES, ...MODULES_B];
+
+function moduleRecord<T>(value: T): Record<ModuleType, T> {
+  return Object.fromEntries(ALL_MODULES.map(m => [m.id, value])) as Record<ModuleType, T>;
+}
 
 const PRESETS = [
   'Big head mode',
@@ -84,29 +128,17 @@ const PRESETS = [
   'World Map Chorus',
 ];
 
-const DEFAULT_VIDEO_LAYERS: Record<ModuleType, VideoLayer | null> = {
-  transition: null,
-  speedramp: null,
-  tapdelay: null,
-  timesampler: null,
-};
 
 export function App() {
   const [selectedPreset, setSelectedPreset] = useState('Cascade Combo');
   const [macros, setMacros] = useState({ macro1: 50, macro2: 75, macro3: 30, macro4: 60 });
   const [moduleParams, setModuleParams] = useState<Record<ModuleType, Record<string, number>>>(
-    Object.fromEntries(MODULES.map(m => [m.id, { ...m.params }])) as Record<ModuleType, Record<string, number>>
+    Object.fromEntries(ALL_MODULES.map(m => [m.id, { ...m.params }])) as Record<ModuleType, Record<string, number>>
   );
-  const [bypassed, setBypassed] = useState<Record<ModuleType, boolean>>({
-    transition: false, speedramp: false, tapdelay: false, timesampler: false,
-  });
-  const [muted, setMuted] = useState<Record<ModuleType, boolean>>({
-    transition: false, speedramp: false, tapdelay: false, timesampler: false,
-  });
-  const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(DEFAULT_VIDEO_LAYERS);
-  const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>({
-    transition: null, speedramp: null, tapdelay: null, timesampler: null,
-  });
+  const [bypassed, setBypassed] = useState<Record<ModuleType, boolean>>(() => moduleRecord(false));
+  const [muted, setMuted] = useState<Record<ModuleType, boolean>>(() => moduleRecord(false));
+  const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(() => moduleRecord<VideoLayer | null>(null));
+  const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>(() => moduleRecord<MidiLayer | null>(null));
   const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
 
   const objectUrlsRef = useRef<string[]>([]);
@@ -171,7 +203,7 @@ export function App() {
 
   const randomize = useCallback(() => {
     const newParams = {} as Record<ModuleType, Record<string, number>>;
-    MODULES.forEach(module => {
+    ALL_MODULES.forEach(module => {
       newParams[module.id] = {};
       Object.keys(module.params).forEach(param => {
         const existing = module.params[param];
@@ -183,7 +215,7 @@ export function App() {
 
   const clear = useCallback(() => {
     const resetParams = {} as Record<ModuleType, Record<string, number>>;
-    MODULES.forEach(module => {
+    ALL_MODULES.forEach(module => {
       resetParams[module.id] = {};
       Object.keys(module.params).forEach(param => {
         resetParams[module.id][param] = module.params[param];
@@ -252,7 +284,7 @@ export function App() {
             gap: 0,
           }}>
             <MainViewer
-              modules={MODULES}
+              modules={ALL_MODULES}
               pgmSource={pgmSource}
               onSelectSource={setPgmSource}
               moduleParams={moduleParams}
@@ -260,7 +292,7 @@ export function App() {
               midiLayers={midiLayers}
               bypassed={bypassed}
             />
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
               {MODULES.map(module => (
                 <EffectModule
                   key={module.id}
@@ -275,6 +307,21 @@ export function App() {
                   onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
                   midiLayer={midiLayers[module.id]}
                   onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
+                  isOnAir={pgmSource === module.id}
+                />
+              ))}
+            </div>
+            <div style={{ height: 208, display: 'flex', overflow: 'hidden', flexShrink: 0, borderTop: '2px solid #0d0e0f' }}>
+              {MODULES_B.map(module => (
+                <CompactModule
+                  key={module.id}
+                  config={module}
+                  params={moduleParams[module.id]}
+                  onUpdateParam={(param, value) => updateParam(module.id, param, value)}
+                  bypassed={bypassed[module.id]}
+                  onToggleBypass={() => toggleBypass(module.id)}
+                  videoLayer={videoLayers[module.id]}
+                  onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
                   isOnAir={pgmSource === module.id}
                 />
               ))}
@@ -303,165 +350,7 @@ export function App() {
           </div>
         </div>
 
-        <div style={{
-          height: 52,
-          background: 'linear-gradient(180deg, #0e1012 0%, #0a0b0c 100%)',
-          borderTop: '1px solid #0d0e0f',
-          display: 'flex',
-          alignItems: 'center',
-          paddingLeft: 16,
-          paddingRight: 16,
-          gap: 0,
-          flexShrink: 0,
-        }}>
-          <BottomStrip modules={MODULES} moduleParams={moduleParams} onUpdateParam={updateParam} />
-        </div>
       </div>
     </AudioProvider>
-  );
-}
-
-function BottomStrip({
-  modules, moduleParams, onUpdateParam,
-}: {
-  modules: ModuleConfig[];
-  moduleParams: Record<ModuleType, Record<string, number>>;
-  onUpdateParam: (id: ModuleType, param: string, value: number) => void;
-}) {
-  return (
-    <div style={{ display: 'flex', width: '100%', gap: 3 }}>
-      <div style={{ width: 220 + 8 + 3, flexShrink: 0, display: 'flex', alignItems: 'center', paddingLeft: 4 }}>
-        <ConnectorPanel label="IN">
-          <KnobCompact value={75} onChange={() => {}} color="#5a6070" size={32} />
-        </ConnectorPanel>
-      </div>
-
-      {modules.map(m => {
-        const params = moduleParams[m.id];
-        return (
-          <div key={m.id} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <ConnAB color={m.accentColor} />
-            </div>
-            <ConnectorPanel label="IN">
-              <KnobCompact value={params.in_ ?? 80} onChange={v => onUpdateParam(m.id, 'in_', v)} color={m.accentColor} size={32} />
-            </ConnectorPanel>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <ConnAB color={m.accentColor} />
-            </div>
-            <ConnectorPanel label="MIX">
-              <KnobCompact value={params.mix ?? 50} onChange={v => onUpdateParam(m.id, 'mix', v)} color={m.accentColor} size={32} />
-            </ConnectorPanel>
-          </div>
-        );
-      })}
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
-        <ConnectorPanel label="OUT">
-          <KnobCompact value={70} onChange={() => {}} color="#5a6070" size={32} />
-        </ConnectorPanel>
-        <ConnectorPanel label="MIX">
-          <KnobCompact value={80} onChange={() => {}} color="#5a6070" size={32} />
-        </ConnectorPanel>
-      </div>
-    </div>
-  );
-}
-
-function ConnAB({ color }: { color: string }) {
-  const [selA, setSelA] = useState(true);
-  return (
-    <>
-      <button onClick={() => setSelA(true)} style={{
-        width: 16, height: 10,
-        background: selA ? `linear-gradient(180deg, ${color}44, ${color}22)` : 'linear-gradient(180deg, #1c1e22, #141618)',
-        border: `1px solid ${selA ? color + '66' : '#1e2226'}`,
-        borderRadius: 1, cursor: 'pointer',
-        fontFamily: 'Rajdhani, sans-serif', fontSize: 7, fontWeight: 700,
-        color: selA ? color : '#3a4050',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>A</button>
-      <button onClick={() => setSelA(false)} style={{
-        width: 16, height: 10,
-        background: !selA ? `linear-gradient(180deg, ${color}44, ${color}22)` : 'linear-gradient(180deg, #1c1e22, #141618)',
-        border: `1px solid ${!selA ? color + '66' : '#1e2226'}`,
-        borderRadius: 1, cursor: 'pointer',
-        fontFamily: 'Rajdhani, sans-serif', fontSize: 7, fontWeight: 700,
-        color: !selA ? color : '#3a4050',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>B</button>
-    </>
-  );
-}
-
-function ConnectorPanel({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-      {children}
-      <span style={{
-        fontFamily: 'Rajdhani, sans-serif', fontSize: 7, fontWeight: 700,
-        letterSpacing: '0.1em', color: '#2e3440', textTransform: 'uppercase',
-      }}>{label}</span>
-    </div>
-  );
-}
-
-function KnobCompact({ value, onChange, color, size }: {
-  value: number; onChange: (v: number) => void; color: string; size: number;
-}) {
-  const startYRef = useRef(0);
-  const startValRef = useRef(value);
-  const dim = size;
-  const r = dim / 2 - 4;
-  const cx = dim / 2;
-  const cy = dim / 2;
-  const norm = value / 100;
-  const startAngle = 225;
-  const totalArc = 270;
-  const curAngle = startAngle + norm * totalArc;
-  const toXY = (a: number) => ({
-    x: cx + r * Math.cos((a - 90) * Math.PI / 180),
-    y: cy + r * Math.sin((a - 90) * Math.PI / 180),
-  });
-  const sRad = (startAngle - 90) * Math.PI / 180;
-  const eRad = (startAngle + totalArc - 90) * Math.PI / 180;
-  const bgS = { x: cx + r * Math.cos(sRad), y: cy + r * Math.sin(sRad) };
-  const bgE = { x: cx + r * Math.cos(eRad), y: cy + r * Math.sin(eRad) };
-  const actE = toXY(curAngle);
-  const la = norm * totalArc > 180 ? 1 : 0;
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    startYRef.current = e.clientY;
-    startValRef.current = value;
-    document.body.style.cursor = 'ns-resize';
-    const move = (ev: MouseEvent) => {
-      const d = startYRef.current - ev.clientY;
-      onChange(Math.max(0, Math.min(100, startValRef.current + d * 0.5)));
-    };
-    const up = () => {
-      document.body.style.cursor = '';
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
-  return (
-    <svg width={dim} height={dim} style={{ cursor: 'ns-resize', display: 'block' }} onMouseDown={onMouseDown}>
-      <circle cx={cx} cy={cy} r={dim / 2 - 1} fill="none" stroke="rgba(0,0,0,0.6)" strokeWidth={1} />
-      <circle cx={cx} cy={cy} r={dim / 2 - 2} fill="#161819" stroke="#0d0e0f" strokeWidth={1} />
-      <path d={`M ${bgS.x} ${bgS.y} A ${r} ${r} 0 1 1 ${bgE.x} ${bgE.y}`} fill="none" stroke="#1a1c1e" strokeWidth={2} strokeLinecap="round" />
-      {norm > 0 && (
-        <path d={`M ${bgS.x} ${bgS.y} A ${r} ${r} 0 ${la} 1 ${actE.x} ${actE.y}`} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      )}
-      <line
-        x1={cx} y1={cy}
-        x2={cx + (r - 3) * Math.cos((curAngle - 90) * Math.PI / 180)}
-        y2={cy + (r - 3) * Math.sin((curAngle - 90) * Math.PI / 180)}
-        stroke="#7a8090" strokeWidth={1.5} strokeLinecap="round"
-      />
-    </svg>
   );
 }

@@ -6,6 +6,7 @@ interface AudioContextValue {
   playing: boolean;
   togglePlay: () => void;
   setBPM: (bpm: number) => void;
+  unlockBPM: () => void;
   tapTempo: () => void;
   loadAudioFile: (file: File) => Promise<void>;
   clearUploadedTrack: () => void;
@@ -13,6 +14,7 @@ interface AudioContextValue {
 
 const defaultState: AudioState = {
   bpm: 128,
+  bpmLocked: false,
   beat: 0,
   beatPhase: 0,
   amplitude: 0,
@@ -31,6 +33,7 @@ const Ctx = createContext<AudioContextValue>({
   playing: false,
   togglePlay: () => {},
   setBPM: () => {},
+  unlockBPM: () => {},
   tapTempo: () => {},
   loadAudioFile: async () => {},
   clearUploadedTrack: () => {},
@@ -67,6 +70,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     audioEngine.setBPM(bpm);
   };
 
+  const unlockBPM = () => {
+    audioEngine.unlockBPM();
+  };
+
   const tapTempo = () => {
     const now = performance.now();
     tapTimesRef.current.push(now);
@@ -92,7 +99,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <Ctx.Provider value={{ state, playing, togglePlay, setBPM, tapTempo, loadAudioFile, clearUploadedTrack }}>
+    <Ctx.Provider value={{ state, playing, togglePlay, setBPM, unlockBPM, tapTempo, loadAudioFile, clearUploadedTrack }}>
       {children}
     </Ctx.Provider>
   );

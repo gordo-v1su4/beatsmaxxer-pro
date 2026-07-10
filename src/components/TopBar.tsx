@@ -10,9 +10,18 @@ interface TopBarProps {
 }
 
 export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
-  const { state, playing, togglePlay, tapTempo, loadAudioFile, clearUploadedTrack } = useAudio();
+  const { state, playing, togglePlay, setBPM, unlockBPM, tapTempo, loadAudioFile, clearUploadedTrack } = useAudio();
   const [tapFlash, setTapFlash] = useState(false);
+  const [bpmEdit, setBpmEdit] = useState<string | null>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
+
+  const commitBpm = () => {
+    if (bpmEdit !== null) {
+      const v = parseFloat(bpmEdit);
+      if (Number.isFinite(v) && v >= 60 && v <= 200) setBPM(v);
+    }
+    setBpmEdit(null);
+  };
 
   const handleTap = () => {
     tapTempo();
@@ -137,14 +146,16 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
         <div style={{ width:1, height:20, background:'#1e2226' }}/>
 
         <div style={{ display:'flex', alignItems:'center', gap:3 }}>
-          <div style={{
-            height: 26, paddingInline: 8,
-            background: 'linear-gradient(180deg,#0e1012,#0a0c0e)',
-            border: '1px solid #1a1c1e',
-            borderRadius: 2,
-            display:'flex', alignItems:'center', gap:5,
-            boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.7)',
-          }}>
+          <div
+            title={state.bpmLocked ? 'Manual BPM (click badge to re-enable auto-detect)' : 'Click number to type BPM'}
+            style={{
+              height: 26, paddingInline: 8,
+              background: 'linear-gradient(180deg,#0e1012,#0a0c0e)',
+              border: '1px solid #1a1c1e',
+              borderRadius: 2,
+              display:'flex', alignItems:'center', gap:5,
+              boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.7)',
+            }}>
             <div style={{
               width: 6, height: 6, borderRadius:'50%',
               background: beatOn && playing ? '#f59e0b' : '#1e2226',
@@ -152,10 +163,36 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
               transition:'background 0.04s, box-shadow 0.04s',
               flexShrink: 0,
             }}/>
-            <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:13, color:'#e2a030', letterSpacing:'0.05em', lineHeight:1 }}>
-              {Math.round(state.bpm).toString().padStart(3,'0')}
+            {bpmEdit !== null ? (
+              <input
+                autoFocus
+                value={bpmEdit}
+                onChange={e => setBpmEdit(e.target.value.replace(/[^0-9.]/g, ''))}
+                onBlur={commitBpm}
+                onKeyDown={e => { if (e.key === 'Enter') commitBpm(); if (e.key === 'Escape') setBpmEdit(null); }}
+                style={{
+                  width: 34, background:'transparent', border:'none', outline:'none',
+                  fontFamily:'Share Tech Mono,monospace', fontSize:13, color:'#ffd77a', letterSpacing:'0.05em',
+                }}
+              />
+            ) : (
+              <span
+                onClick={() => setBpmEdit(String(Math.round(state.bpm)))}
+                style={{ fontFamily:'Share Tech Mono,monospace', fontSize:13, color:'#e2a030', letterSpacing:'0.05em', lineHeight:1, cursor:'text' }}
+              >
+                {Math.round(state.bpm).toString().padStart(3,'0')}
+              </span>
+            )}
+            <span
+              onClick={() => { if (state.bpmLocked) unlockBPM(); }}
+              style={{
+                fontFamily:'Rajdhani,sans-serif', fontSize:7, fontWeight:700, letterSpacing:'0.1em',
+                color: state.bpmLocked ? '#e2a030' : '#4a5060',
+                cursor: state.bpmLocked ? 'pointer' : 'default',
+              }}
+            >
+              {state.bpmLocked ? 'BPM·M' : 'BPM·A'}
             </span>
-            <span style={{ fontFamily:'Rajdhani,sans-serif', fontSize:7, color:'#4a5060', fontWeight:700, letterSpacing:'0.1em' }}>BPM</span>
           </div>
 
           <div style={{

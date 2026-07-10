@@ -181,6 +181,60 @@ export function VUMeter({ value, color }: { value: number; color: string }) {
   );
 }
 
+/** One video element + texture per module, shared by every screen showing that module
+    (FX preview and PGM monitor), so all views stay frame-synced. */
+const sharedVideos: Record<string, { url: string; video: HTMLVideoElement; texture: THREE.VideoTexture; refs: number }> = {};
+
+function acquireSharedVideo(moduleId: string, url: string) {
+  const existing = sharedVideos[moduleId];
+  if (existing && existing.url === url) {
+    existing.refs++;
+    return existing;
+  }
+  if (existing) destroySharedVideo(moduleId);
+
+  const video = document.createElement('video');
+  video.src = url;
+  video.muted = true;
+  video.loop = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.crossOrigin = 'anonymous';
+  video.preload = 'auto';
+  video.play().catch(() => {});
+
+  const texture = new THREE.VideoTexture(video);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+
+  const entry = { url, video, texture, refs: 1 };
+  sharedVideos[moduleId] = entry;
+  return entry;
+}
+
+function releaseSharedVideo(moduleId: string, url: string) {
+  const entry = sharedVideos[moduleId];
+  if (!entry || entry.url !== url) return;
+  entry.refs--;
+  if (entry.refs <= 0) destroySharedVideo(moduleId);
+}
+
+function destroySharedVideo(moduleId: string) {
+  const entry = sharedVideos[moduleId];
+  if (!entry) return;
+  entry.texture.dispose();
+  entry.video.pause();
+  entry.video.src = '';
+  entry.video.load();
+  delete sharedVideos[moduleId];
+}
+
+/** Per-module shared clock: the FX-preview instance drives the time-remap engine and
+    writes here; the PGM monitor instance follows, so test-pattern clocks match too. */
+const moduleClocks: Record<string, { srcTime: number; aux1: number; aux2: number }> = {};
+
 /** True if transport moved from tPrev to tNow across any MIDI note-on time (looping by loopDur). */
 function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number, loopDur: number): boolean {
   if (notes.length === 0 || loopDur <= 0) return false;
@@ -225,6 +279,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     scratchPongAtBack: true,
     srcTime: 0,
     bassEma: 0.05,
+    lastTrigAt: -9,
+    lastTrigCount: -1,
   });
   const { state: audioState } = useAudio();
 
@@ -244,7 +300,27 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     const p = (k: string, def = 50) => ((params[k] ?? def) / 100);
     if (type === 'transition') return {
       uP0: new THREE.Vector4(params.type ?? 0, p('interval', 50), p('duration', 40), p('amount', 60)),
-      uP1: new THREE.Vector4(p('mix', 100), p('in_', 80), p('out', 75), 0),
+      uP1: new THREE.Vector4(p('mix', 100), p('in_', 80), p('out', 75), params.trig ?? 0),
+      uP2: new THREE.Vector4(0, 0, 0, 0),
+    };
+    if (type === 'punch') return {
+      uP0: new THREE.Vector4(p('dir', 50), p('amt', 60), p('snap', 55), p('mix', 100)),
+      uP1: new THREE.Vector4(0, 0, 0, 0),
+      uP2: new THREE.Vector4(0, 0, 0, 0),
+    };
+    if (type === 'shake') return {
+      uP0: new THREE.Vector4(p('hand', 40), p('impact', 55), p('sway', 30), p('mix', 100)),
+      uP1: new THREE.Vector4(0, 0, 0, 0),
+      uP2: new THREE.Vector4(0, 0, 0, 0),
+    };
+    if (type === 'orbit') return {
+      uP0: new THREE.Vector4(p('spd', 35), p('drift', 50), p('nudge', 40), p('mix', 100)),
+      uP1: new THREE.Vector4(0, 0, 0, 0),
+      uP2: new THREE.Vector4(0, 0, 0, 0),
+    };
+    if (type === 'focus') return {
+      uP0: new THREE.Vector4(p('amt', 35), p('pulse', 55), p('soft', 45), p('mix', 100)),
+      uP1: new THREE.Vector4(0, 0, 0, 0),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
     if (type === 'speedramp') return {
@@ -370,32 +446,43 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         st.bassEma = st.bassEma * 0.97 + bassNow * 0.03;
         const onsetStr = Math.max(0, Math.min(1.5, bassNow / Math.max(0.02, st.bassEma) - 1.0));
 
-        // Tapdelay Stutter Mode (applied across all types for video fx)
-        if (type === 'tapdelay' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
-          const timeP = m.uniforms.uP1.value.x; // STUTTER TIME (0 to 1)
-          const freqP = m.uniforms.uP0.value.z; // CHANCE (0 to 1) when not using MIDI
-          
+        const isDriver = mode === 'effect';
+        const clock = (moduleClocks[type] ??= { srcTime: 0, aux1: 0, aux2: 0 });
+
+        if (!isDriver) {
+          // follower (PGM monitor): mirror the driver module's clock so every
+          // screen showing this module stays in sync
+          m.uniforms.uSrcTime.value = clock.srcTime;
+          m.uniforms.uAux1.value = clock.aux1;
+          m.uniforms.uAux2.value = clock.aux2;
+        }
+        else if (type === 'tapdelay') {
+          // Accent-matched stutter: fires when FFT bass energy spikes past the
+          // SENS threshold; scratch variations jump the clip (or test-card clock).
+          const timeP = m.uniforms.uP1.value.x;
+          const sens = m.uniforms.uP0.value.z;
+          const bypass = m.uniforms.uBypass.value > 0.5;
+
           let stutterLen = 1.0;
-          if (timeP < 0.2) stutterLen = 0.125;      // 1/32 note
-          else if (timeP < 0.4) stutterLen = 0.25;  // 1/16 note
-          else if (timeP < 0.6) stutterLen = 0.3333; // 1/8 note triplet
-          else if (timeP < 0.8) stutterLen = 0.5;   // 1/8 note
-          else stutterLen = 1.0;                    // 1/4 note (1 beat)
+          if (timeP < 0.2) stutterLen = 0.125;
+          else if (timeP < 0.4) stutterLen = 0.25;
+          else if (timeP < 0.6) stutterLen = 0.3333;
+          else if (timeP < 0.8) stutterLen = 0.5;
+          else stutterLen = 1.0;
 
           const tNow = audioEngine.getState().time;
           const tPrev = st.lastTransportSec;
           const beatReset = uBeat < st.lastBeat - 0.5;
           const timeBack = tPrev >= 0 && tNow < tPrev - 0.25;
-          if (beatReset || timeBack) {
+          if (beatReset || timeBack || bypass) {
             st.isStuttering = false;
             st.remRepeats = 0;
-            st.beatsPassed = 0;
           }
 
           const midi = midiLayerRef.current;
           const useMidi = !!(midi?.notes?.length);
           let midiHit = false;
-          if (!beatReset && !timeBack && useMidi && playingRef.current) {
+          if (!beatReset && !timeBack && !bypass && useMidi && playingRef.current) {
             const lastT = midi!.notes[midi!.notes.length - 1]!.time;
             const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
             const jump = tPrev >= 0 && Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
@@ -405,74 +492,84 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           }
           st.lastTransportSec = tNow;
 
+          const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
+          const dur = video && Number.isFinite(video.duration) && video.duration > 0.05 ? video.duration : 1e6;
+          if (video) st.srcTime = video.currentTime;
+          else st.srcTime += dt;
+
+          const seek = (tSec: number) => {
+            st.srcTime = Math.max(0, Math.min(dur - 0.02, tSec));
+            if (video) video.currentTime = st.srcTime;
+          };
+
           const scratchMode = Math.min(3, Math.max(0, Math.round(m.uniforms.uP2.value.y)));
           const pDepth = m.uniforms.uP2.value.x;
           const scratchSec = Math.max(1 / 60, Math.min(0.85, (1 + pDepth * 23) / 30));
 
-          const video = videoRef.current;
-          const dur = Number.isFinite(video.duration) && video.duration > 0.05 ? video.duration : 1e6;
-
           const startStutter = () => {
             const bpm = m.uniforms.uBPM.value || 128;
-            const beatDuration = 60.0 / bpm;
-            const stutterSeconds = stutterLen * beatDuration;
+            const stutterSeconds = stutterLen * (60.0 / bpm);
             st.isStuttering = true;
             st.stutterStartBeat = uBeat;
+            st.lastTrigAt = timeRef.current;
             const repeatsRaw = m.uniforms.uP0.value.y;
-            st.remRepeats = Math.max(1, Math.round(repeatsRaw * 8));
-            st.stutterAnchor = video.currentTime;
+            // stronger accents earn more repeats
+            st.remRepeats = Math.max(1, Math.min(8, Math.round(repeatsRaw * 8 * (0.6 + onsetStr * 0.6))));
+            st.stutterAnchor = st.srcTime;
 
             if (scratchMode === 3) {
               const coin = Math.random() < 0.5 ? -1 : 1;
               st.stutterVideoTime = Math.max(0, Math.min(dur - 0.02, st.stutterAnchor + coin * scratchSec));
-              video.currentTime = st.stutterVideoTime;
             } else if (scratchMode === 1 || scratchMode === 2) {
               st.stutterVideoTime = Math.max(0, st.stutterAnchor - scratchSec);
-              video.currentTime = st.stutterVideoTime;
               st.scratchPongAtBack = true;
             } else {
               st.stutterVideoTime = Math.max(0, st.stutterAnchor - stutterSeconds);
-              video.currentTime = st.stutterVideoTime;
             }
+            seek(st.stutterVideoTime);
           };
 
-          if (!st.isStuttering) {
+          if (!st.isStuttering && !bypass) {
             if (useMidi) {
               if (midiHit) startStutter();
-            } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP * (0.35 + onsetStr)) {
-              startStutter();
-            }
-          } else {
-            if (uBeat - st.stutterStartBeat >= stutterLen) {
-              st.remRepeats--;
-              if (st.remRepeats > 0) {
-                if (scratchMode === 1) {
-                  video.currentTime = st.stutterVideoTime;
-                } else if (scratchMode === 2) {
-                  st.scratchPongAtBack = !st.scratchPongAtBack;
-                  video.currentTime = st.scratchPongAtBack ? st.stutterVideoTime : st.stutterAnchor;
-                } else if (scratchMode === 3) {
-                  const spread = scratchSec * (2 + Math.random() * 5);
-                  st.stutterVideoTime = Math.max(0, Math.min(dur - 0.02, st.stutterAnchor + (Math.random() * 2 - 1) * spread));
-                  video.currentTime = st.stutterVideoTime;
-                } else {
-                  video.currentTime = st.stutterVideoTime;
-                }
-                st.stutterStartBeat = uBeat;
-              } else {
-                st.isStuttering = false;
+            } else {
+              const thr = 0.08 + (1 - sens) * 1.1;
+              if (playingRef.current && onsetStr > thr && timeRef.current - st.lastTrigAt > 0.25) {
+                startStutter();
               }
+            }
+          } else if (st.isStuttering && uBeat - st.stutterStartBeat >= stutterLen) {
+            st.remRepeats--;
+            if (st.remRepeats > 0) {
+              if (scratchMode === 2) {
+                st.scratchPongAtBack = !st.scratchPongAtBack;
+                seek(st.scratchPongAtBack ? st.stutterVideoTime : st.stutterAnchor);
+              } else if (scratchMode === 3) {
+                const spread = scratchSec * (2 + Math.random() * 5);
+                st.stutterVideoTime = Math.max(0, Math.min(dur - 0.02, st.stutterAnchor + (Math.random() * 2 - 1) * spread));
+                seek(st.stutterVideoTime);
+              } else {
+                seek(st.stutterVideoTime);
+              }
+              st.stutterStartBeat = uBeat;
+            } else {
+              st.isStuttering = false;
             }
           }
           st.lastBeat = uBeat;
-        } 
+
+          m.uniforms.uSrcTime.value = st.srcTime;
+          m.uniforms.uAux1.value = st.isStuttering ? 1.0 : 0.0;
+          m.uniforms.uAux2.value = st.isStuttering
+            ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / stutterLen))
+            : 0.0;
+        }
         else if (type === 'timesampler') {
-          // Time-remap sampler: chops source time into beat-synced chunks.
-          // Drives video.currentTime for loaded clips and uSrcTime for the test pattern.
-          const mode = Math.round(m.uniforms.uP0.value.x);
+          // Time-remap sampler: chunks trigger on FFT accents past the SENS threshold.
+          const mode_ = Math.round(m.uniforms.uP0.value.x);
           const sizeP = m.uniforms.uP0.value.y;
           const repeatsP = m.uniforms.uP0.value.z;
-          const chance = m.uniforms.uP0.value.w;
+          const sens = m.uniforms.uP0.value.w;
           const rate = 0.25 + m.uniforms.uP1.value.x * 1.75;
           const bypass = m.uniforms.uBypass.value > 0.5;
           const chunkBeats = sizeP < 0.2 ? 0.25 : sizeP < 0.4 ? 0.5 : sizeP < 0.6 ? 1 : sizeP < 0.8 ? 2 : 4;
@@ -505,7 +602,6 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           }
           st.lastTransportSec = tNow;
 
-          // the remapped source clock: follows the clip when loaded, free-runs otherwise
           if (video) st.srcTime = video.currentTime;
           else st.srcTime += dt * rate;
 
@@ -517,7 +613,9 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             st.isStuttering = true;
             st.stutterAnchor = st.srcTime;
             st.stutterStartBeat = uBeat;
-            st.remRepeats = Math.max(1, Math.round(repeatsP * 8));
+            st.lastTrigAt = timeRef.current;
+            // louder accents earn more repeats
+            st.remRepeats = Math.max(1, Math.min(8, Math.round(repeatsP * 8 * (0.6 + onsetStr * 0.6))));
             st.scratchPongAtBack = false;
             st.beatsPassed = 0;
           };
@@ -526,26 +624,25 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             if (!bypass) {
               if (useMidi) {
                 if (midiHit) startChunk();
-              } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < chance * (0.35 + onsetStr)) {
-                startChunk();
+              } else {
+                const thr = 0.08 + (1 - sens) * 1.1;
+                if (playingRef.current && onsetStr > thr && timeRef.current - st.lastTrigAt > 0.3) {
+                  startChunk();
+                }
               }
             }
           } else if (uBeat - st.stutterStartBeat >= chunkBeats) {
             st.remRepeats--;
             if (st.remRepeats > 0) {
               st.beatsPassed++;
-              if (mode === 1) {
-                // REV: each repeat steps a chunk further back
+              if (mode_ === 1) {
                 seek(st.stutterAnchor - st.beatsPassed * chunkSec);
-              } else if (mode === 2) {
-                // PONG: alternate chunk start / chunk end
+              } else if (mode_ === 2) {
                 st.scratchPongAtBack = !st.scratchPongAtBack;
                 seek(st.scratchPongAtBack ? st.stutterAnchor + chunkSec : st.stutterAnchor);
-              } else if (mode === 3) {
-                // RAND: jump to a random nearby position
+              } else if (mode_ === 3) {
                 seek(st.stutterAnchor + (Math.random() * 2 - 1) * chunkSec * 4.0);
               } else {
-                // LOOP: classic beat repeat
                 seek(st.stutterAnchor);
               }
               st.stutterStartBeat = uBeat;
@@ -562,41 +659,50 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             : 0.0;
         }
         else if (type === 'transition') {
-          // Transition clock: fires at the end of every N-beat cycle (or on MIDI
-          // notes), producing a 0..1 progress the shader animates the wipe/whip with.
+          // Transition clock: fires at the end of every N-beat cycle, on MIDI notes,
+          // or instantly when a pack button is tapped (trig counter). Free-runs on
+          // wall time when the transport is stopped so it always previews.
           const intervalP = m.uniforms.uP0.value.y;
           const durP = m.uniforms.uP0.value.z;
+          const trigCount = m.uniforms.uP1.value.w;
           const intervalBeats = intervalP < 0.25 ? 1 : intervalP < 0.5 ? 2 : intervalP < 0.75 ? 4 : 8;
           const durBeats = 0.15 + durP * 0.85;
           const bypass = m.uniforms.uBypass.value > 0.5;
+          const bpm = m.uniforms.uBPM.value || 128;
+          const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
+
+          // manual fire from the pack buttons
+          if (st.lastTrigCount < 0) st.lastTrigCount = trigCount;
+          if (trigCount !== st.lastTrigCount) {
+            st.lastTrigCount = trigCount;
+            st.isStuttering = true;
+            st.stutterStartBeat = beatsNow;
+          }
 
           const tNow = audioEngine.getState().time;
           const tPrev = st.lastTransportSec;
           const midi = midiLayerRef.current;
           const useMidi = !!(midi?.notes?.length);
-          let midiHit = false;
           if (useMidi && playingRef.current && tPrev >= 0 && !bypass) {
             const lastT = midi!.notes[midi!.notes.length - 1]!.time;
             const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
             const jump = Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
-            if (!jump) midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
+            if (!jump && midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur)) {
+              st.isStuttering = true;
+              st.stutterStartBeat = beatsNow;
+            }
           }
           st.lastTransportSec = tNow;
 
           let p = 0;
           if (!bypass) {
-            if (useMidi) {
-              if (midiHit) {
-                st.isStuttering = true;
-                st.stutterStartBeat = uBeat;
-              }
-              if (st.isStuttering) {
-                const since = uBeat - st.stutterStartBeat;
-                if (since >= 0 && since < durBeats) p = since / durBeats;
-                else st.isStuttering = false;
-              }
-            } else {
-              const beatInCycle = ((uBeat % intervalBeats) + intervalBeats) % intervalBeats;
+            if (st.isStuttering) {
+              const since = beatsNow - st.stutterStartBeat;
+              if (since >= 0 && since < durBeats) p = since / durBeats;
+              else st.isStuttering = false;
+            }
+            if (p === 0 && !st.isStuttering && !useMidi) {
+              const beatInCycle = ((beatsNow % intervalBeats) + intervalBeats) % intervalBeats;
               const start = intervalBeats - durBeats;
               if (beatInCycle >= start) p = (beatInCycle - start) / durBeats;
             }
@@ -606,10 +712,10 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           m.uniforms.uAux2.value = Math.min(1, Math.max(0, p));
         }
         else if (type === 'speedramp') {
-          // Curve-driven speed ramp: the 16-point curve (curve0..curve15) maps the
-          // beat-cycle phase to a playback rate. Real playbackRate on clips; the
-          // test card free-runs on the same remapped clock. A frame interpolator
-          // (e.g. RIFE) can later replace the raw rate change for smooth slow-mo.
+          // Bezier-curve speed ramp: a cubic bezier over the beat cycle maps phase to
+          // playback rate. Real playbackRate on clips; the test card free-runs on the
+          // same remapped clock. A frame interpolator (e.g. RIFE) can consume the same
+          // rate signal later for smooth slow motion.
           const prm = paramsRef.current;
           const lenP = (prm.len ?? 50) / 100;
           const depth = (prm.depth ?? 60) / 100;
@@ -619,13 +725,22 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
           const phase = (((beatsNow % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
 
-          // sample the curve with linear interpolation; value 0.5 = 1x, ±2 octaves at full depth
-          const x = phase * 16;
-          const i0 = Math.floor(x) % 16;
-          const f = x - Math.floor(x);
-          const c0 = (prm[`curve${i0}`] ?? 50) / 100;
-          const c1 = (prm[`curve${(i0 + 1) % 16}`] ?? 50) / 100;
-          const cv = c0 + (c1 - c0) * f;
+          // cubic bezier: x anchors at 0/1 with clamped handles keeps x(t) monotonic,
+          // so bisection solves t for x = phase
+          const y0 = (prm.bzY0 ?? 80) / 100, y1 = (prm.bzY1 ?? 5) / 100;
+          const y2 = (prm.bzY2 ?? 5) / 100, y3 = (prm.bzY3 ?? 80) / 100;
+          const x1 = Math.max(0, Math.min(1, (prm.bzX1 ?? 35) / 100));
+          const x2 = Math.max(0, Math.min(1, (prm.bzX2 ?? 65) / 100));
+          const bez = (a: number, b_: number, c: number, d: number, t: number) => {
+            const mt = 1 - t;
+            return mt * mt * mt * a + 3 * mt * mt * t * b_ + 3 * mt * t * t * c + t * t * t * d;
+          };
+          let lo = 0, hi = 1, t = phase;
+          for (let i = 0; i < 18; i++) {
+            t = (lo + hi) / 2;
+            if (bez(0, x1, x2, 1, t) < phase) lo = t; else hi = t;
+          }
+          const cv = bez(y0, y1, y2, y3, t);
           let rate = Math.pow(2, (cv - 0.5) * 4 * depth);
           if (bypass) rate = 1;
 
@@ -641,6 +756,12 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           m.uniforms.uSrcTime.value = st.srcTime;
           m.uniforms.uAux1.value = rate;
           m.uniforms.uAux2.value = phase;
+        }
+
+        if (isDriver) {
+          clock.srcTime = m.uniforms.uSrcTime.value;
+          clock.aux1 = m.uniforms.uAux1.value;
+          clock.aux2 = m.uniforms.uAux2.value;
         }
       }
 
@@ -665,7 +786,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       cancelAnimationFrame(frameRef.current);
       window.removeEventListener('resize', onResize);
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
-      videoTextureRef.current?.dispose();
+      // video texture is shared per-module; released by the videoUrl effect, not here
       imageTextureRef.current?.dispose();
       rtA.dispose();
       rtB.dispose();
@@ -721,15 +842,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     const m = materialRef.current;
     if (!m) return;
 
-    videoTextureRef.current?.dispose();
     videoTextureRef.current = null;
-
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.src = '';
-      videoRef.current.load();
-      videoRef.current = null;
-    }
+    videoRef.current = null;
 
     if (!videoUrl) {
       m.uniforms.uHasVideo.value = 0.0;
@@ -739,39 +853,28 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       return;
     }
 
-    const video = document.createElement('video');
-    video.src = videoUrl;
-    video.muted = true;
-    video.loop = true;
-    video.autoplay = true;
-    video.playsInline = true;
-    video.crossOrigin = 'anonymous';
-    video.preload = 'auto';
-    video.addEventListener('loadedmetadata', () => {
+    // shared per-module video: every screen of this module samples the same frames
+    const entry = acquireSharedVideo(type, videoUrl);
+    const video = entry.video;
+    const applyRes = () => {
       if (m && video.videoWidth > 0 && video.videoHeight > 0) {
         m.uniforms.uVideoRes.value.set(video.videoWidth, video.videoHeight);
       }
-    });
-    video.play().catch(() => {});
+    };
+    applyRes();
+    video.addEventListener('loadedmetadata', applyRes);
     videoRef.current = video;
+    videoTextureRef.current = entry.texture;
 
-    const texture = new THREE.VideoTexture(video);
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    videoTextureRef.current = texture;
-
-    m.uniforms.uVideoTex.value = texture;
+    m.uniforms.uVideoTex.value = entry.texture;
     m.uniforms.uHasVideo.value = 1.0;
 
     return () => {
-      texture.dispose();
-      video.pause();
-      video.src = '';
-      video.load();
+      video.removeEventListener('loadedmetadata', applyRes);
+      releaseSharedVideo(type, videoUrl);
     };
-  }, [videoUrl]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoUrl, type]);
 
   return <div ref={containerRef} style={{ width:'100%', height:'100%' }}/>;
 }
@@ -1097,10 +1200,11 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="PACK" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>TRANSITION LIBRARY</div>
+          <div style={labelStyle}>TRANSITION LIBRARY · TAP = FIRE</div>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:2 }}>
             {TRANSITION_PACK.map(o => (
-              <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color} onClick={()=>onUpdate('type',o.v)} width={40}/>
+              <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color}
+                onClick={()=>{ onUpdate('type',o.v); onUpdate('trig', ((params.trig ?? 0) + 1) % 100); }} width={40}/>
             ))}
           </div>
         </div>
@@ -1118,6 +1222,9 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
               const isActive = Math.abs(intervalP - v.val) <= 12;
               return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('interval',v.val)} width={34}/>;
             })}
+            <div style={{ flex:1 }}/>
+            <RackBtn label="FIRE" color="#ef4444" width={36}
+              onClick={()=>onUpdate('trig', ((params.trig ?? 0) + 1) % 100)}/>
           </div>
         </div>
       </Section>
@@ -1138,51 +1245,64 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
   );
 }
 
-const RAMP_PRESETS: Record<string, number[]> = {
-  FLAT:  Array.from({ length: 16 }, () => 50),
-  'RMP+': Array.from({ length: 16 }, (_, i) => Math.round(18 + (i / 15) * 68)),
-  'RMP-': Array.from({ length: 16 }, (_, i) => Math.round(86 - (i / 15) * 68)),
-  PNCH:  [82, 82, 78, 68, 40, 22, 14, 12, 12, 16, 28, 45, 62, 74, 80, 82],
-  SINE:  Array.from({ length: 16 }, (_, i) => Math.round(50 + 40 * Math.sin((i / 16) * Math.PI * 2))),
-  STEP:  Array.from({ length: 16 }, (_, i) => (Math.floor(i / 4) % 2 === 0 ? 78 : 26)),
+/** Bezier presets: endpoints (y0, y3) + control handles (x1,y1) (x2,y2), all 0-100. */
+const RAMP_PRESETS: Record<string, { y0: number; x1: number; y1: number; x2: number; y2: number; y3: number }> = {
+  FLAT:  { y0: 50, x1: 33, y1: 50, x2: 66, y2: 50, y3: 50 },
+  'RMP+': { y0: 20, x1: 40, y1: 30, x2: 70, y2: 72, y3: 88 },
+  'RMP-': { y0: 88, x1: 30, y1: 72, x2: 60, y2: 30, y3: 20 },
+  PNCH:  { y0: 80, x1: 35, y1: 0, x2: 65, y2: 0, y3: 80 },
+  SWELL: { y0: 22, x1: 35, y1: 100, x2: 65, y2: 100, y3: 22 },
+  EASE:  { y0: 15, x1: 85, y1: 15, x2: 15, y2: 85, y3: 85 },
 };
 
-function CurveEditor({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+/** Draggable cubic-bezier speed curve: square anchors set the in/out rates, round
+    handles shape the ramp between them. Dashed center line = 1x. */
+function BezierEditor({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
   const { state } = useAudio();
   const boxRef = useRef<HTMLDivElement>(null);
-  const lastRef = useRef<{ i: number; v: number } | null>(null);
-  const W = 100, H = 100; // viewBox units
-  const pts = Array.from({ length: 16 }, (_, i) => params[`curve${i}`] ?? 50);
+  const dragRef = useRef<null | 'p0' | 'p1' | 'p2' | 'p3'>(null);
+
+  const y0 = params.bzY0 ?? 80, y1 = params.bzY1 ?? 5, y2 = params.bzY2 ?? 5, y3 = params.bzY3 ?? 80;
+  const x1 = params.bzX1 ?? 35, x2 = params.bzX2 ?? 65;
+  const pts = {
+    p0: { x: 0, y: y0 }, p1: { x: x1, y: y1 },
+    p2: { x: x2, y: y2 }, p3: { x: 100, y: y3 },
+  };
 
   const lenP = (params.len ?? 50) / 100;
   const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
   const phase = (((state.beat % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
 
-  const applyAt = useCallback((clientX: number, clientY: number) => {
-    const rect = boxRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const i = Math.max(0, Math.min(15, Math.floor(((clientX - rect.left) / rect.width) * 16)));
-    const v = Math.max(0, Math.min(100, 100 - ((clientY - rect.top) / rect.height) * 100));
-    const last = lastRef.current;
-    // fill skipped columns so fast drags draw a continuous curve
-    if (last && Math.abs(i - last.i) > 1) {
-      const step = i > last.i ? 1 : -1;
-      for (let k = last.i + step; k !== i; k += step) {
-        const f = (k - last.i) / (i - last.i);
-        onUpdate(`curve${k}`, last.v + (v - last.v) * f);
-      }
-    }
-    onUpdate(`curve${i}`, v);
-    lastRef.current = { i, v };
-  }, [onUpdate]);
+  const toLocal = (clientX: number, clientY: number) => {
+    const rect = boxRef.current!.getBoundingClientRect();
+    return {
+      x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
+      y: Math.max(0, Math.min(100, 100 - ((clientY - rect.top) / rect.height) * 100)),
+    };
+  };
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    lastRef.current = null;
-    applyAt(e.clientX, e.clientY);
-    const move = (ev: MouseEvent) => applyAt(ev.clientX, ev.clientY);
+    if (!boxRef.current) return;
+    const l = toLocal(e.clientX, e.clientY);
+    let best: 'p0' | 'p1' | 'p2' | 'p3' | null = null;
+    let bestD = 20;
+    (Object.keys(pts) as Array<keyof typeof pts>).forEach(k => {
+      const d = Math.hypot(pts[k].x - l.x, pts[k].y - l.y);
+      if (d < bestD) { bestD = d; best = k; }
+    });
+    if (!best) return;
+    dragRef.current = best;
+    const move = (ev: MouseEvent) => {
+      const q = toLocal(ev.clientX, ev.clientY);
+      const which = dragRef.current;
+      if (which === 'p0') onUpdate('bzY0', q.y);
+      else if (which === 'p3') onUpdate('bzY3', q.y);
+      else if (which === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
+      else if (which === 'p2') { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
+    };
     const up = () => {
-      lastRef.current = null;
+      dragRef.current = null;
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
     };
@@ -1190,23 +1310,31 @@ function CurveEditor({ params, onUpdate, color }: { params: Record<string,number
     window.addEventListener('mouseup', up);
   };
 
-  const poly = pts.map((v, i) => `${((i + 0.5) / 16) * W},${H - v}`).join(' ');
+  const iy = (v: number) => 100 - v;
   return (
     <div ref={boxRef} onMouseDown={onMouseDown} style={{
-      height: 64, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
-      cursor:'crosshair', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
+      height: 72, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
+      cursor:'pointer', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
     }}>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
-        {[25, 50, 75].map(x => <line key={x} x1={x} y1={0} x2={x} y2={H} stroke="#161819" strokeWidth={0.6}/>)}
-        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="#2a2e34" strokeWidth={0.8} strokeDasharray="2 2"/>
-        <polygon points={`0,${H - pts[0]} ${poly} ${W},${H - pts[15]} ${W},${H} 0,${H}`} fill={`${color}18`}/>
-        <polyline points={`0,${H - pts[0]} ${poly} ${W},${H - pts[15]}`} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round"/>
-        {pts.map((v, i) => (
-          <circle key={i} cx={((i + 0.5) / 16) * W} cy={H - v} r={1.6} fill={color}/>
-        ))}
-        <line x1={phase * W} y1={0} x2={phase * W} y2={H} stroke="#fff" strokeWidth={0.8} opacity={0.55}/>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
+        {[25, 50, 75].map(x => <line key={x} x1={x} y1={0} x2={x} y2={100} stroke="#161819" strokeWidth={0.6}/>)}
+        <line x1={0} y1={50} x2={100} y2={50} stroke="#2a2e34" strokeWidth={0.8} strokeDasharray="2 2"/>
+        <line x1={0} y1={iy(y0)} x2={x1} y2={iy(y1)} stroke={`${color}55`} strokeWidth={0.8} strokeDasharray="1.5 1.5"/>
+        <line x1={100} y1={iy(y3)} x2={x2} y2={iy(y2)} stroke={`${color}55`} strokeWidth={0.8} strokeDasharray="1.5 1.5"/>
+        <path
+          d={`M 0 ${iy(y0)} C ${x1} ${iy(y1)}, ${x2} ${iy(y2)}, 100 ${iy(y3)}`}
+          fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round"
+        />
+        <line x1={phase * 100} y1={0} x2={phase * 100} y2={100} stroke="#fff" strokeWidth={0.8} opacity={0.5}/>
+        <rect x={-2.4} y={iy(y0) - 2.4} width={4.8} height={4.8} fill={color}/>
+        <rect x={97.6} y={iy(y3) - 2.4} width={4.8} height={4.8} fill={color}/>
+        <circle cx={x1} cy={iy(y1)} r={2.6} fill="#0a0b0c" stroke={color} strokeWidth={1.2}/>
+        <circle cx={x2} cy={iy(y2)} r={2.6} fill="#0a0b0c" stroke={color} strokeWidth={1.2}/>
       </svg>
-      <span style={{ position:'absolute', top:2, right:4, fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>1× —</span>
+      <span style={{ position:'absolute', top:2, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>FAST</span>
+      <span style={{ position:'absolute', bottom:2, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>SLOW</span>
+      <span style={{ position:'absolute', top:'50%', left:3, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>IN</span>
+      <span style={{ position:'absolute', top:'50%', right:3, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>OUT</span>
     </div>
   );
 }
@@ -1214,16 +1342,23 @@ function CurveEditor({ params, onUpdate, color }: { params: Record<string,number
 function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
   const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
   const lenP = params.len ?? 50;
+  const applyPreset = (c: { y0: number; x1: number; y1: number; x2: number; y2: number; y3: number }) => {
+    onUpdate('bzY0', c.y0);
+    onUpdate('bzX1', c.x1);
+    onUpdate('bzY1', c.y1);
+    onUpdate('bzX2', c.x2);
+    onUpdate('bzY2', c.y2);
+    onUpdate('bzY3', c.y3);
+  };
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="CURV" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>SPEED CURVE · DRAW OR PRESET</div>
-          <CurveEditor params={params} onUpdate={onUpdate} color={color}/>
+          <div style={labelStyle}>SPEED CURVE · DRAG POINTS</div>
+          <BezierEditor params={params} onUpdate={onUpdate} color={color}/>
           <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:2 }}>
             {Object.entries(RAMP_PRESETS).map(([name, curve]) => (
-              <RackBtn key={name} label={name} color={color} width={30}
-                onClick={() => curve.forEach((v, i) => onUpdate(`curve${i}`, v))}/>
+              <RackBtn key={name} label={name} color={color} width={30} onClick={() => applyPreset(curve)}/>
             ))}
           </div>
         </div>
@@ -1352,12 +1487,12 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
 
           <Section label="TRIG" color={color} noBorder>
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <div style={labelStyle}>CHANCE</div>
+              <div style={labelStyle}>ACCENT SENS · FIRES ON FFT HITS</div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                 <div style={{ flex:1 }}>
-                  <HSlider value={params.end??70} onChange={v=>onUpdate('end',v)} color={color}/>
+                  <HSlider value={params.end??60} onChange={v=>onUpdate('end',v)} color={color}/>
                 </div>
-                <MiniDisplay value={`${Math.round(params.end??70)}%`} width={36}/>
+                <MiniDisplay value={`${Math.round(params.end??60)}%`} width={36}/>
               </div>
             </div>
           </Section>
@@ -1372,7 +1507,7 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
           </Section>
           <Section label="TRIG" color={color} noBorder>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <Knob label="CHANCE" value={params.end??70} onChange={v=>onUpdate('end',v)} size="sm" color={color}/>
+              <Knob label="SENS" value={params.end??60} onChange={v=>onUpdate('end',v)} size="sm" color={color}/>
             </div>
           </Section>
         </>
@@ -1442,7 +1577,7 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
       </Section>
       <Section label="TRIG" color={color} noBorder>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>CHANCE</div>
+          <div style={labelStyle}>ACCENT SENS · FIRES ON FFT HITS</div>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <div style={{ flex:1 }}>
               <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
@@ -1839,6 +1974,124 @@ function getFragmentShader(type: ModuleType): string {
     }`;
   }
 
+  if (type === 'punch') {
+    return `${common}
+    /* Crash zoom: beat-synced punch-in / punch-out like a fake camera zoom hit.
+       DIR knob: low = IN, mid = alternate, high = OUT. */
+    void main(){
+      vec2 uv = vUv;
+      float dirP = uP0.x;
+      float amt  = uP0.y;
+      float snap = uP0.z;
+      float mix_ = uP0.w;
+      float pulse = exp(-uBeatPhase * (3.0 + snap * 9.0));
+      float dir = dirP < 0.33 ? 1.0 : dirP < 0.66 ? (mod(floor(uBeat), 2.0) < 0.5 ? 1.0 : -1.0) : -1.0;
+      float z = max(0.45, 1.0 + dir * pulse * (amt * 0.5 + uBassAmp * 0.12));
+
+      // motion blur along the zoom
+      vec3 wet = vec3(0.0);
+      for(int i = 0; i < 5; i++){
+        float zz = mix(1.0, z, 0.55 + 0.45 * float(i) / 4.0);
+        wet += sampleSource((uv - 0.5) / zz + 0.5);
+      }
+      wet /= 5.0;
+      wet *= 1.0 + pulse * 0.08;
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 dry = sampleSource(uv);
+      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+    }`;
+  }
+
+  if (type === 'shake') {
+    return `${common}
+    /* Handheld camera: layered-sine wobble reads as human, not jitter; impact kick
+       on beats weighted by bass; SWAY adds rotational drift. */
+    void main(){
+      vec2 uv = vUv;
+      float hand   = uP0.x;
+      float impact = uP0.y;
+      float sway   = uP0.z;
+      float mix_   = uP0.w;
+      float t = uTime;
+      float pulse = beatPulse(7.0);
+
+      vec2 wob = vec2(
+        sin(t * 1.7) + 0.55 * sin(t * 3.9 + 1.3) + 0.3 * sin(t * 7.1 + 0.5),
+        cos(t * 2.3) + 0.55 * sin(t * 4.7 + 2.1) + 0.3 * cos(t * 6.3)
+      ) * hand * 0.006;
+      float imp = pulse * impact * (0.35 + uBassAmp);
+      wob += vec2(hash(vec2(floor(uBeat), 3.7)) - 0.5, hash(vec2(floor(uBeat), 9.1)) - 0.5) * imp * 0.04;
+
+      float z = 1.0 + hand * 0.035 + imp * 0.06;
+      float ang = (sin(t * 0.9) + 0.5 * sin(t * 2.1)) * sway * 0.02;
+      vec2 c = uv - 0.5;
+      float cs = cos(ang), sn = sin(ang);
+      c = vec2(c.x * cs - c.y * sn, c.x * sn + c.y * cs);
+      vec3 wet = sampleSource(c / z + 0.5 + wob);
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 dry = sampleSource(uv);
+      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+    }`;
+  }
+
+  if (type === 'orbit') {
+    return `${common}
+    /* Drift cam: slow Ken Burns dolly around a cropped frame, nudged on the beat. */
+    void main(){
+      vec2 uv = vUv;
+      float spd   = uP0.x;
+      float drift = uP0.y;
+      float nudge = uP0.z;
+      float mix_  = uP0.w;
+      float t = uTime * (0.05 + spd * 0.35);
+      float pulse = beatPulse(5.0);
+
+      float zoomBase = 1.12 + drift * 0.25;
+      vec2 offs = vec2(cos(t), sin(t * 0.73)) * drift * 0.09;
+      offs += vec2(cos(uBeat * 1.3), sin(uBeat * 0.9)) * pulse * nudge * 0.012;
+      float z = zoomBase * (1.0 + pulse * nudge * 0.02);
+      vec3 wet = sampleSource((uv - 0.5) / z + 0.5 + offs);
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 dry = sampleSource(uv);
+      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+    }`;
+  }
+
+  if (type === 'focus') {
+    return `${common}
+    /* Rack focus: defocus blur that racks in and out with the beat; sharp on the
+       downbeat like a focus pull landing. */
+    void main(){
+      vec2 uv = vUv;
+      float amt    = uP0.x;
+      float pulseP = uP0.y;
+      float soft   = uP0.z;
+      float mix_   = uP0.w;
+
+      float rack = 0.5 - 0.5 * cos(fract(uBeat / 2.0) * TAU);
+      float blur = (amt * 0.35 + rack * pulseP) * 0.018;
+
+      vec3 wet = vec3(0.0);
+      for(int i = 0; i < 8; i++){
+        float a = float(i) / 8.0 * TAU;
+        wet += sampleSource(uv + vec2(cos(a), sin(a)) * blur);
+      }
+      wet /= 8.0;
+      wet += max(wet - 0.62, 0.0) * soft * min(1.0, blur * 45.0);
+
+      float wetAmt = uMode < 0.5 ? 1.0 : mix_;
+      if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
+      vec3 dry = sampleSource(uv);
+      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+    }`;
+  }
+
   return `${common}
   /* Time-remap sampler: the JS transport chops source time into beat-synced chunks
      (LOOP / REV / PONG / RAND). uSrcTime drives the test pattern and video.currentTime
@@ -1877,4 +2130,146 @@ function getFragmentShader(type: ModuleType): string {
     }
     gl_FragColor = vec4(finishPx(col, uv), 1.0);
   }`;
+}
+
+const COMPACT_KNOBS: Partial<Record<ModuleType, { param: string; label: string }[]>> = {
+  punch: [
+    { param: 'dir', label: 'DIR' }, { param: 'amt', label: 'AMT' },
+    { param: 'snap', label: 'SNAP' }, { param: 'mix', label: 'MIX' },
+  ],
+  shake: [
+    { param: 'hand', label: 'HAND' }, { param: 'impact', label: 'IMPCT' },
+    { param: 'sway', label: 'SWAY' }, { param: 'mix', label: 'MIX' },
+  ],
+  orbit: [
+    { param: 'spd', label: 'SPD' }, { param: 'drift', label: 'DRIFT' },
+    { param: 'nudge', label: 'NUDGE' }, { param: 'mix', label: 'MIX' },
+  ],
+  focus: [
+    { param: 'amt', label: 'AMT' }, { param: 'pulse', label: 'PULSE' },
+    { param: 'soft', label: 'SOFT' }, { param: 'mix', label: 'MIX' },
+  ],
+};
+
+/** Slim second-row module: header, FX-preview screen, and a single knob row. */
+export function CompactModule({ config, params, onUpdateParam, bypassed, onToggleBypass, videoLayer, onSetVideoLayer, isOnAir }: {
+  config: ModuleConfig;
+  params: Record<string, number>;
+  onUpdateParam: (param: string, value: number) => void;
+  bypassed: boolean;
+  onToggleBypass: () => void;
+  videoLayer: VideoLayer | null;
+  onSetVideoLayer: (file: File | null) => void;
+  isOnAir?: boolean;
+}) {
+  const { id, name, accentColor } = config;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const dragDepth = useRef(0);
+
+  const knobs = COMPACT_KNOBS[id] ?? [];
+
+  return (
+    <div
+      onDragEnter={(e) => { e.preventDefault(); dragDepth.current++; setDragOver(true); }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={(e) => { e.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragOver(false); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file?.type.startsWith('video/')) onSetVideoLayer(file);
+      }}
+      style={{
+        flex: 1, minWidth: 0,
+        background: '#131416',
+        borderRight: '1px solid #0d0e0f',
+        display: 'flex', flexDirection: 'column',
+        opacity: bypassed ? 0.55 : 1,
+        filter: bypassed ? 'saturate(0.15) brightness(0.6)' : undefined,
+        position: 'relative', overflow: 'hidden',
+      }}
+    >
+      <div style={{
+        display: 'flex', alignItems: 'center', padding: '0 5px', height: 20,
+        background: 'linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%)',
+        borderBottom: '1px solid #0d0e0f', borderTop: '1px solid #252729',
+        gap: 3, flexShrink: 0,
+      }}>
+        <span style={{
+          fontFamily: 'Rajdhani,sans-serif', fontSize: 9, fontWeight: 700,
+          letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7a8090',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>{name}</span>
+        {isOnAir && (
+          <span style={{
+            fontFamily: 'Rajdhani,sans-serif', fontSize: 6.5, fontWeight: 700, letterSpacing: '0.1em',
+            color: '#ef4444', background: '#ef444418', border: '1px solid #ef444455', borderRadius: 2,
+            padding: '0px 3px', boxShadow: '0 0 6px #ef444433', flexShrink: 0,
+          }}>ON AIR</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <input ref={fileRef} type="file" accept="video/*"
+          onChange={(e) => { onSetVideoLayer(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
+          style={{ display: 'none' }}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          title={videoLayer ? videoLayer.name : 'Load clip'}
+          style={{
+            height: 14, paddingInline: 4,
+            background: 'linear-gradient(180deg,#191d22,#121519)',
+            border: `1px solid ${videoLayer ? accentColor + '44' : '#1a1d22'}`,
+            borderRadius: 2, cursor: 'pointer',
+            color: videoLayer ? accentColor : '#445060',
+            display: 'flex', alignItems: 'center', gap: 2,
+            fontFamily: 'Rajdhani,sans-serif', fontSize: 6.5, fontWeight: 700, letterSpacing: '0.08em',
+          }}
+        >
+          <Film size={7} /> CLIP
+        </button>
+        {videoLayer && (
+          <button onClick={() => onSetVideoLayer(null)} style={{
+            width: 14, height: 14,
+            background: 'linear-gradient(180deg,#241919,#1b1212)', border: '1px solid #342020', borderRadius: 2,
+            color: '#c46b6b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+          }}><X size={7} /></button>
+        )}
+        <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
+      </div>
+
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, background: '#000' }}>
+        <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} />
+        <ScreenOverlay />
+        <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
+      </div>
+
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-around',
+        padding: '3px 4px', flexShrink: 0,
+        background: 'linear-gradient(180deg,#111214,#0f1012)',
+        borderTop: '1px solid #0d0e0f',
+      }}>
+        {knobs.map(k => (
+          <Knob key={k.param} label={k.label} value={params[k.param] ?? 50}
+            onChange={v => onUpdateParam(k.param, v)} size="xs" color={accentColor} />
+        ))}
+      </div>
+
+      {dragOver && (
+        <div style={{
+          position: 'absolute', inset: 3, zIndex: 20, pointerEvents: 'none',
+          border: `2px dashed ${accentColor}`, borderRadius: 4,
+          background: 'rgba(0,0,0,0.55)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+        }}>
+          <Upload size={14} color={accentColor} />
+          <span style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 10, fontWeight: 700, letterSpacing: '0.15em', color: accentColor }}>
+            DROP CLIP
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
