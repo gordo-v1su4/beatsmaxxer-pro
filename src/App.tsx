@@ -2,10 +2,11 @@ import { useState, useCallback, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { PresetBrowser } from './components/PresetBrowser';
 import { EffectModule } from './components/EffectModule';
+import { MainViewer } from './components/MainViewer';
 import { AudioProvider } from './audio/AudioContext';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 
-export type ModuleType = 'shaper' | 'downsampler' | 'tapdelay' | 'timesampler';
+export type ModuleType = 'transition' | 'speedramp' | 'tapdelay' | 'timesampler';
 
 export interface ModuleConfig {
   id: ModuleType;
@@ -28,21 +29,23 @@ export interface MidiLayer {
 
 const MODULES: ModuleConfig[] = [
   {
-    id: 'shaper',
-    name: 'SHAPER',
+    id: 'transition',
+    name: 'TRANSITION',
     accentColor: '#22c55e',
     params: {
-      algo: 1, offset: 50, freq: 30, clip: 45, amount: 70,
-      mix: 65, in_: 80, out: 75,
+      type: 0, interval: 50, duration: 40, amount: 60,
+      mix: 100, in_: 80, out: 75,
     },
   },
   {
-    id: 'downsampler',
-    name: 'DOWNSAMPLER',
+    id: 'speedramp',
+    name: 'SPEEDRAMP',
     accentColor: '#f59e0b',
     params: {
-      jitter: 40, crushType: 0, rate: 50, bits: 70,
-      mix: 60, in_: 80, out: 70,
+      len: 50, depth: 60,
+      curve0: 50, curve1: 65, curve2: 78, curve3: 87, curve4: 90, curve5: 87, curve6: 78, curve7: 65,
+      curve8: 50, curve9: 35, curve10: 22, curve11: 13, curve12: 10, curve13: 13, curve14: 22, curve15: 35,
+      mix: 100, in_: 80, out: 70,
     },
   },
   {
@@ -82,8 +85,8 @@ const PRESETS = [
 ];
 
 const DEFAULT_VIDEO_LAYERS: Record<ModuleType, VideoLayer | null> = {
-  shaper: null,
-  downsampler: null,
+  transition: null,
+  speedramp: null,
   tapdelay: null,
   timesampler: null,
 };
@@ -95,15 +98,16 @@ export function App() {
     Object.fromEntries(MODULES.map(m => [m.id, { ...m.params }])) as Record<ModuleType, Record<string, number>>
   );
   const [bypassed, setBypassed] = useState<Record<ModuleType, boolean>>({
-    shaper: false, downsampler: false, tapdelay: false, timesampler: false,
+    transition: false, speedramp: false, tapdelay: false, timesampler: false,
   });
   const [muted, setMuted] = useState<Record<ModuleType, boolean>>({
-    shaper: false, downsampler: false, tapdelay: false, timesampler: false,
+    transition: false, speedramp: false, tapdelay: false, timesampler: false,
   });
   const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(DEFAULT_VIDEO_LAYERS);
   const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>({
-    shaper: null, downsampler: null, tapdelay: null, timesampler: null,
+    transition: null, speedramp: null, tapdelay: null, timesampler: null,
   });
+  const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
 
   const objectUrlsRef = useRef<string[]>([]);
 
@@ -242,26 +246,39 @@ export function App() {
           <div style={{
             flex: 1,
             display: 'flex',
+            flexDirection: 'column',
             overflow: 'hidden',
             background: '#0a0b0c',
             gap: 0,
           }}>
-            {MODULES.map(module => (
-              <EffectModule
-                key={module.id}
-                config={module}
-                params={moduleParams[module.id]}
-                onUpdateParam={(param, value) => updateParam(module.id, param, value)}
-                bypassed={bypassed[module.id]}
-                muted={muted[module.id]}
-                onToggleBypass={() => toggleBypass(module.id)}
-                onToggleMute={() => toggleMute(module.id)}
-                videoLayer={videoLayers[module.id]}
-                onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
-                midiLayer={midiLayers[module.id]}
-                onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
-              />
-            ))}
+            <MainViewer
+              modules={MODULES}
+              pgmSource={pgmSource}
+              onSelectSource={setPgmSource}
+              moduleParams={moduleParams}
+              videoLayers={videoLayers}
+              midiLayers={midiLayers}
+              bypassed={bypassed}
+            />
+            <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+              {MODULES.map(module => (
+                <EffectModule
+                  key={module.id}
+                  config={module}
+                  params={moduleParams[module.id]}
+                  onUpdateParam={(param, value) => updateParam(module.id, param, value)}
+                  bypassed={bypassed[module.id]}
+                  muted={muted[module.id]}
+                  onToggleBypass={() => toggleBypass(module.id)}
+                  onToggleMute={() => toggleMute(module.id)}
+                  videoLayer={videoLayers[module.id]}
+                  onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
+                  midiLayer={midiLayers[module.id]}
+                  onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
+                  isOnAir={pgmSource === module.id}
+                />
+              ))}
+            </div>
           </div>
 
           <div style={{

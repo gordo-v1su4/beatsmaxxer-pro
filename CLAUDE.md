@@ -29,7 +29,8 @@ Beat Surfer Pro is a browser-based audio-reactive effects rack with realtime 3D 
 
 - **`TopBar.tsx`** — Transport controls: play/stop, BPM display, tap tempo, audio file upload, randomize, clear.
 - **`PresetBrowser.tsx`** — 11 hardcoded presets; 4 macro knobs (macro1–4, range 0–100) with color-coded sliders.
-- **`EffectModule.tsx`** — The core component. Renders one of four modules (SHAPER, DOWNSAMPLER, TAPDELAY, TIMESAMPLER) including: parameter knobs, bypass/mute, video/MIDI upload slots, and two embedded Three.js canvases (FX preview at 100% wet + mixed output) driven by audio analysis + module params. Each canvas has ping-pong feedback buffers for real video trails; with no clip loaded, an in-shader animated test card is the source.
+- **`EffectModule.tsx`** — The core component. Renders one of four modules (TRANSITION, SPEEDRAMP, TAPDELAY, TIMESAMPLER) including: parameter knobs, bypass/mute, video/MIDI upload slots, and an embedded Three.js FX-preview canvas (100% wet) driven by audio analysis + module params. Each canvas has ping-pong feedback buffers for real video trails; with no clip loaded, an in-shader animated test card is the source. Trigger probability for TAPDELAY/TIMESAMPLER is weighted by FFT bass-onset strength.
+- **`MainViewer.tsx`** — Broadcast-style program monitor above the module row. PGM source buttons cut between the four effect columns; shows the selected module's mixed output (mode="output"), with an ON AIR tally on the active module's header.
 - **`Knob.tsx`** — Reusable SVG rotary knob; drag-to-adjust; supports xs/sm/md/lg sizes.
 
 ### App State (`src/App.tsx`)
@@ -40,8 +41,8 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 
 | Module | Accent | Key Params |
 |--------|--------|-----------|
-| SHAPER | Green (`#22c55e`) | algo, offset, freq, clip, amount, mix, in, out |
-| DOWNSAMPLER | Amber (`#f59e0b`) | jitter, crushType, rate, bits, mix, in, out |
+| TRANSITION | Green (`#22c55e`) | type (whip L/R, push U/D, wipe, roll, zoom, glitch), interval, duration, amount, mix, in, out |
+| SPEEDRAMP | Amber (`#f59e0b`) | len, depth, curve0–curve15 (drawable 16-point speed curve), mix, in, out |
 | TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end, start, filterSlider, time, feedback, mix, in, out |
 | TIMESAMPLER | Yellow (`#eab308`) | mode (LOOP/REV/PONG/RAND), size, repeats, chance, rate, mix, in, out |
 

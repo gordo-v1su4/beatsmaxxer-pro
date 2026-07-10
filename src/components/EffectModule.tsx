@@ -18,6 +18,7 @@ interface EffectModuleProps {
   onSetVideoLayer: (file: File | null) => void;
   midiLayer: MidiLayer | null;
   onSetMidiLayer: (file: File | null) => void;
+  isOnAir?: boolean;
 }
 
 function Screw() {
@@ -149,7 +150,7 @@ function MiniDisplay({ value, width }: { value: string; width?: number }) {
   );
 }
 
-function ScreenOverlay() {
+export function ScreenOverlay() {
   return (
     <div style={{ position:'absolute', inset:0, pointerEvents:'none', zIndex:5 }}>
       <div style={{ position:'absolute', inset:0, backgroundImage:'repeating-linear-gradient(0deg,transparent,transparent 1px,rgba(0,0,0,0.15) 1px,rgba(0,0,0,0.15) 2px)', zIndex:2 }}/>
@@ -159,7 +160,7 @@ function ScreenOverlay() {
   );
 }
 
-function ScreenBadge({ text, color }: { text: string; color: string }) {
+export function ScreenBadge({ text, color }: { text: string; color: string }) {
   return (
     <div style={{ position:'absolute', top:4, left:5, zIndex:10, background:'rgba(0,0,0,0.75)', border:`1px solid ${color}44`, borderRadius:2, padding:'1px 5px' }}>
       <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:7, color, letterSpacing:'0.08em', opacity:0.85 }}>{text}</span>
@@ -167,7 +168,7 @@ function ScreenBadge({ text, color }: { text: string; color: string }) {
   );
 }
 
-function VUMeter({ value, color }: { value: number; color: string }) {
+export function VUMeter({ value, color }: { value: number; color: string }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:1, height:36, justifyContent:'flex-end' }}>
       {Array.from({length:12}).map((_,i) => {
@@ -197,7 +198,7 @@ function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number,
   return false;
 }
 
-function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypassed }: {
+export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypassed }: {
   type: ModuleType; color: string; params: Record<string,number>; mode: 'effect'|'output'; videoUrl?: string | null;
   midiLayer?: MidiLayer | null; bypassed?: boolean;
 }) {
@@ -211,6 +212,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
   const imageTextureRef = useRef<THREE.Texture | null>(null);
   const midiLayerRef = useRef<MidiLayer | null>(null);
   const playingRef = useRef(false);
+  const paramsRef = useRef(params);
   const loopRef = useRef({
     lastBeat: 0,
     isStuttering: false,
@@ -222,6 +224,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
     stutterAnchor: 0,
     scratchPongAtBack: true,
     srcTime: 0,
+    bassEma: 0.05,
   });
   const { state: audioState } = useAudio();
 
@@ -230,19 +233,23 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
   }, [midiLayer]);
 
   useEffect(() => {
+    paramsRef.current = params;
+  }, [params]);
+
+  useEffect(() => {
     playingRef.current = audioState.playing;
   }, [audioState.playing]);
 
   const getUniforms = useCallback(() => {
     const p = (k: string, def = 50) => ((params[k] ?? def) / 100);
-    if (type === 'shaper') return {
-      uP0: new THREE.Vector4(params.algo ?? 1, p('offset'), p('freq', 30), p('clip', 45)),
-      uP1: new THREE.Vector4(p('amount', 70), p('mix', 65), p('in_', 80), p('out', 75)),
+    if (type === 'transition') return {
+      uP0: new THREE.Vector4(params.type ?? 0, p('interval', 50), p('duration', 40), p('amount', 60)),
+      uP1: new THREE.Vector4(p('mix', 100), p('in_', 80), p('out', 75), 0),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
-    if (type === 'downsampler') return {
-      uP0: new THREE.Vector4(p('jitter', 40), params.crushType ?? 0, p('rate', 50), p('bits', 70)),
-      uP1: new THREE.Vector4(p('mix', 60), p('in_', 80), p('out', 70), 0),
+    if (type === 'speedramp') return {
+      uP0: new THREE.Vector4(p('len', 50), p('depth', 60), p('mix', 100), p('in_', 80)),
+      uP1: new THREE.Vector4(p('out', 70), 0, 0, 0),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
     if (type === 'tapdelay') return {
@@ -303,8 +310,8 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
         uBypass:     { value: bypassed ? 1.0 : 0.0 },
         uPrevTex:    { value: rtB.texture },
         uSrcTime:    { value: 0 },
-        uStut:       { value: 0 },
-        uChunkPhase: { value: 0 },
+        uAux1:       { value: 0 },
+        uAux2: { value: 0 },
         uBPM:        { value: 128.0 },
         uBeat:       { value: 0.0 },
         uBeatPhase:  { value: 0.0 },
@@ -356,7 +363,13 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
 
         const uBeat = m.uniforms.uBeat.value;
         const st = loopRef.current;
-        
+
+        // FFT onset strength: how far current bass energy sits above its running
+        // average. Weights beat-quantized triggers toward actual musical hits.
+        const bassNow = m.uniforms.uBassAmp.value;
+        st.bassEma = st.bassEma * 0.97 + bassNow * 0.03;
+        const onsetStr = Math.max(0, Math.min(1.5, bassNow / Math.max(0.02, st.bassEma) - 1.0));
+
         // Tapdelay Stutter Mode (applied across all types for video fx)
         if (type === 'tapdelay' && videoRef.current && m.uniforms.uHasVideo.value > 0.5) {
           const timeP = m.uniforms.uP1.value.x; // STUTTER TIME (0 to 1)
@@ -426,7 +439,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
           if (!st.isStuttering) {
             if (useMidi) {
               if (midiHit) startStutter();
-            } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP) {
+            } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < freqP * (0.35 + onsetStr)) {
               startStutter();
             }
           } else {
@@ -513,7 +526,7 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
             if (!bypass) {
               if (useMidi) {
                 if (midiHit) startChunk();
-              } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < chance) {
+              } else if (Math.floor(uBeat) > Math.floor(st.lastBeat) && Math.random() < chance * (0.35 + onsetStr)) {
                 startChunk();
               }
             }
@@ -543,10 +556,91 @@ function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypas
           st.lastBeat = uBeat;
 
           m.uniforms.uSrcTime.value = st.srcTime;
-          m.uniforms.uStut.value = st.isStuttering ? 1.0 : 0.0;
-          m.uniforms.uChunkPhase.value = st.isStuttering
+          m.uniforms.uAux1.value = st.isStuttering ? 1.0 : 0.0;
+          m.uniforms.uAux2.value = st.isStuttering
             ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / chunkBeats))
             : 0.0;
+        }
+        else if (type === 'transition') {
+          // Transition clock: fires at the end of every N-beat cycle (or on MIDI
+          // notes), producing a 0..1 progress the shader animates the wipe/whip with.
+          const intervalP = m.uniforms.uP0.value.y;
+          const durP = m.uniforms.uP0.value.z;
+          const intervalBeats = intervalP < 0.25 ? 1 : intervalP < 0.5 ? 2 : intervalP < 0.75 ? 4 : 8;
+          const durBeats = 0.15 + durP * 0.85;
+          const bypass = m.uniforms.uBypass.value > 0.5;
+
+          const tNow = audioEngine.getState().time;
+          const tPrev = st.lastTransportSec;
+          const midi = midiLayerRef.current;
+          const useMidi = !!(midi?.notes?.length);
+          let midiHit = false;
+          if (useMidi && playingRef.current && tPrev >= 0 && !bypass) {
+            const lastT = midi!.notes[midi!.notes.length - 1]!.time;
+            const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
+            const jump = Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
+            if (!jump) midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
+          }
+          st.lastTransportSec = tNow;
+
+          let p = 0;
+          if (!bypass) {
+            if (useMidi) {
+              if (midiHit) {
+                st.isStuttering = true;
+                st.stutterStartBeat = uBeat;
+              }
+              if (st.isStuttering) {
+                const since = uBeat - st.stutterStartBeat;
+                if (since >= 0 && since < durBeats) p = since / durBeats;
+                else st.isStuttering = false;
+              }
+            } else {
+              const beatInCycle = ((uBeat % intervalBeats) + intervalBeats) % intervalBeats;
+              const start = intervalBeats - durBeats;
+              if (beatInCycle >= start) p = (beatInCycle - start) / durBeats;
+            }
+          }
+          st.lastBeat = uBeat;
+          m.uniforms.uAux1.value = p > 0 ? 1.0 : 0.0;
+          m.uniforms.uAux2.value = Math.min(1, Math.max(0, p));
+        }
+        else if (type === 'speedramp') {
+          // Curve-driven speed ramp: the 16-point curve (curve0..curve15) maps the
+          // beat-cycle phase to a playback rate. Real playbackRate on clips; the
+          // test card free-runs on the same remapped clock. A frame interpolator
+          // (e.g. RIFE) can later replace the raw rate change for smooth slow-mo.
+          const prm = paramsRef.current;
+          const lenP = (prm.len ?? 50) / 100;
+          const depth = (prm.depth ?? 60) / 100;
+          const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
+          const bypass = m.uniforms.uBypass.value > 0.5;
+          const bpm = m.uniforms.uBPM.value || 128;
+          const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
+          const phase = (((beatsNow % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
+
+          // sample the curve with linear interpolation; value 0.5 = 1x, ±2 octaves at full depth
+          const x = phase * 16;
+          const i0 = Math.floor(x) % 16;
+          const f = x - Math.floor(x);
+          const c0 = (prm[`curve${i0}`] ?? 50) / 100;
+          const c1 = (prm[`curve${(i0 + 1) % 16}`] ?? 50) / 100;
+          const cv = c0 + (c1 - c0) * f;
+          let rate = Math.pow(2, (cv - 0.5) * 4 * depth);
+          if (bypass) rate = 1;
+
+          const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
+          if (video) {
+            const clamped = Math.max(0.0625, Math.min(4, rate));
+            if (Math.abs(video.playbackRate - clamped) > 0.005) video.playbackRate = clamped;
+            st.srcTime = video.currentTime;
+          } else {
+            st.srcTime += dt * rate;
+          }
+          st.lastBeat = uBeat;
+          m.uniforms.uSrcTime.value = st.srcTime;
+          m.uniforms.uAux1.value = rate;
+          m.uniforms.uAux2.value = phase;
         }
       }
 
@@ -945,7 +1039,6 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     else if (/\.midi?$/i.test(file.name)) onSetMidiLayer(file);
   };
 
-  const mixPct = Math.round(params.mix ?? 50);
   return (
     <div
       onDragEnter={onDragEnter}
@@ -957,7 +1050,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
       <FFTStrip color={color} />
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', borderBottom:'1px solid #111', flexShrink:0 }}>
+      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
         <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
@@ -973,14 +1066,6 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
         {state.beatPhase < 0.08 && state.playing && (
           <div style={{ position:'absolute', inset:0, zIndex:4, pointerEvents:'none', border:`1px solid ${color}44`, borderRadius:0, boxShadow:`inset 0 0 12px ${color}22` }}/>
         )}
-      </div>
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', minHeight:0, height:'auto', background:'#000', flexShrink:0 }}>
-        <ThreeVisualizer type={type} color={color} params={params} mode="output" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
-        <ScreenOverlay/>
-        <ScreenBadge
-          text={bypassed ? 'OUTPUT · BYPASSED' : `OUTPUT · MIX ${mixPct}%`}
-          color={bypassed ? '#ef4444' : color}
-        />
       </div>
       {dragOver && (
         <div style={{
@@ -999,106 +1084,168 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
   );
 }
 
-function ShaperControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+const TRANSITION_PACK = [
+  { l: 'WHP L', v: 0 }, { l: 'WHP R', v: 1 }, { l: 'PSH U', v: 2 }, { l: 'PSH D', v: 3 },
+  { l: 'WIPE', v: 4 }, { l: 'ROLL', v: 5 }, { l: 'ZOOM', v: 6 }, { l: 'GLTC', v: 7 },
+];
+
+function TransitionControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
+  const intervalP = params.interval ?? 50;
+  const durBeats = 0.15 + ((params.duration ?? 40) / 100) * 0.85;
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
-      <Section label="TYPE" color={color}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:3 }}>
-          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-            <span style={{ fontSize:7, fontWeight:700, letterSpacing:'0.1em', color:'#3a4050', fontFamily:'Rajdhani,sans-serif' }}>ALGO</span>
-            <div style={{ display:'flex', gap:2 }}>
-              {[1,2,3,4].map(n => (
-                <RackBtn key={n} label={String(n)} active={Math.round(params.algo??1)===n} color={color} onClick={()=>onUpdate('algo',n)}/>
-              ))}
-            </div>
+      <Section label="PACK" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>TRANSITION LIBRARY</div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:2 }}>
+            {TRANSITION_PACK.map(o => (
+              <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color} onClick={()=>onUpdate('type',o.v)} width={40}/>
+            ))}
           </div>
-          <Knob label="OFFSET" value={params.offset??50} onChange={v=>onUpdate('offset',v)} size="sm" color={color}/>
         </div>
       </Section>
-      <div style={{ borderBottom:'1px solid #0d0e0f', background:'#0c0d0e', padding:'4px 5px', display:'flex', gap:3, alignItems:'center', flexShrink:0 }}>
-        <ShaperBars algo={Math.round(params.algo??1)} amount={params.amount??70} freq={params.freq??30} color={color}/>
-      </div>
-      <Section label="RAMP" color={color} noBorder>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <Knob label="FREQ" value={params.freq??30} onChange={v=>onUpdate('freq',v)} size="sm" color={color}/>
-          <Knob label="CLIP" value={params.clip??45} onChange={v=>onUpdate('clip',v)} size="sm" color={color}/>
-          <Knob label="AMT" value={params.amount??70} onChange={v=>onUpdate('amount',v)} size="sm" color={color}/>
+      <Section label="SYNC" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>FIRE EVERY</div>
+          <div style={{ display:'flex', gap:2 }}>
+            {[
+              { l: '1 BT', val: 12 },
+              { l: '2 BT', val: 37 },
+              { l: '1 BAR', val: 62 },
+              { l: '2 BAR', val: 87 },
+            ].map(v => {
+              const isActive = Math.abs(intervalP - v.val) <= 12;
+              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('interval',v.val)} width={34}/>;
+            })}
+          </div>
+        </div>
+      </Section>
+      <Section label="SHPE" color={color} noBorder>
+        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ flex:1 }}>
+              <HSlider value={params.duration??40} onChange={v=>onUpdate('duration',v)} color={color} label="MOVE LENGTH"/>
+            </div>
+            <MiniDisplay value={`${durBeats.toFixed(2)}bt`} width={44}/>
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-start' }}>
+            <Knob label="BLUR" value={params.amount??60} onChange={v=>onUpdate('amount',v)} size="sm" color={color}/>
+          </div>
         </div>
       </Section>
     </div>
   );
 }
 
-function ShaperBars({ algo, amount, freq, color }: { algo:number; amount:number; freq:number; color:string }) {
+const RAMP_PRESETS: Record<string, number[]> = {
+  FLAT:  Array.from({ length: 16 }, () => 50),
+  'RMP+': Array.from({ length: 16 }, (_, i) => Math.round(18 + (i / 15) * 68)),
+  'RMP-': Array.from({ length: 16 }, (_, i) => Math.round(86 - (i / 15) * 68)),
+  PNCH:  [82, 82, 78, 68, 40, 22, 14, 12, 12, 16, 28, 45, 62, 74, 80, 82],
+  SINE:  Array.from({ length: 16 }, (_, i) => Math.round(50 + 40 * Math.sin((i / 16) * Math.PI * 2))),
+  STEP:  Array.from({ length: 16 }, (_, i) => (Math.floor(i / 4) % 2 === 0 ? 78 : 26)),
+};
+
+function CurveEditor({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
   const { state } = useAudio();
-  const bars = 14;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const lastRef = useRef<{ i: number; v: number } | null>(null);
+  const W = 100, H = 100; // viewBox units
+  const pts = Array.from({ length: 16 }, (_, i) => params[`curve${i}`] ?? 50);
+
+  const lenP = (params.len ?? 50) / 100;
+  const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
+  const phase = (((state.beat % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
+
+  const applyAt = useCallback((clientX: number, clientY: number) => {
+    const rect = boxRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const i = Math.max(0, Math.min(15, Math.floor(((clientX - rect.left) / rect.width) * 16)));
+    const v = Math.max(0, Math.min(100, 100 - ((clientY - rect.top) / rect.height) * 100));
+    const last = lastRef.current;
+    // fill skipped columns so fast drags draw a continuous curve
+    if (last && Math.abs(i - last.i) > 1) {
+      const step = i > last.i ? 1 : -1;
+      for (let k = last.i + step; k !== i; k += step) {
+        const f = (k - last.i) / (i - last.i);
+        onUpdate(`curve${k}`, last.v + (v - last.v) * f);
+      }
+    }
+    onUpdate(`curve${i}`, v);
+    lastRef.current = { i, v };
+  }, [onUpdate]);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    lastRef.current = null;
+    applyAt(e.clientX, e.clientY);
+    const move = (ev: MouseEvent) => applyAt(ev.clientX, ev.clientY);
+    const up = () => {
+      lastRef.current = null;
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  const poly = pts.map((v, i) => `${((i + 0.5) / 16) * W},${H - v}`).join(' ');
   return (
-    <div style={{ flex:1, height:44, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1, display:'flex', alignItems:'flex-end', gap:1, padding:'2px 2px 0', overflow:'hidden', position:'relative', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)' }}>
-      {Array.from({length:bars}).map((_,i) => {
-        const phase = (i/bars)*Math.PI*2 + state.beatPhase * Math.PI * (1 + freq / 50);
-        let h = 0.3;
-        if(algo===1) h=(Math.sin(phase)*0.5+0.5);
-        else if(algo===2) h=Math.abs(Math.sin(phase));
-        else if(algo===3) h=Math.sin(phase)>0?0.9:0.1;
-        else h=Math.abs(Math.sin(phase*1.7+0.3))*0.8+0.15;
-        h = h*(amount/100)*0.85+0.08;
-        const beatBump = state.bassAmp * 0.3;
-        h = Math.min(1, h + beatBump);
-        const pct = Math.max(5, Math.min(100, h*100));
-        const isClip = pct > (freq/100)*85+10;
-        return <div key={i} style={{ flex:1, height:`${pct}%`, background:isClip?`linear-gradient(180deg,#ff4422,${color}88)`:`linear-gradient(180deg,${color},${color}66)`, borderRadius:'1px 1px 0 0', boxShadow:`0 0 3px ${color}44`, transition:'height 0.05s ease' }}/>;
-      })}
+    <div ref={boxRef} onMouseDown={onMouseDown} style={{
+      height: 64, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
+      cursor:'crosshair', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
+    }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
+        {[25, 50, 75].map(x => <line key={x} x1={x} y1={0} x2={x} y2={H} stroke="#161819" strokeWidth={0.6}/>)}
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="#2a2e34" strokeWidth={0.8} strokeDasharray="2 2"/>
+        <polygon points={`0,${H - pts[0]} ${poly} ${W},${H - pts[15]} ${W},${H} 0,${H}`} fill={`${color}18`}/>
+        <polyline points={`0,${H - pts[0]} ${poly} ${W},${H - pts[15]}`} fill="none" stroke={color} strokeWidth={1.6} strokeLinejoin="round"/>
+        {pts.map((v, i) => (
+          <circle key={i} cx={((i + 0.5) / 16) * W} cy={H - v} r={1.6} fill={color}/>
+        ))}
+        <line x1={phase * W} y1={0} x2={phase * W} y2={H} stroke="#fff" strokeWidth={0.8} opacity={0.55}/>
+      </svg>
+      <span style={{ position:'absolute', top:2, right:4, fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>1× —</span>
     </div>
   );
 }
 
-function DownsamplerControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
+  const lenP = params.len ?? 50;
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
-      <Section label="CRUSH" color={color}>
-        <div style={{ display:'flex', alignItems:'center', gap:4, justifyContent:'space-between' }}>
-          <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-            <span style={{ fontSize:7, fontWeight:700, color:'#3a4050', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' }}>MODE</span>
-            <div style={{ display:'flex', gap:2 }}>
-              {['PIX','BIT','GLT'].map((t,i) => (
-                <RackBtn key={t} label={t} active={Math.round(params.crushType??0)===i} color={color} onClick={()=>onUpdate('crushType',i)} width={26}/>
-              ))}
-            </div>
+      <Section label="CURV" color={color}>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>SPEED CURVE · DRAW OR PRESET</div>
+          <CurveEditor params={params} onUpdate={onUpdate} color={color}/>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:2 }}>
+            {Object.entries(RAMP_PRESETS).map(([name, curve]) => (
+              <RackBtn key={name} label={name} color={color} width={30}
+                onClick={() => curve.forEach((v, i) => onUpdate(`curve${i}`, v))}/>
+            ))}
           </div>
-          <Knob label="JITTER" value={params.jitter??40} onChange={v=>onUpdate('jitter',v)} size="sm" color={color}/>
         </div>
       </Section>
-      <div style={{ borderBottom:'1px solid #0d0e0f', background:'#0c0d0e', padding:'4px 5px', flexShrink:0 }}>
-        <PixelPreview jitter={params.jitter??40} mode={Math.round(params.crushType??0)} color={color}/>
-      </div>
-      <Section label="RATE" color={color} noBorder>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <Knob label="RATE" value={params.rate??50} onChange={v=>onUpdate('rate',v)} size="sm" color={color}/>
-          <Knob label="BITS" value={params.bits??70} onChange={v=>onUpdate('bits',v)} size="sm" color={color}/>
-          <Knob label="MIX" value={params.mix??60} onChange={v=>onUpdate('mix',v)} size="sm" color={color}/>
+      <Section label="CYCL" color={color} noBorder>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <div style={labelStyle}>CYCLE LENGTH</div>
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            {[
+              { l: '1 BT', val: 12 },
+              { l: '2 BT', val: 37 },
+              { l: '1 BAR', val: 62 },
+              { l: '2 BAR', val: 87 },
+            ].map(v => {
+              const isActive = Math.abs(lenP - v.val) <= 12;
+              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('len',v.val)} width={34}/>;
+            })}
+            <div style={{ flex:1 }}/>
+            <Knob label="DEPTH" value={params.depth??60} onChange={v=>onUpdate('depth',v)} size="sm" color={color}/>
+          </div>
         </div>
       </Section>
-    </div>
-  );
-}
-
-function PixelPreview({ jitter, mode, color }: { jitter:number; mode:number; color:string }) {
-  const { state } = useAudio();
-  const cols = 14, rows = 4;
-  const pulse = state.bassAmp;
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
-      {Array.from({length:rows}).map((_,r) => (
-        <div key={r} style={{ display:'flex', gap:1 }}>
-          {Array.from({length:cols}).map((_,c) => {
-            const val = Math.sin(r*3.1+c*1.7+jitter*0.1+state.beatPhase*6)*0.5+0.5;
-            const glitch = mode===2 && ((c + r + state.beat) % 5 === 0);
-            const bit = mode===1 ? Math.round(val) : val;
-            const bright = glitch ? 1 : (bit*(jitter/100)*0.8+0.1) * (1 + pulse*0.5);
-            return <div key={c} style={{ flex:1, height:6, background:glitch?`rgba(255,50,50,${bright})`:`${color}${Math.round(Math.min(1,bright)*180).toString(16).padStart(2,'0')}`, borderRadius:0.5 }}/>;
-          })}
-        </div>
-      ))}
     </div>
   );
 }
@@ -1331,7 +1478,7 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
   );
 }
 
-export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: EffectModuleProps) {
+export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, isOnAir }: EffectModuleProps) {
   const { id, name, accentColor } = config;
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -1363,6 +1510,13 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
           fontFamily:'Rajdhani,sans-serif', fontSize:10, fontWeight:700,
           letterSpacing:'0.14em', textTransform:'uppercase', color:'#7a8090', flex:1, marginLeft:3,
         }}>{name}</span>
+        {isOnAir && (
+          <span style={{
+            fontFamily:'Rajdhani,sans-serif', fontSize:7, fontWeight:700, letterSpacing:'0.1em',
+            color:'#ef4444', background:'#ef444418', border:'1px solid #ef444455', borderRadius:2,
+            padding:'0px 3px', boxShadow:'0 0 6px #ef444433', flexShrink:0,
+          }}>ON AIR</span>
+        )}
         <button
           onClick={() => setCollapsed(v => !v)}
           title={collapsed ? 'Expand controls' : 'Collapse controls'}
@@ -1381,8 +1535,8 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
 
       {!collapsed && (
         <div style={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
-          {id==='shaper' && <ShaperControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
-          {id==='downsampler' && <DownsamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='transition' && <TransitionControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+          {id==='speedramp' && <SpeedRampControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='tapdelay' && <TapDelayControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='timesampler' && <TimeSamplerControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
         </div>
@@ -1418,8 +1572,8 @@ function getFragmentShader(type: ModuleType): string {
     uniform sampler2D uPrevTex;
     uniform float uHasVideo;
     uniform float uSrcTime;
-    uniform float uStut;
-    uniform float uChunkPhase;
+    uniform float uAux1;
+    uniform float uAux2;
     varying vec2 vUv;
 
     #define PI  3.14159265359
@@ -1504,115 +1658,139 @@ function getFragmentShader(type: ModuleType): string {
     }
   `;
 
-  if (type === 'shaper') {
+  if (type === 'transition') {
     return `${common}
-    /* Waveshaper as a video effect: a transfer curve applied to each color channel.
-       ALGO 1 sine fold (solarize), 2 triangle fold, 3 hard clip (contrast), 4 saw wrap. */
-    float shapeCurve(float x, float algo, float offset, float freq, float clip, float drive){
-      float v = (x - 0.5) * drive + (offset - 0.5) * 1.5;
-      float f = 1.0 + freq * 5.0;
-      float y;
-      if(algo < 1.5)      y = sin(v * f);
-      else if(algo < 2.5) y = abs(fract(v * f * 0.35 + 0.25) * 4.0 - 2.0) - 1.0;
-      else if(algo < 3.5) y = clamp(v * f, -1.0, 1.0);
-      else                y = fract(v * f * 0.35 + 0.5) * 2.0 - 1.0;
-      float c = mix(1.0, 0.18, clip);
-      return clamp(y, -c, c) / c * 0.5 + 0.5;
+    /* Transition pack: beat-quantized self-transitions animated by uAux2 (0..1 progress
+       from the JS clock). TYPE: 0 whip L, 1 whip R, 2 push up, 3 push down,
+       4 wipe, 5 camera roll, 6 zoom punch, 7 glitch cut. AMT = motion blur/intensity. */
+    vec2 rot2(vec2 p, float a){
+      float c = cos(a), s = sin(a);
+      return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+    }
+    vec3 transSample(vec2 uv, float typeI, float e, float aspect){
+      if(typeI < 0.5)      return sampleSource(fract(uv + vec2(-e, 0.0)));          // whip L
+      else if(typeI < 1.5) return sampleSource(fract(uv + vec2(e, 0.0)));           // whip R
+      else if(typeI < 2.5) return sampleSource(fract(uv + vec2(0.0, e)));           // push up
+      else if(typeI < 3.5) return sampleSource(fract(uv + vec2(0.0, -e)));          // push down
+      else if(typeI < 4.5){                                                          // wipe
+        float edge = e;
+        vec2 su = uv.x < edge ? vec2(uv.x - edge + 1.0, uv.y) : uv;
+        return sampleSource(su);
+      }
+      else if(typeI < 5.5){                                                          // camera roll
+        vec2 c = uv - 0.5;
+        c.x *= aspect;
+        c = rot2(c, e * TAU);
+        c.x /= aspect;
+        return sampleSource(fract(c + 0.5));
+      }
+      else if(typeI < 6.5){                                                          // zoom punch
+        float z = 1.0 + sin(e * PI) * 2.2;
+        return sampleSource((uv - 0.5) / z + 0.5);
+      }
+      // glitch cut: slice displacement burst
+      float burst = sin(e * PI);
+      float row = floor(uv.y * 24.0);
+      float d = (hash(vec2(row, floor(e * 14.0))) - 0.5) * burst * 0.5;
+      vec3 g = sampleSource(fract(uv + vec2(d, 0.0)));
+      float split = burst * 0.02;
+      g.r = sampleSource(fract(uv + vec2(d + split, 0.0))).r;
+      g.b = sampleSource(fract(uv + vec2(d - split, 0.0))).b;
+      return g;
     }
     void main(){
       vec2 uv = vUv;
-      float algo   = floor(uP0.x + 0.5);
-      float offset = uP0.y;
-      float freq   = uP0.z;
-      float clip   = uP0.w;
-      float amount = uP1.x;
-      float mix_   = uP1.y;
-      float pulse  = beatPulse(6.0);
-      float drive  = 0.6 + amount * 3.2 + uBassAmp * 1.4;
+      float typeI  = floor(uP0.x + 0.5);
+      float amount = uP0.w;
+      float mix_   = uP1.x;
+      float aspect = uResolution.x / uResolution.y;
+      float p = uAux2;
+      // ease in-out so the move snaps like a whip, not a linear slide
+      float e = p < 0.5 ? 2.0 * p * p : 1.0 - pow(-2.0 * p + 2.0, 2.0) / 2.0;
 
       vec3 dry = sampleSource(uv);
-      vec3 wet = vec3(
-        shapeCurve(dry.r, algo, offset, freq, clip, drive),
-        shapeCurve(dry.g, algo, offset, freq, clip, drive),
-        shapeCurve(dry.b, algo, offset, freq, clip, drive)
-      );
-      wet *= 1.0 + pulse * 0.08;
+      vec3 wet;
+      if(uAux1 < 0.5){
+        wet = dry;
+      } else {
+        // motion-blurred transition: accumulate samples along the move
+        float blurSpan = (0.02 + amount * 0.1) * sin(p * PI);
+        wet = vec3(0.0);
+        for(int i = 0; i < 6; i++){
+          float o = (float(i) / 5.0 - 0.5) * blurSpan;
+          wet += transSample(uv, typeI, clamp(e + o, 0.0, 1.0), aspect);
+        }
+        wet /= 6.0;
+        // flash at the cut point
+        wet *= 1.0 + sin(p * PI) * amount * 0.25;
+      }
 
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
       if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
       vec3 col = mix(dry, wet, wetAmt);
 
       if(uMode < 0.5){
-        // live transfer-curve scope inset (in = x, out = y)
-        vec2 s = (uv - vec2(0.035, 0.06)) / vec2(0.30, 0.42);
-        if(s.x > 0.0 && s.x < 1.0 && s.y > 0.0 && s.y < 1.0){
-          col *= 0.30;
-          float box = max(abs(s.x - 0.5), abs(s.y - 0.5));
-          col += uColor * (step(box, 0.5) - step(box, 0.47)) * 0.35;
-          col += vec3(0.5) * smoothstep(0.02, 0.0, abs(s.y - s.x)) * 0.35;
-          float cy = shapeCurve(s.x, algo, offset, freq, clip, drive);
-          col += uColor * smoothstep(0.05, 0.0, abs(s.y - cy)) * 1.3;
+        // cycle countdown strip: fills over the interval, accent burst during the move
+        float ph = fract(uBeat / 4.0);
+        if(uv.y < 0.04){
+          col *= 0.25;
+          col += uColor * (0.10 + step(uv.x, uAux2) * uAux1 * 0.9 + (1.0 - uAux1) * step(uv.x, ph) * 0.2);
         }
       }
       gl_FragColor = vec4(finishPx(col, uv), 1.0);
     }`;
   }
 
-  if (type === 'downsampler') {
+  if (type === 'speedramp') {
     return `${common}
-    /* Sample-rate + bit-depth reduction as video: RATE = spatial resolution (pixelate),
-       BITS = color depth (posterize), JITTER = analog line glitch.
-       PIX = dithered pixelate, BIT = harsh posterize, GLT = glitch (RGB split + block corruption). */
+    /* Speed ramp: the actual time remap happens upstream (playbackRate / uSrcTime,
+       driven by the 16-point curve in JS). uAux1 = current rate, uAux2 = cycle phase.
+       The shader adds speed-proportional motion streaking, chroma pull at extremes,
+       and a rate meter. A frame interpolator (RIFE) will replace the streaking later. */
     void main(){
       vec2 uv = vUv;
-      float t = uTime;
-      float jitter    = uP0.x;
-      float crushType = floor(uP0.y + 0.5);
-      float rate      = uP0.z;
-      float bits      = uP0.w;
-      float mix_      = uP1.x;
-      float pulse = beatPulse(8.0);
-      float bass  = uFFT0.x;
-      float aspect = uResolution.x / uResolution.y;
+      float mix_  = uP0.z;
+      float rate  = max(uAux1, 0.001);
+      float phase = uAux2;
+      float pulse = beatPulse(6.0);
 
-      // pixelate: RATE up = coarser sampling, bass momentarily crunches harder
-      float pxCount = mix(240.0, 10.0, clamp(rate + bass * 0.15 + pulse * rate * 0.1, 0.0, 1.0));
-      vec2 grid = vec2(pxCount, max(4.0, pxCount / aspect));
-      vec2 pUv = (floor(uv * grid) + 0.5) / grid;
+      // 0 at 1x, 1 at 4x / 0.25x (log-symmetric)
+      float dev = clamp(abs(log2(rate)) / 2.0, 0.0, 1.0);
 
-      // analog jitter: random scanline bands displace horizontally
-      float row = floor(uv.y * 64.0);
-      float band = step(1.0 - jitter * 0.35 - pulse * 0.12, hash(vec2(row, floor(t * 12.0))));
-      float disp = (hash(vec2(row + 7.0, floor(t * 12.0))) - 0.5) * band * jitter * (crushType > 1.5 ? 0.35 : 0.10);
-      vec2 st = pUv + vec2(disp, 0.0);
-
-      vec3 wet;
-      if(crushType > 1.5){
-        float split = jitter * 0.02 + pulse * 0.012;
-        wet.r = sampleSource(st + vec2(split, 0.0)).r;
-        wet.g = sampleSource(st).g;
-        wet.b = sampleSource(st - vec2(split, 0.0)).b;
-        // block corruption on random macro-cells
-        vec2 bc = floor(uv * vec2(8.0, 6.0));
-        float bh = hash(bc + floor(t * 6.0));
-        if(bh > 1.0 - jitter * 0.3){
-          wet = sampleSource(fract(st + vec2(bh * 0.3, -bh * 0.2))).brg;
-        }
-      } else {
-        wet = sampleSource(st);
+      // motion streaking scaled by how far off 1x we are (fast = horizontal, slow = ghost)
+      vec3 wet = vec3(0.0);
+      float span = dev * 0.035;
+      for(int i = 0; i < 5; i++){
+        float o = (float(i) / 4.0 - 0.5) * span;
+        wet += sampleSource(uv + vec2(o, 0.0));
       }
+      wet /= 5.0;
 
-      // posterize: BITS up = more levels (cleaner); beat drops levels for a crush hit
-      float levels = crushType < 0.5 ? mix(6.0, 32.0, bits) : mix(2.0, 14.0, bits);
-      levels = max(2.0, levels - pulse * 5.0 * (1.0 - bits));
-      float dith = crushType < 0.5 ? (hash(floor(uv * grid)) - 0.5) / levels : 0.0;
-      wet = clamp(floor((wet + dith) * levels) / (levels - 1.0), 0.0, 1.0);
+      // chroma pull at speed extremes
+      float split = dev * 0.012;
+      wet.r = sampleSource(uv + vec2(split, 0.0)).r;
+      wet.b = sampleSource(uv - vec2(split, 0.0)).b;
 
-      wet *= 1.0 + pulse * 0.1;
+      // slow motion glows slightly, fast speed crunches contrast
+      wet *= 1.0 + (rate < 1.0 ? dev * 0.15 : -dev * 0.05) + pulse * 0.05;
+
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
       if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
       vec3 dry = sampleSource(uv);
-      gl_FragColor = vec4(finishPx(mix(dry, wet, wetAmt), uv), 1.0);
+      vec3 col = mix(dry, wet, wetAmt);
+
+      if(uMode < 0.5){
+        // rate meter: center = 1x, right = fast, left = slow; playhead shows cycle phase
+        if(uv.y < 0.05){
+          col *= 0.25;
+          float x = clamp(log2(rate) / 4.0 + 0.5, 0.0, 1.0);
+          float lit = (x >= 0.5) ? step(0.5, uv.x) * step(uv.x, x) : step(x, uv.x) * step(uv.x, 0.5);
+          col += uColor * (0.10 + lit * 0.9);
+          col += vec3(0.9) * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.5;
+          col += uColor * smoothstep(0.006, 0.0, abs(uv.x - phase)) * 0.8;
+        }
+      }
+      gl_FragColor = vec4(finishPx(col, uv), 1.0);
     }`;
   }
 
@@ -1680,10 +1858,10 @@ function getFragmentShader(type: ModuleType): string {
 
     // stutter ghosting from the feedback buffer while a chunk repeats
     vec3 prev = texture2D(uPrevTex, clamp(uv + vec2(0.006, 0.0), 0.0, 1.0)).rgb;
-    wet = max(wet, prev * (uStut * 0.5));
+    wet = max(wet, prev * (uAux1 * 0.5));
 
     // retrigger flash at each chunk start
-    float flash = uStut * exp(-uChunkPhase * 7.0);
+    float flash = uAux1 * exp(-uAux2 * 7.0);
     wet *= 1.0 + flash * 0.22 + pulse * 0.05;
     wet += uColor * flash * 0.04;
 
@@ -1695,7 +1873,7 @@ function getFragmentShader(type: ModuleType): string {
     if(uMode < 0.5 && uv.y < 0.045){
       // chunk progress strip: fills as the current chunk plays out
       col *= 0.25;
-      col += uColor * (0.12 + step(uv.x, uChunkPhase) * uStut * 0.9);
+      col += uColor * (0.12 + step(uv.x, uAux2) * uAux1 * 0.9);
     }
     gl_FragColor = vec4(finishPx(col, uv), 1.0);
   }`;
