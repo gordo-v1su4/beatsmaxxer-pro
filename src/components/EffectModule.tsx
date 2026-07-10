@@ -2219,7 +2219,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
       }}>
         {knobs.map(k => (
           <Knob key={k.param} label={k.label} value={params[k.param] ?? 50}
-            onChange={v => onUpdateParam(k.param, v)} size="xs" color={accentColor} />
+            onChange={v => onUpdateParam(k.param, v)} size="sm" color={accentColor} />
         ))}
       </div>
 
