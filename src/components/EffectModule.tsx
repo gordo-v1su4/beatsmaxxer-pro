@@ -1284,15 +1284,28 @@ function BezierEditor({ params, onUpdate, color }: { params: Record<string,numbe
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!boxRef.current) return;
-    const l = toLocal(e.clientX, e.clientY);
-    let best: 'p0' | 'p1' | 'p2' | 'p3' | null = null;
-    let bestD = 20;
+    // pick the nearest point in PIXEL space (viewBox units are non-uniform), and
+    // always grab something so the editor never feels dead
+    const rect = boxRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    let best: 'p0' | 'p1' | 'p2' | 'p3' = 'p1';
+    let bestD = Infinity;
     (Object.keys(pts) as Array<keyof typeof pts>).forEach(k => {
-      const d = Math.hypot(pts[k].x - l.x, pts[k].y - l.y);
+      const px = (pts[k].x / 100) * rect.width;
+      const py = ((100 - pts[k].y) / 100) * rect.height;
+      const d = Math.hypot(px - mx, py - my);
       if (d < bestD) { bestD = d; best = k; }
     });
-    if (!best) return;
     dragRef.current = best;
+    // apply immediately so a plain click repositions the grabbed point
+    {
+      const q = toLocal(e.clientX, e.clientY);
+      if (best === 'p0') onUpdate('bzY0', q.y);
+      else if (best === 'p3') onUpdate('bzY3', q.y);
+      else if (best === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
+      else { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
+    }
     const move = (ev: MouseEvent) => {
       const q = toLocal(ev.clientX, ev.clientY);
       const which = dragRef.current;
@@ -1316,7 +1329,7 @@ function BezierEditor({ params, onUpdate, color }: { params: Record<string,numbe
       height: 72, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
       cursor:'pointer', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
     }}>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
+      <svg viewBox="-3 -4 106 108" preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
         {[25, 50, 75].map(x => <line key={x} x1={x} y1={0} x2={x} y2={100} stroke="#161819" strokeWidth={0.6}/>)}
         <line x1={0} y1={50} x2={100} y2={50} stroke="#2a2e34" strokeWidth={0.8} strokeDasharray="2 2"/>
         <line x1={0} y1={iy(y0)} x2={x1} y2={iy(y1)} stroke={`${color}55`} strokeWidth={0.8} strokeDasharray="1.5 1.5"/>
@@ -1385,20 +1398,20 @@ function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,
   );
 }
 
+function InlineRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+      <span style={{
+        width:32, flexShrink:0, fontSize:7, fontWeight:700, color:'#3a4050',
+        fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.08em',
+      }}>{label}</span>
+      <div style={{ display:'flex', gap:2, flex:1, alignItems:'center', minWidth:0 }}>{children}</div>
+    </div>
+  );
+}
+
 function TapDelayControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
-  const { state: audioState, tapTempo } = useAudio();
-  const [tapFlash, setTapFlash] = useState(false);
-
-  const handleTap = useCallback(() => {
-    tapTempo();
-    setTapFlash(true);
-    setTimeout(() => setTapFlash(false), 120);
-    onUpdate('time', Math.max(0, Math.min(100, (60000/audioState.bpm)/2000*100)));
-  }, [tapTempo, onUpdate, audioState.bpm]);
-
   const stutterMode = Math.round(params.type ?? 0) === 1;
-  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
-
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="TYPE" color={color}>
@@ -1408,107 +1421,76 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
           ))}
         </div>
       </Section>
-      <div style={{ padding:'4px 5px', borderBottom:'1px solid #0d0e0f', flexShrink:0 }}>
-        <button onClick={handleTap} style={{
-          height:44, width:'100%',
-          background: tapFlash ? 'linear-gradient(180deg,#1a2030,#141820)' : 'linear-gradient(180deg,#1c1e22,#141618)',
-          border:`1px solid ${tapFlash?'#3b82f666':'#1e2226'}`,
-          borderTop:`1px solid ${tapFlash?'#3b82f644':'#272b30'}`,
-          borderRadius:3, cursor:'pointer',
-          color: tapFlash ? '#3b82f6' : '#3a4050',
-          fontFamily:'Orbitron,sans-serif', fontWeight:700, fontSize:14, letterSpacing:'0.25em',
-          boxShadow: tapFlash?'inset 0 3px 8px rgba(0,0,0,0.8),0 0 12px rgba(59,130,246,0.25)':'inset 0 1px 2px rgba(0,0,0,0.4)',
-          transition:'all 0.08s',
-          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2,
-        }}>
-          TAP
-          <span style={{ fontSize:8, letterSpacing:'0.05em', color:tapFlash?'#3b82f688':'#2a3040', fontFamily:'Rajdhani,sans-serif' }}>
-            {Math.round(audioState.bpm)} BPM
-          </span>
-        </button>
-      </div>
 
       {stutterMode ? (
         <>
-          <Section label="LEN" color={color}>
+          <Section label="STUT" color={color}>
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <div style={labelStyle}>STUTTER LENGTH</div>
-              <div style={{ display:'flex', gap:2 }}>
+              <InlineRow label="LEN">
                 {[
                   { l: '1/32', val: 10 },
                   { l: '1/16', val: 30 },
                   { l: '1/8T', val: 50 },
                   { l: '1/8', val: 70 },
                   { l: '1/4', val: 90 },
-                ].map((v) => {
-                   const isActive = Math.abs((params.time??60) - v.val) <= 10;
-                   return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('time',v.val)} width={28}/>;
+                ].map(v => {
+                  const isActive = Math.abs((params.time??60) - v.val) <= 10;
+                  return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('time',v.val)} width={28}/>;
                 })}
-              </div>
-            </div>
-          </Section>
-
-          <Section label="RPT" color={color}>
-            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <div style={labelStyle}>REPEATS</div>
-              <div style={{ display:'flex', gap:2 }}>
-                {[1, 2, 4, 6, 8].map((n) => {
+              </InlineRow>
+              <InlineRow label="RPT">
+                {[1, 2, 4, 6, 8].map(n => {
                   const currentRepeats = Math.round((params.velCrv ?? 25) / 100 * 8) || 1;
-                  const isActive = currentRepeats === n;
-                  return <RackBtn key={n} label={`${n}×`} active={isActive} color={color} onClick={()=>onUpdate('velCrv', (n / 8) * 100)} width={28}/>;
+                  return <RackBtn key={n} label={`${n}×`} active={currentRepeats===n} color={color} onClick={()=>onUpdate('velCrv', (n / 8) * 100)} width={28}/>;
                 })}
-              </div>
+              </InlineRow>
             </div>
           </Section>
-
           <Section label="SCR" color={color}>
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <div style={labelStyle}>MOTION</div>
-              <div style={{ display:'flex', gap:2, flexWrap:'wrap' }}>
+              <InlineRow label="MODE">
                 {[
                   { l: 'BEAT', v: 0 },
                   { l: 'LOOP', v: 1 },
                   { l: 'PONG', v: 2 },
                   { l: 'RND', v: 3 },
-                ].map((o) => (
-                  <RackBtn
-                    key={o.l}
-                    label={o.l}
-                    active={Math.round(params.scratchMode ?? 0) === o.v}
-                    color={color}
-                    onClick={() => onUpdate('scratchMode', o.v)}
-                    width={30}
-                  />
+                ].map(o => (
+                  <RackBtn key={o.l} label={o.l} active={Math.round(params.scratchMode ?? 0) === o.v} color={color} onClick={() => onUpdate('scratchMode', o.v)} width={30}/>
                 ))}
-              </div>
-              <HSlider value={params.scratchDepth ?? 45} onChange={(v) => onUpdate('scratchDepth', v)} color={color} label="DEPTH (≈frames)" />
+              </InlineRow>
+              <InlineRow label="DEPTH">
+                <div style={{ flex:1 }}>
+                  <HSlider value={params.scratchDepth ?? 45} onChange={(v) => onUpdate('scratchDepth', v)} color={color}/>
+                </div>
+              </InlineRow>
             </div>
           </Section>
-
           <Section label="TRIG" color={color} noBorder>
-            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <div style={labelStyle}>ACCENT SENS · FIRES ON FFT HITS</div>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <div style={{ flex:1 }}>
-                  <HSlider value={params.end??60} onChange={v=>onUpdate('end',v)} color={color}/>
-                </div>
-                <MiniDisplay value={`${Math.round(params.end??60)}%`} width={36}/>
+            <InlineRow label="SENS">
+              <div style={{ flex:1 }}>
+                <HSlider value={params.end??60} onChange={v=>onUpdate('end',v)} color={color}/>
               </div>
-            </div>
+              <MiniDisplay value={`${Math.round(params.end??60)}%`} width={34}/>
+            </InlineRow>
           </Section>
         </>
       ) : (
         <>
           <Section label="TIME" color={color}>
             <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <HSlider value={params.time??60} onChange={v=>onUpdate('time',v)} color={color} label="DELAY TIME"/>
-              <HSlider value={params.feedback??50} onChange={v=>onUpdate('feedback',v)} color={color} label="FEEDBACK"/>
+              <InlineRow label="TIME">
+                <div style={{ flex:1 }}><HSlider value={params.time??60} onChange={v=>onUpdate('time',v)} color={color}/></div>
+              </InlineRow>
+              <InlineRow label="FDBK">
+                <div style={{ flex:1 }}><HSlider value={params.feedback??50} onChange={v=>onUpdate('feedback',v)} color={color}/></div>
+              </InlineRow>
             </div>
           </Section>
           <Section label="TRIG" color={color} noBorder>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <Knob label="SENS" value={params.end??60} onChange={v=>onUpdate('end',v)} size="sm" color={color}/>
-            </div>
+            <InlineRow label="SENS">
+              <div style={{ flex:1 }}><HSlider value={params.end??60} onChange={v=>onUpdate('end',v)} color={color}/></div>
+              <MiniDisplay value={`${Math.round(params.end??60)}%`} width={34}/>
+            </InlineRow>
           </Section>
         </>
       )}
@@ -1517,29 +1499,24 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
 }
 
 function TimeSamplerControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
-  const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
   const rate = 0.25 + ((params.rate ?? 43) / 100) * 1.75;
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="MODE" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>CHUNK MODE</div>
-          <div style={{ display:'flex', gap:2 }}>
-            {[
-              { l: 'LOOP', v: 0 },
-              { l: 'REV', v: 1 },
-              { l: 'PONG', v: 2 },
-              { l: 'RAND', v: 3 },
-            ].map(o => (
-              <RackBtn key={o.l} label={o.l} active={Math.round(params.mode??0)===o.v} color={color} onClick={()=>onUpdate('mode',o.v)} width={34}/>
-            ))}
-          </div>
+        <div style={{ display:'flex', gap:2 }}>
+          {[
+            { l: 'LOOP', v: 0 },
+            { l: 'REV', v: 1 },
+            { l: 'PONG', v: 2 },
+            { l: 'RAND', v: 3 },
+          ].map(o => (
+            <RackBtn key={o.l} label={o.l} active={Math.round(params.mode??0)===o.v} color={color} onClick={()=>onUpdate('mode',o.v)} width={34}/>
+          ))}
         </div>
       </Section>
-      <Section label="LEN" color={color}>
+      <Section label="CHNK" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>CHUNK LENGTH</div>
-          <div style={{ display:'flex', gap:2 }}>
+          <InlineRow label="LEN">
             {[
               { l: '1/16', val: 10 },
               { l: '1/8', val: 30 },
@@ -1550,41 +1527,30 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
               const isActive = Math.abs((params.size??50) - v.val) <= 10;
               return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('size',v.val)} width={28}/>;
             })}
-          </div>
-        </div>
-      </Section>
-      <Section label="RPT" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>REPEATS</div>
-          <div style={{ display:'flex', gap:2 }}>
+          </InlineRow>
+          <InlineRow label="RPT">
             {[1, 2, 4, 6, 8].map(n => {
               const currentRepeats = Math.round((params.repeats ?? 50) / 100 * 8) || 1;
               return <RackBtn key={n} label={`${n}×`} active={currentRepeats===n} color={color} onClick={()=>onUpdate('repeats', (n / 8) * 100)} width={28}/>;
             })}
-          </div>
+          </InlineRow>
         </div>
       </Section>
       <Section label="SPD" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>PLAYBACK RATE</div>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <div style={{ flex:1 }}>
-              <HSlider value={params.rate??43} onChange={v=>onUpdate('rate',v)} color={color}/>
-            </div>
-            <MiniDisplay value={`${rate.toFixed(2)}×`} width={44}/>
+        <InlineRow label="RATE">
+          <div style={{ flex:1 }}>
+            <HSlider value={params.rate??43} onChange={v=>onUpdate('rate',v)} color={color}/>
           </div>
-        </div>
+          <MiniDisplay value={`${rate.toFixed(2)}×`} width={40}/>
+        </InlineRow>
       </Section>
       <Section label="TRIG" color={color} noBorder>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>ACCENT SENS · FIRES ON FFT HITS</div>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <div style={{ flex:1 }}>
-              <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
-            </div>
-            <MiniDisplay value={`${Math.round(params.chance??60)}%`} width={36}/>
+        <InlineRow label="SENS">
+          <div style={{ flex:1 }}>
+            <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
           </div>
-        </div>
+          <MiniDisplay value={`${Math.round(params.chance??60)}%`} width={34}/>
+        </InlineRow>
       </Section>
     </div>
   );

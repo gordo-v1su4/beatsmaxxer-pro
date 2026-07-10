@@ -292,7 +292,7 @@ export function App() {
               midiLayers={midiLayers}
               bypassed={bypassed}
             />
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
+            <div style={{ height: 'clamp(430px, 55vh, 545px)', flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
               {MODULES.map(module => (
                 <EffectModule
                   key={module.id}
@@ -311,7 +311,7 @@ export function App() {
                 />
               ))}
             </div>
-            <div style={{ height: 208, display: 'flex', overflow: 'hidden', flexShrink: 0, borderTop: '2px solid #0d0e0f' }}>
+            <div style={{ flex: 1, minHeight: 130, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
               {MODULES_B.map(module => (
                 <CompactModule
                   key={module.id}
