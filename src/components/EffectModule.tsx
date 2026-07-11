@@ -421,6 +421,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     mat.uniforms.uP1.value.copy(u.uP1);
     mat.uniforms.uP2.value.copy(u.uP2);
 
+    // observe the actual container so canvases track ANY layout change (window
+    // scale, collapse, reorder), keeping every preview scaling uniformly
     const onResize = () => {
       const w = Math.max(1, container.clientWidth), h = Math.max(1, container.clientHeight);
       renderer.setSize(w, h);
@@ -428,7 +430,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       rtB.setSize(w, h);
       mat.uniforms.uResolution.value.set(w, h);
     };
-    window.addEventListener('resize', onResize);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(container);
 
     let last = performance.now();
     const animate = () => {
@@ -789,7 +792,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
     return () => {
       cancelAnimationFrame(frameRef.current);
-      window.removeEventListener('resize', onResize);
+      ro.disconnect();
       if (container.contains(renderer.domElement)) container.removeChild(renderer.domElement);
       // video texture is shared per-module; released by the videoUrl effect, not here
       imageTextureRef.current?.dispose();
@@ -881,7 +884,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoUrl, type]);
 
-  return <div ref={containerRef} style={{ width:'100%', height:'100%' }}/>;
+  // absolute so the canvas's own size can never prop open the aspect-ratio box
+  return <div ref={containerRef} style={{ position:'absolute', inset:0, overflow:'hidden' }}/>;
 }
 
 function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
@@ -1125,7 +1129,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     >
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
-      <div style={{ position:'relative', width:'100%', height:158, background:'#000', flexShrink:0 }}>
+      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
         <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
@@ -1842,10 +1846,6 @@ function getFragmentShader(type: ModuleType): string {
       float x = fract(uv.x * 7.0 - t * 1.4);
       float tick = smoothstep(0.10, 0.03, abs(x - 0.5));
       col += uColor * tick * (0.2 + 0.55 * smoothstep(0.4, 0.0, abs(uv.y - 0.5)));
-      // sprocket dots top/bottom like a strip of film
-      float sy = min(abs(uv.y - 0.12), abs(uv.y - 0.88));
-      float sx = abs(fract(uv.x * 7.0 - t * 1.4) - 0.5);
-      col += vec3(0.5) * smoothstep(0.05, 0.02, max(sx * 0.4, sy)) * 0.5;
       col += vec3(0.35) * smoothstep(0.004, 0.0, abs(uv.x - 0.5)) * 0.5;
       return col;
     }
@@ -1982,12 +1982,12 @@ function getFragmentShader(type: ModuleType): string {
       vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
       float r = length(c);
       vec3 col = vec3(0.045, 0.05, 0.06);
-      col += uColor * (smoothstep(0.007, 0.0, abs(r - 0.12))
-                     + smoothstep(0.007, 0.0, abs(r - 0.27))
-                     + smoothstep(0.007, 0.0, abs(r - 0.42))) * 0.7;
+      col += uColor * (smoothstep(0.016, 0.0, abs(r - 0.12))
+                     + smoothstep(0.016, 0.0, abs(r - 0.27))
+                     + smoothstep(0.016, 0.0, abs(r - 0.42))) * 0.95;
       float cross = min(abs(c.x), abs(c.y));
-      col += uColor * smoothstep(0.004, 0.0, cross) * step(r, 0.5) * 0.35;
-      col += vec3(0.9) * smoothstep(0.02, 0.0, r) * 0.6;
+      col += uColor * smoothstep(0.008, 0.0, cross) * step(r, 0.5) * 0.5;
+      col += vec3(0.95) * smoothstep(0.03, 0.0, r) * 0.8;
       return col;
     }
     /* Crash zoom: beat-synced punch-in / punch-out like a fake camera zoom hit.
@@ -2000,7 +2000,7 @@ function getFragmentShader(type: ModuleType): string {
       float mix_ = uP0.w;
       float pulse = exp(-uBeatPhase * (3.0 + snap * 9.0));
       float dir = dirP < 0.33 ? 1.0 : dirP < 0.66 ? (mod(floor(uBeat), 2.0) < 0.5 ? 1.0 : -1.0) : -1.0;
-      float z = max(0.45, 1.0 + dir * pulse * (amt * 0.5 + uBassAmp * 0.12));
+      float z = max(0.35, 1.0 + dir * pulse * (amt * amt * 1.4 + amt * 0.25 + uBassAmp * 0.12));
 
       // motion blur along the zoom
       vec3 wet = vec3(0.0);
@@ -2026,11 +2026,11 @@ function getFragmentShader(type: ModuleType): string {
       vec3 col = vec3(0.045, 0.05, 0.06);
       float hLine = smoothstep(0.006, 0.0, abs(fract(uv.y * 4.0 + 0.5) - 0.5) / 4.0);
       float vLine = smoothstep(0.006, 0.0, abs(fract(uv.x * aspect * 4.0 + 0.5) - 0.5) / (aspect * 4.0));
-      col += vec3(0.10, 0.11, 0.13) * max(hLine, vLine);
+      col += vec3(0.16, 0.17, 0.20) * max(hLine, vLine);
       // emphasized horizon + level marks
-      col += uColor * smoothstep(0.006, 0.0, abs(uv.y - 0.5)) * 0.7;
-      float marks = step(abs(uv.y - 0.5), 0.035) * step(0.92, fract(uv.x * aspect * 8.0));
-      col += uColor * marks * 0.4;
+      col += uColor * smoothstep(0.012, 0.0, abs(uv.y - 0.5)) * 0.95;
+      float marks = step(abs(uv.y - 0.5), 0.05) * step(0.88, fract(uv.x * aspect * 8.0));
+      col += uColor * marks * 0.6;
       return col;
     }
     /* Handheld camera: layered-sine wobble reads as human, not jitter; impact kick
@@ -2047,12 +2047,12 @@ function getFragmentShader(type: ModuleType): string {
       vec2 wob = vec2(
         sin(t * 1.7) + 0.55 * sin(t * 3.9 + 1.3) + 0.3 * sin(t * 7.1 + 0.5),
         cos(t * 2.3) + 0.55 * sin(t * 4.7 + 2.1) + 0.3 * cos(t * 6.3)
-      ) * hand * 0.006;
+      ) * hand * (0.004 + hand * 0.012);
       float imp = pulse * impact * (0.35 + uBassAmp);
-      wob += vec2(hash(vec2(floor(uBeat), 3.7)) - 0.5, hash(vec2(floor(uBeat), 9.1)) - 0.5) * imp * 0.04;
+      wob += vec2(hash(vec2(floor(uBeat), 3.7)) - 0.5, hash(vec2(floor(uBeat), 9.1)) - 0.5) * imp * (0.03 + impact * 0.08);
 
-      float z = 1.0 + hand * 0.035 + imp * 0.06;
-      float ang = (sin(t * 0.9) + 0.5 * sin(t * 2.1)) * sway * 0.02;
+      float z = 1.0 + hand * 0.05 + imp * (0.05 + impact * 0.1);
+      float ang = (sin(t * 0.9) + 0.5 * sin(t * 2.1)) * sway * (0.012 + sway * 0.05);
       vec2 c = uv - 0.5;
       float cs = cos(ang), sn = sin(ang);
       c = vec2(c.x * cs - c.y * sn, c.x * sn + c.y * cs);
@@ -2072,13 +2072,13 @@ function getFragmentShader(type: ModuleType): string {
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
       vec2 g = uv * vec2(aspect * 6.0, 6.0);
-      col += vec3(0.05, 0.06, 0.07) * step(0.94, max(fract(g.x), fract(g.y)));
+      col += vec3(0.09, 0.10, 0.12) * step(0.92, max(fract(g.x), fract(g.y)));
       for(int i = 0; i < 5; i++){
         float fi = float(i);
         vec2 lp = vec2(hash(vec2(fi, 2.7)), hash(vec2(7.7, fi)));
         float d = length(vec2((uv.x - lp.x) * aspect, uv.y - lp.y));
-        col += uColor * smoothstep(0.02, 0.0, d) * 0.9;
-        col += uColor * smoothstep(0.05, 0.0, d) * 0.15 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
+        col += uColor * smoothstep(0.032, 0.0, d) * 1.1;
+        col += uColor * smoothstep(0.09, 0.0, d) * 0.22 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
       }
       return col;
     }
@@ -2089,13 +2089,13 @@ function getFragmentShader(type: ModuleType): string {
       float drift = uP0.y;
       float nudge = uP0.z;
       float mix_  = uP0.w;
-      float t = uTime * (0.05 + spd * 0.35);
+      float t = uTime * (0.05 + spd * 0.3 + spd * spd * 0.7);
       float pulse = beatPulse(5.0);
 
-      float zoomBase = 1.12 + drift * 0.25;
-      vec2 offs = vec2(cos(t), sin(t * 0.73)) * drift * 0.09;
-      offs += vec2(cos(uBeat * 1.3), sin(uBeat * 0.9)) * pulse * nudge * 0.012;
-      float z = zoomBase * (1.0 + pulse * nudge * 0.02);
+      float zoomBase = 1.1 + drift * 0.45;
+      vec2 offs = vec2(cos(t), sin(t * 0.73)) * drift * (0.06 + drift * 0.12);
+      offs += vec2(cos(uBeat * 1.3), sin(uBeat * 0.9)) * pulse * nudge * (0.008 + nudge * 0.03);
+      float z = zoomBase * (1.0 + pulse * nudge * 0.04);
       vec3 wet = sampleSource((uv - 0.5) / z + 0.5 + offs);
 
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
@@ -2115,11 +2115,11 @@ function getFragmentShader(type: ModuleType): string {
       vec3 col = vec3(0.045, 0.05, 0.06);
       // Siemens star
       float star = step(0.0, sin(atan(c.y, c.x) * 18.0));
-      col = mix(col, vec3(0.72) * (0.4 + 0.6 * star), smoothstep(0.34, 0.32, r));
-      col += uColor * smoothstep(0.006, 0.0, abs(r - 0.34)) * 0.6;
+      col = mix(col, vec3(0.8) * (0.35 + 0.65 * star), smoothstep(0.42, 0.40, r));
+      col += uColor * smoothstep(0.012, 0.0, abs(r - 0.42)) * 0.8;
       // fine "text" line rows in the margins
-      float rows = step(0.6, fract(uv.y * 26.0)) * step(0.36, r);
-      col += vec3(0.35) * rows * 0.35;
+      float rows = step(0.55, fract(uv.y * 22.0)) * step(0.44, r);
+      col += vec3(0.5) * rows * 0.45;
       return col;
     }
     /* Rack focus: defocus blur that racks in and out with the beat; sharp on the
@@ -2132,7 +2132,7 @@ function getFragmentShader(type: ModuleType): string {
       float mix_   = uP0.w;
 
       float rack = 0.5 - 0.5 * cos(fract(uBeat / 2.0) * TAU);
-      float blur = (amt * 0.35 + rack * pulseP) * 0.018;
+      float blur = (amt * 0.35 + rack * pulseP) * (0.014 + pulseP * 0.035);
 
       vec3 wet = vec3(0.0);
       for(int i = 0; i < 8; i++){
@@ -2154,10 +2154,12 @@ function getFragmentShader(type: ModuleType): string {
        rewind the pattern; flash while a chunk repeats. */
     vec3 moduleIdle(vec2 uv, float t){
       vec3 col = vec3(0.04, 0.045, 0.055);
-      float cell = floor((uv.x + t * 0.35) * 14.0);
+      float sx = (uv.x + t * 0.35) * 30.0;
+      float cell = floor(sx);
       float v = hash(vec2(cell, 7.0));
-      float bar = step(0.3, v) * (0.15 + v * 0.5);
-      col += uColor * bar * smoothstep(0.44, 0.4, abs(uv.y - 0.5));
+      // variable-width thin bars, like a real barcode
+      float line = step(fract(sx), 0.18 + v * 0.4) * step(0.3, v);
+      col += uColor * line * (0.35 + v * 0.5) * smoothstep(0.46, 0.42, abs(uv.y - 0.5));
       col += vec3(0.9) * smoothstep(0.004, 0.0, abs(uv.x - 0.5)) * 0.5;
       col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.12;
       return col;
@@ -2202,34 +2204,54 @@ function getFragmentShader(type: ModuleType): string {
 }
 
 interface CompactSpec {
-  buttons: { label: string; value: number }[];
-  buttonParam: string;
+  /** Preset buttons set several params at once; the last one is deliberately extreme. */
+  buttons: { label: string; set: Record<string, number> }[];
+  primary: string;
   slider: { param: string; label: string };
   knobs: { param: string; label: string }[];
 }
 
 const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
   punch: {
-    buttons: [{ label: 'IN', value: 10 }, { label: 'ALT', value: 50 }, { label: 'OUT', value: 90 }],
-    buttonParam: 'dir',
+    buttons: [
+      { label: 'IN', set: { dir: 10 } },
+      { label: 'ALT', set: { dir: 50 } },
+      { label: 'OUT', set: { dir: 90 } },
+    ],
+    primary: 'dir',
     slider: { param: 'amt', label: 'AMOUNT' },
     knobs: [{ param: 'snap', label: 'SNAP' }, { param: 'mix', label: 'MIX' }],
   },
   shake: {
-    buttons: [{ label: 'CALM', value: 20 }, { label: 'RUN', value: 50 }, { label: 'RIOT', value: 85 }],
-    buttonParam: 'impact',
+    buttons: [
+      { label: 'WALK', set: { impact: 22, hand: 22, sway: 15 } },
+      { label: 'RUN', set: { impact: 48, hand: 45, sway: 30 } },
+      { label: 'CHASE', set: { impact: 72, hand: 68, sway: 50 } },
+      { label: 'RIOT', set: { impact: 100, hand: 100, sway: 85 } },
+    ],
+    primary: 'impact',
     slider: { param: 'hand', label: 'HANDHELD' },
     knobs: [{ param: 'sway', label: 'SWAY' }, { param: 'mix', label: 'MIX' }],
   },
   orbit: {
-    buttons: [{ label: 'SLOW', value: 15 }, { label: 'MED', value: 45 }, { label: 'FAST', value: 80 }],
-    buttonParam: 'spd',
+    buttons: [
+      { label: 'SLOW', set: { spd: 15, drift: 32, nudge: 20 } },
+      { label: 'MED', set: { spd: 45, drift: 55, nudge: 40 } },
+      { label: 'FAST', set: { spd: 72, drift: 75, nudge: 60 } },
+      { label: 'WARP', set: { spd: 100, drift: 100, nudge: 90 } },
+    ],
+    primary: 'spd',
     slider: { param: 'drift', label: 'DRIFT' },
     knobs: [{ param: 'nudge', label: 'NUDGE' }, { param: 'mix', label: 'MIX' }],
   },
   focus: {
-    buttons: [{ label: 'SOFT', value: 25 }, { label: 'PULL', value: 55 }, { label: 'HARD', value: 85 }],
-    buttonParam: 'pulse',
+    buttons: [
+      { label: 'SOFT', set: { pulse: 22, amt: 18, soft: 30 } },
+      { label: 'PULL', set: { pulse: 52, amt: 30, soft: 45 } },
+      { label: 'HARD', set: { pulse: 78, amt: 50, soft: 60 } },
+      { label: 'BLIND', set: { pulse: 100, amt: 88, soft: 95 } },
+    ],
+    primary: 'pulse',
     slider: { param: 'amt', label: 'BASE BLUR' },
     knobs: [{ param: 'soft', label: 'BLOOM' }, { param: 'mix', label: 'MIX' }],
   },
@@ -2340,7 +2362,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
       </div>
 
-      <div style={{ position: 'relative', width: '100%', height: 158, background: '#000', flexShrink: 0 }}>
+      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
         <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} />
         <ScreenOverlay />
         <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
@@ -2348,8 +2370,8 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
 
       {!collapsed && (
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '4px 6px', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '6px 7px', flexShrink: 0,
         background: 'linear-gradient(180deg,#111214,#0f1012)',
         borderTop: '1px solid #0d0e0f',
       }}>
@@ -2357,10 +2379,10 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
           <div style={{ display: 'flex', gap: 2 }}>
             {spec?.buttons.map(btn => (
               <RackBtn key={btn.label} label={btn.label}
-                active={Math.abs((params[spec.buttonParam] ?? 50) - btn.value) <= 17}
+                active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= 9}
                 color={accentColor}
-                onClick={() => onUpdateParam(spec.buttonParam, btn.value)}
-                width={38} height={16} />
+                onClick={() => Object.entries(btn.set).forEach(([k, v]) => onUpdateParam(k, v))}
+                width={36} height={16} />
             ))}
           </div>
           {spec && (
