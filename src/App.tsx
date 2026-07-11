@@ -122,6 +122,8 @@ export function App() {
   const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(() => moduleRecord<VideoLayer | null>(null));
   const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>(() => moduleRecord<MidiLayer | null>(null));
   const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
+  const [orderTop, setOrderTop] = useState<ModuleType[]>(MODULES.map(m => m.id));
+  const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
 
   const objectUrlsRef = useRef<string[]>([]);
 
@@ -191,6 +193,20 @@ export function App() {
     setModuleParams(newParams);
   }, []);
 
+  // drop draggedId in front of targetId within its own row
+  const reorderModules = useCallback((draggedId: ModuleType, targetId: ModuleType) => {
+    const apply = (setList: React.Dispatch<React.SetStateAction<ModuleType[]>>) => {
+      setList(prev => {
+        if (!prev.includes(draggedId) || !prev.includes(targetId) || draggedId === targetId) return prev;
+        const list = prev.filter(x => x !== draggedId);
+        list.splice(list.indexOf(targetId), 0, draggedId);
+        return list;
+      });
+    };
+    apply(setOrderTop);
+    apply(setOrderBottom);
+  }, []);
+
   const clear = useCallback(() => {
     const resetParams = {} as Record<ModuleType, Record<string, number>>;
     ALL_MODULES.forEach(module => {
@@ -201,6 +217,8 @@ export function App() {
     });
     setModuleParams(resetParams);
   }, []);
+
+  const moduleById = Object.fromEntries(ALL_MODULES.map(m => [m.id, m])) as Record<ModuleType, ModuleConfig>;
 
   return (
     <AudioProvider>
@@ -267,7 +285,7 @@ export function App() {
               bypassed={bypassed}
             />
             <div style={{ height: 452, flexShrink: 0, display: 'flex', overflow: 'hidden' }}>
-              {MODULES.map(module => (
+              {orderTop.map(mid => moduleById[mid]).map(module => (
                 <EffectModule
                   key={module.id}
                   config={module}
@@ -282,11 +300,12 @@ export function App() {
                   midiLayer={midiLayers[module.id]}
                   onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
                   isOnAir={pgmSource === module.id}
+                  onModuleDrop={(dragged) => reorderModules(dragged, module.id)}
                 />
               ))}
             </div>
             <div style={{ height: 252, flexShrink: 0, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
-              {MODULES_B.map(module => (
+              {orderBottom.map(mid => moduleById[mid]).map(module => (
                 <CompactModule
                   key={module.id}
                   config={module}
@@ -297,6 +316,7 @@ export function App() {
                   videoLayer={videoLayers[module.id]}
                   onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
                   isOnAir={pgmSource === module.id}
+                  onModuleDrop={(dragged) => reorderModules(dragged, module.id)}
                 />
               ))}
             </div>

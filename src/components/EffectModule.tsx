@@ -19,6 +19,7 @@ interface EffectModuleProps {
   midiLayer: MidiLayer | null;
   onSetMidiLayer: (file: File | null) => void;
   isOnAir?: boolean;
+  onModuleDrop?: (draggedId: ModuleType) => void;
 }
 
 function Screw() {
@@ -1095,6 +1096,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
 
   const onDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
+    if (!e.dataTransfer.types.includes('Files')) return;
     dragDepth.current++;
     setDragOver(true);
   };
@@ -1223,10 +1225,24 @@ const RAMP_PRESETS: Record<string, { y0: number; x1: number; y1: number; x2: num
 
 /** Draggable cubic-bezier speed curve: square anchors set the in/out rates, round
     handles shape the ramp between them. Dashed center line = 1x. */
+/** Draggable cubic-bezier speed curve rendered in true pixel space (no viewBox
+    stretching, so handles stay round). Square anchors = in/out rates; round
+    handles shape the ramp. Dashed center line = 1x. */
 function BezierEditor({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
   const { state } = useAudio();
   const boxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<null | 'p0' | 'p1' | 'p2' | 'p3'>(null);
+  const [dims, setDims] = useState({ w: 300, h: 72 });
+
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => setDims({ w: Math.max(40, el.clientWidth), h: Math.max(30, el.clientHeight) });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const y0 = params.bzY0 ?? 80, y1 = params.bzY1 ?? 5, y2 = params.bzY2 ?? 5, y3 = params.bzY3 ?? 80;
   const x1 = params.bzX1 ?? 35, x2 = params.bzX2 ?? 65;
@@ -1235,50 +1251,46 @@ function BezierEditor({ params, onUpdate, color }: { params: Record<string,numbe
     p2: { x: x2, y: y2 }, p3: { x: 100, y: y3 },
   };
 
+  // inset so edge anchors and extreme handles stay fully visible
+  const PAD_X = 8, PAD_Y = 7;
+  const X = (v: number) => PAD_X + (v / 100) * (dims.w - PAD_X * 2);
+  const Y = (v: number) => PAD_Y + ((100 - v) / 100) * (dims.h - PAD_Y * 2);
+  const fromPx = (px: number, py: number) => ({
+    x: Math.max(0, Math.min(100, ((px - PAD_X) / (dims.w - PAD_X * 2)) * 100)),
+    y: Math.max(0, Math.min(100, 100 - ((py - PAD_Y) / (dims.h - PAD_Y * 2)) * 100)),
+  });
+
   const lenP = (params.len ?? 50) / 100;
   const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
   const phase = (((state.beat % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
 
-  const toLocal = (clientX: number, clientY: number) => {
-    const rect = boxRef.current!.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100)),
-      y: Math.max(0, Math.min(100, 100 - ((clientY - rect.top) / rect.height) * 100)),
-    };
+  const applyPoint = (which: 'p0' | 'p1' | 'p2' | 'p3', px: number, py: number) => {
+    const q = fromPx(px, py);
+    if (which === 'p0') onUpdate('bzY0', q.y);
+    else if (which === 'p3') onUpdate('bzY3', q.y);
+    else if (which === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
+    else { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (!boxRef.current) return;
-    // pick the nearest point in PIXEL space (viewBox units are non-uniform), and
-    // always grab something so the editor never feels dead
-    const rect = boxRef.current.getBoundingClientRect();
+    const rect = boxRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
+    // grab the nearest point (in pixels) so the editor never feels dead
     let best: 'p0' | 'p1' | 'p2' | 'p3' = 'p1';
     let bestD = Infinity;
     (Object.keys(pts) as Array<keyof typeof pts>).forEach(k => {
-      const px = (pts[k].x / 100) * rect.width;
-      const py = ((100 - pts[k].y) / 100) * rect.height;
-      const d = Math.hypot(px - mx, py - my);
+      const d = Math.hypot(X(pts[k].x) - mx, Y(pts[k].y) - my);
       if (d < bestD) { bestD = d; best = k; }
     });
     dragRef.current = best;
-    // apply immediately so a plain click repositions the grabbed point
-    {
-      const q = toLocal(e.clientX, e.clientY);
-      if (best === 'p0') onUpdate('bzY0', q.y);
-      else if (best === 'p3') onUpdate('bzY3', q.y);
-      else if (best === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
-      else { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
-    }
+    applyPoint(best, mx, my);
     const move = (ev: MouseEvent) => {
-      const q = toLocal(ev.clientX, ev.clientY);
-      const which = dragRef.current;
-      if (which === 'p0') onUpdate('bzY0', q.y);
-      else if (which === 'p3') onUpdate('bzY3', q.y);
-      else if (which === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
-      else if (which === 'p2') { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
+      const r = boxRef.current?.getBoundingClientRect();
+      if (!r || !dragRef.current) return;
+      applyPoint(dragRef.current, ev.clientX - r.left, ev.clientY - r.top);
     };
     const up = () => {
       dragRef.current = null;
@@ -1289,31 +1301,30 @@ function BezierEditor({ params, onUpdate, color }: { params: Record<string,numbe
     window.addEventListener('mouseup', up);
   };
 
-  const iy = (v: number) => 100 - v;
   return (
     <div ref={boxRef} onMouseDown={onMouseDown} style={{
       height: 72, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
       cursor:'pointer', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
     }}>
-      <svg viewBox="-3 -4 106 108" preserveAspectRatio="none" style={{ position:'absolute', inset:0, width:'100%', height:'100%' }}>
-        {[25, 50, 75].map(x => <line key={x} x1={x} y1={0} x2={x} y2={100} stroke="#161819" strokeWidth={0.6}/>)}
-        <line x1={0} y1={50} x2={100} y2={50} stroke="#2a2e34" strokeWidth={0.8} strokeDasharray="2 2"/>
-        <line x1={0} y1={iy(y0)} x2={x1} y2={iy(y1)} stroke={`${color}55`} strokeWidth={0.8} strokeDasharray="1.5 1.5"/>
-        <line x1={100} y1={iy(y3)} x2={x2} y2={iy(y2)} stroke={`${color}55`} strokeWidth={0.8} strokeDasharray="1.5 1.5"/>
+      <svg width={dims.w} height={dims.h} style={{ position:'absolute', inset:0, display:'block' }}>
+        {[25, 50, 75].map(v => <line key={v} x1={X(v)} y1={0} x2={X(v)} y2={dims.h} stroke="#161819" strokeWidth={1}/>)}
+        <line x1={0} y1={Y(50)} x2={dims.w} y2={Y(50)} stroke="#2a2e34" strokeWidth={1} strokeDasharray="3 3"/>
+        <line x1={X(0)} y1={Y(y0)} x2={X(x1)} y2={Y(y1)} stroke={`${color}55`} strokeWidth={1} strokeDasharray="2 2"/>
+        <line x1={X(100)} y1={Y(y3)} x2={X(x2)} y2={Y(y2)} stroke={`${color}55`} strokeWidth={1} strokeDasharray="2 2"/>
         <path
-          d={`M 0 ${iy(y0)} C ${x1} ${iy(y1)}, ${x2} ${iy(y2)}, 100 ${iy(y3)}`}
+          d={`M ${X(0)} ${Y(y0)} C ${X(x1)} ${Y(y1)}, ${X(x2)} ${Y(y2)}, ${X(100)} ${Y(y3)}`}
           fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round"
         />
-        <line x1={phase * 100} y1={0} x2={phase * 100} y2={100} stroke="#fff" strokeWidth={0.8} opacity={0.5}/>
-        <rect x={-2.4} y={iy(y0) - 2.4} width={4.8} height={4.8} fill={color}/>
-        <rect x={97.6} y={iy(y3) - 2.4} width={4.8} height={4.8} fill={color}/>
-        <circle cx={x1} cy={iy(y1)} r={2.6} fill="#0a0b0c" stroke={color} strokeWidth={1.2}/>
-        <circle cx={x2} cy={iy(y2)} r={2.6} fill="#0a0b0c" stroke={color} strokeWidth={1.2}/>
+        <line x1={X(phase * 100)} y1={0} x2={X(phase * 100)} y2={dims.h} stroke="#fff" strokeWidth={1} opacity={0.5}/>
+        <rect x={X(0) - 4} y={Y(y0) - 4} width={8} height={8} fill={color} stroke="#0a0b0c" strokeWidth={1}/>
+        <rect x={X(100) - 4} y={Y(y3) - 4} width={8} height={8} fill={color} stroke="#0a0b0c" strokeWidth={1}/>
+        <circle cx={X(x1)} cy={Y(y1)} r={4} fill="#0a0b0c" stroke={color} strokeWidth={1.5}/>
+        <circle cx={X(x2)} cy={Y(y2)} r={4} fill="#0a0b0c" stroke={color} strokeWidth={1.5}/>
       </svg>
-      <span style={{ position:'absolute', top:2, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>FAST</span>
-      <span style={{ position:'absolute', bottom:2, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>SLOW</span>
-      <span style={{ position:'absolute', top:'50%', left:3, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>IN</span>
-      <span style={{ position:'absolute', top:'50%', right:3, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>OUT</span>
+      <span style={{ position:'absolute', top:1, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>FAST</span>
+      <span style={{ position:'absolute', bottom:1, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>SLOW</span>
+      <span style={{ position:'absolute', top:'50%', left:2, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>IN</span>
+      <span style={{ position:'absolute', top:'50%', right:2, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>OUT</span>
     </div>
   );
 }
@@ -1545,25 +1556,35 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
   );
 }
 
-export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, isOnAir }: EffectModuleProps) {
+export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, isOnAir, onModuleDrop }: EffectModuleProps) {
   const { id, name, accentColor } = config;
   const [collapsed, setCollapsed] = useState(false);
   return (
-    <div style={{
-      flex:1, minWidth:0,
-      background:'#131416',
-      borderRight:'1px solid #0d0e0f',
-      display:'flex', flexDirection:'column',
-      opacity: muted ? 0.35 : bypassed ? 0.55 : 1,
-      filter: bypassed ? 'saturate(0.15) brightness(0.6)' : undefined,
-      position:'relative', overflow:'hidden',
-    }}>
-      <div style={{
-        display:'flex', alignItems:'center', padding:'0 5px', height:26,
-        background:'linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%)',
-        borderBottom:'1px solid #0d0e0f', borderTop:'1px solid #252729',
-        gap:3, flexShrink:0,
+    <div
+      onDragOver={(e) => { if (e.dataTransfer.types.includes('text/x-module')) e.preventDefault(); }}
+      onDrop={(e) => {
+        const dragged = e.dataTransfer.getData('text/x-module') as ModuleType;
+        if (dragged && onModuleDrop) { e.preventDefault(); onModuleDrop(dragged); }
+      }}
+      style={{
+        flex:1, minWidth:0,
+        background:'#131416',
+        borderRight:'1px solid #0d0e0f',
+        display:'flex', flexDirection:'column',
+        opacity: muted ? 0.35 : bypassed ? 0.55 : 1,
+        filter: bypassed ? 'saturate(0.15) brightness(0.6)' : undefined,
+        position:'relative', overflow:'hidden',
       }}>
+      <div
+        draggable
+        onDragStart={(e) => { e.dataTransfer.setData('text/x-module', id); e.dataTransfer.effectAllowed = 'move'; }}
+        title="Drag to reorder"
+        style={{
+          display:'flex', alignItems:'center', padding:'0 5px', height:26,
+          background:'linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%)',
+          borderBottom:'1px solid #0d0e0f', borderTop:'1px solid #252729',
+          gap:3, flexShrink:0, cursor:'grab',
+        }}>
         <Screw/>
         <div style={{ display:'flex', flexDirection:'column', gap:1.5, marginLeft:1 }}>
           {[0,1,2].map(i => (
@@ -1610,7 +1631,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
       )}
       {collapsed && <div style={{ flex:1 }}/>}
 
-      <MixSection params={params} onUpdate={onUpdateParam} color={accentColor}/>
+      {!collapsed && <MixSection params={params} onUpdate={onUpdateParam} color={accentColor}/>}
     </div>
   );
 }
@@ -1673,41 +1694,27 @@ function getFragmentShader(type: ModuleType): string {
       return vec3(0.0, 0.0, 0.82);
     }
 
-    /* Animated broadcast-style test card, used as the source when no clip is loaded
-       so every effect previews on real picture content. Runs on uSrcTime so the
-       TIMESAMPLER's chunk remapping is visible without a clip. */
+    /* Per-module idle graphic (defined by each effect shader below): a param-reactive
+       visualization that shows what the module does before any clip is loaded. */
+    vec3 moduleIdle(vec2 uv, float t);
+
+    /* Test card source when no clip is loaded: color bars + gray ramp up top for
+       color-effect readouts, the module's own idle graphic below. Runs on uSrcTime
+       so time-remapping modules visibly warp it. */
     vec3 testPattern(vec2 uv){
       float t = uSrcTime;
       float aspect = uResolution.x / uResolution.y;
       vec3 col;
-      if(uv.y > 0.60){
+      if(uv.y > 0.74){
         col = smpteBar(floor(uv.x * 7.0)) * 0.9;
         col *= 0.82 + 0.18 * smoothstep(0.0, 0.03, abs(fract(uv.x * 7.0) - 0.5));
-      } else if(uv.y > 0.47){
-        col = vec3(floor(uv.x * 10.0) / 9.0);
-      } else if(uv.y > 0.40){
-        col = vec3(uv.x);
+      } else if(uv.y > 0.64){
+        col = vec3(floor(uv.x * 12.0) / 11.0);
       } else {
-        col = vec3(0.045, 0.05, 0.06);
-        vec2 g = fract(uv * vec2(aspect * 6.0, 6.0));
-        col += vec3(0.06, 0.07, 0.08) * step(0.95, max(g.x, g.y));
-        // beat-synced orbiting beacon
-        float ang = -uBeat * 0.25 * TAU;
-        vec2 c = vec2(0.5, 0.20);
-        vec2 op = c + vec2(cos(ang) * 0.30 / aspect, sin(ang) * 0.13);
-        float d = length(vec2((uv.x - op.x) * aspect, uv.y - op.y));
-        col += uColor * (smoothstep(0.045, 0.0, d) * 1.6 + smoothstep(0.15, 0.0, d) * 0.25);
-        // bouncing block
-        float bx = abs(fract(t * 0.11) * 2.0 - 1.0);
-        vec2 bp = vec2(mix(0.05, 0.95, bx), 0.20);
-        float blk = step(max(abs(uv.x - bp.x) * aspect, abs(uv.y - bp.y) * 3.0), 0.055);
-        col = mix(col, vec3(0.92), blk);
+        col = moduleIdle(vec2(uv.x, uv.y / 0.64), t);
       }
-      // full-height sweep bar (reads motion for delays/trails)
-      float sx = fract(t * 0.18);
-      col += vec3(1.0, 0.97, 0.9) * smoothstep(0.012, 0.0, abs(uv.x - sx)) * 0.85;
       // beat flash marker, top-left
-      float mk = step(max(abs(uv.x - 0.035) * aspect, abs(uv.y - 0.945)), 0.045);
+      float mk = step(max(abs(uv.x - 0.03) * aspect, abs(uv.y - 0.96)), 0.028);
       col = mix(col, uColor, mk * beatPulse(10.0) * 0.9);
       return clamp(col, 0.0, 1.0);
     }
@@ -1727,6 +1734,24 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'transition') {
     return `${common}
+    /* Idle: chevrons marching in the selected transition's direction. */
+    vec3 moduleIdle(vec2 uv, float t){
+      float aspect = uResolution.x / uResolution.y;
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      vec2 gr = fract(uv * vec2(aspect * 5.0, 5.0));
+      col += vec3(0.045) * step(0.95, max(gr.x, gr.y));
+      float typeI = floor(uP0.x + 0.5);
+      vec2 dir = typeI < 0.5 ? vec2(-1.0, 0.0)
+               : typeI < 1.5 ? vec2(1.0, 0.0)
+               : typeI < 2.5 ? vec2(0.0, 1.0)
+               : typeI < 3.5 ? vec2(0.0, -1.0)
+               : vec2(1.0, 0.0);
+      float along = dot(uv - 0.5, dir) * 4.0 - t * 1.4;
+      float lane = abs(dot(uv - 0.5, vec2(-dir.y, dir.x)));
+      float chev = smoothstep(0.78, 0.9, fract(along + lane * 1.5)) * smoothstep(0.42, 0.0, lane);
+      col += uColor * chev * 0.55;
+      return col;
+    }
     /* Transition pack: beat-quantized self-transitions animated by uAux2 (0..1 progress
        from the JS clock). TYPE: 0 whip L, 1 whip R, 2 push up, 3 push down,
        4 wipe, 5 camera roll, 6 zoom punch, 7 glitch cut. AMT = motion blur/intensity. */
@@ -1810,6 +1835,20 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'speedramp') {
     return `${common}
+    /* Idle: film-strip ticks scrolling on the remapped clock - speed changes are
+       obvious as the ticks accelerate and crawl with the bezier curve. */
+    vec3 moduleIdle(vec2 uv, float t){
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      float x = fract(uv.x * 7.0 - t * 1.4);
+      float tick = smoothstep(0.10, 0.03, abs(x - 0.5));
+      col += uColor * tick * (0.2 + 0.55 * smoothstep(0.4, 0.0, abs(uv.y - 0.5)));
+      // sprocket dots top/bottom like a strip of film
+      float sy = min(abs(uv.y - 0.12), abs(uv.y - 0.88));
+      float sx = abs(fract(uv.x * 7.0 - t * 1.4) - 0.5);
+      col += vec3(0.5) * smoothstep(0.05, 0.02, max(sx * 0.4, sy)) * 0.5;
+      col += vec3(0.35) * smoothstep(0.004, 0.0, abs(uv.x - 0.5)) * 0.5;
+      return col;
+    }
     /* Speed ramp: the actual time remap happens upstream (playbackRate / uSrcTime,
        driven by the 16-point curve in JS). uAux1 = current rate, uAux2 = cycle phase.
        The shader adds speed-proportional motion streaking, chroma pull at extremes,
@@ -1863,6 +1902,35 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'tapdelay') {
     return `${common}
+    /* Idle: the classic tap-line display - echo taps sweep with TIME, fade with
+       FEEDBACK, chop in Stutter mode, and mask with the Filter slider. */
+    vec3 moduleIdle(vec2 uv, float t){
+      vec3 col = vec3(0.03, 0.035, 0.045);
+      float typeIdx = uP0.x;
+      float vel = uP0.y;
+      float feedback = uP1.y;
+      float delayT = uP1.x;
+      float filtPos = uP1.w;
+      float beatInterval = 60.0 / max(1.0, uBPM);
+      float tapInterval = mix(beatInterval * 0.125, beatInterval * 2.0, delayT);
+      for(int i = 0; i < 8; i++){
+        float fi = float(i);
+        float xPos = fract(t / tapInterval * 0.5 + fi / 8.0);
+        float bw = 0.015 + vel * 0.02 + fi * 0.003;
+        float fade = pow(max(0.0, feedback), fi);
+        float band = smoothstep(bw, 0.0, abs(uv.x - xPos));
+        vec3 tapCol = uColor;
+        if(typeIdx > 0.5 && typeIdx < 1.5){
+          band *= step(0.5, fract(uv.y * 5.0 + fi * 0.7 + uBeatPhase * 4.0));
+          tapCol = mix(uColor, vec3(0.8, 0.9, 1.0), 0.35);
+        } else if(typeIdx > 1.5){
+          band *= smoothstep(filtPos - 0.1, filtPos + 0.1, uv.y);
+          tapCol = mix(uColor, vec3(0.3, 0.5, 1.0), 0.4);
+        }
+        col += tapCol * band * fade * 1.7;
+      }
+      return col;
+    }
     /* Real video echo: the previous OUTPUT frame is fed back in (uPrevTex ping-pong),
        so trails/feedback behave like an actual video delay line.
        PAN = directional smear, STUTTER = zoom feedback tunnel, FILTER = luma-keyed tinted trails. */
@@ -1908,6 +1976,20 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'punch') {
     return `${common}
+    /* Idle: bullseye zoom target - the crash zoom reads instantly against it. */
+    vec3 moduleIdle(vec2 uv, float t){
+      float aspect = uResolution.x / uResolution.y;
+      vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
+      float r = length(c);
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      col += uColor * (smoothstep(0.007, 0.0, abs(r - 0.12))
+                     + smoothstep(0.007, 0.0, abs(r - 0.27))
+                     + smoothstep(0.007, 0.0, abs(r - 0.42))) * 0.7;
+      float cross = min(abs(c.x), abs(c.y));
+      col += uColor * smoothstep(0.004, 0.0, cross) * step(r, 0.5) * 0.35;
+      col += vec3(0.9) * smoothstep(0.02, 0.0, r) * 0.6;
+      return col;
+    }
     /* Crash zoom: beat-synced punch-in / punch-out like a fake camera zoom hit.
        DIR knob: low = IN, mid = alternate, high = OUT. */
     void main(){
@@ -1938,6 +2020,19 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'shake') {
     return `${common}
+    /* Idle: horizon and level grid - the handheld wobble reads against straight lines. */
+    vec3 moduleIdle(vec2 uv, float t){
+      float aspect = uResolution.x / uResolution.y;
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      float hLine = smoothstep(0.006, 0.0, abs(fract(uv.y * 4.0 + 0.5) - 0.5) / 4.0);
+      float vLine = smoothstep(0.006, 0.0, abs(fract(uv.x * aspect * 4.0 + 0.5) - 0.5) / (aspect * 4.0));
+      col += vec3(0.10, 0.11, 0.13) * max(hLine, vLine);
+      // emphasized horizon + level marks
+      col += uColor * smoothstep(0.006, 0.0, abs(uv.y - 0.5)) * 0.7;
+      float marks = step(abs(uv.y - 0.5), 0.035) * step(0.92, fract(uv.x * aspect * 8.0));
+      col += uColor * marks * 0.4;
+      return col;
+    }
     /* Handheld camera: layered-sine wobble reads as human, not jitter; impact kick
        on beats weighted by bass; SWAY adds rotational drift. */
     void main(){
@@ -1972,6 +2067,21 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'orbit') {
     return `${common}
+    /* Idle: map grid with landmark beacons - the dolly drift pans across it. */
+    vec3 moduleIdle(vec2 uv, float t){
+      float aspect = uResolution.x / uResolution.y;
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      vec2 g = uv * vec2(aspect * 6.0, 6.0);
+      col += vec3(0.05, 0.06, 0.07) * step(0.94, max(fract(g.x), fract(g.y)));
+      for(int i = 0; i < 5; i++){
+        float fi = float(i);
+        vec2 lp = vec2(hash(vec2(fi, 2.7)), hash(vec2(7.7, fi)));
+        float d = length(vec2((uv.x - lp.x) * aspect, uv.y - lp.y));
+        col += uColor * smoothstep(0.02, 0.0, d) * 0.9;
+        col += uColor * smoothstep(0.05, 0.0, d) * 0.15 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
+      }
+      return col;
+    }
     /* Drift cam: slow Ken Burns dolly around a cropped frame, nudged on the beat. */
     void main(){
       vec2 uv = vUv;
@@ -1997,6 +2107,21 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'focus') {
     return `${common}
+    /* Idle: starburst focus chart with fine line rows - defocus blur is unmistakable. */
+    vec3 moduleIdle(vec2 uv, float t){
+      float aspect = uResolution.x / uResolution.y;
+      vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
+      float r = length(c);
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      // Siemens star
+      float star = step(0.0, sin(atan(c.y, c.x) * 18.0));
+      col = mix(col, vec3(0.72) * (0.4 + 0.6 * star), smoothstep(0.34, 0.32, r));
+      col += uColor * smoothstep(0.006, 0.0, abs(r - 0.34)) * 0.6;
+      // fine "text" line rows in the margins
+      float rows = step(0.6, fract(uv.y * 26.0)) * step(0.36, r);
+      col += vec3(0.35) * rows * 0.35;
+      return col;
+    }
     /* Rack focus: defocus blur that racks in and out with the beat; sharp on the
        downbeat like a focus pull landing. */
     void main(){
@@ -2025,6 +2150,18 @@ function getFragmentShader(type: ModuleType): string {
   }
 
   return `${common}
+    /* Idle: barcode timeline scrubbed by the remapped clock - chunk loops visibly
+       rewind the pattern; flash while a chunk repeats. */
+    vec3 moduleIdle(vec2 uv, float t){
+      vec3 col = vec3(0.04, 0.045, 0.055);
+      float cell = floor((uv.x + t * 0.35) * 14.0);
+      float v = hash(vec2(cell, 7.0));
+      float bar = step(0.3, v) * (0.15 + v * 0.5);
+      col += uColor * bar * smoothstep(0.44, 0.4, abs(uv.y - 0.5));
+      col += vec3(0.9) * smoothstep(0.004, 0.0, abs(uv.x - 0.5)) * 0.5;
+      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.12;
+      return col;
+    }
   /* Time-remap sampler: the JS transport chops source time into beat-synced chunks
      (LOOP / REV / PONG / RAND). uSrcTime drives the test pattern and video.currentTime
      is scrubbed for loaded clips, so the remap itself happens upstream — this shader
@@ -2099,7 +2236,7 @@ const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
 };
 
 /** Slim second-row module: header, FX-preview screen, and a single knob row. */
-export function CompactModule({ config, params, onUpdateParam, bypassed, onToggleBypass, videoLayer, onSetVideoLayer, isOnAir }: {
+export function CompactModule({ config, params, onUpdateParam, bypassed, onToggleBypass, videoLayer, onSetVideoLayer, isOnAir, onModuleDrop }: {
   config: ModuleConfig;
   params: Record<string, number>;
   onUpdateParam: (param: string, value: number) => void;
@@ -2108,23 +2245,27 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
   isOnAir?: boolean;
+  onModuleDrop?: (draggedId: ModuleType) => void;
 }) {
   const { id, name, accentColor } = config;
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const dragDepth = useRef(0);
 
   const spec = COMPACT_CONTROLS[id];
 
   return (
     <div
-      onDragEnter={(e) => { e.preventDefault(); dragDepth.current++; setDragOver(true); }}
+      onDragEnter={(e) => { e.preventDefault(); if (e.dataTransfer.types.includes('Files')) { dragDepth.current++; setDragOver(true); } }}
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={(e) => { e.preventDefault(); dragDepth.current = Math.max(0, dragDepth.current - 1); if (dragDepth.current === 0) setDragOver(false); }}
       onDrop={(e) => {
         e.preventDefault();
         dragDepth.current = 0;
         setDragOver(false);
+        const dragged = e.dataTransfer.getData('text/x-module') as ModuleType;
+        if (dragged && onModuleDrop) { onModuleDrop(dragged); return; }
         const file = e.dataTransfer.files?.[0];
         if (file?.type.startsWith('video/')) onSetVideoLayer(file);
       }}
@@ -2138,12 +2279,16 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         position: 'relative', overflow: 'hidden',
       }}
     >
-      <div style={{
-        display: 'flex', alignItems: 'center', padding: '0 5px', height: 20,
-        background: 'linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%)',
-        borderBottom: '1px solid #0d0e0f', borderTop: '1px solid #252729',
-        gap: 3, flexShrink: 0,
-      }}>
+      <div
+        draggable
+        onDragStart={(e) => { e.dataTransfer.setData('text/x-module', id); e.dataTransfer.effectAllowed = 'move'; }}
+        title="Drag to reorder"
+        style={{
+          display: 'flex', alignItems: 'center', padding: '0 5px', height: 20,
+          background: 'linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%)',
+          borderBottom: '1px solid #0d0e0f', borderTop: '1px solid #252729',
+          gap: 3, flexShrink: 0, cursor: 'grab',
+        }}>
         <span style={{
           fontFamily: 'Rajdhani,sans-serif', fontSize: 9, fontWeight: 700,
           letterSpacing: '0.14em', textTransform: 'uppercase', color: '#7a8090',
@@ -2183,6 +2328,15 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
             color: '#c46b6b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
           }}><X size={7} /></button>
         )}
+        <button
+          onClick={() => setCollapsed(v => !v)}
+          title={collapsed ? 'Expand controls' : 'Collapse controls'}
+          style={{ width:12, height:12, border:'1px solid #1e2226', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', background:'linear-gradient(180deg,#1c1e22,#141618)', padding:0, flexShrink:0 }}
+        >
+          <svg width={7} height={4} viewBox="0 0 7 4" style={{ transform: collapsed ? 'rotate(180deg)' : undefined, transition:'transform 0.15s' }}>
+            <path d="M0 0 L3.5 4 L7 0" fill="none" stroke={collapsed ? accentColor : '#3a4050'} strokeWidth={1.2}/>
+          </svg>
+        </button>
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
       </div>
 
@@ -2192,6 +2346,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
       </div>
 
+      {!collapsed && (
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '4px 6px', flexShrink: 0,
@@ -2228,6 +2383,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
           ))}
         </div>
       </div>
+      )}
 
       {dragOver && (
         <div style={{
