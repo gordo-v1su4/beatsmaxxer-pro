@@ -292,6 +292,11 @@ export class AudioEngine {
     if (!this._playing) return;
 
     const elapsed = this.getTransportTime();
+    // keep the clock sane so a bad interval can't feed NaN into every shader
+    if (!Number.isFinite(this.beatInterval) || this.beatInterval <= 0) {
+      this._bpm = DEFAULT_BPM;
+      this.beatInterval = 60 / DEFAULT_BPM;
+    }
     // continuous beat position (integer part = beat number, fraction = phase);
     // effects need the smooth value so sub-beat ramps/stutters work while playing
     this._beat = elapsed / this.beatInterval;

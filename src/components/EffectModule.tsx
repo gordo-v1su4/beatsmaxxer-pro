@@ -396,6 +396,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         uBPM:        { value: 128.0 },
         uBeat:       { value: 0.0 },
         uBeatPhase:  { value: 0.0 },
+        uPlaying:    { value: 0.0 },
         uAmplitude:  { value: 0.0 },
         uBassAmp:    { value: 0.0 },
         uHighAmp:    { value: 0.0 },
@@ -835,9 +836,14 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     const m = materialRef.current;
     if (!m) return;
     const bands = audioState.fftBands ?? new Array(8).fill(0);
-    m.uniforms.uBPM.value = audioState.bpm;
-    m.uniforms.uBeat.value = audioState.beat;
-    m.uniforms.uBeatPhase.value = audioState.beatPhase;
+    // guard against any non-finite audio value poisoning every shader (whiteout)
+    const bpm = Number.isFinite(audioState.bpm) ? audioState.bpm : 128;
+    const beat = Number.isFinite(audioState.beat) ? audioState.beat : 0;
+    const phase = Number.isFinite(audioState.beatPhase) ? audioState.beatPhase : 0;
+    m.uniforms.uBPM.value = bpm;
+    m.uniforms.uBeat.value = beat;
+    m.uniforms.uBeatPhase.value = phase;
+    m.uniforms.uPlaying.value = audioState.playing ? 1.0 : 0.0;
     m.uniforms.uTransportSec.value = audioState.time;
     m.uniforms.uAmplitude.value = audioState.amplitude;
     m.uniforms.uBassAmp.value = audioState.bassAmp;
@@ -1652,6 +1658,7 @@ function getFragmentShader(type: ModuleType): string {
     uniform float uBPM;
     uniform float uBeat;
     uniform float uBeatPhase;
+    uniform float uPlaying;
     uniform float uAmplitude;
     uniform float uBassAmp;
     uniform float uHighAmp;
@@ -1672,7 +1679,17 @@ function getFragmentShader(type: ModuleType): string {
     #define TAU 6.28318530718
 
     float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
-    float beatPulse(float sharpness){ return exp(-uBeatPhase * sharpness); }
+    // beat kick: a spike on the downbeat that decays over the beat, and ZERO when
+    // stopped (no beat = no kick). Base effect motion runs on uTime instead so it
+    // looks the same playing or stopped; the kick just adds punctuation.
+    float beatPulse(float sharpness){ return uPlaying * exp(-uBeatPhase * sharpness); }
+    // scrub NaN/Inf so a bad frame can't poison the feedback buffer into a whiteout
+    vec3 sanitize(vec3 c){
+      c.r = (c.r <= 1e4 && c.r >= -1e4) ? c.r : 0.0;
+      c.g = (c.g <= 1e4 && c.g >= -1e4) ? c.g : 0.0;
+      c.b = (c.b <= 1e4 && c.b >= -1e4) ? c.b : 0.0;
+      return clamp(c, 0.0, 1.0);
+    }
     float luma(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
 
     vec3 sampleVideo(vec2 uv){
@@ -1955,9 +1972,9 @@ function getFragmentShader(type: ModuleType): string {
       } else {
         pUv = uv + vec2(0.0, (filtPos - 0.5) * amt * 2.0);
       }
-      vec3 prev = texture2D(uPrevTex, clamp(pUv, 0.0, 1.0)).rgb;
+      vec3 prev = sanitize(texture2D(uPrevTex, clamp(pUv, 0.0, 1.0)).rgb);
 
-      float fb = clamp(feedback * 0.93 + pulse * 0.03, 0.0, 0.97);
+      float fb = clamp(feedback * 0.9 + pulse * 0.03, 0.0, 0.94);
       vec3 cur = sampleSource(uv);
       vec3 wet;
       if(typeIdx > 1.5){
@@ -1998,9 +2015,11 @@ function getFragmentShader(type: ModuleType): string {
       float amt  = uP0.y;
       float snap = uP0.z;
       float mix_ = uP0.w;
-      float pulse = exp(-uBeatPhase * (3.0 + snap * 9.0));
+      float pulse = uPlaying * exp(-uBeatPhase * (3.0 + snap * 9.0));
       float dir = dirP < 0.33 ? 1.0 : dirP < 0.66 ? (mod(floor(uBeat), 2.0) < 0.5 ? 1.0 : -1.0) : -1.0;
-      float z = max(0.35, 1.0 + dir * pulse * (amt * amt * 1.4 + amt * 0.25 + uBassAmp * 0.12));
+      // gentle idle breathing so the frame is alive with no beat
+      float breath = (0.5 - 0.5 * cos(uTime * 1.2)) * (0.02 + amt * 0.03);
+      float z = max(0.35, 1.0 + dir * pulse * (amt * amt * 1.4 + amt * 0.25 + uBassAmp * 0.12) + dir * breath);
 
       // motion blur along the zoom
       vec3 wet = vec3(0.0);
@@ -2033,30 +2052,42 @@ function getFragmentShader(type: ModuleType): string {
       col += uColor * marks * 0.6;
       return col;
     }
-    /* Handheld camera: layered-sine wobble reads as human, not jitter; impact kick
-       on beats weighted by bass; SWAY adds rotational drift. */
+    /* Handheld camera: a body operator's frame. Slow breathing sway + faster
+       micro-jitter (always running on uTime), footstep bumps on the beat, and a
+       drifting roll. The frame is cropped in so the shove never reveals edges. */
     void main(){
       vec2 uv = vUv;
-      float hand   = uP0.x;
-      float impact = uP0.y;
-      float sway   = uP0.z;
+      float hand   = uP0.x;   // overall handheld intensity
+      float impact = uP0.y;   // footstep bump strength on the beat
+      float sway   = uP0.z;   // rotational roll
       float mix_   = uP0.w;
       float t = uTime;
-      float pulse = beatPulse(7.0);
 
-      vec2 wob = vec2(
-        sin(t * 1.7) + 0.55 * sin(t * 3.9 + 1.3) + 0.3 * sin(t * 7.1 + 0.5),
-        cos(t * 2.3) + 0.55 * sin(t * 4.7 + 2.1) + 0.3 * cos(t * 6.3)
-      ) * hand * (0.004 + hand * 0.012);
-      float imp = pulse * impact * (0.35 + uBassAmp);
-      wob += vec2(hash(vec2(floor(uBeat), 3.7)) - 0.5, hash(vec2(floor(uBeat), 9.1)) - 0.5) * imp * (0.03 + impact * 0.08);
+      float amp = 0.006 + hand * hand * 0.05;
+      // slow operator sway (breathing / weight shift) from incommensurate sines
+      vec2 drift = vec2(
+        sin(t * 0.9) + 0.6 * sin(t * 1.73 + 1.3) + 0.3 * sin(t * 3.1 + 0.5),
+        cos(t * 1.1) + 0.6 * sin(t * 2.17 + 2.1) + 0.3 * cos(t * 2.7 + 1.7)
+      ) * amp;
+      // fast fine hand jitter
+      vec2 jit = vec2(sin(t * 17.0) + 0.5 * sin(t * 29.0), cos(t * 19.0) + 0.5 * sin(t * 31.0))
+                 * amp * 0.18 * (0.3 + hand);
+      // footstep: a lurch on the beat (settles downward), random per step
+      float boot = beatPulse(9.0) * impact;
+      vec2 stepOff = vec2(hash(vec2(floor(uBeat), 3.7)) - 0.5, -abs(hash(vec2(floor(uBeat), 9.1)) - 0.5) * 1.4)
+                     * boot * (0.03 + impact * 0.1);
+      vec2 off = drift + jit + stepOff;
 
-      float z = 1.0 + hand * 0.05 + imp * (0.05 + impact * 0.1);
-      float ang = (sin(t * 0.9) + 0.5 * sin(t * 2.1)) * sway * (0.012 + sway * 0.05);
+      // drifting roll + a kick on footsteps
+      float ang = (sin(t * 0.6) + 0.5 * sin(t * 1.27 + 1.0)) * sway * (0.02 + sway * 0.07)
+                  + boot * sway * 0.04;
+      // crop in so translation/rotation never exposes the frame edge
+      float z = 1.07 + hand * 0.06 + boot * (0.03 + impact * 0.07);
+
       vec2 c = uv - 0.5;
       float cs = cos(ang), sn = sin(ang);
       c = vec2(c.x * cs - c.y * sn, c.x * sn + c.y * cs);
-      vec3 wet = sampleSource(c / z + 0.5 + wob);
+      vec3 wet = sampleSource(c / z + 0.5 + off);
 
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
       if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
@@ -2082,20 +2113,29 @@ function getFragmentShader(type: ModuleType): string {
       }
       return col;
     }
-    /* Drift cam: slow Ken Burns dolly around a cropped frame, nudged on the beat. */
+    /* Drift cam: a flying dolly move across a cropped frame. The sweep runs on
+       uTime so it looks identical playing or stopped; the beat only adds a nudge
+       on top (SPD = travel speed, DRIFT = travel distance, NUDGE = beat kick). */
     void main(){
       vec2 uv = vUv;
       float spd   = uP0.x;
       float drift = uP0.y;
       float nudge = uP0.z;
       float mix_  = uP0.w;
-      float t = uTime * (0.05 + spd * 0.3 + spd * spd * 0.7);
-      float pulse = beatPulse(5.0);
+      float t = uTime * (0.12 + spd * 0.6 + spd * spd * 1.4);
+      float pulse = beatPulse(4.0);
 
-      float zoomBase = 1.1 + drift * 0.45;
-      vec2 offs = vec2(cos(t), sin(t * 0.73)) * drift * (0.06 + drift * 0.12);
-      offs += vec2(cos(uBeat * 1.3), sin(uBeat * 0.9)) * pulse * nudge * (0.008 + nudge * 0.03);
-      float z = zoomBase * (1.0 + pulse * nudge * 0.04);
+      // crop in enough that even a big sweep never shows the edge
+      float dist = 0.12 + drift * 0.26;
+      float zoomBase = 1.18 + drift * 0.5;
+      // wandering path (two incommensurate orbits) - the always-on "full drift"
+      vec2 offs = vec2(
+        sin(t * 0.8) + 0.5 * sin(t * 1.9 + 1.1),
+        cos(t * 0.63) + 0.5 * cos(t * 1.7 + 0.4)
+      ) * dist * 0.6;
+      // beat nudge kicks the frame, then it eases back (0 when stopped)
+      offs += vec2(sin(uBeat * 1.7), cos(uBeat * 1.1)) * pulse * nudge * (0.03 + nudge * 0.06);
+      float z = zoomBase * (1.0 + pulse * nudge * 0.06);
       vec3 wet = sampleSource((uv - 0.5) / z + 0.5 + offs);
 
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
@@ -2131,7 +2171,9 @@ function getFragmentShader(type: ModuleType): string {
       float soft   = uP0.z;
       float mix_   = uP0.w;
 
-      float rack = 0.5 - 0.5 * cos(fract(uBeat / 2.0) * TAU);
+      // rack pulls to the beat when playing, breathes on its own clock when stopped
+      float rackPhase = mix(uTime * 0.22, uBeat / 2.0, uPlaying);
+      float rack = 0.5 - 0.5 * cos(fract(rackPhase) * TAU);
       float blur = (amt * 0.35 + rack * pulseP) * (0.014 + pulseP * 0.035);
 
       vec3 wet = vec3(0.0);
@@ -2181,7 +2223,7 @@ function getFragmentShader(type: ModuleType): string {
     vec3 wet = sampleSource(st);
 
     // stutter ghosting from the feedback buffer while a chunk repeats
-    vec3 prev = texture2D(uPrevTex, clamp(uv + vec2(0.006, 0.0), 0.0, 1.0)).rgb;
+    vec3 prev = sanitize(texture2D(uPrevTex, clamp(uv + vec2(0.006, 0.0), 0.0, 1.0)).rgb);
     wet = max(wet, prev * (uAux1 * 0.5));
 
     // retrigger flash at each chunk start
