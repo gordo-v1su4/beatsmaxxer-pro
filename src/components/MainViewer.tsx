@@ -180,13 +180,16 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
 
   return (
     <div style={{
-      flex: 1, minHeight: 170, display:'flex', alignItems:'stretch', justifyContent:'center',
+      flex: 1, minHeight: 170, display:'flex', alignItems:'center', justifyContent:'center',
       background:'linear-gradient(180deg,#101214,#0c0d0f)',
       borderBottom:'2px solid #0d0e0f',
       padding: 6, minWidth: 0,
+      containerType: 'size',
     }}>
       <div style={{
-        position:'relative', aspectRatio:'16/9', height:'100%', maxWidth:'100%',
+        // largest 16:9 rectangle that fits BOTH the width and height of the cell
+        position:'relative', aspectRatio:'16/9',
+        width: 'min(100%, calc(100cqh * 16 / 9))',
         background:'#000', border:'1px solid #1a1c1e', borderRadius:2, overflow:'hidden',
       }}>
         <ThreeVisualizer

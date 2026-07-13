@@ -1985,6 +1985,19 @@ function getFragmentShader(type: ModuleType): string {
       }
       wet *= 1.0 + pulse * 0.08;
 
+      // STUTTER: punctuate every beat-repeat so the jump is unmistakable - the
+      // source has already scrubbed back (uAux1=stuttering, uAux2=repeat progress);
+      // here we flash + RGB-split hard at the top of each repeat, easing out.
+      if(typeIdx > 0.5 && typeIdx < 1.5 && uAux1 > 0.5){
+        float rep = pow(1.0 - uAux2, 2.0);
+        float sp = 0.008 + rep * 0.03;
+        wet.r = sampleSource(uv + vec2(sp, 0.0)).r;
+        wet.b = sampleSource(uv - vec2(sp, 0.0)).b;
+        wet *= 1.0 + rep * 0.5;
+        // strobe scanline sweeping on each repeat
+        wet += uColor * smoothstep(0.02, 0.0, abs(uv.y - fract(uAux2 * 2.0))) * rep * 0.4;
+      }
+
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
       if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
       gl_FragColor = vec4(finishPx(mix(cur, wet, wetAmt), uv), 1.0);
@@ -2220,21 +2233,26 @@ function getFragmentShader(type: ModuleType): string {
     float wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
     vec2 st = uv;
     st.x += sin(uv.y * 60.0 + uTime * 9.0) * wob * 0.004;
-    vec3 wet = sampleSource(st);
+    vec3 cur = sampleSource(st);
 
-    // stutter ghosting from the feedback buffer while a chunk repeats
-    vec3 prev = sanitize(texture2D(uPrevTex, clamp(uv + vec2(0.006, 0.0), 0.0, 1.0)).rgb);
-    wet = max(wet, prev * (uAux1 * 0.5));
+    // Sampled hold: while a chunk repeats (uAux1), FREEZE the frame from the
+    // feedback buffer, then hard-cut to the freshly scrubbed source at the top of
+    // each repeat (uAux2 near 0). Reads as a machine-gun beat-repeat.
+    vec3 prev = sanitize(texture2D(uPrevTex, uv).rgb);
+    float held = step(0.10, uAux2);          // 0 at retrigger (show jump), 1 = hold
+    vec3 wet = mix(cur, prev, uAux1 * held);
 
-    // retrigger flash at each chunk start
-    float flash = uAux1 * exp(-uAux2 * 7.0);
-    wet *= 1.0 + flash * 0.22 + pulse * 0.05;
-    wet += uColor * flash * 0.04;
+    // retrigger flash + RGB split so every chunk repeat pops
+    float flash = uAux1 * exp(-uAux2 * 6.0);
+    float sp = flash * 0.035;
+    wet.r = mix(wet.r, sampleSource(st + vec2(sp, 0.0)).r, uAux1);
+    wet.b = mix(wet.b, sampleSource(st - vec2(sp, 0.0)).b, uAux1);
+    wet *= 1.0 + flash * 0.5 + pulse * 0.05;
+    wet += uColor * flash * 0.12;
 
     float wetAmt = uMode < 0.5 ? 1.0 : mix_;
     if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
-    vec3 dry = sampleSource(uv);
-    vec3 col = mix(dry, wet, wetAmt);
+    vec3 col = mix(cur, wet, wetAmt);
 
     if(uMode < 0.5 && uv.y < 0.045){
       // chunk progress strip: fills as the current chunk plays out
