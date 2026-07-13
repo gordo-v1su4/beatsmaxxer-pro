@@ -106,7 +106,7 @@ function Section({ label, color, children, noBorder }: {
       }}>
         <VertLabel text={label} color={color} />
       </div>
-      <div style={{ flex:1, padding:'5px 5px' }}>{children}</div>
+      <div style={{ flex:1, padding:'4px 5px' }}>{children}</div>
     </div>
   );
 }
@@ -1135,7 +1135,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     >
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
-      <div style={{ position:'relative', width:'min(100%, calc(172px * 16 / 9))', alignSelf:'center', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
+      <div style={{ position:'relative', width:'min(100%, calc(300px * 16 / 9))', alignSelf:'center', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
         <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
@@ -1177,19 +1177,15 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="PACK" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>TRANSITION LIBRARY · TAP = FIRE</div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:2 }}>
-            {TRANSITION_PACK.map(o => (
-              <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color}
-                onClick={()=>{ onUpdate('type',o.v); onUpdate('trig', ((params.trig ?? 0) + 1) % 100); }} width={40}/>
-            ))}
-          </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:2 }}>
+          {TRANSITION_PACK.map(o => (
+            <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color}
+              onClick={()=>{ onUpdate('type',o.v); onUpdate('trig', ((params.trig ?? 0) + 1) % 100); }} width={40}/>
+          ))}
         </div>
       </Section>
-      <Section label="SYNC" color={color}>
+      <Section label="FIRE" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>FIRE EVERY</div>
           <div style={{ display:'flex', gap:2 }}>
             {[
               { l: '1 BT', val: 12 },
@@ -1208,14 +1204,14 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
       </Section>
       <Section label="SHPE" color={color} noBorder>
         <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ display:'flex', alignItems:'flex-end', gap:8 }}>
             <div style={{ flex:1 }}>
               <HSlider value={params.duration??40} onChange={v=>onUpdate('duration',v)} color={color} label="MOVE LENGTH"/>
             </div>
             <MiniDisplay value={`${durBeats.toFixed(2)}bt`} width={44}/>
           </div>
-          <div style={{ display:'flex', justifyContent:'flex-start' }}>
-            <Knob label="BLUR" value={params.amount??60} onChange={v=>onUpdate('amount',v)} size="sm" color={color}/>
+          <div style={{ flex:1 }}>
+            <HSlider value={params.amount??60} onChange={v=>onUpdate('amount',v)} color={color} label="MOTION BLUR"/>
           </div>
         </div>
       </Section>
@@ -1224,148 +1220,68 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
 }
 
 /** Bezier presets: endpoints (y0, y3) + control handles (x1,y1) (x2,y2), all 0-100. */
-const RAMP_PRESETS: Record<string, { y0: number; x1: number; y1: number; x2: number; y2: number; y3: number }> = {
-  FLAT:  { y0: 50, x1: 33, y1: 50, x2: 66, y2: 50, y3: 50 },
-  'RMP+': { y0: 20, x1: 40, y1: 30, x2: 70, y2: 72, y3: 88 },
-  'RMP-': { y0: 88, x1: 30, y1: 72, x2: 60, y2: 30, y3: 20 },
-  PNCH:  { y0: 80, x1: 35, y1: 0, x2: 65, y2: 0, y3: 80 },
-  SWELL: { y0: 22, x1: 35, y1: 100, x2: 65, y2: 100, y3: 22 },
-  EASE:  { y0: 15, x1: 85, y1: 15, x2: 15, y2: 85, y3: 85 },
-};
+// Speed-ramp shapes as bezier control points; each renders a drawn curve on its button.
+const RAMP_SHAPES: { key: string; pts: { y0:number;x1:number;y1:number;x2:number;y2:number;y3:number } }[] = [
+  { key: 'FLAT',  pts: { y0:50, x1:33, y1:50, x2:66, y2:50, y3:50 } },
+  { key: 'UP',    pts: { y0:16, x1:40, y1:28, x2:70, y2:74, y3:90 } },
+  { key: 'DOWN',  pts: { y0:90, x1:30, y1:74, x2:60, y2:28, y3:16 } },
+  { key: 'S',     pts: { y0:16, x1:78, y1:18, x2:22, y2:82, y3:90 } },
+  { key: 'DIP',   pts: { y0:82, x1:35, y1:4,  x2:65, y2:4,  y3:82 } },
+  { key: 'BUMP',  pts: { y0:20, x1:35, y1:98, x2:65, y2:98, y3:20 } },
+];
 
-/** Draggable cubic-bezier speed curve: square anchors set the in/out rates, round
-    handles shape the ramp between them. Dashed center line = 1x. */
-/** Draggable cubic-bezier speed curve rendered in true pixel space (no viewBox
-    stretching, so handles stay round). Square anchors = in/out rates; round
-    handles shape the ramp. Dashed center line = 1x. */
-function BezierEditor({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
-  const { state } = useAudio();
-  const boxRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<null | 'p0' | 'p1' | 'p2' | 'p3'>(null);
-  const [dims, setDims] = useState({ w: 300, h: 72 });
-
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const measure = () => setDims({ w: Math.max(40, el.clientWidth), h: Math.max(30, el.clientHeight) });
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const y0 = params.bzY0 ?? 80, y1 = params.bzY1 ?? 5, y2 = params.bzY2 ?? 5, y3 = params.bzY3 ?? 80;
-  const x1 = params.bzX1 ?? 35, x2 = params.bzX2 ?? 65;
-  const pts = {
-    p0: { x: 0, y: y0 }, p1: { x: x1, y: y1 },
-    p2: { x: x2, y: y2 }, p3: { x: 100, y: y3 },
-  };
-
-  // inset so edge anchors and extreme handles stay fully visible
-  const PAD_X = 8, PAD_Y = 7;
-  const X = (v: number) => PAD_X + (v / 100) * (dims.w - PAD_X * 2);
-  const Y = (v: number) => PAD_Y + ((100 - v) / 100) * (dims.h - PAD_Y * 2);
-  const fromPx = (px: number, py: number) => ({
-    x: Math.max(0, Math.min(100, ((px - PAD_X) / (dims.w - PAD_X * 2)) * 100)),
-    y: Math.max(0, Math.min(100, 100 - ((py - PAD_Y) / (dims.h - PAD_Y * 2)) * 100)),
-  });
-
-  const lenP = (params.len ?? 50) / 100;
-  const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
-  const phase = (((state.beat % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats;
-
-  const applyPoint = (which: 'p0' | 'p1' | 'p2' | 'p3', px: number, py: number) => {
-    const q = fromPx(px, py);
-    if (which === 'p0') onUpdate('bzY0', q.y);
-    else if (which === 'p3') onUpdate('bzY3', q.y);
-    else if (which === 'p1') { onUpdate('bzX1', q.x); onUpdate('bzY1', q.y); }
-    else { onUpdate('bzX2', q.x); onUpdate('bzY2', q.y); }
-  };
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const rect = boxRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-    // grab the nearest point (in pixels) so the editor never feels dead
-    let best: 'p0' | 'p1' | 'p2' | 'p3' = 'p1';
-    let bestD = Infinity;
-    (Object.keys(pts) as Array<keyof typeof pts>).forEach(k => {
-      const d = Math.hypot(X(pts[k].x) - mx, Y(pts[k].y) - my);
-      if (d < bestD) { bestD = d; best = k; }
-    });
-    dragRef.current = best;
-    applyPoint(best, mx, my);
-    const move = (ev: MouseEvent) => {
-      const r = boxRef.current?.getBoundingClientRect();
-      if (!r || !dragRef.current) return;
-      applyPoint(dragRef.current, ev.clientX - r.left, ev.clientY - r.top);
-    };
-    const up = () => {
-      dragRef.current = null;
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
+/** A speed-shape button: draws its bezier curve so you pick by the shape, not numbers. */
+function RampShapeBtn({ shape, active, color, onClick }: {
+  shape: typeof RAMP_SHAPES[number]; active: boolean; color: string; onClick: () => void;
+}) {
+  const { pts, key } = shape;
+  const W = 44, H = 30, P = 4;
+  const X = (v: number) => P + (v / 100) * (W - P * 2);
+  const Y = (v: number) => P + ((100 - v) / 100) * (H - P * 2);
   return (
-    <div ref={boxRef} onMouseDown={onMouseDown} style={{
-      height: 72, background:'#0a0b0c', border:'1px solid #1a1c1e', borderRadius:1,
-      cursor:'pointer', boxShadow:'inset 0 2px 4px rgba(0,0,0,0.5)', position:'relative', overflow:'hidden',
+    <button onClick={onClick} title={key} style={{
+      width: '100%', height: 34, padding: 0, cursor: 'pointer',
+      background: active ? `linear-gradient(180deg,${color}22,${color}0e)` : 'linear-gradient(180deg,#181a1c,#141618)',
+      border: `1px solid ${active ? color + '77' : '#1e2226'}`,
+      borderRadius: 2, position: 'relative',
+      boxShadow: active ? `inset 0 1px 3px rgba(0,0,0,0.5), 0 0 6px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)',
     }}>
-      <svg width={dims.w} height={dims.h} style={{ position:'absolute', inset:0, display:'block' }}>
-        {[25, 50, 75].map(v => <line key={v} x1={X(v)} y1={0} x2={X(v)} y2={dims.h} stroke="#161819" strokeWidth={1}/>)}
-        <line x1={0} y1={Y(50)} x2={dims.w} y2={Y(50)} stroke="#2a2e34" strokeWidth={1} strokeDasharray="3 3"/>
-        <line x1={X(0)} y1={Y(y0)} x2={X(x1)} y2={Y(y1)} stroke={`${color}55`} strokeWidth={1} strokeDasharray="2 2"/>
-        <line x1={X(100)} y1={Y(y3)} x2={X(x2)} y2={Y(y2)} stroke={`${color}55`} strokeWidth={1} strokeDasharray="2 2"/>
-        <path
-          d={`M ${X(0)} ${Y(y0)} C ${X(x1)} ${Y(y1)}, ${X(x2)} ${Y(y2)}, ${X(100)} ${Y(y3)}`}
-          fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round"
-        />
-        <line x1={X(phase * 100)} y1={0} x2={X(phase * 100)} y2={dims.h} stroke="#fff" strokeWidth={1} opacity={0.5}/>
-        <rect x={X(0) - 4} y={Y(y0) - 4} width={8} height={8} fill={color} stroke="#0a0b0c" strokeWidth={1}/>
-        <rect x={X(100) - 4} y={Y(y3) - 4} width={8} height={8} fill={color} stroke="#0a0b0c" strokeWidth={1}/>
-        <circle cx={X(x1)} cy={Y(y1)} r={4} fill="#0a0b0c" stroke={color} strokeWidth={1.5}/>
-        <circle cx={X(x2)} cy={Y(y2)} r={4} fill="#0a0b0c" stroke={color} strokeWidth={1.5}/>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" preserveAspectRatio="none" style={{ display:'block' }}>
+        <line x1={0} y1={Y(50)} x2={W} y2={Y(50)} stroke="#2a2e34" strokeWidth={0.6} strokeDasharray="2 2"/>
+        <path d={`M ${X(0)} ${Y(pts.y0)} C ${X(pts.x1)} ${Y(pts.y1)}, ${X(pts.x2)} ${Y(pts.y2)}, ${X(100)} ${Y(pts.y3)}`}
+          fill="none" stroke={active ? color : '#5a6270'} strokeWidth={1.6} strokeLinecap="round"/>
       </svg>
-      <span style={{ position:'absolute', top:1, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>FAST</span>
-      <span style={{ position:'absolute', bottom:1, left:'50%', transform:'translateX(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#3a4050', pointerEvents:'none' }}>SLOW</span>
-      <span style={{ position:'absolute', top:'50%', left:2, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>IN</span>
-      <span style={{ position:'absolute', top:'50%', right:2, transform:'translateY(-50%)', fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:`${color}aa`, pointerEvents:'none' }}>OUT</span>
-    </div>
+    </button>
   );
 }
 
 function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
   const labelStyle = { fontSize:9, fontWeight:700 as const, color:'#4a5565', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em' };
   const lenP = params.len ?? 50;
-  const applyPreset = (c: { y0: number; x1: number; y1: number; x2: number; y2: number; y3: number }) => {
-    onUpdate('bzY0', c.y0);
-    onUpdate('bzX1', c.x1);
-    onUpdate('bzY1', c.y1);
-    onUpdate('bzX2', c.x2);
-    onUpdate('bzY2', c.y2);
-    onUpdate('bzY3', c.y3);
+  const apply = (c: typeof RAMP_SHAPES[number]['pts']) => {
+    onUpdate('bzY0', c.y0); onUpdate('bzX1', c.x1); onUpdate('bzY1', c.y1);
+    onUpdate('bzX2', c.x2); onUpdate('bzY2', c.y2); onUpdate('bzY3', c.y3);
   };
+  const activeKey = (() => {
+    let best = ''; let bestD = 1e9;
+    for (const sh of RAMP_SHAPES) {
+      const d = Math.abs((params.bzY0 ?? 80) - sh.pts.y0) + Math.abs((params.bzY1 ?? 5) - sh.pts.y1)
+              + Math.abs((params.bzY2 ?? 5) - sh.pts.y2) + Math.abs((params.bzY3 ?? 80) - sh.pts.y3);
+      if (d < bestD) { bestD = d; best = sh.key; }
+    }
+    return bestD < 40 ? best : '';
+  })();
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
-      <Section label="CURV" color={color}>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>SPEED CURVE · DRAG POINTS</div>
-          <BezierEditor params={params} onUpdate={onUpdate} color={color}/>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:2 }}>
-            {Object.entries(RAMP_PRESETS).map(([name, curve]) => (
-              <RackBtn key={name} label={name} color={color} width={30} onClick={() => applyPreset(curve)}/>
-            ))}
-          </div>
+      <Section label="SHAPE" color={color}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(6, 1fr)', gap:3 }}>
+          {RAMP_SHAPES.map(sh => (
+            <RampShapeBtn key={sh.key} shape={sh} active={activeKey === sh.key} color={color} onClick={() => apply(sh.pts)} />
+          ))}
         </div>
       </Section>
-      <Section label="CYCL" color={color} noBorder>
+      <Section label="CYCLE" color={color} noBorder>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={labelStyle}>CYCLE LENGTH</div>
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
             {[
               { l: '1 BT', val: 12 },
@@ -1377,7 +1293,7 @@ function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,
               return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('len',v.val)} width={34}/>;
             })}
             <div style={{ flex:1 }}/>
-            <Knob label="DEPTH" value={params.depth??60} onChange={v=>onUpdate('depth',v)} size="sm" color={color}/>
+            <Knob label="DEPTH" value={params.depth??60} onChange={v=>onUpdate('depth',v)} size="xs" color={color}/>
           </div>
         </div>
       </Section>
@@ -1544,23 +1460,17 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
 }
 
 function MixSection({ params, onUpdate, color }: { params:Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
-  const [routeA, setRouteA] = useState(true);
-  const [routeB, setRouteB] = useState(false);
   return (
     <div style={{
       background:'linear-gradient(180deg,#111214,#0f1012)',
-      borderTop:'2px solid #0d0e0f', padding:'4px 5px 4px 3px',
-      display:'flex', alignItems:'flex-end', gap:3, flexShrink:0,
+      borderTop:'2px solid #0d0e0f', padding:'3px 8px',
+      display:'flex', alignItems:'center', gap:6, flexShrink:0,
     }}>
       <VertLabel text="MIX" color={color}/>
-      <div style={{ flex:1, display:'flex', justifyContent:'space-around', alignItems:'flex-end' }}>
+      <div style={{ flex:1, display:'flex', justifyContent:'space-around', alignItems:'center' }}>
         <Knob label="IN" value={params.in_??80} onChange={v=>onUpdate('in_',v)} size="xs" color={color}/>
         <Knob label="MIX" value={params.mix??50} onChange={v=>onUpdate('mix',v)} size="xs" color={color}/>
         <Knob label="OUT" value={params.out??60} onChange={v=>onUpdate('out',v)} size="xs" color={color}/>
-      </div>
-      <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-        <RackBtn label="A" active={routeA} color={color} onClick={()=>setRouteA(v=>!v)} width={18} height={14}/>
-        <RackBtn label="B" active={routeB} color={color} onClick={()=>setRouteB(v=>!v)} width={18} height={14}/>
       </div>
     </div>
   );
@@ -2422,7 +2332,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
       </div>
 
-      <div style={{ position: 'relative', width: 'min(100%, calc(172px * 16 / 9))', alignSelf: 'center', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
+      <div style={{ position: 'relative', width: 'min(100%, calc(300px * 16 / 9))', alignSelf: 'center', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
         <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} />
         <ScreenOverlay />
         <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />

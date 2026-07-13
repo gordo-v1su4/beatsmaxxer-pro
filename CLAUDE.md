@@ -42,7 +42,7 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 | Module | Accent | Key Params |
 |--------|--------|-----------|
 | TRANSITION | Green (`#22c55e`) | type (whip L/R, push U/D, wipe, roll, zoom, glitch), interval, duration, amount, trig (fire counter), mix, in, out |
-| SPEEDRAMP | Amber (`#f59e0b`) | len, depth, bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (draggable cubic-bezier speed curve), mix, in, out |
+| SPEEDRAMP | Amber (`#f59e0b`) | len, depth, bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (speed-curve bezier points, set via drawn shape-preset buttons: flat/up/down/S/dip/bump), mix, in, out |
 | TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end (accent sens), start, filterSlider, time, feedback, mix, in, out |
 | TIMESAMPLER | Yellow (`#eab308`) | mode (LOOP/REV/PONG/RAND), size, repeats, chance (accent sens), rate, mix, in, out |
 | PUNCH ZOOM | Coral (`#fb7185`) | dir, amt, snap, mix |
