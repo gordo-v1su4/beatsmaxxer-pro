@@ -180,7 +180,8 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
 
   return (
     <div style={{
-      flex: 1, minHeight: 170, display:'flex', alignItems:'center', justifyContent:'center',
+      // grows fastest so the program monitor is always the biggest panel
+      flex: '100 1 0%', minHeight: 336, display:'flex', alignItems:'center', justifyContent:'center',
       background:'linear-gradient(180deg,#101214,#0c0d0f)',
       borderBottom:'2px solid #0d0e0f',
       padding: 6, minWidth: 0,

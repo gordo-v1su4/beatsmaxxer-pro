@@ -1135,7 +1135,7 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     >
       <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
-      <div style={{ position:'relative', width:'100%', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
+      <div style={{ position:'relative', width:'min(100%, calc(172px * 16 / 9))', alignSelf:'center', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
         <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} />
         <ScreenOverlay/>
         <ScreenBadge text="FX PREVIEW · 100% WET" color={color}/>
@@ -2422,7 +2422,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         <HeaderBtn label="B" active={bypassed} activeColor="#ef4444" onClick={onToggleBypass} />
       </div>
 
-      <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
+      <div style={{ position: 'relative', width: 'min(100%, calc(172px * 16 / 9))', alignSelf: 'center', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
         <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} />
         <ScreenOverlay />
         <ScreenBadge text={`FX · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
