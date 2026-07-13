@@ -203,7 +203,7 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
             boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.7)',
           }}>
             {[0,1,2,3].map(i => {
-              const beatInBar = state.beat % 4;
+              const beatInBar = Math.floor(state.beat) % 4;
               const active = i === beatInBar && playing;
               return (
                 <div key={i} style={{

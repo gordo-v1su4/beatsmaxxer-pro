@@ -292,7 +292,9 @@ export class AudioEngine {
     if (!this._playing) return;
 
     const elapsed = this.getTransportTime();
-    this._beat = Math.floor(elapsed / this.beatInterval);
+    // continuous beat position (integer part = beat number, fraction = phase);
+    // effects need the smooth value so sub-beat ramps/stutters work while playing
+    this._beat = elapsed / this.beatInterval;
     this._beatPhase = (elapsed % this.beatInterval) / this.beatInterval;
 
     if (this.analyserFull) {
