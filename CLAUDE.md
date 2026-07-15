@@ -50,6 +50,8 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 | DRIFT CAM | Teal (`#2dd4bf`) | spd, drift, nudge, mix |
 | RACK FOCUS | Cream (`#e2c08d`) | amt, pulse, soft, xeye (X-EYE toggle: two 50/50-opacity copies separate and reconverge instead of blurring), mix — the pull envelope always returns to sharp (0) each cycle |
 
+TAPDELAY and TIMESAMPLER additionally have numbered one-tap presets (1/2/3, `MODULE_PRESETS`) rendered in their MIX strip — each sets every param of the module at once (e.g. "swung triplets", "bar march").
+
 BPM: auto-estimated from bass onsets (octave-folded into 90–180); typing a value in the TopBar display or tapping tempo locks it (BPM·M), clicking the badge unlocks auto-detect.
 
 ### Tech Stack

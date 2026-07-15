@@ -74,14 +74,14 @@ function VertLabel({ text, color }: { text: string; color: string }) {
   );
 }
 
-function RackBtn({ label, active, color, onClick, width, height }: {
+function RackBtn({ label, active, color, onClick, width, height, title }: {
   label: string; active?: boolean; color?: string; onClick?: () => void;
-  width?: number; height?: number;
+  width?: number; height?: number; title?: string;
 }) {
   const [hov, setHov] = useState(false);
   const c = color ?? '#666';
   return (
-    <button onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+    <button onClick={onClick} title={title} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         width: width ?? 28, height: height ?? 18,
         background: active ? `linear-gradient(180deg,${c}22,${c}11)` : hov ? '#1e2022' : '#181a1c',
@@ -1509,7 +1509,31 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
   );
 }
 
-function MixSection({ params, onUpdate, color }: { params:Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
+/** One-tap starting points for the trickier modules: each numbered button dials in
+    every setting at once (rendered in the MIX strip so no extra row is needed). */
+const MODULE_PRESETS: Partial<Record<ModuleType, { n: string; title: string; set: Record<string, number> }[]>> = {
+  tapdelay: [
+    { n: '1', title: 'Swung triplets — 1/8T stutter, 4 repeats, swing feel, gentle scratch',
+      set: { type: 1, time: 50, velCrv: 50, feel: 1, scratchMode: 0, scratchDepth: 35, end: 65, mix: 70 } },
+    { n: '2', title: 'Dotted pong — 1/16 stutter, 6 repeats, dotted feel, pong scratch',
+      set: { type: 1, time: 30, velCrv: 75, feel: 2, scratchMode: 2, scratchDepth: 60, end: 55, mix: 75 } },
+    { n: '3', title: 'Chaos — 1/8 stutter, 8 repeats, random scratch, hair trigger',
+      set: { type: 1, time: 70, velCrv: 100, feel: 0, scratchMode: 3, scratchDepth: 80, end: 75, mix: 85 } },
+  ],
+  timesampler: [
+    { n: '1', title: 'Bar march — 8 slices, steps forward one slice per bar',
+      set: { mode: 0, size: 90, slices: 8, accent: 0, chance: 40, rate: 43, mix: 70 } },
+    { n: '2', title: 'Pong halves — 16 slices, bounces back and forth every 1/2 note',
+      set: { mode: 2, size: 70, slices: 16, accent: 0, chance: 55, rate: 43, mix: 75 } },
+    { n: '3', title: 'Juggle — 32 slices, random jump every 1/4 plus accent punches',
+      set: { mode: 3, size: 50, slices: 32, accent: 0, chance: 75, rate: 43, mix: 85 } },
+  ],
+};
+
+function MixSection({ params, onUpdate, color, presets }: {
+  params:Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string;
+  presets?: { n: string; title: string; set: Record<string, number> }[];
+}) {
   return (
     <div style={{
       background:'linear-gradient(180deg,#111214,#0f1012)',
@@ -1517,6 +1541,23 @@ function MixSection({ params, onUpdate, color }: { params:Record<string,number>;
       display:'flex', alignItems:'center', gap:6, flexShrink:0,
     }}>
       <VertLabel text="MIX" color={color}/>
+      {presets && (
+        <div style={{ display:'flex', flexDirection:'column', gap:2, alignItems:'center', flexShrink:0 }}>
+          <span style={{
+            fontSize:6.5, fontWeight:700, color:'#3a4050',
+            fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.12em',
+          }}>PRESET</span>
+          <div style={{ display:'flex', gap:2 }}>
+            {presets.map(p => {
+              const active = Object.entries(p.set).every(([k, v]) => Math.abs((params[k] ?? -999) - v) <= 1);
+              return (
+                <RackBtn key={p.n} label={p.n} title={p.title} active={active} color={color} width={18} height={16}
+                  onClick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}/>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div style={{ flex:1, display:'flex', justifyContent:'space-around', alignItems:'center' }}>
         <Knob label="IN" value={params.in_??80} onChange={v=>onUpdate('in_',v)} size="xs" color={color}/>
         <Knob label="MIX" value={params.mix??50} onChange={v=>onUpdate('mix',v)} size="xs" color={color}/>
@@ -1601,7 +1642,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
       )}
       {collapsed && <div style={{ flex:1 }}/>}
 
-      {!collapsed && <MixSection params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+      {!collapsed && <MixSection params={params} onUpdate={onUpdateParam} color={accentColor} presets={MODULE_PRESETS[id]}/>}
       {!collapsed && <div style={{ flex:1 }}/>}
     </div>
   );
