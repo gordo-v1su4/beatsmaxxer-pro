@@ -29,7 +29,7 @@ Beat Surfer Pro is a browser-based audio-reactive effects rack with realtime 3D 
 
 - **`TopBar.tsx`** — Transport controls: play/stop, BPM display, tap tempo, audio file upload, randomize, clear.
 - **`PresetBrowser.tsx`** — 11 hardcoded presets; 4 macro knobs (macro1–4, range 0–100) with color-coded sliders.
-- **`EffectModule.tsx`** — The core component. Renders the four main modules (TRANSITION, SPEEDRAMP, TAPDELAY, TIMESAMPLER) plus exports `CompactModule` for the second row of camera effects (PUNCH ZOOM, HANDHELD, DRIFT CAM, RACK FOCUS). Each module has an embedded Three.js FX-preview canvas (100% wet) with ping-pong feedback buffers; with no clip loaded, the source is an in-shader test card whose lower zone is a per-module, param-reactive idle graphic (tap lines, film-strip ticks, barcode timeline, bullseye, horizon grid, map grid, focus star). Module headers drag-to-reorder within their row; the chevron collapses a module's controls. Videos are shared per-module (`sharedVideos` registry) so the FX preview and PGM monitor stay frame-synced; a `moduleClocks` registry mirrors the driver instance's remapped clock to followers. TAPDELAY/TIMESAMPLER stutters fire when FFT bass-onset strength crosses an ACCENT SENS threshold (MIDI notes override).
+- **`EffectModule.tsx`** — The core component. Renders the four main modules (TRANSITION, SPEEDRAMP, TAPDELAY, TIMESAMPLER) plus exports `CompactModule` for the second row of camera effects (PUNCH ZOOM, HANDHELD, DRIFT CAM, RACK FOCUS). Each module has an embedded Three.js FX-preview canvas (100% wet) with ping-pong feedback buffers; with no clip loaded, the source is an in-shader test card whose lower zone is a per-module, param-reactive idle graphic (tap lines, film-strip ticks, color-coded filmstrip, bullseye, horizon grid, map grid, focus star). Module headers drag-to-reorder within their row; the chevron collapses a module's controls. Videos are shared per-module (`sharedVideos` registry) so the FX preview and PGM monitor stay frame-synced; a `moduleClocks` registry mirrors the driver instance's remapped clock to followers. TAPDELAY/TIMESAMPLER stutters fire when FFT bass-onset strength crosses an ACCENT SENS threshold (MIDI notes override).
 - **`MainViewer.tsx`** — Broadcast-style program monitor above the module rows. Eight PGM source buttons with Ableton-style launch quantize: clicking arms a channel (blinks) and the cut lands on the next bar; RAND auto-hops channels every bar. ON AIR tally shows on the active module's header.
 - **`Knob.tsx`** — Reusable SVG rotary knob; drag-to-adjust; supports xs/sm/md/lg sizes.
 
@@ -41,14 +41,14 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 
 | Module | Accent | Key Params |
 |--------|--------|-----------|
-| TRANSITION | Green (`#22c55e`) | type (whip L/R, push U/D, wipe, roll, zoom, glitch), interval, duration, amount, trig (fire counter), mix, in, out |
-| SPEEDRAMP | Amber (`#f59e0b`) | len, depth, bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (speed-curve bezier points, set via drawn shape-preset buttons: flat/up/down/S/dip/bump), mix, in, out |
-| TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end (accent sens), start, filterSlider, time, feedback, mix, in, out |
+| TRANSITION | Green (`#22c55e`) | type (16 moves: whip L/R, push U/D, wipe, roll, zoom, glitch, tilt, spin, zoom-out, bars, iris, slice, flash, defocus), interval (7 zones: 1BT–8BAR), duration, amount, trig (fire counter), mix, in, out |
+| SPEEDRAMP | Amber (`#f59e0b`) | len (7 cycle zones: 1BT–8BAR), spdMin/spdMax (rate range knobs, 0.25×–4× log-mapped), bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (speed-curve bezier points, set via 12 drawn shape-preset buttons incl. LATE±/EASE±/INV-S/SLAM), mix, in, out |
+| TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end (accent sens), start, filterSlider, time, feedback, feel (0 straight / 1 swing / 2 dotted — reshapes each stutter repeat), scratchMode, scratchDepth, mix, in, out |
 | TIMESAMPLER | Yellow (`#eab308`) | mode (LOOP/REV/PONG/RAND), size, repeats, chance (accent sens), rate, mix, in, out |
 | PUNCH ZOOM | Coral (`#fb7185`) | dir, amt, snap, mix |
 | HANDHELD | Violet (`#a78bfa`) | hand, impact, sway, mix |
 | DRIFT CAM | Teal (`#2dd4bf`) | spd, drift, nudge, mix |
-| RACK FOCUS | Cream (`#e2c08d`) | amt, pulse, soft, mix |
+| RACK FOCUS | Cream (`#e2c08d`) | amt, pulse, soft, xeye (X-EYE toggle: two 50/50-opacity copies separate and reconverge instead of blurring), mix — the pull envelope always returns to sharp (0) each cycle |
 
 BPM: auto-estimated from bass onsets (octave-folded into 90–180); typing a value in the TopBar display or tapping tempo locks it (BPM·M), clicking the badge unlocks auto-detect.
 

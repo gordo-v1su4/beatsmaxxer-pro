@@ -325,18 +325,18 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     };
     if (type === 'focus') return {
       uP0: new THREE.Vector4(p('amt', 35), p('pulse', 55), p('soft', 45), p('mix', 100)),
-      uP1: new THREE.Vector4(0, 0, 0, 0),
+      uP1: new THREE.Vector4(p('xeye', 0), 0, 0, 0),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
     if (type === 'speedramp') return {
-      uP0: new THREE.Vector4(p('len', 50), p('depth', 60), p('mix', 100), p('in_', 80)),
+      uP0: new THREE.Vector4(p('len', 36), 0, p('mix', 100), p('in_', 80)),
       uP1: new THREE.Vector4(p('out', 70), 0, 0, 0),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
     if (type === 'tapdelay') return {
       uP0: new THREE.Vector4(params.type ?? 0, p('velCrv', 55), p('end', 70), p('start', 25)),
       uP1: new THREE.Vector4(p('time', 60), p('feedback', 50), p('mix', 55), p('filterSlider', 60)),
-      uP2: new THREE.Vector4(p('scratchDepth', 45), params.scratchMode ?? 0, 0, 0),
+      uP2: new THREE.Vector4(p('scratchDepth', 45), params.scratchMode ?? 0, params.feel ?? 0, 0),
     };
     return {
       uP0: new THREE.Vector4(params.mode ?? 0, p('size', 50), p('repeats', 50), p('chance', 60)),
@@ -515,11 +515,20 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           const pDepth = m.uniforms.uP2.value.x;
           const scratchSec = Math.max(1 / 60, Math.min(0.85, (1 + pDepth * 23) / 30));
 
+          // FEEL reshapes each repeat on top of any LEN: 0 straight, 1 swing
+          // (long/short alternation), 2 dotted (every hit 1.5x)
+          const feelI = Math.min(2, Math.max(0, Math.round(m.uniforms.uP2.value.z)));
+          const segFor = (idx: number) =>
+            feelI === 2 ? stutterLen * 1.5
+            : feelI === 1 ? stutterLen * (idx % 2 === 0 ? 1.34 : 0.66)
+            : stutterLen;
+
           const startStutter = () => {
             const bpm = m.uniforms.uBPM.value || 128;
-            const stutterSeconds = stutterLen * (60.0 / bpm);
+            const stutterSeconds = segFor(0) * (60.0 / bpm);
             st.isStuttering = true;
             st.stutterStartBeat = uBeat;
+            st.beatsPassed = 0;
             st.lastTrigAt = timeRef.current;
             const repeatsRaw = m.uniforms.uP0.value.y;
             // stronger accents earn more repeats
@@ -547,8 +556,9 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
                 startStutter();
               }
             }
-          } else if (st.isStuttering && uBeat - st.stutterStartBeat >= stutterLen) {
+          } else if (st.isStuttering && uBeat - st.stutterStartBeat >= segFor(st.beatsPassed)) {
             st.remRepeats--;
+            st.beatsPassed++;
             if (st.remRepeats > 0) {
               if (scratchMode === 2) {
                 st.scratchPongAtBack = !st.scratchPongAtBack;
@@ -570,7 +580,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           m.uniforms.uSrcTime.value = st.srcTime;
           m.uniforms.uAux1.value = st.isStuttering ? 1.0 : 0.0;
           m.uniforms.uAux2.value = st.isStuttering
-            ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / stutterLen))
+            ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / segFor(st.beatsPassed)))
             : 0.0;
         }
         else if (type === 'timesampler') {
@@ -674,7 +684,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           const intervalP = m.uniforms.uP0.value.y;
           const durP = m.uniforms.uP0.value.z;
           const trigCount = m.uniforms.uP1.value.w;
-          const intervalBeats = intervalP < 0.25 ? 1 : intervalP < 0.5 ? 2 : intervalP < 0.75 ? 4 : 8;
+          const intervalBeats = [1, 2, 4, 8, 16, 24, 32][Math.min(6, Math.floor(intervalP * 7))]!;
           const durBeats = 0.15 + durP * 0.85;
           const bypass = m.uniforms.uBypass.value > 0.5;
           const bpm = m.uniforms.uBPM.value || 128;
@@ -726,9 +736,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           // same remapped clock. A frame interpolator (e.g. RIFE) can consume the same
           // rate signal later for smooth slow motion.
           const prm = paramsRef.current;
-          const lenP = (prm.len ?? 50) / 100;
-          const depth = (prm.depth ?? 60) / 100;
-          const cycleBeats = lenP < 0.25 ? 1 : lenP < 0.5 ? 2 : lenP < 0.75 ? 4 : 8;
+          const lenP = (prm.len ?? 36) / 100;
+          const cycleBeats = [1, 2, 4, 8, 16, 24, 32][Math.min(6, Math.floor(lenP * 7))]!;
           const bypass = m.uniforms.uBypass.value > 0.5;
           const bpm = m.uniforms.uBPM.value || 128;
           const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
@@ -749,8 +758,13 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             t = (lo + hi) / 2;
             if (bez(0, x1, x2, 1, t) < phase) lo = t; else hi = t;
           }
-          const cv = bez(y0, y1, y2, y3, t);
-          let rate = Math.pow(2, (cv - 0.5) * 4 * depth);
+          const cv = Math.max(0, Math.min(1, bez(y0, y1, y2, y3, t)));
+          // the curve sweeps between SPEED MIN and SPEED MAX in log space, so
+          // 0.5x and 2x sit symmetrically around 1x
+          const toRate = (v: number) => 0.25 * Math.pow(2, v * 4);
+          const rMin = toRate(Math.min(prm.spdMin ?? 25, prm.spdMax ?? 75) / 100);
+          const rMax = toRate(Math.max(prm.spdMin ?? 25, prm.spdMax ?? 75) / 100);
+          let rate = rMin * Math.pow(rMax / rMin, cv);
           if (bypass) rate = 1;
 
           const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
@@ -1168,6 +1182,8 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
 const TRANSITION_PACK = [
   { l: 'WHP L', v: 0 }, { l: 'WHP R', v: 1 }, { l: 'PSH U', v: 2 }, { l: 'PSH D', v: 3 },
   { l: 'WIPE', v: 4 }, { l: 'ROLL', v: 5 }, { l: 'ZOOM', v: 6 }, { l: 'GLTC', v: 7 },
+  { l: 'TILT', v: 8 }, { l: 'SPIN', v: 9 }, { l: 'ZM -', v: 10 }, { l: 'BARS', v: 11 },
+  { l: 'IRIS', v: 12 }, { l: 'SLCE', v: 13 }, { l: 'FLSH', v: 14 }, { l: 'DFOC', v: 15 },
 ];
 
 function TransitionControls({ params, onUpdate, color }: { params: Record<string,number>; onUpdate:(p:string,v:number)=>void; color:string }) {
@@ -1177,27 +1193,30 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="PACK" color={color}>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:2 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(8, 1fr)', gap:2 }}>
           {TRANSITION_PACK.map(o => (
             <RackBtn key={o.l} label={o.l} active={Math.round(params.type??0)===o.v} color={color}
-              onClick={()=>{ onUpdate('type',o.v); onUpdate('trig', ((params.trig ?? 0) + 1) % 100); }} width={40}/>
+              onClick={()=>{ onUpdate('type',o.v); onUpdate('trig', ((params.trig ?? 0) + 1) % 100); }} width={34}/>
           ))}
         </div>
       </Section>
       <Section label="FIRE" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={{ display:'flex', gap:2 }}>
+          <div style={{ display:'flex', gap:2, flexWrap:'wrap' }}>
             {[
-              { l: '1 BT', val: 12 },
-              { l: '2 BT', val: 37 },
-              { l: '1 BAR', val: 62 },
-              { l: '2 BAR', val: 87 },
-            ].map(v => {
-              const isActive = Math.abs(intervalP - v.val) <= 12;
-              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('interval',v.val)} width={34}/>;
+              { l: '1BT', val: 7 },
+              { l: '2BT', val: 21 },
+              { l: '1BR', val: 36 },
+              { l: '2BR', val: 50 },
+              { l: '4BR', val: 64 },
+              { l: '6BR', val: 79 },
+              { l: '8BR', val: 93 },
+            ].map((v, i) => {
+              const isActive = Math.min(6, Math.floor(intervalP * 7 / 100)) === i;
+              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('interval',v.val)} width={28}/>;
             })}
             <div style={{ flex:1 }}/>
-            <RackBtn label="FIRE" color="#ef4444" width={36}
+            <RackBtn label="FIRE" color="#ef4444" width={32}
               onClick={()=>onUpdate('trig', ((params.trig ?? 0) + 1) % 100)}/>
           </div>
         </div>
@@ -1228,6 +1247,12 @@ const RAMP_SHAPES: { key: string; pts: { y0:number;x1:number;y1:number;x2:number
   { key: 'S',     pts: { y0:16, x1:78, y1:18, x2:22, y2:82, y3:90 } },
   { key: 'DIP',   pts: { y0:82, x1:35, y1:4,  x2:65, y2:4,  y3:82 } },
   { key: 'BUMP',  pts: { y0:20, x1:35, y1:98, x2:65, y2:98, y3:20 } },
+  { key: 'LATE+', pts: { y0:50, x1:80, y1:50, x2:92, y2:64, y3:100 } },
+  { key: 'LATE-', pts: { y0:50, x1:80, y1:50, x2:92, y2:36, y3:0  } },
+  { key: 'EASE+', pts: { y0:100,x1:8,  y1:64, x2:20, y2:50, y3:50 } },
+  { key: 'EASE-', pts: { y0:0,  x1:8,  y1:36, x2:20, y2:50, y3:50 } },
+  { key: 'INV-S', pts: { y0:34, x1:90, y1:96, x2:10, y2:4,  y3:66 } },
+  { key: 'SLAM',  pts: { y0:14, x1:96, y1:14, x2:99, y2:96, y3:100 } },
 ];
 
 /** A speed-shape button: draws its bezier curve so you pick by the shape, not numbers. */
@@ -1240,7 +1265,7 @@ function RampShapeBtn({ shape, active, color, onClick }: {
   const Y = (v: number) => P + ((100 - v) / 100) * (H - P * 2);
   return (
     <button onClick={onClick} title={key} style={{
-      width: '100%', height: 34, padding: 0, cursor: 'pointer',
+      width: '100%', height: 26, padding: 0, cursor: 'pointer',
       background: active ? `linear-gradient(180deg,${color}22,${color}0e)` : 'linear-gradient(180deg,#181a1c,#141618)',
       border: `1px solid ${active ? color + '77' : '#1e2226'}`,
       borderRadius: 2, position: 'relative',
@@ -1280,20 +1305,31 @@ function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,
           ))}
         </div>
       </Section>
-      <Section label="CYCLE" color={color} noBorder>
-        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            {[
-              { l: '1 BT', val: 12 },
-              { l: '2 BT', val: 37 },
-              { l: '1 BAR', val: 62 },
-              { l: '2 BAR', val: 87 },
-            ].map(v => {
-              const isActive = Math.abs(lenP - v.val) <= 12;
-              return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('len',v.val)} width={34}/>;
-            })}
-            <div style={{ flex:1 }}/>
-            <Knob label="DEPTH" value={params.depth??60} onChange={v=>onUpdate('depth',v)} size="xs" color={color}/>
+      <Section label="CYCLE" color={color}>
+        <div style={{ display:'flex', gap:2, flexWrap:'wrap' }}>
+          {[
+            { l: '1BT', val: 7 },
+            { l: '2BT', val: 21 },
+            { l: '1BR', val: 36 },
+            { l: '2BR', val: 50 },
+            { l: '4BR', val: 64 },
+            { l: '6BR', val: 79 },
+            { l: '8BR', val: 93 },
+          ].map((v, i) => {
+            const isActive = Math.min(6, Math.floor(lenP * 7 / 100)) === i;
+            return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('len',v.val)} width={28}/>;
+          })}
+        </div>
+      </Section>
+      <Section label="RANGE" color={color} noBorder>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-around', gap:6 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <Knob label="MIN" value={params.spdMin??25} onChange={v=>onUpdate('spdMin',v)} size="xs" color={color}/>
+            <MiniDisplay value={`${(0.25 * Math.pow(2, (params.spdMin??25) / 25)).toFixed(2)}x`} width={42}/>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <Knob label="MAX" value={params.spdMax??75} onChange={v=>onUpdate('spdMax',v)} size="xs" color={color}/>
+            <MiniDisplay value={`${(0.25 * Math.pow(2, (params.spdMax??75) / 25)).toFixed(2)}x`} width={42}/>
           </div>
         </div>
       </Section>
@@ -1346,27 +1382,31 @@ function TapDelayControls({ params, onUpdate, color }: { params: Record<string,n
                   const currentRepeats = Math.round((params.velCrv ?? 25) / 100 * 8) || 1;
                   return <RackBtn key={n} label={`${n}×`} active={currentRepeats===n} color={color} onClick={()=>onUpdate('velCrv', (n / 8) * 100)} width={28}/>;
                 })}
+                <div style={{ width:4 }}/>
+                {[
+                  { l: 'STR8', v: 0 },
+                  { l: 'SWNG', v: 1 },
+                  { l: 'DOT', v: 2 },
+                ].map(o => (
+                  <RackBtn key={o.l} label={o.l} active={Math.round(params.feel ?? 0) === o.v} color={color} onClick={() => onUpdate('feel', o.v)} width={28}/>
+                ))}
               </InlineRow>
             </div>
           </Section>
           <Section label="SCR" color={color}>
-            <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-              <InlineRow label="MODE">
-                {[
-                  { l: 'BEAT', v: 0 },
-                  { l: 'LOOP', v: 1 },
-                  { l: 'PONG', v: 2 },
-                  { l: 'RND', v: 3 },
-                ].map(o => (
-                  <RackBtn key={o.l} label={o.l} active={Math.round(params.scratchMode ?? 0) === o.v} color={color} onClick={() => onUpdate('scratchMode', o.v)} width={30}/>
-                ))}
-              </InlineRow>
-              <InlineRow label="DEPTH">
-                <div style={{ flex:1 }}>
-                  <HSlider value={params.scratchDepth ?? 45} onChange={(v) => onUpdate('scratchDepth', v)} color={color}/>
-                </div>
-              </InlineRow>
-            </div>
+            <InlineRow label="MODE">
+              {[
+                { l: 'BEAT', v: 0 },
+                { l: 'LOOP', v: 1 },
+                { l: 'PONG', v: 2 },
+                { l: 'RND', v: 3 },
+              ].map(o => (
+                <RackBtn key={o.l} label={o.l} active={Math.round(params.scratchMode ?? 0) === o.v} color={color} onClick={() => onUpdate('scratchMode', o.v)} width={30}/>
+              ))}
+              <div style={{ flex:1, minWidth:36 }}>
+                <HSlider value={params.scratchDepth ?? 45} onChange={(v) => onUpdate('scratchDepth', v)} color={color}/>
+              </div>
+            </InlineRow>
           </Section>
           <Section label="TRIG" color={color} noBorder>
             <InlineRow label="SENS">
@@ -1684,8 +1724,10 @@ function getFragmentShader(type: ModuleType): string {
       return col;
     }
     /* Transition pack: beat-quantized self-transitions animated by uAux2 (0..1 progress
-       from the JS clock). TYPE: 0 whip L, 1 whip R, 2 push up, 3 push down,
-       4 wipe, 5 camera roll, 6 zoom punch, 7 glitch cut. AMT = motion blur/intensity. */
+       from the JS clock). TYPE: 0 whip L, 1 whip R, 2 push up, 3 push down, 4 wipe,
+       5 camera roll, 6 zoom punch, 7 glitch cut, 8 tilt rock, 9 spin, 10 zoom out,
+       11 venetian bars, 12 iris, 13 diagonal slice, 14 white flash, 15 defocus dip.
+       AMT = motion blur/intensity. */
     vec2 rot2(vec2 p, float a){
       float c = cos(a), s = sin(a);
       return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
@@ -1711,15 +1753,60 @@ function getFragmentShader(type: ModuleType): string {
         float z = 1.0 + sin(e * PI) * 2.2;
         return sampleSource((uv - 0.5) / z + 0.5);
       }
-      // glitch cut: slice displacement burst
-      float burst = sin(e * PI);
-      float row = floor(uv.y * 24.0);
-      float d = (hash(vec2(row, floor(e * 14.0))) - 0.5) * burst * 0.5;
-      vec3 g = sampleSource(fract(uv + vec2(d, 0.0)));
-      float split = burst * 0.02;
-      g.r = sampleSource(fract(uv + vec2(d + split, 0.0))).r;
-      g.b = sampleSource(fract(uv + vec2(d - split, 0.0))).b;
-      return g;
+      else if(typeI < 7.5){                                                          // glitch cut
+        float burst = sin(e * PI);
+        float row = floor(uv.y * 24.0);
+        float d = (hash(vec2(row, floor(e * 14.0))) - 0.5) * burst * 0.5;
+        vec3 g = sampleSource(fract(uv + vec2(d, 0.0)));
+        float split = burst * 0.02;
+        g.r = sampleSource(fract(uv + vec2(d + split, 0.0))).r;
+        g.b = sampleSource(fract(uv + vec2(d - split, 0.0))).b;
+        return g;
+      }
+      else if(typeI < 8.5){                                                          // tilt: dutch rock
+        vec2 c = uv - 0.5;
+        c.x *= aspect;
+        c = rot2(c, sin(e * PI) * 0.45);
+        c.x /= aspect;
+        return sampleSource(fract(c + 0.5));
+      }
+      else if(typeI < 9.5){                                                          // spin: full roll + zoom dip
+        vec2 c = uv - 0.5;
+        c.x *= aspect;
+        c = rot2(c, e * TAU);
+        c.x /= aspect;
+        float z = 1.0 - sin(e * PI) * 0.35;
+        return sampleSource(fract(c / z + 0.5));
+      }
+      else if(typeI < 10.5){                                                         // zoom pull-back
+        float z = 1.0 - sin(e * PI) * 0.65;
+        return sampleSource(fract((uv - 0.5) / z + 0.5));
+      }
+      else if(typeI < 11.5){                                                         // venetian bars slide out
+        float rowDir = mod(floor(uv.y * 8.0), 2.0) * 2.0 - 1.0;
+        return sampleSource(fract(uv + vec2(rowDir * e, 0.0)));
+      }
+      else if(typeI < 12.5){                                                         // iris close/open
+        vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
+        float ap = 0.8 * (1.0 - sin(e * PI)) + 0.001;
+        return sampleSource(uv) * (1.0 - smoothstep(ap, ap + 0.03, length(c)));
+      }
+      else if(typeI < 13.5){                                                         // diagonal slice push
+        float band = step(0.5, fract((uv.x + uv.y) * 3.0));
+        float d = (band * 2.0 - 1.0) * e * 0.7;
+        return sampleSource(fract(uv + vec2(d, -d)));
+      }
+      else if(typeI < 14.5){                                                         // white flash dip
+        return mix(sampleSource(uv), vec3(1.0), sin(e * PI) * 0.9);
+      }
+      // defocus dip: blur out and back in
+      float b = sin(e * PI) * 0.05;
+      vec3 acc = vec3(0.0);
+      for(int i = 0; i < 6; i++){
+        float a = float(i) / 6.0 * TAU;
+        acc += sampleSource(uv + vec2(cos(a), sin(a)) * b);
+      }
+      return acc / 6.0;
     }
     void main(){
       vec2 uv = vUv;
@@ -2085,27 +2172,38 @@ function getFragmentShader(type: ModuleType): string {
       col += vec3(0.5) * rows * 0.45;
       return col;
     }
-    /* Rack focus: defocus blur that racks in and out with the beat; sharp on the
-       downbeat like a focus pull landing. */
+    /* Rack focus: a focus pull that ALWAYS lands back at sharp - the envelope hits
+       0 at the top of every cycle, like a focus pull settling. X-EYE mode splits the
+       frame into two 50/50 copies that drift apart and reconverge instead of blurring. */
     void main(){
       vec2 uv = vUv;
       float amt    = uP0.x;
       float pulseP = uP0.y;
       float soft   = uP0.z;
       float mix_   = uP0.w;
+      float xeye   = uP1.x;
 
-      // rack pulls to the beat when playing, breathes on its own clock when stopped
+      // rack pulls to the beat when playing, breathes on its own clock when stopped;
+      // cosine envelope guarantees a return to 0 = perfectly in focus every cycle
       float rackPhase = mix(uTime * 0.22, uBeat / 2.0, uPlaying);
       float rack = 0.5 - 0.5 * cos(fract(rackPhase) * TAU);
-      float blur = (amt * 0.35 + rack * pulseP) * (0.014 + pulseP * 0.035);
+      float k = rack * (0.2 + pulseP * 0.8);
 
-      vec3 wet = vec3(0.0);
-      for(int i = 0; i < 8; i++){
-        float a = float(i) / 8.0 * TAU;
-        wet += sampleSource(uv + vec2(cos(a), sin(a)) * blur);
+      vec3 wet;
+      if(xeye > 0.5){
+        // cross-eyed: two half-opacity copies separate and reconverge to one image
+        float sep = k * (0.01 + amt * 0.09);
+        wet = (sampleSource(uv + vec2(sep, 0.0)) + sampleSource(uv - vec2(sep, 0.0))) * 0.5;
+      } else {
+        float blur = k * (0.004 + amt * 0.045);
+        wet = vec3(0.0);
+        for(int i = 0; i < 8; i++){
+          float a = float(i) / 8.0 * TAU;
+          wet += sampleSource(uv + vec2(cos(a), sin(a)) * blur);
+        }
+        wet /= 8.0;
+        wet += max(wet - 0.62, 0.0) * soft * min(1.0, blur * 45.0);
       }
-      wet /= 8.0;
-      wet += max(wet - 0.62, 0.0) * soft * min(1.0, blur * 45.0);
 
       float wetAmt = uMode < 0.5 ? 1.0 : mix_;
       if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
@@ -2115,18 +2213,31 @@ function getFragmentShader(type: ModuleType): string {
   }
 
   return `${common}
-    /* Idle: barcode timeline scrubbed by the remapped clock - chunk loops visibly
-       rewind the pattern; flash while a chunk repeats. */
+    /* Idle: a scrolling filmstrip where every frame has its own color and marker,
+       so a beat-repeat visibly re-plays the SAME frames (they scroll back and pass
+       again), reverse runs the strip backwards, and each retrigger flashes. */
     vec3 moduleIdle(vec2 uv, float t){
-      vec3 col = vec3(0.04, 0.045, 0.055);
-      float sx = (uv.x + t * 0.35) * 30.0;
-      float cell = floor(sx);
-      float v = hash(vec2(cell, 7.0));
-      // variable-width thin bars, like a real barcode
-      float line = step(fract(sx), 0.18 + v * 0.4) * step(0.3, v);
-      col += uColor * line * (0.35 + v * 0.5) * smoothstep(0.46, 0.42, abs(uv.y - 0.5));
-      col += vec3(0.9) * smoothstep(0.004, 0.0, abs(uv.x - 0.5)) * 0.5;
-      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.12;
+      vec3 col = vec3(0.03, 0.035, 0.045);
+      float x = uv.x * 5.0 + t * 1.6;
+      float fi = floor(x);
+      float fx = fract(x);
+      // per-frame hue: repeated chunks are unmistakable because the colors repeat
+      float hue = fract(fi * 0.61803);
+      vec3 fcol = 0.18 + 0.5 * (0.5 + 0.5 * cos(TAU * (hue + vec3(0.0, 0.33, 0.67))));
+      float inFrame = step(0.05, fx) * step(fx, 0.95) * step(0.22, uv.y) * step(uv.y, 0.78);
+      col = mix(col, fcol * 0.45, inFrame);
+      // per-frame diagonal marker - in-frame motion that scrubs with the clock
+      float mpos = fract(fi * 0.37);
+      float diag = smoothstep(0.07, 0.0, abs((uv.y - 0.22) / 0.56 - fract(fx + mpos)));
+      col += fcol * diag * inFrame * 0.9;
+      // sprocket holes top and bottom
+      float sy = min(abs(uv.y - 0.12), abs(uv.y - 0.88));
+      float hole = step(sy, 0.045) * step(0.35, fract(x * 2.0)) * step(fract(x * 2.0), 0.65);
+      col = mix(col, vec3(0.5), hole);
+      // fixed playhead: the strip moves THROUGH it
+      col += uColor * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.8;
+      // retrigger flash
+      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.25;
       return col;
     }
   /* Time-remap sampler: the JS transport chops source time into beat-synced chunks
@@ -2179,6 +2290,8 @@ interface CompactSpec {
   primary: string;
   slider: { param: string; label: string };
   knobs: { param: string; label: string }[];
+  /** Optional on/off mode switch (0 or 100), e.g. rack focus X-EYE. */
+  toggle?: { param: string; label: string };
 }
 
 const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
@@ -2222,8 +2335,9 @@ const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
       { label: 'BLIND', set: { pulse: 100, amt: 88, soft: 95 } },
     ],
     primary: 'pulse',
-    slider: { param: 'amt', label: 'BASE BLUR' },
+    slider: { param: 'amt', label: 'AMOUNT' },
     knobs: [{ param: 'soft', label: 'BLOOM' }, { param: 'mix', label: 'MIX' }],
+    toggle: { param: 'xeye', label: 'XEYE' },
   },
 };
 
@@ -2354,6 +2468,16 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
                 onClick={() => Object.entries(btn.set).forEach(([k, v]) => onUpdateParam(k, v))}
                 width={36} height={16} />
             ))}
+            {spec?.toggle ? (
+              <RackBtn label={spec.toggle.label}
+                active={(params[spec.toggle.param] ?? 0) > 50}
+                color={accentColor}
+                onClick={() => {
+                  const tp = spec.toggle!.param;
+                  onUpdateParam(tp, (params[tp] ?? 0) > 50 ? 0 : 100);
+                }}
+                width={36} height={16} />
+            ) : null}
           </div>
           {spec && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>

@@ -36,7 +36,7 @@ const MODULES: ModuleConfig[] = [
     shortName: 'TRANS',
     accentColor: '#22c55e',
     params: {
-      type: 0, interval: 50, duration: 40, amount: 60, trig: 0,
+      type: 0, interval: 36, duration: 40, amount: 60, trig: 0,
       mix: 100, in_: 80, out: 75,
     },
   },
@@ -46,7 +46,7 @@ const MODULES: ModuleConfig[] = [
     shortName: 'RAMP',
     accentColor: '#f59e0b',
     params: {
-      len: 50, depth: 60,
+      len: 36, spdMin: 25, spdMax: 75,
       bzY0: 80, bzX1: 35, bzY1: 5, bzX2: 65, bzY2: 5, bzY3: 80,
       mix: 100, in_: 80, out: 70,
     },
@@ -58,7 +58,7 @@ const MODULES: ModuleConfig[] = [
     accentColor: '#38bdf8',
     params: {
       type: 1, velCrv: 55, end: 60, start: 25, filterSlider: 60,
-      time: 60, feedback: 50,
+      time: 60, feedback: 50, feel: 0,
       scratchMode: 0, scratchDepth: 45,
       mix: 55, in_: 80, out: 65,
     },
@@ -103,7 +103,7 @@ const MODULES_B: ModuleConfig[] = [
     name: 'RACK FOCUS',
     shortName: 'FOCUS',
     accentColor: '#e2c08d',
-    params: { amt: 35, pulse: 55, soft: 45, mix: 100 },
+    params: { amt: 35, pulse: 55, soft: 45, xeye: 0, mix: 100 },
   },
 ];
 
@@ -284,7 +284,7 @@ export function App() {
               midiLayers={midiLayers}
               bypassed={bypassed}
             />
-            <div style={{ height: 'clamp(408px, calc((100vw - 206px) * 9 / 64 + 250px), 540px)', flexShrink: 1, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ height: 'clamp(460px, calc((100vw - 206px) * 9 / 64 + 302px), 592px)', flexShrink: 1, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
               {orderTop.map(mid => moduleById[mid]).map(module => (
                 <EffectModule
                   key={module.id}
@@ -304,7 +304,7 @@ export function App() {
                 />
               ))}
             </div>
-            <div style={{ height: 'clamp(230px, calc((100vw - 206px) * 9 / 64 + 84px), 392px)', flexShrink: 1, minHeight: 176, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
+            <div style={{ height: 'clamp(236px, calc((100vw - 206px) * 9 / 64 + 90px), 398px)', flexShrink: 0.3, minHeight: 176, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
               {orderBottom.map(mid => moduleById[mid]).map(module => (
                 <CompactModule
                   key={module.id}
