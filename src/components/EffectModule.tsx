@@ -1676,6 +1676,10 @@ function getFragmentShader(type: ModuleType): string {
       return vec3(0.0, 0.0, 0.82);
     }
 
+    /* Shared idle-card treatment: accent graphics fade to black toward the top and
+       bottom of the card so every module's idle reads as one family. */
+    float idleFade(vec2 uv){ return 0.22 + 0.78 * smoothstep(0.50, 0.18, abs(uv.y - 0.5)); }
+
     /* Per-module idle graphic (defined by each effect shader below): a param-reactive
        visualization that shows what the module does before any clip is loaded. */
     vec3 moduleIdle(vec2 uv, float t);
@@ -2020,17 +2024,18 @@ function getFragmentShader(type: ModuleType): string {
       vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
       float r = length(c);
       vec3 col = vec3(0.045, 0.05, 0.06);
-      // thick feathered rings (solid core + soft halo) to match the top-row cards
+      // thick feathered rings (solid core + soft halo), faded top/bottom like the rest
+      float fade = idleFade(uv);
       float rings = smoothstep(0.030, 0.010, abs(r - 0.12))
                   + smoothstep(0.030, 0.010, abs(r - 0.27))
                   + smoothstep(0.030, 0.010, abs(r - 0.42));
       float halo  = smoothstep(0.065, 0.0, abs(r - 0.12))
                   + smoothstep(0.065, 0.0, abs(r - 0.27))
                   + smoothstep(0.065, 0.0, abs(r - 0.42));
-      col += uColor * (rings * 0.8 + halo * 0.3);
+      col += uColor * (rings * 0.62 + halo * 0.26) * fade;
       float cross = min(abs(c.x), abs(c.y));
-      col += uColor * (smoothstep(0.016, 0.004, cross) * 0.5 + smoothstep(0.05, 0.0, cross) * 0.18) * step(r, 0.5);
-      col += vec3(0.95) * smoothstep(0.045, 0.0, r) * 0.8;
+      col += uColor * (smoothstep(0.016, 0.004, cross) * 0.42 + smoothstep(0.05, 0.0, cross) * 0.15) * step(r, 0.5) * fade;
+      col += vec3(0.95) * smoothstep(0.045, 0.0, r) * 0.7 * fade;
       return col;
     }
     /* Crash zoom: beat-synced punch-in / punch-out like a fake camera zoom hit.
@@ -2069,14 +2074,15 @@ function getFragmentShader(type: ModuleType): string {
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
+      float fade = idleFade(uv);
       float hLine = smoothstep(0.009, 0.0, abs(fract(uv.y * 4.0 + 0.5) - 0.5) / 4.0);
       float vLine = smoothstep(0.009, 0.0, abs(fract(uv.x * aspect * 4.0 + 0.5) - 0.5) / (aspect * 4.0));
-      col += vec3(0.16, 0.17, 0.20) * max(hLine, vLine);
+      col += vec3(0.16, 0.17, 0.20) * max(hLine, vLine) * (0.35 + 0.65 * fade);
       // emphasized horizon: thick core + feathered glow, chunky level marks
-      col += uColor * (smoothstep(0.022, 0.006, abs(uv.y - 0.5)) * 0.85
-                     + smoothstep(0.07, 0.0, abs(uv.y - 0.5)) * 0.30);
+      col += uColor * (smoothstep(0.022, 0.006, abs(uv.y - 0.5)) * 0.7
+                     + smoothstep(0.07, 0.0, abs(uv.y - 0.5)) * 0.26) * fade;
       float marks = step(abs(uv.y - 0.5), 0.07) * smoothstep(0.82, 0.92, fract(uv.x * aspect * 8.0));
-      col += uColor * marks * 0.7;
+      col += uColor * marks * 0.55 * fade;
       return col;
     }
     /* Handheld camera: a body operator's frame. Slow breathing sway + faster
@@ -2129,16 +2135,17 @@ function getFragmentShader(type: ModuleType): string {
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
+      float fade = idleFade(uv);
       vec2 g = uv * vec2(aspect * 6.0, 6.0);
-      col += vec3(0.09, 0.10, 0.12) * step(0.92, max(fract(g.x), fract(g.y)));
+      col += vec3(0.09, 0.10, 0.12) * step(0.92, max(fract(g.x), fract(g.y))) * (0.35 + 0.65 * fade);
       for(int i = 0; i < 5; i++){
         float fi = float(i);
         vec2 lp = vec2(hash(vec2(fi, 2.7)), hash(vec2(7.7, fi)));
         vec2 d = vec2((uv.x - lp.x) * aspect, uv.y - lp.y);
         // X landmark: two thick feathered diagonal strokes
-        float xm = smoothstep(0.012, 0.003, abs(abs(d.x) - abs(d.y))) * step(max(abs(d.x), abs(d.y)), 0.034);
-        col += uColor * xm;
-        col += uColor * smoothstep(0.10, 0.0, length(d)) * 0.22 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
+        float xm = smoothstep(0.014, 0.004, abs(abs(d.x) - abs(d.y))) * smoothstep(0.036, 0.028, max(abs(d.x), abs(d.y)));
+        col += uColor * xm * 0.8 * fade;
+        col += uColor * smoothstep(0.10, 0.0, length(d)) * 0.20 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1)) * fade;
       }
       return col;
     }
@@ -2181,8 +2188,9 @@ function getFragmentShader(type: ModuleType): string {
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
+      float fade = idleFade(uv);
       vec2 g = uv * vec2(aspect * 6.0, 6.0);
-      col += vec3(0.05, 0.055, 0.065) * step(0.93, max(fract(g.x), fract(g.y)));
+      col += vec3(0.05, 0.055, 0.065) * step(0.93, max(fract(g.x), fract(g.y))) * (0.35 + 0.65 * fade);
       for(int i = 0; i < 5; i++){
         float fi = float(i);
         float z = fi / 4.0;                                    // 0 far .. 1 near
@@ -2194,9 +2202,10 @@ function getFragmentShader(type: ModuleType): string {
         float m = mod(fi, 3.0) < 0.5 ? length(d)
                 : mod(fi, 3.0) < 1.5 ? abs(d.x) + abs(d.y)
                 : max(abs(d.x), abs(d.y));
-        float w = 0.020 - z * 0.012;                           // far feathered, near crisp
-        float ring = smoothstep(w + 0.006, w * 0.3, abs(m - sz));
-        col += uColor * ring * (0.30 + z * 0.65);
+        // flat, even stroke - symmetric feather on both sides, no hard edge
+        float w = 0.014 - z * 0.006;
+        float ring = smoothstep(w + 0.010, w * 0.5, abs(m - sz));
+        col += uColor * ring * (0.22 + z * 0.42) * fade;
       }
       return col;
     }
@@ -2241,37 +2250,38 @@ function getFragmentShader(type: ModuleType): string {
   }
 
   return `${common}
-    /* Idle: a MIDI-clip piano roll scrubbed by the slice clock - note blocks scroll
-       through the fixed playhead and visibly teleport when the sampler jumps. */
+    /* Idle: a MIDI-clip piano roll scrubbed by the slice clock. The notes climb a
+       repeating arpeggio staircase, so playback DIRECTION reads at a glance - FWD
+       climbs, REV descends, PONG bounces, RND teleports. Bar columns are accented. */
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
+      float fade = idleFade(uv);
       float gx = uv.x * aspect * 3.2 + t * 1.8;
       float gy = uv.y * 6.0;
-      // lane + beat grid
-      col += vec3(0.05, 0.055, 0.065) * step(0.95, fract(gy));
-      col += vec3(0.06, 0.065, 0.075) * step(0.94, fract(gx));
       float ci = floor(gx);
       float fx = fract(gx);
-      float laneBody = step(0.15, fract(gy)) * step(fract(gy), 0.88);
-      // primary note per column: hashed lane, start-anchored, hashed length + velocity
-      float lane = floor(hash(vec2(ci, 3.7)) * 6.0);
-      float len = 0.30 + hash(vec2(ci, 9.1)) * 0.55;
-      float inNote = step(lane, gy) * step(gy, lane + 1.0)
-                   * step(0.05, fx) * step(fx, len) * laneBody;
-      float vel = 0.45 + hash(vec2(ci, 5.3)) * 0.55;
-      col = mix(col, uColor * vel * 0.75, inNote);
-      col += uColor * inNote * smoothstep(0.16, 0.05, fx) * 0.45;
-      // second, shorter note on some columns so the roll feels like a real clip
-      float lane2 = floor(hash(vec2(ci, 7.7)) * 6.0);
-      float has2 = step(0.45, hash(vec2(ci, 1.3)));
-      float inNote2 = has2 * step(lane2, gy) * step(gy, lane2 + 1.0)
-                    * step(0.05, fx) * step(fx, 0.22 + hash(vec2(ci, 6.2)) * 0.35) * laneBody;
-      col = mix(col, uColor * (0.35 + hash(vec2(ci, 8.8)) * 0.4) * 0.75, inNote2 * (1.0 - inNote));
+      // lane + beat grid; every 4th column is a bar line, drawn brighter
+      float isBar = step(mod(ci, 4.0), 0.5);
+      col += vec3(0.05, 0.055, 0.065) * step(0.95, fract(gy)) * (0.4 + 0.6 * fade);
+      col += vec3(0.06, 0.065, 0.075) * step(0.94, fract(gx)) * (0.4 + 0.6 * fade);
+      col += uColor * smoothstep(0.06, 0.0, fx) * isBar * 0.22 * fade;
+      // rising arpeggio staircase: lane follows the column index, so scrolling
+      // forward climbs and reverse descends - the jump direction is visible
+      float lane = mod(ci, 6.0);
+      float len = 0.55 + 0.30 * hash(vec2(ci, 9.1));
+      float inLane = step(lane, gy) * step(gy, lane + 1.0);
+      float laneBody = smoothstep(0.10, 0.24, fract(gy)) * smoothstep(0.92, 0.78, fract(gy));
+      // feathered note ends (soft attack and release, never hard opaque blocks)
+      float body = smoothstep(0.02, 0.12, fx) * smoothstep(len, len - 0.14, fx);
+      float note = inLane * laneBody * body;
+      float vel = 0.55 + 0.35 * hash(vec2(ci, 5.3));
+      col += uColor * note * vel * 0.55 * fade;
+      col += uColor * note * smoothstep(0.18, 0.04, fx) * 0.25 * fade;
       // fixed playhead the roll scrolls through
-      col += vec3(0.9) * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.5;
+      col += vec3(0.9) * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.45;
       // slice-jump flash
-      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.18;
+      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.16;
       return col;
     }
   /* Simpler-style slice sampler: the JS transport splits the source into N slices
