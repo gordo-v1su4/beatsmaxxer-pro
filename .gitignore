@@ -28,3 +28,8 @@ dist-ssr
 
 # Build files
 *.tsbuildinfo
+
+# npm/yarn/pnpm lockfiles (this project uses bun.lock)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
