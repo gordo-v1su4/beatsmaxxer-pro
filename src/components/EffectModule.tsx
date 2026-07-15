@@ -37,6 +37,10 @@ function Screw() {
   );
 }
 
+/** Global FX-preview freeze: when paused, every shader canvas holds its last
+    rendered frame (for anyone who finds the constant motion distracting). */
+export const shaderCtl = { paused: false };
+
 function HeaderBtn({ label, active, activeColor, onClick }: {
   label: string; active?: boolean; activeColor?: string; onClick?: () => void;
 }) {
@@ -440,6 +444,12 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     let last = performance.now();
     const animate = () => {
       const now = performance.now();
+      if (shaderCtl.paused) {
+        // FX freeze: hold the last frame; keep last fresh so resume doesn't jump
+        last = now;
+        frameRef.current = requestAnimationFrame(animate);
+        return;
+      }
       const dt = (now - last) * 0.001;
       timeRef.current += dt;
       last = now;
@@ -1582,7 +1592,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
       <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} bypassed={bypassed} />
 
       {!collapsed && (
-        <div style={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
+        <div style={{ flex:'0 1 auto', display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
           {id==='transition' && <TransitionControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='speedramp' && <SpeedRampControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
           {id==='tapdelay' && <TapDelayControls params={params} onUpdate={onUpdateParam} color={accentColor}/>}
@@ -1592,6 +1602,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
       {collapsed && <div style={{ flex:1 }}/>}
 
       {!collapsed && <MixSection params={params} onUpdate={onUpdateParam} color={accentColor}/>}
+      {!collapsed && <div style={{ flex:1 }}/>}
     </div>
   );
 }
@@ -2009,12 +2020,17 @@ function getFragmentShader(type: ModuleType): string {
       vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
       float r = length(c);
       vec3 col = vec3(0.045, 0.05, 0.06);
-      col += uColor * (smoothstep(0.016, 0.0, abs(r - 0.12))
-                     + smoothstep(0.016, 0.0, abs(r - 0.27))
-                     + smoothstep(0.016, 0.0, abs(r - 0.42))) * 0.95;
+      // thick feathered rings (solid core + soft halo) to match the top-row cards
+      float rings = smoothstep(0.030, 0.010, abs(r - 0.12))
+                  + smoothstep(0.030, 0.010, abs(r - 0.27))
+                  + smoothstep(0.030, 0.010, abs(r - 0.42));
+      float halo  = smoothstep(0.065, 0.0, abs(r - 0.12))
+                  + smoothstep(0.065, 0.0, abs(r - 0.27))
+                  + smoothstep(0.065, 0.0, abs(r - 0.42));
+      col += uColor * (rings * 0.8 + halo * 0.3);
       float cross = min(abs(c.x), abs(c.y));
-      col += uColor * smoothstep(0.008, 0.0, cross) * step(r, 0.5) * 0.5;
-      col += vec3(0.95) * smoothstep(0.03, 0.0, r) * 0.8;
+      col += uColor * (smoothstep(0.016, 0.004, cross) * 0.5 + smoothstep(0.05, 0.0, cross) * 0.18) * step(r, 0.5);
+      col += vec3(0.95) * smoothstep(0.045, 0.0, r) * 0.8;
       return col;
     }
     /* Crash zoom: beat-synced punch-in / punch-out like a fake camera zoom hit.
@@ -2053,13 +2069,14 @@ function getFragmentShader(type: ModuleType): string {
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
       vec3 col = vec3(0.045, 0.05, 0.06);
-      float hLine = smoothstep(0.006, 0.0, abs(fract(uv.y * 4.0 + 0.5) - 0.5) / 4.0);
-      float vLine = smoothstep(0.006, 0.0, abs(fract(uv.x * aspect * 4.0 + 0.5) - 0.5) / (aspect * 4.0));
+      float hLine = smoothstep(0.009, 0.0, abs(fract(uv.y * 4.0 + 0.5) - 0.5) / 4.0);
+      float vLine = smoothstep(0.009, 0.0, abs(fract(uv.x * aspect * 4.0 + 0.5) - 0.5) / (aspect * 4.0));
       col += vec3(0.16, 0.17, 0.20) * max(hLine, vLine);
-      // emphasized horizon + level marks
-      col += uColor * smoothstep(0.012, 0.0, abs(uv.y - 0.5)) * 0.95;
-      float marks = step(abs(uv.y - 0.5), 0.05) * step(0.88, fract(uv.x * aspect * 8.0));
-      col += uColor * marks * 0.6;
+      // emphasized horizon: thick core + feathered glow, chunky level marks
+      col += uColor * (smoothstep(0.022, 0.006, abs(uv.y - 0.5)) * 0.85
+                     + smoothstep(0.07, 0.0, abs(uv.y - 0.5)) * 0.30);
+      float marks = step(abs(uv.y - 0.5), 0.07) * smoothstep(0.82, 0.92, fract(uv.x * aspect * 8.0));
+      col += uColor * marks * 0.7;
       return col;
     }
     /* Handheld camera: a body operator's frame. Slow breathing sway + faster
@@ -2117,9 +2134,11 @@ function getFragmentShader(type: ModuleType): string {
       for(int i = 0; i < 5; i++){
         float fi = float(i);
         vec2 lp = vec2(hash(vec2(fi, 2.7)), hash(vec2(7.7, fi)));
-        float d = length(vec2((uv.x - lp.x) * aspect, uv.y - lp.y));
-        col += uColor * smoothstep(0.032, 0.0, d) * 1.1;
-        col += uColor * smoothstep(0.09, 0.0, d) * 0.22 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
+        vec2 d = vec2((uv.x - lp.x) * aspect, uv.y - lp.y);
+        // X landmark: two thick feathered diagonal strokes
+        float xm = smoothstep(0.012, 0.003, abs(abs(d.x) - abs(d.y))) * step(max(abs(d.x), abs(d.y)), 0.034);
+        col += uColor * xm;
+        col += uColor * smoothstep(0.10, 0.0, length(d)) * 0.22 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1));
       }
       return col;
     }
@@ -2157,19 +2176,28 @@ function getFragmentShader(type: ModuleType): string {
 
   if (type === 'focus') {
     return `${common}
-    /* Idle: starburst focus chart with fine line rows - defocus blur is unmistakable. */
+    /* Idle: depth planes - outlined shapes floating at different z distances (far =
+       small, soft, dim; near = big, crisp, bright), in the house idle-card style. */
     vec3 moduleIdle(vec2 uv, float t){
       float aspect = uResolution.x / uResolution.y;
-      vec2 c = vec2((uv.x - 0.5) * aspect, uv.y - 0.5);
-      float r = length(c);
       vec3 col = vec3(0.045, 0.05, 0.06);
-      // Siemens star
-      float star = step(0.0, sin(atan(c.y, c.x) * 18.0));
-      col = mix(col, vec3(0.8) * (0.35 + 0.65 * star), smoothstep(0.42, 0.40, r));
-      col += uColor * smoothstep(0.012, 0.0, abs(r - 0.42)) * 0.8;
-      // fine "text" line rows in the margins
-      float rows = step(0.55, fract(uv.y * 22.0)) * step(0.44, r);
-      col += vec3(0.5) * rows * 0.45;
+      vec2 g = uv * vec2(aspect * 6.0, 6.0);
+      col += vec3(0.05, 0.055, 0.065) * step(0.93, max(fract(g.x), fract(g.y)));
+      for(int i = 0; i < 5; i++){
+        float fi = float(i);
+        float z = fi / 4.0;                                    // 0 far .. 1 near
+        vec2 sp = vec2(0.14 + fi * 0.18 + sin(t * 0.25 + fi * 2.1) * 0.012,
+                       0.35 + 0.34 * hash(vec2(fi, 4.2)));
+        vec2 d = vec2((uv.x - sp.x) * aspect, uv.y - sp.y);
+        float sz = 0.035 + z * 0.075;
+        // alternate shape metrics: circle / diamond / square outlines
+        float m = mod(fi, 3.0) < 0.5 ? length(d)
+                : mod(fi, 3.0) < 1.5 ? abs(d.x) + abs(d.y)
+                : max(abs(d.x), abs(d.y));
+        float w = 0.020 - z * 0.012;                           // far feathered, near crisp
+        float ring = smoothstep(w + 0.006, w * 0.3, abs(m - sz));
+        col += uColor * ring * (0.30 + z * 0.65);
+      }
       return col;
     }
     /* Rack focus: a focus pull that ALWAYS lands back at sharp - the envelope hits
@@ -2213,31 +2241,37 @@ function getFragmentShader(type: ModuleType): string {
   }
 
   return `${common}
-    /* Idle: a scrolling filmstrip where every frame has its own color and marker,
-       so a beat-repeat visibly re-plays the SAME frames (they scroll back and pass
-       again), reverse runs the strip backwards, and each retrigger flashes. */
+    /* Idle: a MIDI-clip piano roll scrubbed by the slice clock - note blocks scroll
+       through the fixed playhead and visibly teleport when the sampler jumps. */
     vec3 moduleIdle(vec2 uv, float t){
-      vec3 col = vec3(0.03, 0.035, 0.045);
-      float x = uv.x * 5.0 + t * 1.6;
-      float fi = floor(x);
-      float fx = fract(x);
-      // per-frame hue: repeated chunks are unmistakable because the colors repeat
-      float hue = fract(fi * 0.61803);
-      vec3 fcol = 0.18 + 0.5 * (0.5 + 0.5 * cos(TAU * (hue + vec3(0.0, 0.33, 0.67))));
-      float inFrame = step(0.05, fx) * step(fx, 0.95) * step(0.22, uv.y) * step(uv.y, 0.78);
-      col = mix(col, fcol * 0.45, inFrame);
-      // per-frame diagonal marker - in-frame motion that scrubs with the clock
-      float mpos = fract(fi * 0.37);
-      float diag = smoothstep(0.07, 0.0, abs((uv.y - 0.22) / 0.56 - fract(fx + mpos)));
-      col += fcol * diag * inFrame * 0.9;
-      // sprocket holes top and bottom
-      float sy = min(abs(uv.y - 0.12), abs(uv.y - 0.88));
-      float hole = step(sy, 0.045) * step(0.35, fract(x * 2.0)) * step(fract(x * 2.0), 0.65);
-      col = mix(col, vec3(0.5), hole);
-      // fixed playhead: the strip moves THROUGH it
-      col += uColor * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.8;
-      // retrigger flash
-      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.25;
+      float aspect = uResolution.x / uResolution.y;
+      vec3 col = vec3(0.045, 0.05, 0.06);
+      float gx = uv.x * aspect * 3.2 + t * 1.8;
+      float gy = uv.y * 6.0;
+      // lane + beat grid
+      col += vec3(0.05, 0.055, 0.065) * step(0.95, fract(gy));
+      col += vec3(0.06, 0.065, 0.075) * step(0.94, fract(gx));
+      float ci = floor(gx);
+      float fx = fract(gx);
+      float laneBody = step(0.15, fract(gy)) * step(fract(gy), 0.88);
+      // primary note per column: hashed lane, start-anchored, hashed length + velocity
+      float lane = floor(hash(vec2(ci, 3.7)) * 6.0);
+      float len = 0.30 + hash(vec2(ci, 9.1)) * 0.55;
+      float inNote = step(lane, gy) * step(gy, lane + 1.0)
+                   * step(0.05, fx) * step(fx, len) * laneBody;
+      float vel = 0.45 + hash(vec2(ci, 5.3)) * 0.55;
+      col = mix(col, uColor * vel * 0.75, inNote);
+      col += uColor * inNote * smoothstep(0.16, 0.05, fx) * 0.45;
+      // second, shorter note on some columns so the roll feels like a real clip
+      float lane2 = floor(hash(vec2(ci, 7.7)) * 6.0);
+      float has2 = step(0.45, hash(vec2(ci, 1.3)));
+      float inNote2 = has2 * step(lane2, gy) * step(gy, lane2 + 1.0)
+                    * step(0.05, fx) * step(fx, 0.22 + hash(vec2(ci, 6.2)) * 0.35) * laneBody;
+      col = mix(col, uColor * (0.35 + hash(vec2(ci, 8.8)) * 0.4) * 0.75, inNote2 * (1.0 - inNote));
+      // fixed playhead the roll scrolls through
+      col += vec3(0.9) * smoothstep(0.006, 0.0, abs(uv.x - 0.5)) * 0.5;
+      // slice-jump flash
+      col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.18;
       return col;
     }
   /* Simpler-style slice sampler: the JS transport splits the source into N slices

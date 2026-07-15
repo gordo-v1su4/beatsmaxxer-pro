@@ -284,7 +284,7 @@ export function App() {
               midiLayers={midiLayers}
               bypassed={bypassed}
             />
-            <div style={{ height: 'clamp(460px, calc((100vw - 206px) * 9 / 64 + 302px), 592px)', flexShrink: 1, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
+            <div style={{ height: 'clamp(420px, calc((100vw - 206px) * 9 / 64 + 244px), 544px)', flexShrink: 0.15, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
               {orderTop.map(mid => moduleById[mid]).map(module => (
                 <EffectModule
                   key={module.id}
@@ -304,7 +304,7 @@ export function App() {
                 />
               ))}
             </div>
-            <div style={{ height: 'clamp(236px, calc((100vw - 206px) * 9 / 64 + 90px), 398px)', flexShrink: 0.3, minHeight: 176, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
+            <div style={{ height: 'clamp(240px, calc((100vw - 206px) * 9 / 64 + 96px), 404px)', flexShrink: 0.15, minHeight: 176, display: 'flex', overflow: 'hidden', borderTop: '2px solid #0d0e0f' }}>
               {orderBottom.map(mid => moduleById[mid]).map(module => (
                 <CompactModule
                   key={module.id}

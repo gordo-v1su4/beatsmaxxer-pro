@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { Undo2, Redo2, Shuffle, X, AlignJustify, Play, Square, Upload, Music4, Disc3 } from 'lucide-react';
+import { Undo2, Redo2, Shuffle, X, AlignJustify, Play, Square, Upload, Music4, Disc3, Pause } from 'lucide-react';
 import { useAudio } from '../audio/AudioContext';
+import { shaderCtl } from './EffectModule';
 
 interface TopBarProps {
   onRandomize: () => void;
@@ -13,6 +14,7 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
   const { state, playing, togglePlay, setBPM, unlockBPM, tapTempo, loadAudioFile, clearUploadedTrack } = useAudio();
   const [tapFlash, setTapFlash] = useState(false);
   const [bpmEdit, setBpmEdit] = useState<string | null>(null);
+  const [fxFrozen, setFxFrozen] = useState(false);
   const audioInputRef = useRef<HTMLInputElement>(null);
 
   const commitBpm = () => {
@@ -259,6 +261,28 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
         <TopBtn icon={<Redo2 size={10} />} label="REDO" onClick={onRedo} />
         <TopBtn icon={<Shuffle size={10} />} label="RANDOMIZE" onClick={onRandomize} accent />
         <TopBtn icon={<X size={10} />} label="CLEAR" onClick={onClear} danger />
+
+        <div style={{ width:1, height:20, background:'#1e2226' }}/>
+
+        <button
+          onClick={() => { shaderCtl.paused = !shaderCtl.paused; setFxFrozen(shaderCtl.paused); }}
+          title={fxFrozen ? 'Resume the FX preview shaders' : 'Freeze all FX preview shaders (if the motion gets distracting)'}
+          style={{
+            height: 26, paddingInline: 7,
+            background: fxFrozen ? 'linear-gradient(180deg,#2a1a1a,#1c1212)' : 'linear-gradient(180deg,#191b1d,#131517)',
+            border: `1px solid ${fxFrozen ? '#ef444466' : '#1a1c1e'}`,
+            borderTop: `1px solid ${fxFrozen ? '#ef444444' : '#222428'}`,
+            borderRadius: 3, cursor:'pointer',
+            color: fxFrozen ? '#ef4444' : '#3a4050',
+            fontFamily:'Rajdhani,sans-serif', fontWeight:700, fontSize:9, letterSpacing:'0.1em',
+            display:'flex', alignItems:'center', gap:4,
+            boxShadow: fxFrozen ? '0 0 8px rgba(239,68,68,0.25)' : 'inset 0 1px 2px rgba(0,0,0,0.4)',
+            transition:'all 0.1s',
+          }}
+        >
+          {fxFrozen ? <Play size={10}/> : <Pause size={10}/>}
+          {fxFrozen ? 'FX RUN' : 'FX HOLD'}
+        </button>
       </div>
 
       <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:280, justifyContent:'flex-end' }}>
