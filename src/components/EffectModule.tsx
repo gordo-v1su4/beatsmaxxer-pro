@@ -745,8 +745,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
           // cubic bezier: x anchors at 0/1 with clamped handles keeps x(t) monotonic,
           // so bisection solves t for x = phase
-          const y0 = (prm.bzY0 ?? 80) / 100, y1 = (prm.bzY1 ?? 5) / 100;
-          const y2 = (prm.bzY2 ?? 5) / 100, y3 = (prm.bzY3 ?? 80) / 100;
+          const y0 = (prm.bzY0 ?? 100) / 100, y1 = (prm.bzY1 ?? 0) / 100;
+          const y2 = (prm.bzY2 ?? 0) / 100, y3 = (prm.bzY3 ?? 100) / 100;
           const x1 = Math.max(0, Math.min(1, (prm.bzX1 ?? 35) / 100));
           const x2 = Math.max(0, Math.min(1, (prm.bzX2 ?? 65) / 100));
           const bez = (a: number, b_: number, c: number, d: number, t: number) => {
@@ -759,12 +759,14 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             if (bez(0, x1, x2, 1, t) < phase) lo = t; else hi = t;
           }
           const cv = Math.max(0, Math.min(1, bez(y0, y1, y2, y3, t)));
-          // the curve sweeps between SPEED MIN and SPEED MAX in log space, so
-          // 0.5x and 2x sit symmetrically around 1x
+          // the curve's midline is ALWAYS 1x (the dashed line on the shape buttons):
+          // the top half sweeps 1x -> SPEED MAX and the bottom half 1x -> SPEED MIN
+          // in log space, so what you draw is exactly what you get
           const toRate = (v: number) => 0.25 * Math.pow(2, v * 4);
           const rMin = toRate(Math.min(prm.spdMin ?? 25, prm.spdMax ?? 75) / 100);
           const rMax = toRate(Math.max(prm.spdMin ?? 25, prm.spdMax ?? 75) / 100);
-          let rate = rMin * Math.pow(rMax / rMin, cv);
+          const sw = cv * 2 - 1;
+          let rate = sw >= 0 ? Math.pow(rMax, sw) : Math.pow(rMin, -sw);
           if (bypass) rate = 1;
 
           const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
@@ -1240,19 +1242,22 @@ function TransitionControls({ params, onUpdate, color }: { params: Record<string
 
 /** Bezier presets: endpoints (y0, y3) + control handles (x1,y1) (x2,y2), all 0-100. */
 // Speed-ramp shapes as bezier control points; each renders a drawn curve on its button.
+/* Shape semantics: the dashed midline on each button = 1x playback; the top edge
+   = SPEED MAX, the bottom edge = SPEED MIN. Presets span the full drawing so every
+   ramp actually reaches the user's chosen range ends. */
 const RAMP_SHAPES: { key: string; pts: { y0:number;x1:number;y1:number;x2:number;y2:number;y3:number } }[] = [
   { key: 'FLAT',  pts: { y0:50, x1:33, y1:50, x2:66, y2:50, y3:50 } },
-  { key: 'UP',    pts: { y0:16, x1:40, y1:28, x2:70, y2:74, y3:90 } },
-  { key: 'DOWN',  pts: { y0:90, x1:30, y1:74, x2:60, y2:28, y3:16 } },
-  { key: 'S',     pts: { y0:16, x1:78, y1:18, x2:22, y2:82, y3:90 } },
-  { key: 'DIP',   pts: { y0:82, x1:35, y1:4,  x2:65, y2:4,  y3:82 } },
-  { key: 'BUMP',  pts: { y0:20, x1:35, y1:98, x2:65, y2:98, y3:20 } },
+  { key: 'UP',    pts: { y0:0,  x1:40, y1:15, x2:70, y2:85, y3:100 } },
+  { key: 'DOWN',  pts: { y0:100,x1:30, y1:85, x2:60, y2:15, y3:0  } },
+  { key: 'S',     pts: { y0:0,  x1:78, y1:2,  x2:22, y2:98, y3:100 } },
+  { key: 'DIP',   pts: { y0:100,x1:35, y1:0,  x2:65, y2:0,  y3:100 } },
+  { key: 'BUMP',  pts: { y0:0,  x1:35, y1:100,x2:65, y2:100,y3:0  } },
   { key: 'LATE+', pts: { y0:50, x1:80, y1:50, x2:92, y2:64, y3:100 } },
   { key: 'LATE-', pts: { y0:50, x1:80, y1:50, x2:92, y2:36, y3:0  } },
   { key: 'EASE+', pts: { y0:100,x1:8,  y1:64, x2:20, y2:50, y3:50 } },
   { key: 'EASE-', pts: { y0:0,  x1:8,  y1:36, x2:20, y2:50, y3:50 } },
-  { key: 'INV-S', pts: { y0:34, x1:90, y1:96, x2:10, y2:4,  y3:66 } },
-  { key: 'SLAM',  pts: { y0:14, x1:96, y1:14, x2:99, y2:96, y3:100 } },
+  { key: 'INV-S', pts: { y0:0,  x1:90, y1:100,x2:10, y2:0,  y3:100 } },
+  { key: 'SLAM',  pts: { y0:0,  x1:96, y1:0,  x2:99, y2:100,y3:100 } },
 ];
 
 /** A speed-shape button: draws its bezier curve so you pick by the shape, not numbers. */
@@ -1290,8 +1295,8 @@ function SpeedRampControls({ params, onUpdate, color }: { params: Record<string,
   const activeKey = (() => {
     let best = ''; let bestD = 1e9;
     for (const sh of RAMP_SHAPES) {
-      const d = Math.abs((params.bzY0 ?? 80) - sh.pts.y0) + Math.abs((params.bzY1 ?? 5) - sh.pts.y1)
-              + Math.abs((params.bzY2 ?? 5) - sh.pts.y2) + Math.abs((params.bzY3 ?? 80) - sh.pts.y3);
+      const d = Math.abs((params.bzY0 ?? 100) - sh.pts.y0) + Math.abs((params.bzY1 ?? 0) - sh.pts.y1)
+              + Math.abs((params.bzY2 ?? 0) - sh.pts.y2) + Math.abs((params.bzY3 ?? 100) - sh.pts.y3);
       if (d < bestD) { bestD = d; best = sh.key; }
     }
     return bestD < 40 ? best : '';

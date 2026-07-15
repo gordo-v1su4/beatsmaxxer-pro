@@ -42,7 +42,7 @@ Owns all application state: `moduleParams` (per-module parameter maps), `macros`
 | Module | Accent | Key Params |
 |--------|--------|-----------|
 | TRANSITION | Green (`#22c55e`) | type (16 moves: whip L/R, push U/D, wipe, roll, zoom, glitch, tilt, spin, zoom-out, bars, iris, slice, flash, defocus), interval (7 zones: 1BT–8BAR), duration, amount, trig (fire counter), mix, in, out |
-| SPEEDRAMP | Amber (`#f59e0b`) | len (7 cycle zones: 1BT–8BAR), spdMin/spdMax (rate range knobs, 0.25×–4× log-mapped), bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (speed-curve bezier points, set via 12 drawn shape-preset buttons incl. LATE±/EASE±/INV-S/SLAM), mix, in, out |
+| SPEEDRAMP | Amber (`#f59e0b`) | len (7 cycle zones: 1BT–8BAR), spdMin/spdMax (rate range knobs, 0.25×–4×; the curve midline is always 1×, top half sweeps to MAX, bottom half to MIN in log space), bzY0/bzX1/bzY1/bzX2/bzY2/bzY3 (speed-curve bezier points, set via 12 drawn shape-preset buttons incl. LATE±/EASE±/INV-S/SLAM), mix, in, out |
 | TAPDELAY | Cyan (`#38bdf8`) | type, velCrv, end (accent sens), start, filterSlider, time, feedback, feel (0 straight / 1 swing / 2 dotted — reshapes each stutter repeat), scratchMode, scratchDepth, mix, in, out |
 | TIMESAMPLER | Yellow (`#eab308`) | mode (LOOP/REV/PONG/RAND), size, repeats, chance (accent sens), rate, mix, in, out |
 | PUNCH ZOOM | Coral (`#fb7185`) | dir, amt, snap, mix |

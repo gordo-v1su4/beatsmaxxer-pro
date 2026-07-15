@@ -47,7 +47,7 @@ const MODULES: ModuleConfig[] = [
     accentColor: '#f59e0b',
     params: {
       len: 36, spdMin: 25, spdMax: 75,
-      bzY0: 80, bzX1: 35, bzY1: 5, bzX2: 65, bzY2: 5, bzY3: 80,
+      bzY0: 100, bzX1: 35, bzY1: 0, bzX2: 65, bzY2: 0, bzY3: 100,
       mix: 100, in_: 80, out: 70,
     },
   },
