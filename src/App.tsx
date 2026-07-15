@@ -69,7 +69,7 @@ const MODULES: ModuleConfig[] = [
     shortName: 'SMPLR',
     accentColor: '#eab308',
     params: {
-      mode: 0, size: 50, repeats: 50, chance: 60, rate: 43,
+      mode: 0, size: 50, slices: 8, accent: 0, chance: 60, rate: 43,
       mix: 60, in_: 80, out: 60,
     },
   },

@@ -282,6 +282,9 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     lastTransportSec: -1,
     stutterAnchor: 0,
     scratchPongAtBack: true,
+    sliceIdx: 0,
+    lastStep: -1,
+    pongDir: 1,
     srcTime: 0,
     bassEma: 0.05,
     lastTrigAt: -9,
@@ -339,7 +342,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       uP2: new THREE.Vector4(p('scratchDepth', 45), params.scratchMode ?? 0, params.feel ?? 0, 0),
     };
     return {
-      uP0: new THREE.Vector4(params.mode ?? 0, p('size', 50), p('repeats', 50), p('chance', 60)),
+      uP0: new THREE.Vector4(params.mode ?? 0, p('size', 50), params.accent ?? 0, p('chance', 60)),
       uP1: new THREE.Vector4(p('rate', 43), p('mix', 60), p('in_', 80), p('out', 60)),
       uP2: new THREE.Vector4(0, 0, 0, 0),
     };
@@ -584,98 +587,83 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             : 0.0;
         }
         else if (type === 'timesampler') {
-          // Time-remap sampler: chunks trigger on FFT accents past the SENS threshold.
+          // Simpler-style slice sampler: the clip is split into SLIC equal sections
+          // and the playhead jumps to a new slice start every JMP beats, in MODE
+          // order (FWD/REV/PONG/RND). Bass accents past SENS punch an immediate
+          // random slice on top; MIDI notes do the same. With no clip, a virtual
+          // loop is sliced so the filmstrip test card visibly teleports.
+          const prm = paramsRef.current;
           const mode_ = Math.round(m.uniforms.uP0.value.x);
           const sizeP = m.uniforms.uP0.value.y;
-          const repeatsP = m.uniforms.uP0.value.z;
           const sens = m.uniforms.uP0.value.w;
+          const nSlices = Math.max(2, Math.round(prm.slices ?? 8));
           const rate = 0.25 + m.uniforms.uP1.value.x * 1.75;
           const bypass = m.uniforms.uBypass.value > 0.5;
           const chunkBeats = sizeP < 0.2 ? 0.25 : sizeP < 0.4 ? 0.5 : sizeP < 0.6 ? 1 : sizeP < 0.8 ? 2 : 4;
           const bpm = m.uniforms.uBPM.value || 128;
-          const chunkSec = chunkBeats * (60 / bpm);
 
           const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
-          const dur = video && Number.isFinite(video.duration) && video.duration > 0.05 ? video.duration : 1e6;
+          const hasDur = !!(video && Number.isFinite(video.duration) && video.duration > 0.05);
+          const dur = hasDur ? video!.duration : nSlices * 4 * (60 / bpm);
+          const sliceLen = dur / nSlices;
           if (video && Math.abs(video.playbackRate - rate) > 0.01) video.playbackRate = rate;
 
           const tNow = audioEngine.getState().time;
           const tPrev = st.lastTransportSec;
-          const beatReset = uBeat < st.lastBeat - 0.5;
-          const timeBack = tPrev >= 0 && tNow < tPrev - 0.25;
-          if (beatReset || timeBack || bypass) {
-            st.isStuttering = false;
-            st.remRepeats = 0;
-          }
-
           const midi = midiLayerRef.current;
           const useMidi = !!(midi?.notes?.length);
           let midiHit = false;
-          if (!beatReset && !timeBack && !bypass && useMidi && playingRef.current) {
+          if (!bypass && useMidi && playingRef.current && tPrev >= 0) {
             const lastT = midi!.notes[midi!.notes.length - 1]!.time;
             const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
-            const jump = tPrev >= 0 && Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
-            if (!jump && tPrev >= 0) {
-              midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
-            }
+            const jump = Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
+            if (!jump) midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
           }
           st.lastTransportSec = tNow;
 
           if (video) st.srcTime = video.currentTime;
           else st.srcTime += dt * rate;
 
-          const seek = (tSec: number) => {
+          const jumpTo = (idx: number) => {
+            st.sliceIdx = ((idx % nSlices) + nSlices) % nSlices;
+            const tSec = st.sliceIdx * sliceLen + 0.001;
             st.srcTime = tSec;
-            if (video) video.currentTime = Math.max(0, Math.min(dur - 0.02, ((tSec % dur) + dur) % dur));
+            if (video) video.currentTime = Math.max(0, Math.min(dur - 0.02, tSec));
           };
-          const startChunk = () => {
-            st.isStuttering = true;
-            st.stutterAnchor = st.srcTime;
-            st.stutterStartBeat = uBeat;
-            st.lastTrigAt = timeRef.current;
-            // louder accents earn more repeats
-            st.remRepeats = Math.max(1, Math.min(8, Math.round(repeatsP * 8 * (0.6 + onsetStr * 0.6))));
-            st.scratchPongAtBack = false;
-            st.beatsPassed = 0;
+          const advance = () => {
+            if (mode_ === 1) jumpTo(st.sliceIdx - 1);                          // REV
+            else if (mode_ === 2) {                                             // PONG
+              if (st.sliceIdx + st.pongDir < 0 || st.sliceIdx + st.pongDir >= nSlices) st.pongDir *= -1;
+              jumpTo(st.sliceIdx + st.pongDir);
+            }
+            else if (mode_ === 3) jumpTo(Math.floor(Math.random() * nSlices));  // RND
+            else jumpTo(st.sliceIdx + 1);                                       // FWD
           };
 
-          if (!st.isStuttering) {
-            if (!bypass) {
-              if (useMidi) {
-                if (midiHit) startChunk();
-              } else {
-                const thr = 0.08 + (1 - sens) * 1.1;
-                if (playingRef.current && onsetStr > thr && timeRef.current - st.lastTrigAt > 0.3) {
-                  startChunk();
-                }
-              }
+          // the slice clock free-runs when stopped so the preview always chops
+          const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
+          const step = Math.floor(beatsNow / chunkBeats);
+          if (!bypass && step !== st.lastStep) {
+            const first = st.lastStep < 0;
+            st.lastStep = step;
+            if (!first) {
+              advance();
+              st.stutterStartBeat = beatsNow;
             }
-          } else if (uBeat - st.stutterStartBeat >= chunkBeats) {
-            st.remRepeats--;
-            if (st.remRepeats > 0) {
-              st.beatsPassed++;
-              if (mode_ === 1) {
-                seek(st.stutterAnchor - st.beatsPassed * chunkSec);
-              } else if (mode_ === 2) {
-                st.scratchPongAtBack = !st.scratchPongAtBack;
-                seek(st.scratchPongAtBack ? st.stutterAnchor + chunkSec : st.stutterAnchor);
-              } else if (mode_ === 3) {
-                seek(st.stutterAnchor + (Math.random() * 2 - 1) * chunkSec * 4.0);
-              } else {
-                seek(st.stutterAnchor);
-              }
-              st.stutterStartBeat = uBeat;
-            } else {
-              st.isStuttering = false;
-            }
+          }
+          // accent juggle: strong bass hits (or MIDI notes) punch a random slice now
+          const thr = 0.08 + (1 - sens) * 1.1;
+          if (!bypass && ((useMidi && midiHit) ||
+              (!useMidi && playingRef.current && onsetStr > thr && timeRef.current - st.lastTrigAt > 0.25))) {
+            jumpTo(Math.floor(Math.random() * nSlices));
+            st.stutterStartBeat = beatsNow;
+            st.lastTrigAt = timeRef.current;
           }
           st.lastBeat = uBeat;
 
           m.uniforms.uSrcTime.value = st.srcTime;
-          m.uniforms.uAux1.value = st.isStuttering ? 1.0 : 0.0;
-          m.uniforms.uAux2.value = st.isStuttering
-            ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / chunkBeats))
-            : 0.0;
+          m.uniforms.uAux1.value = bypass ? 0.0 : 1.0;
+          m.uniforms.uAux2.value = Math.min(1, Math.max(0, (beatsNow - st.stutterStartBeat) / chunkBeats));
         }
         else if (type === 'transition') {
           // Transition clock: fires at the end of every N-beat cycle, on MIDI notes,
@@ -1451,20 +1439,28 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
   return (
     <div style={{ display:'flex', flexDirection:'column', flex:1 }}>
       <Section label="MODE" color={color}>
-        <div style={{ display:'flex', gap:2 }}>
+        <div style={{ display:'flex', gap:2, alignItems:'center' }}>
           {[
-            { l: 'LOOP', v: 0 },
+            { l: 'FWD', v: 0 },
             { l: 'REV', v: 1 },
             { l: 'PONG', v: 2 },
-            { l: 'RAND', v: 3 },
+            { l: 'RND', v: 3 },
           ].map(o => (
-            <RackBtn key={o.l} label={o.l} active={Math.round(params.mode??0)===o.v} color={color} onClick={()=>onUpdate('mode',o.v)} width={34}/>
+            <RackBtn key={o.l} label={o.l} active={Math.round(params.mode??0)===o.v} color={color} onClick={()=>onUpdate('mode',o.v)} width={32}/>
+          ))}
+          <div style={{ width:4 }}/>
+          {[
+            { l: 'LUM', v: 0 },
+            { l: 'RGB', v: 1 },
+            { l: 'OFF', v: 2 },
+          ].map(o => (
+            <RackBtn key={o.l} label={o.l} active={Math.round(params.accent??0)===o.v} color={color} onClick={()=>onUpdate('accent',o.v)} width={28}/>
           ))}
         </div>
       </Section>
-      <Section label="CHNK" color={color}>
+      <Section label="CHOP" color={color}>
         <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
-          <InlineRow label="LEN">
+          <InlineRow label="JMP">
             {[
               { l: '1/16', val: 10 },
               { l: '1/8', val: 30 },
@@ -1476,29 +1472,28 @@ function TimeSamplerControls({ params, onUpdate, color }: { params: Record<strin
               return <RackBtn key={v.l} label={v.l} active={isActive} color={color} onClick={()=>onUpdate('size',v.val)} width={28}/>;
             })}
           </InlineRow>
-          <InlineRow label="RPT">
-            {[1, 2, 4, 6, 8].map(n => {
-              const currentRepeats = Math.round((params.repeats ?? 50) / 100 * 8) || 1;
-              return <RackBtn key={n} label={`${n}×`} active={currentRepeats===n} color={color} onClick={()=>onUpdate('repeats', (n / 8) * 100)} width={28}/>;
-            })}
+          <InlineRow label="SLIC">
+            {[4, 8, 16, 32].map(n => (
+              <RackBtn key={n} label={`${n}`} active={Math.round(params.slices ?? 8) === n} color={color} onClick={()=>onUpdate('slices', n)} width={28}/>
+            ))}
           </InlineRow>
         </div>
       </Section>
-      <Section label="SPD" color={color}>
-        <InlineRow label="RATE">
-          <div style={{ flex:1 }}>
-            <HSlider value={params.rate??43} onChange={v=>onUpdate('rate',v)} color={color}/>
-          </div>
-          <MiniDisplay value={`${rate.toFixed(2)}×`} width={40}/>
-        </InlineRow>
-      </Section>
-      <Section label="TRIG" color={color} noBorder>
-        <InlineRow label="SENS">
-          <div style={{ flex:1 }}>
-            <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
-          </div>
-          <MiniDisplay value={`${Math.round(params.chance??60)}%`} width={34}/>
-        </InlineRow>
+      <Section label="PLAY" color={color} noBorder>
+        <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+          <InlineRow label="RATE">
+            <div style={{ flex:1 }}>
+              <HSlider value={params.rate??43} onChange={v=>onUpdate('rate',v)} color={color}/>
+            </div>
+            <MiniDisplay value={`${rate.toFixed(2)}×`} width={40}/>
+          </InlineRow>
+          <InlineRow label="SENS">
+            <div style={{ flex:1 }}>
+              <HSlider value={params.chance??60} onChange={v=>onUpdate('chance',v)} color={color}/>
+            </div>
+            <MiniDisplay value={`${Math.round(params.chance??60)}%`} width={34}/>
+          </InlineRow>
+        </div>
       </Section>
     </div>
   );
@@ -2245,12 +2240,15 @@ function getFragmentShader(type: ModuleType): string {
       col += uColor * uAux1 * exp(-uAux2 * 5.0) * 0.25;
       return col;
     }
-  /* Time-remap sampler: the JS transport chops source time into beat-synced chunks
-     (LOOP / REV / PONG / RAND). uSrcTime drives the test pattern and video.currentTime
-     is scrubbed for loaded clips, so the remap itself happens upstream — this shader
-     adds stutter ghosting, a retrigger flash, tape wobble off-1x, and a chunk readout. */
+  /* Simpler-style slice sampler: the JS transport splits the source into N slices
+     and jumps the playhead between slice starts every JMP beats (FWD/REV/PONG/RND),
+     plus accent-punched random slices. The remap itself happens upstream (uSrcTime /
+     video seeks) so the picture really jumps; this shader only adds the per-jump HIT
+     accent (LUM exposure pop / RGB split / OFF), tape wobble off-1x, and a strip
+     showing progress to the next jump. */
   void main(){
     vec2 uv = vUv;
+    float hitMode = floor(uP0.z + 0.5);
     float rate  = 0.25 + uP1.x * 1.75;
     float mix_  = uP1.y;
     float pulse = beatPulse(6.0);
@@ -2260,28 +2258,28 @@ function getFragmentShader(type: ModuleType): string {
     vec2 st = uv;
     st.x += sin(uv.y * 60.0 + uTime * 9.0) * wob * 0.004;
     vec3 cur = sampleSource(st);
+    vec3 wet = cur;
 
-    // Sampled hold: while a chunk repeats (uAux1), FREEZE the frame from the
-    // feedback buffer, then hard-cut to the freshly scrubbed source at the top of
-    // each repeat (uAux2 near 0). Reads as a machine-gun beat-repeat.
-    vec3 prev = sanitize(texture2D(uPrevTex, uv).rgb);
-    float held = step(0.10, uAux2);          // 0 at retrigger (show jump), 1 = hold
-    vec3 wet = mix(cur, prev, uAux1 * held);
-
-    // retrigger flash + RGB split so every chunk repeat pops
+    // per-jump accent: a quick pop right after each slice jump, then clean playback
     float flash = uAux1 * exp(-uAux2 * 6.0);
-    float sp = flash * 0.035;
-    wet.r = mix(wet.r, sampleSource(st + vec2(sp, 0.0)).r, uAux1);
-    wet.b = mix(wet.b, sampleSource(st - vec2(sp, 0.0)).b, uAux1);
-    wet *= 1.0 + flash * 0.5 + pulse * 0.05;
-    wet += uColor * flash * 0.12;
+    if(hitMode < 0.5){
+      // LUM: exposure pop - gain + gamma lift, like a flash frame
+      wet = pow(max(wet, 0.0), vec3(1.0 / (1.0 + flash * 0.9))) * (1.0 + flash * 0.55);
+    } else if(hitMode < 1.5){
+      // RGB: chroma split hit
+      float sp = flash * 0.035;
+      wet.r = sampleSource(st + vec2(sp, 0.0)).r;
+      wet.b = sampleSource(st - vec2(sp, 0.0)).b;
+      wet *= 1.0 + flash * 0.3;
+    }
+    wet *= 1.0 + pulse * 0.05;
 
     float wetAmt = uMode < 0.5 ? 1.0 : mix_;
     if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
     vec3 col = mix(cur, wet, wetAmt);
 
     if(uMode < 0.5 && uv.y < 0.045){
-      // chunk progress strip: fills as the current chunk plays out
+      // jump countdown strip: fills until the next slice jump
       col *= 0.25;
       col += uColor * (0.12 + step(uv.x, uAux2) * uAux1 * 0.9);
     }
