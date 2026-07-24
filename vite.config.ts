@@ -136,13 +136,14 @@ async function readRequestBody(req: AsyncIterable<Uint8Array>) {
   const chunks: Uint8Array[] = [];
   for await (const chunk of req) chunks.push(chunk);
   const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
-  const body = new Uint8Array(size);
+  const buffer = new ArrayBuffer(size);
+  const body = new Uint8Array(buffer);
   let offset = 0;
   for (const chunk of chunks) {
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return body;
+  return buffer;
 }
 
 function postEssentiaBytes(
@@ -151,7 +152,7 @@ function postEssentiaBytes(
   engine: string,
   endpointName: "fast" | "rhythm",
   contentType: string,
-  body: Uint8Array,
+  body: ArrayBuffer,
 ) {
   const endpoint = new URL(`${apiBaseUrl.replace(/\/+$/, "")}/analyze/${endpointName}`);
   if (engine) endpoint.searchParams.set("engine", engine);
