@@ -20,23 +20,15 @@ export interface EssentiaRhythmAnalysis {
 }
 
 declare const __APP_ESSENTIA_API_BASE_URL__: string;
-declare const __APP_ESSENTIA_API_KEY__: string;
 declare const __APP_ESSENTIA_ANALYSIS_ENGINE__: string;
 
 const DEFAULT_ESSENTIA_API_BASE_URL = "https://essentia.v1su4.dev";
 
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
-  const apiKey = resolveEssentiaApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "Missing Essentia API key. Set VITE_ESSENTIA_API_KEY or ESSENTIA_API_KEY in the local env."
-    );
-  }
-
   const formData = new FormData();
   formData.set("file", file, file.name);
 
-  return requestHostedAnalysis(formData, apiKey);
+  return requestHostedAnalysis(formData);
 }
 
 export async function fetchRhythmAnalysisFromUrl(analysisUrl: string): Promise<EssentiaRhythmAnalysis> {
@@ -59,10 +51,6 @@ function resolveEssentiaApiBaseUrl() {
   return configured.trim().replace(/\/+$/, "");
 }
 
-function resolveEssentiaApiKey() {
-  return (__APP_ESSENTIA_API_KEY__ || import.meta.env.VITE_ESSENTIA_API_KEY || "").trim();
-}
-
 function resolveEssentiaAnalysisEngine() {
   return (
     import.meta.env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
@@ -71,8 +59,8 @@ function resolveEssentiaAnalysisEngine() {
   ).trim();
 }
 
-async function requestHostedAnalysis(formData: FormData, apiKey: string) {
-  const response = await postHostedAnalysis("fast", formData, apiKey);
+async function requestHostedAnalysis(formData: FormData) {
+  const response = await postHostedAnalysis("fast", formData);
   const payload = await readResponsePayload(response);
 
   if (response.ok) {
@@ -89,7 +77,7 @@ async function requestHostedAnalysis(formData: FormData, apiKey: string) {
     throw new Error(extractErrorMessage(payload, response.status, response.statusText));
   }
 
-  const fallbackResponse = await postHostedAnalysis("rhythm", formData, apiKey);
+  const fallbackResponse = await postHostedAnalysis("rhythm", formData);
   const fallbackPayload = await readResponsePayload(fallbackResponse);
   if (!fallbackResponse.ok) {
     throw new Error(
@@ -100,16 +88,15 @@ async function requestHostedAnalysis(formData: FormData, apiKey: string) {
   return normalizeRhythmAnalysis(fallbackPayload);
 }
 
-function postHostedAnalysis(endpointName: "fast" | "rhythm", formData: FormData, apiKey: string) {
-  const endpoint = new URL(`${resolveEssentiaApiBaseUrl()}/analyze/${endpointName}`);
+function postHostedAnalysis(endpointName: "fast" | "rhythm", formData: FormData) {
+  const endpoint = import.meta.env.DEV
+    ? new URL(`/__api/analyze/${endpointName}`, window.location.origin)
+    : new URL(`${resolveEssentiaApiBaseUrl()}/analyze/${endpointName}`);
   const engine = resolveEssentiaAnalysisEngine();
   if (engine) endpoint.searchParams.set("engine", engine);
 
   return fetch(endpoint.toString(), {
     method: "POST",
-    headers: {
-      "X-API-Key": apiKey,
-    },
     body: formData,
   });
 }
