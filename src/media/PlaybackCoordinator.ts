@@ -339,6 +339,12 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     this.report();
   }
 
+  selectPlaybackPath(fallback: MediaFallback) {
+    this.assertOpen();
+    this.fallback = { ...fallback };
+    this.report();
+  }
+
   handleRendererLoss(recovered: boolean) {
     this.assertOpen();
     if (recovered) {

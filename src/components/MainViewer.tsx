@@ -4,6 +4,7 @@ import { ThreeVisualizer, ScreenOverlay, ScreenBadge, VUMeter } from './EffectMo
 import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
 import type { PgmFeel } from '../timesampler/integration';
+import { rendererLaneForEffect } from '../render/promotion';
 
 type RailFeel = PgmFeel;
 
@@ -284,7 +285,9 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
         position:'relative', aspectRatio:'16/9',
         width: 'min(100%, calc(100cqh * 16 / 9))',
         background:'#000', border:'1px solid #1a1c1e', borderRadius:2, overflow:'hidden',
-      }}>
+      }}
+        data-pgm-renderer-lane={rendererLaneForEffect(active.id)}
+      >
         <ThreeVisualizer
           key={active.id}
           type={active.id}

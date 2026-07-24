@@ -1,6 +1,7 @@
 import { getQaTelemetrySnapshot } from "./telemetry";
 import { createQaInstrumentedPlaybackCoordinator } from "../media/telemetry";
 import type { DecodedFrameLike } from "../media/types";
+import { probeBrowserRendererCapabilities } from "../render/browserFactory";
 
 export function installQaTelemetryBridge() {
   if (!import.meta.env.DEV || typeof window === "undefined") return;
@@ -25,4 +26,48 @@ export function installQaTelemetryBridge() {
   };
   publishSnapshot();
   window.setInterval(publishSnapshot, 500);
+
+  if (params.get("qa") === "renderer-probe") {
+    void publishRendererProbe();
+  }
+}
+
+async function publishRendererProbe() {
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = 2;
+  sampleCanvas.height = 2;
+  const context = sampleCanvas.getContext("2d");
+  if (!context || typeof VideoFrame === "undefined") {
+    document.documentElement.dataset.beatSurferRendererProbe =
+      JSON.stringify({ videoFrame: false });
+    return;
+  }
+  context.fillStyle = "#808080";
+  context.fillRect(0, 0, 2, 2);
+  const createCanvas = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 2;
+    canvas.height = 2;
+    return canvas;
+  };
+  const capabilities = await probeBrowserRendererCapabilities({
+    createSampleFrame: async () =>
+      new VideoFrame(sampleCanvas, { timestamp: 0 }),
+    request: {
+      width: 2,
+      height: 2,
+      effect: "timesampler",
+      accentMode: "OFF",
+      accentEnvelope: 0,
+      rgbOffset: 0,
+      mix: 1,
+    },
+    canvases: {
+      webgpu: createCanvas(),
+      webgl: createCanvas(),
+      htmlVideo: createCanvas(),
+    },
+  });
+  document.documentElement.dataset.beatSurferRendererProbe =
+    JSON.stringify({ videoFrame: true, capabilities });
 }

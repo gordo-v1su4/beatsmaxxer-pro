@@ -17,6 +17,10 @@ import {
   registerWebGlRenderer,
   updateSharedVideoResources,
 } from '../qa/telemetry';
+import {
+  previewPolicy,
+  rendererLaneForEffect,
+} from '../render/promotion';
 
 interface EffectModuleProps {
   config: ModuleConfig;
@@ -336,7 +340,10 @@ function LightweightSourcePreview({ videoUrl, color, label, animated = false }: 
   }, [animated, videoUrl]);
 
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#000' }}>
+    <div
+      data-preview-policy={previewPolicy(animated)}
+      style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#000' }}
+    >
       {videoUrl ? (
         <video
           ref={previewRef}
@@ -1163,7 +1170,14 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   }, [videoUrl, type]);
 
   // absolute so the canvas's own size can never prop open the aspect-ratio box
-  return <div ref={containerRef} style={{ position:'absolute', inset:0, overflow:'hidden' }}/>;
+  return (
+    <div
+      ref={containerRef}
+      data-renderer-lane={rendererLaneForEffect(type)}
+      data-preview-policy={previewPolicy(!!isOnAir || mode === 'output')}
+      style={{ position:'absolute', inset:0, overflow:'hidden' }}
+    />
+  );
 }
 
 function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
