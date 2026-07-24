@@ -1,0 +1,8 @@
+{
+  "bpm": 94,
+  "confidence": 0.73,
+  "duration": 3,
+  "sample_rate": 1000,
+  "beats": [2, 0.5, 1, 1, -1, "not-a-time"],
+  "onsets": [1.25, 0.25, 0.75]
+}

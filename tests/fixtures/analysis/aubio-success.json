@@ -1,0 +1,20 @@
+{
+  "analysis_version": "sync-4.0.2",
+  "provider": "aubio",
+  "provider_version": "0.4.9",
+  "provider_config": {
+    "method": "default",
+    "hop_size": 512
+  },
+  "decoder_name": "ffmpeg",
+  "decoder_version": "7.1",
+  "container_image": "sha256:fixture",
+  "input_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "sample_rate": 1000,
+  "channels": 1,
+  "duration": 3,
+  "bpm": 120,
+  "confidence": 0.91,
+  "beats": [0.5, 1, 1.5, 2],
+  "onsets": [0.25, 0.75, 1.25]
+}

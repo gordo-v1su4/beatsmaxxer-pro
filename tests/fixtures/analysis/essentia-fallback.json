@@ -1,0 +1,22 @@
+{
+  "analysis_version": "sync-4.0.2",
+  "provider": "essentia",
+  "provider_version": "2.1-beta6",
+  "provider_config": {
+    "rhythm_method": "RhythmExtractor2013",
+    "segmentation": "SBic"
+  },
+  "fallback_reason": "low_confidence",
+  "decoder_name": "ffmpeg",
+  "decoder_version": "7.1",
+  "sample_rate_hz": 1000,
+  "channels": 2,
+  "duration_s": 4,
+  "bpm": 128,
+  "confidence": 0.88,
+  "beats": [0.468, 0.937, 1.406, 1.875],
+  "onsets": [0.2, 0.7, 1.1],
+  "structure": {
+    "boundaries": [0, 1.5, 4]
+  }
+}
