@@ -80,7 +80,27 @@ describe("analysis fallback selection", () => {
     );
   });
 
-  test("accepts a verified Essentia fallback consistent with the preserved Aubio attempt", () => {
+  test("rejects Essentia fallback when Aubio was not attempted", () => {
+    const result = verifiedEssentiaFallback();
+    result.attempts.aubio.status = "not_attempted";
+    result.attempts.aubio.failure_code = "provider_not_run";
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "Essentia selection reason must match the Aubio fallback predicate",
+    );
+  });
+
+  test("rejects Essentia fallback when Aubio ended in a terminal decode failure", () => {
+    const result = verifiedEssentiaFallback();
+    result.attempts.aubio.status = "failed";
+    result.attempts.aubio.failure_code = "decode_failed";
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "Essentia selection reason must match the Aubio fallback predicate",
+    );
+  });
+
+  test("accepts Essentia fallback when succeeded Aubio output is quality-rejected", () => {
     const result = verifiedEssentiaFallback();
 
     expect(validateAnalysisResultV1(result)).toBe(result);

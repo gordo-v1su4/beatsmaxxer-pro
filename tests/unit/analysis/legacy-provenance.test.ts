@@ -59,4 +59,22 @@ describe("legacy analysis provenance", () => {
       verified: false,
     });
   });
+
+  test("does not verify a contradictory result object before validation", () => {
+    const result = normalizeLegacySyncAnalysis({
+      provider: "aubio",
+      provider_version: "0.4.9",
+      provider_config: { method: "default" },
+      bpm: 120,
+      confidence: 1,
+      duration: 2,
+      sample_rate: 1000,
+      beats: [0.5, 1],
+      onsets: [0.25],
+    });
+    result.attempts.aubio.status = "failed";
+    result.attempts.aubio.failure_code = "decode_failed";
+
+    expect(isProductionProvenanceVerified(result)).toBe(false);
+  });
 });
