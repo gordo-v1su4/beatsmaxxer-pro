@@ -17,6 +17,8 @@ import { FakeFrame } from "../../unit/media/fakes";
 import {
   circularMediaTimeDistance,
   resetPresentedVideoCadence,
+  rvfcPresentationIsAuthoritative,
+  rvfcValidityDeadlineMs,
 } from "../../../src/media/BrowserProgramRenderer";
 
 interface FakeVideo {
@@ -96,6 +98,9 @@ function setup(
     decoded?: boolean;
     videoFrameRate?: number;
     seekLatencyFrames?: () => number;
+    rvfcLagSeconds?: number;
+    rvfcAgeSeconds?: number;
+    rvfcAuthoritative?: boolean;
   } = {},
 ) {
   const registry = new ClipRegistry();
@@ -148,16 +153,37 @@ function setup(
         : 1 / 30,
     presentedTimeMatches: options.videoFrameRate
       ? (video, targetTime) =>
-          Math.abs(video.currentTime - targetTime) <=
+          Math.abs(
+            video.currentTime -
+              (options.rvfcLagSeconds ?? 0) -
+              targetTime,
+          ) <=
           1 / options.videoFrameRate! + 1e-9
       : undefined,
     presentationDiagnostics: (video) => ({
-      presentedMediaTime: video.currentTime,
+      presentedMediaTime:
+        video.currentTime - (options.rvfcLagSeconds ?? 0),
       frameDurationSeconds: options.videoFrameRate
         ? 1 / options.videoFrameRate
         : null,
       durationSeconds: null,
       playbackRate: video.playbackRate,
+      rvfcAgeSeconds: options.rvfcAgeSeconds ?? 0,
+      rvfcValidUntilMs:
+        options.rvfcAuthoritative === false ? -1 : 1_000,
+      rvfcFresh: options.rvfcAuthoritative !== false,
+      rvfcAuthoritative: options.rvfcAuthoritative ?? true,
+      displayedFrameCountAtCallback: 10,
+      displayedFrameCount:
+        options.rvfcAuthoritative === false ? 11 : 10,
+      rvfcExpired: options.rvfcAuthoritative === false,
+      rvfcSuperseded: options.rvfcAuthoritative === false,
+      latestRawDeltaSeconds: options.videoFrameRate
+        ? 1 / options.videoFrameRate
+        : null,
+      callbackSequence: Math.floor(
+        now / (1_000 / (options.videoFrameRate ?? 30)),
+      ),
     }),
     seek: (video, timeSeconds) => {
       seekCalls += 1;
@@ -291,6 +317,55 @@ describe("G007 multi-clip production runtime", () => {
       presentedMediaTime: null,
       frameDurationSeconds: 1 / 30,
     });
+
+    expect(rvfcValidityDeadlineMs(1_000, 1 / 24, 1.0025)).toBeCloseTo(
+      1_041.56276,
+    );
+    expect(
+      rvfcPresentationIsAuthoritative({
+        hasPresentation: true,
+        paused: false,
+        expired: false,
+        displayedFrameCountAtCallback: 10,
+        displayedFrameCount: 10,
+      }),
+    ).toBe(true);
+    expect(
+      rvfcPresentationIsAuthoritative({
+        hasPresentation: true,
+        paused: false,
+        expired: true,
+        displayedFrameCountAtCallback: 10,
+        displayedFrameCount: 11,
+      }),
+    ).toBe(false);
+    expect(
+      rvfcPresentationIsAuthoritative({
+        hasPresentation: true,
+        paused: false,
+        expired: true,
+        displayedFrameCountAtCallback: 10,
+        displayedFrameCount: 10,
+      }),
+    ).toBe(true);
+    expect(
+      rvfcPresentationIsAuthoritative({
+        hasPresentation: true,
+        paused: true,
+        expired: true,
+        displayedFrameCountAtCallback: 10,
+        displayedFrameCount: 11,
+      }),
+    ).toBe(true);
+    expect(
+      rvfcPresentationIsAuthoritative({
+        hasPresentation: true,
+        paused: false,
+        expired: true,
+        displayedFrameCountAtCallback: null,
+        displayedFrameCount: null,
+      }),
+    ).toBe(true);
   });
 
   test("revokes every owned upload URL on replace, remove, and disposal", () => {
@@ -820,8 +895,85 @@ describe("G007 multi-clip production runtime", () => {
       sourceTimeSeconds: 0,
     });
     expect(JSON.stringify(diagnostics)).not.toContain("/fixtures/");
-    expect(JSON.stringify(diagnostics)).not.toContain("clip-0");
+    const decisions =
+      state.runtime.snapshot().htmlDecisionDiagnostics;
+    expect(decisions.capacity).toBe(512);
+    expect(decisions.freezeAfterDriftEpisodes).toBe(16);
+    expect(decisions.frozen).toBe(true);
+    expect(decisions.recordedDecisions).toBe(32);
+    expect(decisions.records).toHaveLength(32);
+    expect(decisions.records.at(-1)).toMatchObject({
+      outcome: "steady-drift",
+      basis: "rvfc",
+      clipId: "clip-0",
+      rvfcFresh: true,
+      rvfcAuthoritative: true,
+      rvfcExpired: false,
+      rvfcSuperseded: false,
+    });
     await state.runtime.dispose();
+  });
+
+  test("uses RVFC while authoritative and current time only after supersession", async () => {
+    const fresh = setup({
+      videoFrameRate: 24,
+      rvfcLagSeconds: 0.05,
+      rvfcAgeSeconds: 0.01,
+      rvfcAuthoritative: true,
+    });
+    fresh.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(fresh.present({ sourceTimeSeconds: 0 })).toBe(false);
+    expect(
+      fresh.runtime.snapshot().htmlDecisionDiagnostics.records.at(-1),
+    ).toMatchObject({
+      outcome: "deliberate-seek",
+      basis: "rvfc",
+      currentDistanceSeconds: 0,
+      presentedDistanceSeconds: 0.05,
+      rvfcAuthoritative: true,
+    });
+    await fresh.runtime.dispose();
+
+    const superseded = setup({
+      videoFrameRate: 24,
+      rvfcLagSeconds: 0.05,
+      rvfcAgeSeconds: 0.05,
+      rvfcAuthoritative: false,
+    });
+    superseded.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(superseded.present({ sourceTimeSeconds: 0 })).toBe(true);
+    expect(
+      superseded.runtime
+        .snapshot()
+        .htmlDecisionDiagnostics.records.at(-1),
+    ).toMatchObject({
+      outcome: "accepted",
+      basis: "current-time-stale-rvfc",
+      currentDistanceSeconds: 0,
+      presentedDistanceSeconds: 0.05,
+      rvfcExpired: true,
+      rvfcSuperseded: true,
+    });
+    superseded.shiftVideoTime(0.2);
+    expect(superseded.present({ sourceTimeSeconds: 0 })).toBe(false);
+    expect(
+      superseded.runtime
+        .snapshot()
+        .htmlDecisionDiagnostics.records.at(-1),
+    ).toMatchObject({
+      outcome: "steady-drift",
+      basis: "current-time-stale-rvfc",
+      currentDistanceSeconds: 0.2,
+    });
+    await superseded.runtime.dispose();
   });
 
   test("keeps 24, 30, and 60fps presented intervals below 1% over 60 seconds", async () => {
@@ -871,6 +1023,9 @@ describe("G007 multi-clip production runtime", () => {
       videoFrameRate: 30,
       seekLatencyFrames: () =>
         seekLatencies[nextSeekLatency++ % seekLatencies.length],
+      rvfcLagSeconds: 0.04,
+      rvfcAgeSeconds: 0.05,
+      rvfcAuthoritative: false,
     });
     state.runtime.select({
       pgm: "clip-0",
@@ -927,6 +1082,17 @@ describe("G007 multi-clip production runtime", () => {
       "steady-drift": 3,
       "renderer-rejected": 0,
     });
+    const decisions =
+      state.runtime.snapshot().htmlDecisionDiagnostics;
+    expect(decisions.frozen).toBe(false);
+    expect(decisions.recordedDecisions).toBe(3_601);
+    expect(decisions.records).toHaveLength(512);
+    expect(
+      decisions.records.some(
+        (decision) =>
+          decision.basis === "current-time-stale-rvfc",
+      ),
+    ).toBe(true);
     await state.runtime.dispose();
   });
 

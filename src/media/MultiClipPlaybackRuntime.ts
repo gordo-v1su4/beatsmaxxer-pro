@@ -41,6 +41,16 @@ export interface CompatibilityVideoAdapter<Video extends object> {
     frameDurationSeconds: number | null;
     durationSeconds: number | null;
     playbackRate: number | null;
+    rvfcAgeSeconds: number | null;
+    rvfcValidUntilMs: number | null;
+    rvfcFresh: boolean;
+    rvfcAuthoritative: boolean;
+    displayedFrameCountAtCallback: number | null;
+    displayedFrameCount: number | null;
+    rvfcExpired: boolean;
+    rvfcSuperseded: boolean;
+    latestRawDeltaSeconds: number | null;
+    callbackSequence: number;
   };
   seek(video: Video, timeSeconds: number): void;
   setPlaybackRate?(video: Video, playbackRate: number): void;
@@ -86,6 +96,58 @@ export interface MultiClipRendererRuntime<
 const CLEANUP_TIMEOUT_MS = 1_950;
 const PRESENTATION_TOLERANCE_SECONDS = 1 / 30;
 const STEADY_DRIFT_DIAGNOSTIC_CAPACITY = 20;
+const HTML_DECISION_DIAGNOSTIC_CAPACITY = 512;
+const HTML_DECISION_FREEZE_DRIFT_EPISODES = 16;
+
+type HtmlDecisionOutcome =
+  | "accepted"
+  | "video-not-ready"
+  | "seek-wait"
+  | "steady-drift"
+  | "deliberate-seek"
+  | "renderer-rejected";
+
+type HtmlDecisionBasis =
+  | "rvfc"
+  | "current-time"
+  | "current-time-stale-rvfc"
+  | "none";
+
+interface HtmlDecisionDiagnostic {
+  sequence: number;
+  clipId: string;
+  outcome: HtmlDecisionOutcome;
+  basis: HtmlDecisionBasis;
+  targetTimeSeconds: number;
+  currentTimeSeconds: number;
+  presentedMediaTimeSeconds: number | null;
+  frameDurationSeconds: number | null;
+  presentationToleranceSeconds: number;
+  currentDistanceSeconds: number;
+  presentedDistanceSeconds: number | null;
+  durationSeconds: number | null;
+  rvfcAgeSeconds: number | null;
+  rvfcValidUntilMs: number | null;
+  rvfcFresh: boolean;
+  rvfcAuthoritative: boolean;
+  displayedFrameCountAtCallback: number | null;
+  displayedFrameCount: number | null;
+  rvfcExpired: boolean;
+  rvfcSuperseded: boolean;
+  latestRawDeltaSeconds: number | null;
+  callbackSequence: number;
+  sourceGeneration: number | null;
+  previousSourceGeneration: number | null;
+  discontinuityGeneration: number;
+  previousDiscontinuityGeneration: number | null;
+  requestedPlaybackRate: number;
+  actualPlaybackRate: number | null;
+  seekInFlight: boolean;
+  videoSeeking: boolean;
+  deliberateDiscontinuity: boolean;
+  transportTimeSeconds: number;
+  sourceTimeSeconds: number;
+}
 
 interface SteadyDriftDiagnostic {
   episode: number;
@@ -128,6 +190,9 @@ export class MultiClipPlaybackRuntime<
   private readonly releases = new Set<TrackedRelease>();
   private steadyDriftEpisodeCount = 0;
   private readonly steadyDriftDiagnostics: SteadyDriftDiagnostic[] = [];
+  private htmlDecisionSequence = 0;
+  private htmlDecisionDiagnosticsFrozen = false;
+  private readonly htmlDecisionDiagnostics: HtmlDecisionDiagnostic[] = [];
 
   constructor(
     private readonly options: {
@@ -295,19 +360,11 @@ export class MultiClipPlaybackRuntime<
       }
       submission.receipt.release();
     } else {
-      if (
-        !this.options.videos.ready(pgm.video) ||
-        this.options.videos.seeking?.(pgm.video)
-      ) {
-        if (!pgm.seekInFlight) {
-          this.recordDroppedFrame(
-            transport,
-            pgm,
-            "video-not-ready",
-          );
-        }
-        return false;
-      }
+      const sourceGeneration = options.sourceGeneration ?? null;
+      const requestedPlaybackRate = Math.max(
+        0.01,
+        options.playbackRate ?? 1,
+      );
       const currentTime = this.options.videos.currentTime(pgm.video);
       const targetTime =
         this.options.videos.normalizeTime?.(
@@ -320,7 +377,6 @@ export class MultiClipPlaybackRuntime<
           currentTime,
           targetTime,
         ) ?? Math.abs(currentTime - targetTime);
-      const sourceGeneration = options.sourceGeneration ?? null;
       const presentationTolerance = Math.min(
         0.1,
         Math.max(
@@ -329,23 +385,103 @@ export class MultiClipPlaybackRuntime<
             PRESENTATION_TOLERANCE_SECONDS,
         ),
       );
+      const videoDiagnostics =
+        this.options.videos.presentationDiagnostics?.(pgm.video);
+      const presentedMediaTime =
+        videoDiagnostics?.presentedMediaTime ?? null;
+      const presentedDistance =
+        presentedMediaTime === null
+          ? null
+          : (this.options.videos.timeDistance?.(
+              pgm.video,
+              presentedMediaTime,
+              targetTime,
+            ) ?? Math.abs(presentedMediaTime - targetTime));
+      const videoSeeking =
+        this.options.videos.seeking?.(pgm.video) ?? false;
+      const diagnosticBase = {
+        clipId: pgm.clip.id,
+        targetTimeSeconds: targetTime,
+        currentTimeSeconds: currentTime,
+        presentedMediaTimeSeconds: presentedMediaTime,
+        frameDurationSeconds:
+          videoDiagnostics?.frameDurationSeconds ?? null,
+        presentationToleranceSeconds: presentationTolerance,
+        currentDistanceSeconds: drift,
+        presentedDistanceSeconds: presentedDistance,
+        durationSeconds: videoDiagnostics?.durationSeconds ?? null,
+        rvfcAgeSeconds: videoDiagnostics?.rvfcAgeSeconds ?? null,
+        rvfcValidUntilMs:
+          videoDiagnostics?.rvfcValidUntilMs ?? null,
+        rvfcFresh: videoDiagnostics?.rvfcFresh ?? false,
+        rvfcAuthoritative:
+          videoDiagnostics?.rvfcAuthoritative ?? false,
+        displayedFrameCountAtCallback:
+          videoDiagnostics?.displayedFrameCountAtCallback ?? null,
+        displayedFrameCount:
+          videoDiagnostics?.displayedFrameCount ?? null,
+        rvfcExpired: videoDiagnostics?.rvfcExpired ?? false,
+        rvfcSuperseded:
+          videoDiagnostics?.rvfcSuperseded ?? false,
+        latestRawDeltaSeconds:
+          videoDiagnostics?.latestRawDeltaSeconds ?? null,
+        callbackSequence: videoDiagnostics?.callbackSequence ?? 0,
+        sourceGeneration,
+        previousSourceGeneration: pgm.lastSourceGeneration,
+        discontinuityGeneration: transport.discontinuityGeneration,
+        previousDiscontinuityGeneration:
+          pgm.lastDiscontinuityGeneration,
+        requestedPlaybackRate,
+        actualPlaybackRate: videoDiagnostics?.playbackRate ?? null,
+        seekInFlight: pgm.seekInFlight,
+        videoSeeking,
+        transportTimeSeconds: transport.presentationTimeSeconds,
+        sourceTimeSeconds,
+      };
+      if (!this.options.videos.ready(pgm.video) || videoSeeking) {
+        if (!pgm.seekInFlight) {
+          this.recordDroppedFrame(
+            transport,
+            pgm,
+            "video-not-ready",
+          );
+        }
+        this.recordHtmlDecision({
+          ...diagnosticBase,
+          outcome: videoSeeking ? "seek-wait" : "video-not-ready",
+          basis: "none",
+          deliberateDiscontinuity: false,
+        });
+        return false;
+      }
       const presentedTimeMatches =
         this.options.videos.presentedTimeMatches?.(
           pgm.video,
           targetTime,
         );
-      if (
-        presentedTimeMatches === false ||
-        (presentedTimeMatches === undefined &&
-          drift > presentationTolerance)
-      ) {
-        const deliberateDiscontinuity =
-          (pgm.lastSourceGeneration !== null &&
-            sourceGeneration !== null &&
-            sourceGeneration !== pgm.lastSourceGeneration) ||
-          (pgm.lastDiscontinuityGeneration !== null &&
-            transport.discontinuityGeneration !==
-              pgm.lastDiscontinuityGeneration);
+      const currentTimeMatches = drift <= presentationTolerance;
+      const rvfcIsAuthoritative =
+        presentedTimeMatches !== undefined &&
+        (videoDiagnostics?.rvfcAuthoritative ?? false);
+      const accepted =
+        rvfcIsAuthoritative
+          ? presentedTimeMatches
+          : currentTimeMatches;
+      const basis: HtmlDecisionBasis =
+        rvfcIsAuthoritative
+          ? "rvfc"
+          : presentedTimeMatches === undefined
+            ? "current-time"
+            : "current-time-stale-rvfc";
+      const deliberateDiscontinuity =
+        (pgm.lastSourceGeneration !== null &&
+          sourceGeneration !== null &&
+          sourceGeneration !== pgm.lastSourceGeneration) ||
+        (pgm.lastDiscontinuityGeneration !== null &&
+          transport.discontinuityGeneration !==
+            pgm.lastDiscontinuityGeneration);
+      if (!accepted) {
+        let outcome: HtmlDecisionOutcome = "deliberate-seek";
         if (!deliberateDiscontinuity && !pgm.seekInFlight) {
           const recorded = this.recordDroppedFrame(
             transport,
@@ -353,48 +489,19 @@ export class MultiClipPlaybackRuntime<
             "steady-drift",
           );
           if (recorded) {
-            const videoDiagnostics =
-              this.options.videos.presentationDiagnostics?.(pgm.video);
-            const presentedMediaTime =
-              videoDiagnostics?.presentedMediaTime ?? null;
+            outcome = "steady-drift";
             this.recordSteadyDriftDiagnostic({
               episode: ++this.steadyDriftEpisodeCount,
-              targetTimeSeconds: targetTime,
-              currentTimeSeconds: currentTime,
-              presentedMediaTimeSeconds: presentedMediaTime,
-              frameDurationSeconds:
-                videoDiagnostics?.frameDurationSeconds ?? null,
-              presentationToleranceSeconds: presentationTolerance,
-              currentDistanceSeconds: drift,
-              presentedDistanceSeconds:
-                presentedMediaTime === null
-                  ? null
-                  : (this.options.videos.timeDistance?.(
-                      pgm.video,
-                      presentedMediaTime,
-                      targetTime,
-                    ) ?? Math.abs(presentedMediaTime - targetTime)),
-              durationSeconds:
-                videoDiagnostics?.durationSeconds ?? null,
-              sourceGeneration,
-              previousSourceGeneration: pgm.lastSourceGeneration,
-              discontinuityGeneration:
-                transport.discontinuityGeneration,
-              previousDiscontinuityGeneration:
-                pgm.lastDiscontinuityGeneration,
-              requestedPlaybackRate: Math.max(
-                0.01,
-                options.playbackRate ?? 1,
-              ),
-              actualPlaybackRate:
-                videoDiagnostics?.playbackRate ?? null,
-              seekInFlight: pgm.seekInFlight,
-              transportTimeSeconds:
-                transport.presentationTimeSeconds,
-              sourceTimeSeconds,
+              ...diagnosticBase,
             });
           }
         }
+        this.recordHtmlDecision({
+          ...diagnosticBase,
+          outcome,
+          basis,
+          deliberateDiscontinuity,
+        });
         this.options.videos.seek(pgm.video, targetTime);
         pgm.seekInFlight = true;
         pgm.lastSourceGeneration = sourceGeneration;
@@ -409,7 +516,7 @@ export class MultiClipPlaybackRuntime<
         transport.discontinuityGeneration;
       this.options.videos.setPlaybackRate?.(
         pgm.video,
-        Math.max(0.01, options.playbackRate ?? 1),
+        requestedPlaybackRate,
       );
       this.options.videos.setPlaying(pgm.video, transport.playing);
       if (!this.options.renderer.presentHtmlVideo(pgm.video, request)) {
@@ -418,8 +525,20 @@ export class MultiClipPlaybackRuntime<
           pgm,
           "renderer-rejected",
         );
+        this.recordHtmlDecision({
+          ...diagnosticBase,
+          outcome: "renderer-rejected",
+          basis,
+          deliberateDiscontinuity,
+        });
         return false;
       }
+      this.recordHtmlDecision({
+        ...diagnosticBase,
+        outcome: "accepted",
+        basis,
+        deliberateDiscontinuity,
+      });
     }
 
     const settlesPendingPresentation =
@@ -536,6 +655,16 @@ export class MultiClipPlaybackRuntime<
         totalEpisodes: this.steadyDriftEpisodeCount,
         retainedDistanceSeconds: this.summarizeSteadyDriftDistances(),
         records: this.steadyDriftDiagnostics.map((record) => ({
+          ...record,
+        })),
+      },
+      htmlDecisionDiagnostics: {
+        capacity: HTML_DECISION_DIAGNOSTIC_CAPACITY,
+        freezeAfterDriftEpisodes:
+          HTML_DECISION_FREEZE_DRIFT_EPISODES,
+        frozen: this.htmlDecisionDiagnosticsFrozen,
+        recordedDecisions: this.htmlDecisionSequence,
+        records: this.htmlDecisionDiagnostics.map((record) => ({
           ...record,
         })),
       },
@@ -751,6 +880,30 @@ export class MultiClipPlaybackRuntime<
       this.steadyDriftDiagnostics.shift();
     }
     this.steadyDriftDiagnostics.push(diagnostic);
+  }
+
+  private recordHtmlDecision(
+    diagnostic: Omit<HtmlDecisionDiagnostic, "sequence">,
+  ) {
+    if (this.htmlDecisionDiagnosticsFrozen) return;
+    const record = {
+      ...diagnostic,
+      sequence: ++this.htmlDecisionSequence,
+    };
+    if (
+      this.htmlDecisionDiagnostics.length ===
+      HTML_DECISION_DIAGNOSTIC_CAPACITY
+    ) {
+      this.htmlDecisionDiagnostics.shift();
+    }
+    this.htmlDecisionDiagnostics.push(record);
+    if (
+      diagnostic.outcome === "steady-drift" &&
+      this.steadyDriftEpisodeCount >=
+        HTML_DECISION_FREEZE_DRIFT_EPISODES
+    ) {
+      this.htmlDecisionDiagnosticsFrozen = true;
+    }
   }
 
   private summarizeSteadyDriftDistances() {

@@ -47,6 +47,39 @@ export function resetPresentedVideoCadence(cadence: {
   cadence.presentedMediaTime = null;
 }
 
+export function rvfcValidityDeadlineMs(
+  expectedDisplayTimeMs: number,
+  frameDurationSeconds: number,
+  playbackRate: number,
+) {
+  return (
+    expectedDisplayTimeMs +
+    (1_000 * frameDurationSeconds) /
+      Math.max(0.01, Math.abs(playbackRate))
+  );
+}
+
+export function rvfcPresentationIsAuthoritative(options: {
+  hasPresentation: boolean;
+  paused: boolean;
+  expired: boolean;
+  displayedFrameCountAtCallback: number | null;
+  displayedFrameCount: number | null;
+}) {
+  if (!options.hasPresentation) return false;
+  if (options.paused || !options.expired) return true;
+  if (
+    options.displayedFrameCountAtCallback === null ||
+    options.displayedFrameCount === null
+  ) {
+    return true;
+  }
+  return (
+    options.displayedFrameCount <=
+    options.displayedFrameCountAtCallback
+  );
+}
+
 function applyQaCommand(
   runtime: MultiClipPlaybackRuntime<VideoFrame, HTMLVideoElement> | null,
   value: string,
@@ -127,8 +160,26 @@ export function BrowserProgramRenderer(
         previousMediaTime: number | null;
         presentedMediaTime: number | null;
         frameDurationSeconds: number | null;
+        lastCallbackAtMs: number | null;
+        lastExpectedDisplayTimeMs: number | null;
+        latestRawDeltaSeconds: number | null;
+        callbackSequence: number;
+        displayedFrameCountAtCallback: number | null;
       }
     >();
+    const displayedFrameCount = (video: HTMLVideoElement) => {
+      if (typeof video.getVideoPlaybackQuality !== "function") {
+        return null;
+      }
+      try {
+        const quality = video.getVideoPlaybackQuality();
+        const count =
+          quality.totalVideoFrames - quality.droppedVideoFrames;
+        return Number.isFinite(count) ? count : null;
+      } catch {
+        return null;
+      }
+    };
     const observeVideoCadence = (video: HTMLVideoElement) => {
       if (
         videoCadences.has(video) ||
@@ -142,13 +193,19 @@ export function BrowserProgramRenderer(
         previousMediaTime: null as number | null,
         presentedMediaTime: null as number | null,
         frameDurationSeconds: null as number | null,
+        lastCallbackAtMs: null as number | null,
+        lastExpectedDisplayTimeMs: null as number | null,
+        latestRawDeltaSeconds: null as number | null,
+        callbackSequence: 0,
+        displayedFrameCountAtCallback: null as number | null,
       };
-      const observe: VideoFrameRequestCallback = (_now, metadata) => {
+      const observe: VideoFrameRequestCallback = (now, metadata) => {
         if (!state.active) return;
         if (state.previousMediaTime !== null) {
-          const duration = Math.abs(
-            metadata.mediaTime - state.previousMediaTime,
-          );
+          const rawDelta =
+            metadata.mediaTime - state.previousMediaTime;
+          const duration = Math.abs(rawDelta);
+          state.latestRawDeltaSeconds = rawDelta;
           if (duration >= 1 / 240 && duration <= 0.1) {
             state.frameDurationSeconds =
               state.frameDurationSeconds === null
@@ -158,6 +215,11 @@ export function BrowserProgramRenderer(
         }
         state.previousMediaTime = metadata.mediaTime;
         state.presentedMediaTime = metadata.mediaTime;
+        state.lastCallbackAtMs = now;
+        state.lastExpectedDisplayTimeMs = metadata.expectedDisplayTime;
+        state.callbackSequence += 1;
+        state.displayedFrameCountAtCallback =
+          displayedFrameCount(video);
         state.callbackId = video.requestVideoFrameCallback(observe);
       };
       state.callbackId = video.requestVideoFrameCallback(observe);
@@ -314,24 +376,85 @@ export function BrowserProgramRenderer(
           },
           presentationDiagnostics: (video) => {
             const cadence = videoCadences.get(video);
+            const frameDuration =
+              cadence?.frameDurationSeconds ?? null;
+            const playbackRate = Number.isFinite(video.playbackRate)
+              ? video.playbackRate
+              : null;
+            const validUntilMs =
+              cadence?.lastExpectedDisplayTimeMs === null ||
+              cadence?.lastExpectedDisplayTimeMs === undefined ||
+              frameDuration === null ||
+              playbackRate === null
+                ? null
+                : rvfcValidityDeadlineMs(
+                    cadence.lastExpectedDisplayTimeMs,
+                    frameDuration,
+                    playbackRate,
+                  );
+            const now = performance.now();
+            const currentDisplayedFrameCount =
+              displayedFrameCount(video);
+            const hasPresentation =
+              cadence?.presentedMediaTime !== null &&
+              cadence?.presentedMediaTime !== undefined;
+            const expired =
+              hasPresentation &&
+              validUntilMs !== null &&
+              now > validUntilMs;
+            const superseded =
+              expired &&
+              cadence?.displayedFrameCountAtCallback !== null &&
+              cadence?.displayedFrameCountAtCallback !== undefined &&
+              currentDisplayedFrameCount !== null &&
+              currentDisplayedFrameCount >
+                cadence.displayedFrameCountAtCallback;
             return {
               presentedMediaTime:
                 cadence?.presentedMediaTime ?? null,
-              frameDurationSeconds:
-                cadence?.frameDurationSeconds ?? null,
+              frameDurationSeconds: frameDuration,
               durationSeconds:
                 Number.isFinite(video.duration) && video.duration > 0
                   ? video.duration
                   : null,
-              playbackRate: Number.isFinite(video.playbackRate)
-                ? video.playbackRate
-                : null,
+              playbackRate,
+              rvfcAgeSeconds:
+                cadence?.lastCallbackAtMs === null ||
+                cadence?.lastCallbackAtMs === undefined
+                  ? null
+                  : Math.max(
+                      0,
+                      (now - cadence.lastCallbackAtMs) / 1_000,
+                    ),
+              rvfcValidUntilMs: validUntilMs,
+              rvfcFresh: hasPresentation && !expired,
+              rvfcAuthoritative:
+                rvfcPresentationIsAuthoritative({
+                  hasPresentation,
+                  paused: video.paused,
+                  expired,
+                  displayedFrameCountAtCallback:
+                    cadence?.displayedFrameCountAtCallback ?? null,
+                  displayedFrameCount: currentDisplayedFrameCount,
+                }),
+              displayedFrameCountAtCallback:
+                cadence?.displayedFrameCountAtCallback ?? null,
+              displayedFrameCount: currentDisplayedFrameCount,
+              rvfcExpired: expired,
+              rvfcSuperseded: superseded,
+              latestRawDeltaSeconds:
+                cadence?.latestRawDeltaSeconds ?? null,
+              callbackSequence: cadence?.callbackSequence ?? 0,
             };
           },
           seek: (video, timeSeconds) => {
             const cadence = videoCadences.get(video);
             if (cadence) {
               resetPresentedVideoCadence(cadence);
+              cadence.lastCallbackAtMs = null;
+              cadence.lastExpectedDisplayTimeMs = null;
+              cadence.latestRawDeltaSeconds = null;
+              cadence.displayedFrameCountAtCallback = null;
             }
             video.currentTime = Math.max(0, timeSeconds);
           },
