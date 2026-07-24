@@ -40,7 +40,12 @@ async function localSecretValues() {
   const text = await readFile(".env", "utf8");
   return text
     .split(/\r?\n/)
-    .map((line) => line.match(/^[A-Z][A-Z0-9_]*=(.*)$/)?.[1]?.trim() ?? "")
+    .map((line) => line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/))
+    .filter(
+      (match): match is RegExpMatchArray =>
+        Boolean(match) && /(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/.test(match[1]),
+    )
+    .map((match) => match[2].trim())
     .map((value) => value.replace(/^(['"])(.*)\1$/, "$2"))
     .filter((value) => value.length >= 12 && !/^(?:change-me|example|placeholder)$/i.test(value));
 }
