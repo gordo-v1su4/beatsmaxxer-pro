@@ -138,7 +138,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     role: PlaybackLaneRole,
     clipId: string,
     generation: number,
-    decoder: LaneDecoderResource,
+    decoder: LaneDecoderResource | null,
   ) {
     this.assertOpen();
     if (!isLaneRole(role)) throw new Error("fourth-playback-lane-prohibited");
@@ -149,12 +149,13 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     if (!Number.isInteger(generation) || generation < 0) {
       throw new Error("invalid-lane-generation");
     }
-    if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
+    if (decoder && decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
       throw new Error("decode-queue-budget-exceeded");
     }
     if (
       PLAYBACK_LANE_ROLES.some(
         (existingRole) =>
+          decoder !== null &&
           this.slots[existingRole]?.decoder === decoder,
       )
     ) {

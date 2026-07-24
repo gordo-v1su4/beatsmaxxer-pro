@@ -5,6 +5,7 @@ import { MainViewer, PgmRail } from './components/MainViewer';
 import { AudioProvider } from './audio/AudioContext';
 import { audioEngine } from './audio/AudioEngine';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
+import { ClipRegistry } from './media/ClipRegistry';
 
 export type ModuleType =
   | 'transition' | 'speedramp' | 'tapdelay' | 'timesampler'
@@ -145,10 +146,14 @@ export function App() {
   const [videoLayers, setVideoLayers] = useState<Record<ModuleType, VideoLayer | null>>(() => moduleRecord<VideoLayer | null>(null));
   const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>(() => moduleRecord<MidiLayer | null>(null));
   const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
+  const [queuedPgmSource, setQueuedPgmSource] = useState<ModuleType | null>(null);
+  const [overlapPgmSource, setOverlapPgmSource] = useState<ModuleType | null>(null);
   const [orderTop, setOrderTop] = useState<ModuleType[]>(MODULES.map(m => m.id));
   const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
 
-  const objectUrlsRef = useRef<string[]>([]);
+  const clipRegistryRef = useRef(new ClipRegistry());
+  const registryLifecycleRef = useRef(0);
+  const overlapTimerRef = useRef<number | null>(null);
   const qaSeedRef = useRef(false);
 
   const updateParam = useCallback((moduleId: ModuleType, param: string, value: number) => {
@@ -168,20 +173,17 @@ export function App() {
 
   const setModuleVideo = useCallback((moduleId: ModuleType, file: File | null) => {
     setVideoLayers(prev => {
-      const current = prev[moduleId];
-      if (current?.url?.startsWith('blob:')) URL.revokeObjectURL(current.url);
-
       if (!file) {
+        clipRegistryRef.current.remove(moduleId);
         return { ...prev, [moduleId]: null };
       }
 
-      const url = URL.createObjectURL(file);
-      objectUrlsRef.current.push(url);
+      const clip = clipRegistryRef.current.registerFile(moduleId, file);
       return {
         ...prev,
         [moduleId]: {
-          name: file.name,
-          url,
+          name: clip.name,
+          url: clip.url,
           file,
         },
       };
@@ -250,7 +252,7 @@ export function App() {
 
     qaSeedRef.current = true;
 
-    const baseUrl = (params.get('qaMediaBase') || 'http://127.0.0.1:8765').trim();
+    const baseUrl = (params.get('qaMediaBase') || '/__qa/media').trim();
     const audioName = (params.get('qaAudio') || QA_SAMPLE_AUDIO).trim();
     const clipNames = (params.get('qaClips') || QA_SAMPLE_CLIPS.join(','))
       .split(',')
@@ -263,9 +265,11 @@ export function App() {
       const next = { ...prev };
       orderedModuleIds.forEach((moduleId, index) => {
         const clipName = clipNames[index % clipNames.length];
+        const url = joinQaUrl(baseUrl, clipName);
+        clipRegistryRef.current.registerUrl(moduleId, clipName, url);
         next[moduleId] = {
           name: clipName,
-          url: joinQaUrl(baseUrl, clipName),
+          url,
         };
       });
       return next;
@@ -287,6 +291,34 @@ export function App() {
         console.error('Failed to preload QA sample media', error);
       }
     })();
+  }, []);
+
+  useEffect(() => {
+    const lifecycle = ++registryLifecycleRef.current;
+    return () => {
+      queueMicrotask(() => {
+        if (registryLifecycleRef.current !== lifecycle) return;
+        if (overlapTimerRef.current !== null) {
+          window.clearTimeout(overlapTimerRef.current);
+        }
+        clipRegistryRef.current.dispose();
+      });
+    };
+  }, []);
+
+  const selectPgmSource = useCallback((next: ModuleType) => {
+    setPgmSource((current) => {
+      if (current === next) return current;
+      setOverlapPgmSource(current);
+      if (overlapTimerRef.current !== null) {
+        window.clearTimeout(overlapTimerRef.current);
+      }
+      overlapTimerRef.current = window.setTimeout(() => {
+        setOverlapPgmSource(null);
+        overlapTimerRef.current = null;
+      }, 250);
+      return next;
+    });
   }, []);
 
   const moduleById = Object.fromEntries(ALL_MODULES.map(m => [m.id, m])) as Record<ModuleType, ModuleConfig>;
@@ -334,7 +366,8 @@ export function App() {
           <PgmRail
             modules={ALL_MODULES}
             pgmSource={pgmSource}
-            onSelectSource={setPgmSource}
+            onSelectSource={selectPgmSource}
+            onQueueChange={setQueuedPgmSource}
           />
 
           <div style={{ width: 3, background: '#0d0e0f', flexShrink: 0 }} />
@@ -354,6 +387,9 @@ export function App() {
               videoLayers={videoLayers}
               midiLayers={midiLayers}
               bypassed={bypassed}
+              clipRegistry={clipRegistryRef.current}
+              queuedPgmSource={queuedPgmSource}
+              overlapPgmSource={overlapPgmSource}
             />
             <div style={{ height: 'clamp(420px, calc((100vw - 206px) * 9 / 64 + 244px), 544px)', flexShrink: 0.15, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
               {orderTop.map(mid => moduleById[mid]).map(module => (

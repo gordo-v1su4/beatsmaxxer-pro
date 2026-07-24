@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
+import { createReadStream } from "fs";
 import { fileURLToPath } from "url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -19,7 +20,9 @@ export default defineConfig(({ mode }) => {
     "https://essentia.v1su4.dev";
   const essentiaApiKey = env.ESSENTIA_API_KEY || "";
   const essentiaAnalysisEngine = env.ESSENTIA_ANALYSIS_ENGINE || env.VITE_ESSENTIA_ANALYSIS_ENGINE || "aubio";
-  const qaMediaDir = env.QA_MEDIA_DIR || "/Users/robertspaniolo/Downloads/new-test-media-for-pss";
+  const qaMediaDir =
+    env.QA_MEDIA_DIR ||
+    path.resolve(__dirname, "../../../Downloads/new-test-media-for-pss");
 
   return {
     plugins: [
@@ -29,6 +32,88 @@ export default defineConfig(({ mode }) => {
       {
         name: "qa-rhythm-bridge",
         configureServer(server) {
+          server.middlewares.use("/__qa/media", async (req, res) => {
+            try {
+              const relativePath = decodeURIComponent(
+                new URL(req.url || "/", "http://127.0.0.1").pathname,
+              ).replace(/^\/+/, "");
+              const mediaRoot = path.resolve(qaMediaDir);
+              const filePath = path.resolve(mediaRoot, relativePath);
+              if (
+                !relativePath ||
+                (!filePath.startsWith(`${mediaRoot}${path.sep}`) &&
+                  filePath !== mediaRoot)
+              ) {
+                res.statusCode = 400;
+                res.end("Invalid QA media path");
+                return;
+              }
+              const stat = await fs.stat(filePath);
+              if (!stat.isFile()) {
+                res.statusCode = 404;
+                res.end();
+                return;
+              }
+              const mimeType = mediaMimeType(filePath);
+              res.setHeader("Content-Type", mimeType);
+              res.setHeader("Accept-Ranges", "bytes");
+              res.setHeader("Cache-Control", "no-store");
+              const range = req.headers.range;
+              if (range) {
+                const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+                if (!match) {
+                  res.statusCode = 416;
+                  res.setHeader("Content-Range", `bytes */${stat.size}`);
+                  res.end();
+                  return;
+                }
+                const start = match[1] ? Number(match[1]) : 0;
+                const end = Math.min(
+                  match[2] ? Number(match[2]) : stat.size - 1,
+                  stat.size - 1,
+                );
+                if (start > end || start >= stat.size) {
+                  res.statusCode = 416;
+                  res.setHeader("Content-Range", `bytes */${stat.size}`);
+                  res.end();
+                  return;
+                }
+                res.statusCode = 206;
+                res.setHeader(
+                  "Content-Range",
+                  `bytes ${start}-${end}/${stat.size}`,
+                );
+                res.setHeader("Content-Length", end - start + 1);
+                if (req.method === "HEAD") {
+                  res.end();
+                  return;
+                }
+                createReadStream(filePath, { start, end }).pipe(res);
+                return;
+              }
+              res.statusCode = 200;
+              res.setHeader("Content-Length", stat.size);
+              if (req.method === "HEAD") {
+                res.end();
+                return;
+              }
+              createReadStream(filePath).pipe(res);
+            } catch (error) {
+              const code =
+                typeof error === "object" &&
+                error !== null &&
+                "code" in error
+                  ? error.code
+                  : null;
+              res.statusCode = code === "ENOENT" ? 404 : 500;
+              res.end(
+                code === "ENOENT"
+                  ? "QA media fixture not found"
+                  : "QA media fixture failed",
+              );
+            }
+          });
+
           server.middlewares.use("/__api/analyze", async (req, res) => {
             try {
               const requestUrl = new URL(req.url || "/", "http://127.0.0.1:5174");
@@ -131,6 +216,19 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function mediaMimeType(filePath: string) {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === ".mp4") return "video/mp4";
+  if (extension === ".webm") return "video/webm";
+  if (extension === ".wav") return "audio/wav";
+  if (extension === ".mp3") return "audio/mpeg";
+  if (extension === ".m4a") return "audio/mp4";
+  if (extension === ".png") return "image/png";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".webp") return "image/webp";
+  return "application/octet-stream";
+}
 
 async function readRequestBody(req: AsyncIterable<Uint8Array>) {
   const chunks: Uint8Array[] = [];

@@ -1,0 +1,369 @@
+import { useEffect, useRef } from "react";
+import type { ModuleType } from "../App";
+import { audioEngine } from "../audio/AudioEngine";
+import { PlaybackPerformanceTracker } from "../qa/performance";
+import {
+  createBrowserMediaRendererRuntime,
+  type BrowserMediaRendererCanvases,
+} from "../render/browserFactory";
+import type { RenderFrameRequest } from "../render/contracts";
+import {
+  acquirePooledVideo,
+  releasePooledVideo,
+} from "../render/legacy/HtmlVideoRenderer";
+import { createQaInstrumentedPlaybackCoordinator } from "./telemetry";
+import type { ClipRegistry } from "./ClipRegistry";
+import { MultiClipPlaybackRuntime } from "./MultiClipPlaybackRuntime";
+
+export interface BrowserProgramRendererProps {
+  registry: ClipRegistry;
+  pgm: ModuleType | null;
+  prewarm: ModuleType | null;
+  overlap: ModuleType | null;
+  promoted: boolean;
+  params: Record<string, number>;
+}
+
+function applyQaCommand(
+  runtime: MultiClipPlaybackRuntime<VideoFrame, HTMLVideoElement> | null,
+  value: string,
+) {
+  if (!runtime || !value) return;
+  try {
+    const command = JSON.parse(value) as
+      | {
+          action: "select";
+          pgm: string;
+          prewarm?: string | null;
+          overlap?: string | null;
+        }
+      | {
+          action: "scrub";
+          timeSeconds: number;
+          cached?: boolean;
+        }
+      | {
+          action: "clear";
+        };
+    if (command.action === "select") {
+      runtime.select({
+        pgm: command.pgm,
+        prewarm: command.prewarm ?? null,
+        overlap: command.overlap ?? null,
+      });
+    } else if (command.action === "clear") {
+      runtime.deactivate();
+    } else if (Number.isFinite(command.timeSeconds)) {
+      runtime.scrub(command.timeSeconds, command.cached ?? true);
+    }
+  } catch {
+    // Malformed QA commands are ignored and remain inspectable.
+  }
+}
+
+function accentMode(params: Record<string, number>) {
+  const index = Math.min(2, Math.max(0, Math.round(params.accent ?? 0)));
+  return (["LUM", "RGB", "OFF"] as const)[index];
+}
+
+export function BrowserProgramRenderer(
+  props: BrowserProgramRendererProps,
+) {
+  const webgpuRef = useRef<HTMLCanvasElement>(null);
+  const webglRef = useRef<HTMLCanvasElement>(null);
+  const htmlRef = useRef<HTMLCanvasElement>(null);
+  const runtimeRef =
+    useRef<MultiClipPlaybackRuntime<VideoFrame, HTMLVideoElement> | null>(
+      null,
+    );
+  const propsRef = useRef(props);
+  propsRef.current = props;
+
+  useEffect(() => {
+    const canvases: BrowserMediaRendererCanvases = {
+      webgpu: webgpuRef.current!,
+      webgl: webglRef.current!,
+      htmlVideo: htmlRef.current!,
+    };
+    let cancelled = false;
+    let animationFrame = 0;
+    let longTaskObserver: PerformanceObserver | null = null;
+    let lastQaCommand = "";
+    let lastPresentedAt: number | null = null;
+    const performanceTracker = new PlaybackPerformanceTracker();
+    const handleQaSelect = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          pgm: string;
+          prewarm?: string | null;
+          overlap?: string | null;
+        }>
+      ).detail;
+      if (!detail?.pgm) return;
+      runtimeRef.current?.select({
+        pgm: detail.pgm,
+        prewarm: detail.prewarm ?? null,
+        overlap: detail.overlap ?? null,
+      });
+    };
+    const handleQaScrub = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{
+          timeSeconds: number;
+          cached?: boolean;
+        }>
+      ).detail;
+      if (!Number.isFinite(detail?.timeSeconds)) return;
+      runtimeRef.current?.scrub(
+        detail.timeSeconds,
+        detail.cached ?? true,
+      );
+    };
+    window.addEventListener(
+      "beat-surfer:multi-clip-select",
+      handleQaSelect,
+    );
+    window.addEventListener(
+      "beat-surfer:multi-clip-scrub",
+      handleQaScrub,
+    );
+
+    void (async () => {
+      const coordinator =
+        createQaInstrumentedPlaybackCoordinator<VideoFrame>();
+      const renderer = await createBrowserMediaRendererRuntime({
+        direct: {
+          supported: false,
+          reason: "sample-frame-probe-failed",
+          config: {
+            codec: "avc1.640028",
+            codedWidth: 1920,
+            codedHeight: 1080,
+          },
+        },
+        capabilities: {
+          webgpuExternalTexture: {
+            available: false,
+            sampleFrameProbePassed: false,
+          },
+          webgl2VideoFrame: {
+            available: false,
+            sampleFrameProbePassed: false,
+          },
+          htmlVideo:
+            canvases.htmlVideo.getContext("webgl2") !== null,
+        },
+        coordinator,
+        canvases,
+      });
+      if (cancelled) {
+        renderer.dispose();
+        coordinator.dispose();
+        return;
+      }
+      const runtime = new MultiClipPlaybackRuntime({
+        registry: props.registry,
+        coordinator,
+        renderer,
+        performance: performanceTracker,
+        videos: {
+          acquire: (clip) => acquirePooledVideo(clip.url),
+          release: (clip) => releasePooledVideo(clip.url),
+          ready: (video) => video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+          currentTime: (video) => video.currentTime,
+          normalizeTime: (video, timeSeconds) =>
+            Number.isFinite(video.duration) && video.duration > 0
+              ? ((timeSeconds % video.duration) + video.duration) %
+                video.duration
+              : Math.max(0, timeSeconds),
+          seek: (video, timeSeconds) => {
+            video.currentTime = Math.max(0, timeSeconds);
+          },
+          setPlaying: (video, playing) => {
+            if (playing) {
+              void video.play().catch(() => {});
+            } else {
+              video.pause();
+            }
+          },
+        },
+      });
+      runtimeRef.current = runtime;
+      runtime.select({
+        pgm: propsRef.current.pgm,
+        prewarm: propsRef.current.prewarm,
+        overlap: propsRef.current.overlap,
+      });
+      if (import.meta.env.DEV) {
+        (
+          window as unknown as {
+            __BEAT_SURFER_MULTI_CLIP_QA__?: {
+              snapshot: () => ReturnType<typeof runtime.snapshot>;
+              select: (
+                pgm: string,
+                prewarm?: string | null,
+                overlap?: string | null,
+              ) => void;
+              scrub: (timeSeconds: number, cached: boolean) => boolean;
+            };
+          }
+        ).__BEAT_SURFER_MULTI_CLIP_QA__ = {
+          snapshot: () => runtime.snapshot(),
+          select: (pgm, prewarm = null, overlap = null) => {
+            runtime.select({ pgm, prewarm, overlap });
+          },
+          scrub: (timeSeconds, cached) =>
+            runtime.scrub(timeSeconds, cached),
+        };
+      }
+
+      if (typeof PerformanceObserver !== "undefined") {
+        try {
+          longTaskObserver = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              performanceTracker.recordLongTask(entry.duration);
+            }
+          });
+          longTaskObserver.observe({ entryTypes: ["longtask"] });
+        } catch {
+          longTaskObserver = null;
+        }
+      }
+
+      const render = () => {
+        const current = propsRef.current;
+        const qaCommand =
+          document.documentElement.dataset.beatSurferMultiClipCommand ??
+          "";
+        if (qaCommand && qaCommand !== lastQaCommand) {
+          lastQaCommand = qaCommand;
+          applyQaCommand(runtime, qaCommand);
+        }
+        const transport = audioEngine.getTransportSample();
+        const live = audioEngine.getLiveScheduleFrame();
+        const canvas = htmlRef.current;
+        if (canvas && current.promoted) {
+          const now = performance.now();
+          const rect = canvas.getBoundingClientRect();
+          const width = Math.max(1, Math.round(rect.width));
+          const height = Math.max(1, Math.round(rect.height));
+          if (canvas.width !== width) canvas.width = width;
+          if (canvas.height !== height) canvas.height = height;
+          const request: RenderFrameRequest = {
+            width,
+            height,
+            effect: "timesampler",
+            accentMode: accentMode(current.params),
+            accentEnvelope: live?.accent ? 1 : 0,
+            rgbOffset: 0.02,
+            mix: Math.min(
+              1,
+              Math.max(0, (current.params.mix ?? 100) / 100),
+            ),
+          };
+          const fallbackPath = runtime.snapshot().renderer.fallback.path;
+          const lateThresholdMs =
+            fallbackPath === "html-video-webgl2"
+              ? (1_000 / 30) * 1.5
+              : (1_000 / 60) * 1.5;
+          const presented = runtime.present(
+            {
+              presentationTimeSeconds:
+                transport.presentationTimeSeconds,
+              playing: transport.playing,
+              discontinuityGeneration:
+                transport.discontinuityGeneration,
+            },
+            live?.timeSampler.sourceTimestampSeconds ??
+              transport.transportSeconds,
+            request,
+            {
+              late:
+                lastPresentedAt !== null &&
+                now - lastPresentedAt > lateThresholdMs,
+            },
+          );
+          if (presented) lastPresentedAt = now;
+        } else {
+          lastPresentedAt = null;
+        }
+        if (import.meta.env.DEV) {
+          document.documentElement.dataset.beatSurferMultiClip =
+            JSON.stringify(runtime.snapshot());
+        }
+        animationFrame = requestAnimationFrame(render);
+      };
+      render();
+    })().catch((error) => {
+      document.documentElement.dataset.beatSurferMultiClip =
+        JSON.stringify({
+          error:
+            error instanceof Error ? error.message : String(error),
+        });
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener(
+        "beat-surfer:multi-clip-select",
+        handleQaSelect,
+      );
+      window.removeEventListener(
+        "beat-surfer:multi-clip-scrub",
+        handleQaScrub,
+      );
+      longTaskObserver?.disconnect();
+      runtimeRef.current?.dispose();
+      runtimeRef.current = null;
+      delete (
+        window as unknown as {
+          __BEAT_SURFER_MULTI_CLIP_QA__?: unknown;
+        }
+      ).__BEAT_SURFER_MULTI_CLIP_QA__;
+      delete document.documentElement.dataset.beatSurferMultiClip;
+    };
+  }, [props.registry]);
+
+  useEffect(() => {
+    runtimeRef.current?.select({
+      pgm: props.pgm,
+      prewarm: props.prewarm,
+      overlap: props.overlap,
+    });
+  }, [props.pgm, props.prewarm, props.overlap]);
+
+  return (
+    <>
+      {import.meta.env.DEV && (
+        <input
+          aria-label="G007 QA command"
+          data-g007-qa-command
+          onChange={(event) =>
+            applyQaCommand(runtimeRef.current, event.currentTarget.value)
+          }
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            opacity: 0.01,
+            zIndex: 20,
+          }}
+        />
+      )}
+      <canvas
+        ref={htmlRef}
+        data-g007-program-canvas
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          display: props.promoted ? "block" : "none",
+        }}
+      />
+      <canvas ref={webgpuRef} hidden />
+      <canvas ref={webglRef} hidden />
+    </>
+  );
+}

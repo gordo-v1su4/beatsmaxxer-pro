@@ -5,6 +5,8 @@ import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
 import type { PgmFeel } from '../timesampler/integration';
 import { rendererLaneForEffect } from '../render/promotion';
+import type { ClipRegistry } from '../media/ClipRegistry';
+import { BrowserProgramRenderer } from '../media/BrowserProgramRenderer';
 
 type RailFeel = PgmFeel;
 
@@ -64,16 +66,20 @@ function PgmButton({ index, name, color, active, queued, onClick }: {
 
 /** Left-rail channel switcher with Ableton-style launch quantize: clicking arms a
     channel (blinks) and the cut lands on the next bar. RAND hops channels every bar. */
-export function PgmRail({ modules, pgmSource, onSelectSource }: {
+export function PgmRail({ modules, pgmSource, onSelectSource, onQueueChange }: {
   modules: ModuleConfig[];
   pgmSource: ModuleType;
   onSelectSource: (id: ModuleType) => void;
+  onQueueChange?: (id: ModuleType | null) => void;
 }) {
   const { state } = useAudio();
   const [queued, setQueued] = useState<ModuleType | null>(null);
   const [autoRand, setAutoRand] = useState(false);
   const [randIntervalBeats, setRandIntervalBeats] = useState(4);
   const [randFeel, setRandFeel] = useState<RailFeel>(0);
+  useEffect(() => {
+    onQueueChange?.(queued);
+  }, [queued, onQueueChange]);
   useEffect(() => {
     audioEngine.configurePgmSchedule({
       active: pgmSource,
@@ -259,13 +265,16 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
 }
 
 /** Program monitor strip: the selected module's mixed output, full width. */
-export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed }: {
+export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, queuedPgmSource, overlapPgmSource }: {
   modules: ModuleConfig[];
   pgmSource: ModuleType;
   moduleParams: Record<ModuleType, Record<string, number>>;
   videoLayers: Record<ModuleType, VideoLayer | null>;
   midiLayers: Record<ModuleType, MidiLayer | null>;
   bypassed: Record<ModuleType, boolean>;
+  clipRegistry: ClipRegistry;
+  queuedPgmSource: ModuleType | null;
+  overlapPgmSource: ModuleType | null;
 }) {
   const { state } = useAudio();
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
@@ -297,6 +306,22 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
           videoUrl={clip?.url}
           midiLayer={midiLayers[active.id]}
           bypassed={bypassed[active.id]}
+        />
+        <BrowserProgramRenderer
+          registry={clipRegistry}
+          pgm={clip ? active.id : null}
+          prewarm={
+            queuedPgmSource && videoLayers[queuedPgmSource]
+              ? queuedPgmSource
+              : null
+          }
+          overlap={
+            overlapPgmSource && videoLayers[overlapPgmSource]
+              ? overlapPgmSource
+              : null
+          }
+          promoted={active.id === 'timesampler' && !!clip}
+          params={moduleParams[active.id]}
         />
         <ScreenOverlay/>
         <ScreenBadge
