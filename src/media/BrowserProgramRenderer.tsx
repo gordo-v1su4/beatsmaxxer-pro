@@ -100,6 +100,57 @@ export function BrowserProgramRenderer(
     let lastQaCommand = "";
     let lastPresentedAt: number | null = null;
     const performanceTracker = new PlaybackPerformanceTracker();
+    const videoCadences = new Map<
+      HTMLVideoElement,
+      {
+        active: boolean;
+        callbackId: number;
+        previousMediaTime: number | null;
+        presentedMediaTime: number | null;
+        frameDurationSeconds: number | null;
+      }
+    >();
+    const observeVideoCadence = (video: HTMLVideoElement) => {
+      if (
+        videoCadences.has(video) ||
+        typeof video.requestVideoFrameCallback !== "function"
+      ) {
+        return;
+      }
+      const state = {
+        active: true,
+        callbackId: 0,
+        previousMediaTime: null as number | null,
+        presentedMediaTime: null as number | null,
+        frameDurationSeconds: null as number | null,
+      };
+      const observe: VideoFrameRequestCallback = (_now, metadata) => {
+        if (!state.active) return;
+        if (state.previousMediaTime !== null) {
+          const duration = Math.abs(
+            metadata.mediaTime - state.previousMediaTime,
+          );
+          if (duration >= 1 / 240 && duration <= 0.1) {
+            state.frameDurationSeconds =
+              state.frameDurationSeconds === null
+                ? duration
+                : Math.min(state.frameDurationSeconds, duration);
+          }
+        }
+        state.previousMediaTime = metadata.mediaTime;
+        state.presentedMediaTime = metadata.mediaTime;
+        state.callbackId = video.requestVideoFrameCallback(observe);
+      };
+      state.callbackId = video.requestVideoFrameCallback(observe);
+      videoCadences.set(video, state);
+    };
+    const stopVideoCadence = (video: HTMLVideoElement) => {
+      const state = videoCadences.get(video);
+      if (!state) return;
+      state.active = false;
+      video.cancelVideoFrameCallback(state.callbackId);
+      videoCadences.delete(video);
+    };
     const handleQaSelect = (event: Event) => {
       const detail = (
         event as CustomEvent<{
@@ -183,9 +234,15 @@ export function BrowserProgramRenderer(
         renderer,
         performance: performanceTracker,
         videos: {
-          acquire: (clip) => acquirePooledVideo(clip.url),
-          release: (clip, _video, signal) =>
-            releasePooledVideo(clip.url, signal),
+          acquire: (clip) => {
+            const video = acquirePooledVideo(clip.url);
+            observeVideoCadence(video);
+            return video;
+          },
+          release: (clip, video, signal) => {
+            stopVideoCadence(video);
+            return releasePooledVideo(clip.url, signal);
+          },
           ready: (video) => video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
           seeking: (video) => video.seeking,
           currentTime: (video) => video.currentTime,
@@ -201,6 +258,42 @@ export function BrowserProgramRenderer(
               ? Math.min(direct, Math.abs(video.duration - direct))
               : direct;
           },
+          presentationTolerance: (video) => {
+            const frameDuration =
+              videoCadences.get(video)?.frameDurationSeconds;
+            return frameDuration === null ||
+              frameDuration === undefined
+              ? 1 / 30
+              : frameDuration * 1.05;
+          },
+          presentedTimeMatches: (video, targetTime) => {
+            const state = videoCadences.get(video);
+            const frameStart = state?.presentedMediaTime;
+            const frameDuration = state?.frameDurationSeconds;
+            if (
+              frameStart === null ||
+              frameStart === undefined ||
+              frameDuration === null ||
+              frameDuration === undefined
+            ) {
+              return (
+                Math.abs(video.currentTime - targetTime) <= 1 / 30
+              );
+            }
+            const interval = Math.min(0.1, frameDuration * 1.05);
+            if (
+              targetTime >= frameStart &&
+              targetTime < frameStart + interval
+            ) {
+              return true;
+            }
+            return (
+              Number.isFinite(video.duration) &&
+              video.duration > 0 &&
+              frameStart + interval > video.duration &&
+              targetTime < frameStart + interval - video.duration
+            );
+          },
           seek: (video, timeSeconds) => {
             video.currentTime = Math.max(0, timeSeconds);
           },
@@ -209,6 +302,11 @@ export function BrowserProgramRenderer(
               void video.play().catch(() => {});
             } else {
               video.pause();
+            }
+          },
+          setPlaybackRate: (video, playbackRate) => {
+            if (Math.abs(video.playbackRate - playbackRate) > 1e-4) {
+              video.playbackRate = playbackRate;
             }
           },
         },
@@ -315,6 +413,8 @@ export function BrowserProgramRenderer(
                 now - lastPresentedAt > lateThresholdMs,
               sourceGeneration:
                 live?.timeSampler.jumpGeneration,
+              playbackRate:
+                live?.timeSampler.targetPlaybackRate,
             },
           );
           if (presented) lastPresentedAt = now;
@@ -352,6 +452,9 @@ export function BrowserProgramRenderer(
         handlePressure,
       );
       longTaskObserver?.disconnect();
+      for (const video of videoCadences.keys()) {
+        stopVideoCadence(video);
+      }
       propsRef.current.onRuntimeChange?.(null);
       void runtimeRef.current?.dispose();
       runtimeRef.current = null;

@@ -6,6 +6,7 @@ import type {
 import type { FrameLease } from "./FrameCache";
 import {
   PlaybackPerformanceTracker,
+  type PlaybackDropReason,
   type PlaybackLatencyKind,
 } from "../qa/performance";
 import type { ClipRegistry, RegisteredClip } from "./ClipRegistry";
@@ -33,7 +34,10 @@ export interface CompatibilityVideoAdapter<Video extends object> {
     currentTimeSeconds: number,
     targetTimeSeconds: number,
   ): number;
+  presentationTolerance?(video: Video): number;
+  presentedTimeMatches?(video: Video, targetTimeSeconds: number): boolean;
   seek(video: Video, timeSeconds: number): void;
+  setPlaybackRate?(video: Video, playbackRate: number): void;
   setPlaying(video: Video, playing: boolean): void;
 }
 
@@ -44,6 +48,7 @@ interface ActiveRole<Video extends object> {
   lastSourceGeneration: number | null;
   lastDiscontinuityGeneration: number | null;
   seekInFlight: boolean;
+  dropEpisode: PlaybackDropReason | null;
 }
 
 interface TrackedRelease {
@@ -197,6 +202,7 @@ export class MultiClipPlaybackRuntime<
     options: {
       late?: boolean;
       sourceGeneration?: number;
+      playbackRate?: number;
     } = {},
   ) {
     this.assertOpen();
@@ -216,7 +222,11 @@ export class MultiClipPlaybackRuntime<
         "multi-clip-renderer",
       );
       if (!lease) {
-        this.recordDroppedFrame(transport);
+        this.recordDroppedFrame(
+          transport,
+          pgm,
+          "decoded-unavailable",
+        );
         return false;
       }
       const targetTimestampUs = Math.round(
@@ -234,7 +244,11 @@ export class MultiClipPlaybackRuntime<
         targetTimestampUs >= frame.timestamp + frameDurationUs
       ) {
         lease.release();
-        this.recordDroppedFrame(transport);
+        this.recordDroppedFrame(
+          transport,
+          pgm,
+          "decoded-off-target",
+        );
         return false;
       }
       const submission = this.options.renderer.presentDecoded(
@@ -242,7 +256,11 @@ export class MultiClipPlaybackRuntime<
         request,
       );
       if (!submission) {
-        this.recordDroppedFrame(transport);
+        this.recordDroppedFrame(
+          transport,
+          pgm,
+          "renderer-rejected",
+        );
         return false;
       }
       submission.receipt.release();
@@ -251,7 +269,13 @@ export class MultiClipPlaybackRuntime<
         !this.options.videos.ready(pgm.video) ||
         this.options.videos.seeking?.(pgm.video)
       ) {
-        if (!pgm.seekInFlight) this.recordDroppedFrame(transport);
+        if (!pgm.seekInFlight) {
+          this.recordDroppedFrame(
+            transport,
+            pgm,
+            "video-not-ready",
+          );
+        }
         return false;
       }
       const currentTime = this.options.videos.currentTime(pgm.video);
@@ -267,7 +291,24 @@ export class MultiClipPlaybackRuntime<
           targetTime,
         ) ?? Math.abs(currentTime - targetTime);
       const sourceGeneration = options.sourceGeneration ?? null;
-      if (drift > PRESENTATION_TOLERANCE_SECONDS) {
+      const presentationTolerance = Math.min(
+        0.1,
+        Math.max(
+          PRESENTATION_TOLERANCE_SECONDS,
+          this.options.videos.presentationTolerance?.(pgm.video) ??
+            PRESENTATION_TOLERANCE_SECONDS,
+        ),
+      );
+      const presentedTimeMatches =
+        this.options.videos.presentedTimeMatches?.(
+          pgm.video,
+          targetTime,
+        );
+      if (
+        presentedTimeMatches === false ||
+        (presentedTimeMatches === undefined &&
+          drift > presentationTolerance)
+      ) {
         const deliberateDiscontinuity =
           (pgm.lastSourceGeneration !== null &&
             sourceGeneration !== null &&
@@ -276,7 +317,7 @@ export class MultiClipPlaybackRuntime<
             transport.discontinuityGeneration !==
               pgm.lastDiscontinuityGeneration);
         if (!deliberateDiscontinuity && !pgm.seekInFlight) {
-          this.recordDroppedFrame(transport);
+          this.recordDroppedFrame(transport, pgm, "steady-drift");
         }
         this.options.videos.seek(pgm.video, targetTime);
         pgm.seekInFlight = true;
@@ -290,9 +331,17 @@ export class MultiClipPlaybackRuntime<
       pgm.lastSourceGeneration = sourceGeneration;
       pgm.lastDiscontinuityGeneration =
         transport.discontinuityGeneration;
+      this.options.videos.setPlaybackRate?.(
+        pgm.video,
+        Math.max(0.01, options.playbackRate ?? 1),
+      );
       this.options.videos.setPlaying(pgm.video, transport.playing);
       if (!this.options.renderer.presentHtmlVideo(pgm.video, request)) {
-        this.recordDroppedFrame(transport);
+        this.recordDroppedFrame(
+          transport,
+          pgm,
+          "renderer-rejected",
+        );
         return false;
       }
     }
@@ -307,6 +356,7 @@ export class MultiClipPlaybackRuntime<
       this.hasPresented &&
       options.late;
     this.hasPresented = true;
+    pgm.dropEpisode = null;
     this.options.performance?.recordFrame({ late });
     if (this.pendingPresentation) {
       if (settlesPendingPresentation) {
@@ -451,6 +501,7 @@ export class MultiClipPlaybackRuntime<
       lastSourceGeneration: null,
       lastDiscontinuityGeneration: null,
       seekInFlight: false,
+      dropEpisode: null,
     });
     this.options.coordinator.activate(
       role,
@@ -473,6 +524,7 @@ export class MultiClipPlaybackRuntime<
     warmed.lastSourceGeneration = null;
     warmed.lastDiscontinuityGeneration = null;
     warmed.seekInFlight = false;
+    warmed.dropEpisode = null;
     this.roles.set("pgm", warmed);
     this.options.coordinator.activate(
       "pgm",
@@ -584,13 +636,22 @@ export class MultiClipPlaybackRuntime<
     this.pendingLaneGeneration = null;
   }
 
-  private recordDroppedFrame(transport: PlaybackTransportState) {
+  private recordDroppedFrame(
+    transport: PlaybackTransportState,
+    pgm: ActiveRole<Video>,
+    reason: PlaybackDropReason,
+  ) {
     if (
       transport.playing &&
       this.hasPresented &&
-      this.pendingPresentation === null
+      this.pendingPresentation === null &&
+      pgm.dropEpisode === null
     ) {
-      this.options.performance?.recordFrame({ dropped: true });
+      pgm.dropEpisode = reason;
+      this.options.performance?.recordFrame({
+        dropped: true,
+        droppedReason: reason,
+      });
     }
   }
 

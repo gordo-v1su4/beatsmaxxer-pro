@@ -5,6 +5,13 @@ export type PlaybackLatencyKind =
   | "keyframeScrub"
   | "cleanup";
 
+export type PlaybackDropReason =
+  | "decoded-unavailable"
+  | "decoded-off-target"
+  | "video-not-ready"
+  | "steady-drift"
+  | "renderer-rejected";
+
 export interface PlaybackLatencySummary {
   count: number;
   p50Ms: number | null;
@@ -19,6 +26,7 @@ export interface PlaybackPerformanceSnapshot {
     presented: number;
     late: number;
     dropped: number;
+    droppedByReason: Record<PlaybackDropReason, number>;
     lateOrDroppedRatio: number | null;
   };
   longTasks: {
@@ -40,6 +48,13 @@ const LATENCY_KINDS: readonly PlaybackLatencyKind[] = [
   "keyframeScrub",
   "cleanup",
 ];
+const DROP_REASONS: readonly PlaybackDropReason[] = [
+  "decoded-unavailable",
+  "decoded-off-target",
+  "video-not-ready",
+  "steady-drift",
+  "renderer-rejected",
+];
 
 function percentile(values: readonly number[], fraction: number) {
   if (values.length === 0) return null;
@@ -60,6 +75,9 @@ export class PlaybackPerformanceTracker {
   private presented = 0;
   private late = 0;
   private dropped = 0;
+  private readonly droppedByReason = new Map<PlaybackDropReason, number>(
+    DROP_REASONS.map((reason) => [reason, 0]),
+  );
   private readonly longTasks: number[] = [];
 
   constructor(private readonly now = () => performance.now()) {}
@@ -85,9 +103,21 @@ export class PlaybackPerformanceTracker {
     );
   }
 
-  recordFrame(options: { late?: boolean; dropped?: boolean } = {}) {
+  recordFrame(
+    options: {
+      late?: boolean;
+      dropped?: boolean;
+      droppedReason?: PlaybackDropReason;
+    } = {},
+  ) {
     if (options.dropped) {
       this.dropped += 1;
+      if (options.droppedReason) {
+        this.droppedByReason.set(
+          options.droppedReason,
+          (this.droppedByReason.get(options.droppedReason) ?? 0) + 1,
+        );
+      }
       return;
     }
     this.presented += 1;
@@ -124,6 +154,12 @@ export class PlaybackPerformanceTracker {
         presented: this.presented,
         late: this.late,
         dropped: this.dropped,
+        droppedByReason: Object.fromEntries(
+          DROP_REASONS.map((reason) => [
+            reason,
+            this.droppedByReason.get(reason) ?? 0,
+          ]),
+        ) as Record<PlaybackDropReason, number>,
         lateOrDroppedRatio:
           attempted > 0 ? lateOrDropped / attempted : null,
       },

@@ -19,6 +19,8 @@ interface FakeVideo {
   clipId: string;
   url: string;
   currentTime: number;
+  clockTime: number;
+  playbackRate: number;
   ready: boolean;
   playing: boolean;
 }
@@ -86,6 +88,7 @@ function setup(
     releaseGate?: Promise<void>;
     cleanupTimeoutMs?: number;
     decoded?: boolean;
+    videoFrameRate?: number;
   } = {},
 ) {
   const registry = new ClipRegistry();
@@ -110,6 +113,8 @@ function setup(
         clipId: clip.id,
         url: clip.url,
         currentTime: now / 1_000,
+        clockTime: now / 1_000,
+        playbackRate: 1,
         ready: true,
         playing: false,
       };
@@ -127,12 +132,26 @@ function setup(
     },
     ready: (video) => video.ready,
     currentTime: (video) => video.currentTime,
+    presentationTolerance: () =>
+      options.videoFrameRate
+        ? 1 / options.videoFrameRate
+        : 1 / 30,
+    presentedTimeMatches: options.videoFrameRate
+      ? (video, targetTime) =>
+          targetTime >= video.currentTime - 1e-9 &&
+          targetTime <
+            video.currentTime + 1 / options.videoFrameRate! + 1e-9
+      : undefined,
     seek: (video, timeSeconds) => {
       seekCalls += 1;
       video.currentTime = timeSeconds;
+      video.clockTime = timeSeconds;
     },
     setPlaying: (video, playing) => {
       video.playing = playing;
+    },
+    setPlaybackRate: (video, playbackRate) => {
+      video.playbackRate = playbackRate;
     },
   };
   const coordinator = new PlaybackCoordinator<FakeFrame>();
@@ -159,6 +178,7 @@ function setup(
       discontinuityGeneration?: number;
       playing?: boolean;
       late?: boolean;
+      playbackRate?: number;
     } = {},
   ) =>
     runtime.present(
@@ -173,6 +193,7 @@ function setup(
       {
         sourceGeneration: overrides.sourceGeneration,
         late: overrides.late,
+        playbackRate: overrides.playbackRate,
       },
     );
   return {
@@ -185,10 +206,21 @@ function setup(
     present,
     seekCalls: () => seekCalls,
     acquisitions: () => acquisitions,
+    setReady(ready: boolean) {
+      for (const video of activeVideos) video.ready = ready;
+    },
     advance(milliseconds: number) {
       now += milliseconds;
       for (const video of activeVideos) {
-        if (video.playing) video.currentTime += milliseconds / 1_000;
+        if (video.playing) {
+          video.clockTime +=
+            (milliseconds / 1_000) * video.playbackRate;
+          video.currentTime = options.videoFrameRate
+            ? Math.floor(
+                (video.clockTime + 1e-9) * options.videoFrameRate,
+              ) / options.videoFrameRate
+            : video.clockTime;
+        }
       }
     },
   };
@@ -565,6 +597,11 @@ describe("G007 multi-clip production runtime", () => {
       }),
     ).toBe(false);
     expect(state.performance.snapshot().frames.dropped).toBe(1);
+    expect(
+      state.performance.snapshot().frames.droppedByReason[
+        "steady-drift"
+      ],
+    ).toBe(1);
     await state.runtime.dispose();
   });
 
@@ -623,6 +660,93 @@ describe("G007 multi-clip production runtime", () => {
       dropped: 1,
       lateOrDroppedRatio: 0.25,
     });
+    await state.runtime.dispose();
+  });
+
+  test("records one reason per continuous steady failure episode", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(state.present()).toBe(true);
+
+    state.setReady(false);
+    for (let frame = 0; frame < 120; frame += 1) {
+      expect(state.present()).toBe(false);
+    }
+    expect(state.performance.snapshot().frames).toMatchObject({
+      dropped: 1,
+      droppedByReason: {
+        "video-not-ready": 1,
+      },
+    });
+
+    state.setReady(true);
+    expect(state.present()).toBe(true);
+    state.setReady(false);
+    expect(state.present()).toBe(false);
+    expect(state.performance.snapshot().frames).toMatchObject({
+      dropped: 2,
+      droppedByReason: {
+        "video-not-ready": 2,
+      },
+    });
+    await state.runtime.dispose();
+  });
+
+  test("keeps 24, 30, and 60fps presented intervals below 1% over 60 seconds", async () => {
+    for (const [frameRate, playbackRate] of [
+      [24, 1.5],
+      [30, 1.0025],
+      [60, 0.5],
+    ] as const) {
+      const state = setup({ videoFrameRate: frameRate });
+      state.runtime.select({
+        pgm: "clip-0",
+        prewarm: null,
+        overlap: null,
+      });
+      expect(state.present({ playbackRate })).toBe(true);
+      let sourceTimeSeconds = 0;
+
+      for (let frame = 0; frame < 3_600; frame += 1) {
+        state.advance(1_000 / 60);
+        sourceTimeSeconds += playbackRate / 60;
+        expect(
+          state.present({
+            sourceTimeSeconds,
+            playbackRate,
+            sourceGeneration: 0,
+          }),
+        ).toBe(true);
+      }
+
+      const frames = state.performance.snapshot().frames;
+      expect(frames.lateOrDroppedRatio).toBeLessThanOrEqual(0.01);
+      expect(frames.droppedByReason).toEqual({
+        "decoded-unavailable": 0,
+        "decoded-off-target": 0,
+        "video-not-ready": 0,
+        "steady-drift": 0,
+        "renderer-rejected": 0,
+      });
+      await state.runtime.dispose();
+    }
+  });
+
+  test("rejects 200ms drift even with a derived 10fps interval", async () => {
+    const state = setup({ videoFrameRate: 10 });
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+
+    expect(state.present({ sourceTimeSeconds: 0.2 })).toBe(false);
+    expect(state.renderer.presented).toBe(0);
+    expect(state.seekCalls()).toBe(1);
     await state.runtime.dispose();
   });
 
