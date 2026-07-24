@@ -6,7 +6,18 @@
     "rhythm_method": "RhythmExtractor2013",
     "segmentation": "SBic"
   },
-  "fallback_reason": "low_confidence",
+  "fallback_reason": "invalid_bpm",
+  "aubio_attempt": {
+    "status": "succeeded",
+    "version": "0.4.9",
+    "config": {
+      "method": "default"
+    },
+    "bpm": 400,
+    "confidence": 0.9,
+    "beats": [0.468, 0.937],
+    "onsets": [0.2]
+  },
   "decoder_name": "ffmpeg",
   "decoder_version": "7.1",
   "sample_rate_hz": 1000,

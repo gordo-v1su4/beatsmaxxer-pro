@@ -43,4 +43,41 @@ describe("analysis contract", () => {
       "inconsistent sample and time values",
     );
   });
+
+  test("rejects effective Aubio when its recorded attempt failed", () => {
+    const result = structuredClone(normalizeLegacySyncAnalysis(aubioSuccess));
+    result.attempts.aubio.status = "failed";
+    result.attempts.aubio.failure_code = "analysis_failed";
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "effective Aubio requires a succeeded Aubio attempt",
+    );
+  });
+
+  test("rejects effective Aubio when its attempt version is missing", () => {
+    const result = structuredClone(normalizeLegacySyncAnalysis(aubioSuccess));
+    result.attempts.aubio.version = null;
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "effective Aubio requires complete attempt provenance",
+    );
+  });
+
+  test("rejects effective Aubio when its attempt config is missing", () => {
+    const result = structuredClone(normalizeLegacySyncAnalysis(aubioSuccess));
+    result.attempts.aubio.config = null;
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "effective Aubio requires complete attempt provenance",
+    );
+  });
+
+  test("rejects effective Aubio when provider provenance is missing", () => {
+    const result = structuredClone(normalizeLegacySyncAnalysis(aubioSuccess));
+    result.provenance.aubio.version = null;
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "effective Aubio requires complete provider provenance",
+    );
+  });
 });

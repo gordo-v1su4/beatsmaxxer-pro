@@ -14,12 +14,15 @@ describe("analysis fallback selection", () => {
 
     expect(result.effective).toMatchObject({
       provider: "essentia",
-      selection_reason: "low_confidence",
+      selection_reason: "invalid_bpm",
       verified: true,
     });
     expect(result.attempts.aubio).toMatchObject({
-      status: "unverified",
-      failure_code: "provider_not_reported",
+      status: "succeeded",
+      version: "0.4.9",
+      rhythm: {
+        bpm: 400,
+      },
     });
     expect(result.attempts.essentia?.status).toBe("succeeded");
     expect(validateAnalysisResultV1(result)).toBe(result);
@@ -67,4 +70,23 @@ describe("analysis fallback selection", () => {
       }),
     ).toBe("low_confidence");
   });
+
+  test("rejects Essentia selection reasons that do not match the Aubio fallback predicate", () => {
+    const result = verifiedEssentiaFallback();
+    result.effective.selection_reason = "insufficient_beats";
+
+    expect(() => validateAnalysisResultV1(result)).toThrow(
+      "Essentia selection reason must match the Aubio fallback predicate",
+    );
+  });
+
+  test("accepts a verified Essentia fallback consistent with the preserved Aubio attempt", () => {
+    const result = verifiedEssentiaFallback();
+
+    expect(validateAnalysisResultV1(result)).toBe(result);
+  });
 });
+
+function verifiedEssentiaFallback() {
+  return structuredClone(normalizeLegacySyncAnalysis(essentiaFallback));
+}

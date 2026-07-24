@@ -39,4 +39,24 @@ describe("legacy analysis provenance", () => {
       "provider provenance is incomplete; result is unverified",
     );
   });
+
+  test("does not verify self-reported Aubio results that fail the acceptance predicate", () => {
+    const result = normalizeLegacySyncAnalysis({
+      provider: "aubio",
+      provider_version: "0.4.9",
+      provider_config: { method: "default" },
+      bpm: 400,
+      confidence: 1,
+      duration: 1,
+      sample_rate: 1000,
+      beats: [0.5],
+      onsets: [],
+    });
+
+    expect(result.effective).toMatchObject({
+      provider: "unknown",
+      selection_reason: "legacy_unverified",
+      verified: false,
+    });
+  });
 });
