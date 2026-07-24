@@ -1,8 +1,9 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { TopBar } from './components/TopBar';
 import { EffectModule, CompactModule } from './components/EffectModule';
 import { MainViewer, PgmRail } from './components/MainViewer';
 import { AudioProvider } from './audio/AudioContext';
+import { audioEngine } from './audio/AudioEngine';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 
 export type ModuleType =
@@ -67,9 +68,9 @@ const MODULES: ModuleConfig[] = [
     id: 'timesampler',
     name: 'TIMESAMPLER',
     shortName: 'SMPLR',
-    accentColor: '#eab308',
+    accentColor: '#fde047',
     params: {
-      mode: 0, size: 50, slices: 8, accent: 0, chance: 60, rate: 43,
+      mode: 0, size: 50, slices: 8, loops: 2, accent: 0, chance: 60, rate: 43,
       mix: 60, in_: 80, out: 60,
     },
   },
@@ -109,8 +110,30 @@ const MODULES_B: ModuleConfig[] = [
 
 const ALL_MODULES: ModuleConfig[] = [...MODULES, ...MODULES_B];
 
+const QA_SAMPLE_CLIPS = [
+  'hf_20260715_204952_1521dea1-55e8-4838-a74c-2afbb212e243.mp4',
+  'hf_20260716_141721_f2b046a6-02fb-43c7-af95-2509f73de473.mp4',
+  'hf_20260715_050415_982fb7e8-2da7-4dc4-b45a-175771abd6fd.mp4',
+  'hf_20260715_165127_8bb294ab-8a6d-4851-b877-27465d118317.mp4',
+  'hf_20260716_133422_03a07843-4356-4649-8b52-a2f9c3aa25dc.mp4',
+  'hf_20260715_135712_b69abf83-d0f1-4e2b-8a83-c8f78afb4564.mp4',
+  'hf_20260718_061437_6ac38dee-9f5a-4e0d-a8d7-fa094f5eacf6.mp4',
+  'hf_20260717_064325_86638b52-4426-432e-bdd5-c09330ac5cf2.mp4',
+] as const;
+
+const QA_SAMPLE_AUDIO = 'redline.wav';
+
 function moduleRecord<T>(value: T): Record<ModuleType, T> {
   return Object.fromEntries(ALL_MODULES.map(m => [m.id, value])) as Record<ModuleType, T>;
+}
+
+function joinQaUrl(baseUrl: string, fileName: string) {
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  const encodedPath = fileName
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
+  return `${trimmed}/${encodedPath}`;
 }
 
 export function App() {
@@ -126,6 +149,7 @@ export function App() {
   const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
 
   const objectUrlsRef = useRef<string[]>([]);
+  const qaSeedRef = useRef(false);
 
   const updateParam = useCallback((moduleId: ModuleType, param: string, value: number) => {
     setModuleParams(prev => ({
@@ -216,6 +240,53 @@ export function App() {
       });
     });
     setModuleParams(resetParams);
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || qaSeedRef.current) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('qa') !== 'sample-media') return;
+
+    qaSeedRef.current = true;
+
+    const baseUrl = (params.get('qaMediaBase') || 'http://127.0.0.1:8765').trim();
+    const audioName = (params.get('qaAudio') || QA_SAMPLE_AUDIO).trim();
+    const clipNames = (params.get('qaClips') || QA_SAMPLE_CLIPS.join(','))
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    const orderedModuleIds = [...MODULES.map((module) => module.id), ...MODULES_B.map((module) => module.id)];
+    const requestedPgm = params.get('qaPgm') as ModuleType | null;
+
+    setVideoLayers((prev) => {
+      const next = { ...prev };
+      orderedModuleIds.forEach((moduleId, index) => {
+        const clipName = clipNames[index % clipNames.length];
+        next[moduleId] = {
+          name: clipName,
+          url: joinQaUrl(baseUrl, clipName),
+        };
+      });
+      return next;
+    });
+
+    if (requestedPgm && ALL_MODULES.some((module) => module.id === requestedPgm)) {
+      setPgmSource(requestedPgm);
+    }
+
+    void (async () => {
+      try {
+        await audioEngine.loadAudioUrl(joinQaUrl(baseUrl, audioName), audioName, {
+          analysisUrl: `/__qa/rhythm?file=${encodeURIComponent(audioName)}`,
+        });
+        if (params.get('qaAutoplay') !== '0') {
+          await audioEngine.start();
+        }
+      } catch (error) {
+        console.error('Failed to preload QA sample media', error);
+      }
+    })();
   }, []);
 
   const moduleById = Object.fromEntries(ALL_MODULES.map(m => [m.id, m])) as Record<ModuleType, ModuleConfig>;

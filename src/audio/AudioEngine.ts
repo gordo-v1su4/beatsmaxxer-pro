@@ -8,6 +8,8 @@
  * - Lightweight onset-based BPM estimation from bass energy
  */
 
+import { fetchEssentiaRhythmAnalysis, fetchRhythmAnalysisFromUrl } from "./essentia";
+
 export interface AudioState {
   bpm: number;
   bpmLocked: boolean;
@@ -22,6 +24,9 @@ export interface AudioState {
   duration: number;
   trackName: string;
   usingUploadedTrack: boolean;
+  analysisStatus: "idle" | "analyzing" | "ready" | "fallback" | "error";
+  analysisConfidence: number | null;
+  analysisError: string | null;
 }
 
 const DEFAULT_BPM = 128;
@@ -50,14 +55,19 @@ export class AudioEngine {
   private _trackName = DEFAULT_TRACK_NAME;
   private _usingUploadedTrack = false;
   private _bpmLocked = false;
+  private _analysisStatus: AudioState["analysisStatus"] = "idle";
+  private _analysisConfidence: number | null = null;
+  private _analysisError: string | null = null;
 
   private beatInterval = 60 / DEFAULT_BPM;
+  private beatGrid: number[] = [];
   private onsetHistory: number[] = [];
   private prevEnergy = 0;
   private onsetCooldown = 0;
 
   private rafId = 0;
   private syntheticStartTime = 0;
+  private analysisRequestId = 0;
 
   async start() {
     await this.ensureContext();
@@ -128,32 +138,77 @@ export class AudioEngine {
     await this.ensureContext();
     if (!this.ctx || !this.gainNode) return;
 
-    if (this.ctx.state === 'suspended') {
-      await this.ctx.resume();
-    }
-
     this.stop();
-
-    if (this.mediaSource) {
-      this.mediaSource.disconnect();
-      this.mediaSource = null;
-    }
-
-    if (this.mediaElement) {
-      this.mediaElement.pause();
-      this.mediaElement.src = '';
-      this.mediaElement.load();
-      this.mediaElement = null;
-    }
-
-    if (this.objectUrl) {
-      URL.revokeObjectURL(this.objectUrl);
-      this.objectUrl = null;
-    }
+    this.disposeMediaElement();
 
     this.objectUrl = URL.createObjectURL(file);
+    this.attachMediaElement(this.objectUrl, file.name);
+    this.prepareUploadedTrack(file.name);
+
+    const requestId = ++this.analysisRequestId;
+
+    try {
+      const analysis = await fetchEssentiaRhythmAnalysis(file);
+      if (requestId !== this.analysisRequestId) return;
+      this.applyRhythmAnalysis(analysis);
+    } catch (error) {
+      if (requestId !== this.analysisRequestId) return;
+      this.applyRealtimeFallback(error);
+    }
+  }
+
+  async loadAudioUrl(url: string, trackName: string, options?: { analysisUrl?: string }) {
+    await this.ensureContext();
+    if (!this.ctx || !this.gainNode) return;
+
+    this.stop();
+    this.disposeMediaElement();
+
+    this.attachMediaElement(url, trackName);
+    this.prepareUploadedTrack(trackName);
+
+    const requestId = ++this.analysisRequestId;
+
+    try {
+      const analysis = options?.analysisUrl
+        ? await fetchRhythmAnalysisFromUrl(options.analysisUrl)
+        : await (async () => {
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch QA audio source (${response.status})`);
+            }
+            const blob = await response.blob();
+            const file = new File([blob], trackName, { type: blob.type || 'audio/wav' });
+            return fetchEssentiaRhythmAnalysis(file);
+          })();
+      if (requestId !== this.analysisRequestId) return;
+      this.applyRhythmAnalysis(analysis);
+    } catch (error) {
+      if (requestId !== this.analysisRequestId) return;
+      this.applyRealtimeFallback(error);
+    }
+  }
+
+  clearUploadedTrack() {
+    this.stop();
+    this.disposeMediaElement();
+
+    this.analysisRequestId += 1;
+    this._usingUploadedTrack = false;
+    this._trackName = DEFAULT_TRACK_NAME;
+    this._bpm = DEFAULT_BPM;
+    this.beatInterval = 60 / this._bpm;
+    this.beatGrid = [];
+    this._analysisStatus = "idle";
+    this._analysisConfidence = null;
+    this._analysisError = null;
+  }
+
+  private attachMediaElement(src: string, trackName: string) {
+    if (!this.ctx || !this.gainNode) return;
+
     const audio = new Audio();
-    audio.src = this.objectUrl;
+    audio.src = src;
     audio.loop = true;
     audio.preload = 'auto';
     audio.crossOrigin = 'anonymous';
@@ -165,18 +220,24 @@ export class AudioEngine {
 
     this.mediaElement = audio;
     this.mediaSource = source;
+    this._trackName = trackName;
+  }
+
+  private prepareUploadedTrack(trackName: string) {
     this._usingUploadedTrack = true;
-    this._trackName = file.name;
+    this._trackName = trackName;
     this._bpm = DEFAULT_BPM;
     this.beatInterval = 60 / this._bpm;
+    this.beatGrid = [];
     this.onsetHistory = [];
     this.prevEnergy = 0;
     this.onsetCooldown = 0;
+    this._analysisStatus = "analyzing";
+    this._analysisConfidence = null;
+    this._analysisError = null;
   }
 
-  clearUploadedTrack() {
-    this.stop();
-
+  private disposeMediaElement() {
     if (this.mediaSource) {
       this.mediaSource.disconnect();
       this.mediaSource = null;
@@ -193,11 +254,6 @@ export class AudioEngine {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;
     }
-
-    this._usingUploadedTrack = false;
-    this._trackName = DEFAULT_TRACK_NAME;
-    this._bpm = DEFAULT_BPM;
-    this.beatInterval = 60 / this._bpm;
   }
 
   setVolume(v: number) {
@@ -230,6 +286,9 @@ export class AudioEngine {
       duration: this.mediaElement?.duration || 0,
       trackName: this._trackName,
       usingUploadedTrack: this._usingUploadedTrack,
+      analysisStatus: this._analysisStatus,
+      analysisConfidence: this._analysisConfidence,
+      analysisError: this._analysisError,
     };
   }
 
@@ -292,15 +351,14 @@ export class AudioEngine {
     if (!this._playing) return;
 
     const elapsed = this.getTransportTime();
-    // keep the clock sane so a bad interval can't feed NaN into every shader
-    if (!Number.isFinite(this.beatInterval) || this.beatInterval <= 0) {
-      this._bpm = DEFAULT_BPM;
-      this.beatInterval = 60 / DEFAULT_BPM;
+    if (!this.updateBeatFromGrid(elapsed)) {
+      if (!Number.isFinite(this.beatInterval) || this.beatInterval <= 0) {
+        this._bpm = DEFAULT_BPM;
+        this.beatInterval = 60 / DEFAULT_BPM;
+      }
+      this._beat = elapsed / this.beatInterval;
+      this._beatPhase = (elapsed % this.beatInterval) / this.beatInterval;
     }
-    // continuous beat position (integer part = beat number, fraction = phase);
-    // effects need the smooth value so sub-beat ramps/stutters work while playing
-    this._beat = elapsed / this.beatInterval;
-    this._beatPhase = (elapsed % this.beatInterval) / this.beatInterval;
 
     if (this.analyserFull) {
       const td = new Uint8Array(this.analyserFull.fftSize);
@@ -343,7 +401,7 @@ export class AudioEngine {
       this.onsetHistory.push(elapsed);
       if (this.onsetHistory.length > 16) this.onsetHistory.shift();
 
-      if (!this._bpmLocked && this.onsetHistory.length >= 4) {
+      if (!this._bpmLocked && this.beatGrid.length < 2 && this.onsetHistory.length >= 4) {
         const intervals = this.onsetHistory
           .slice(1)
           .map((t, i) => t - this.onsetHistory[i])
@@ -394,6 +452,74 @@ export class AudioEngine {
   private snapBPM(bpm: number): number {
     const grids = [90, 95, 100, 105, 110, 115, 120, 124, 125, 126, 128, 130, 132, 135, 140, 145, 150, 155, 160, 165, 170, 174, 178];
     return grids.reduce((a, b) => (Math.abs(b - bpm) < Math.abs(a - bpm) ? b : a));
+  }
+
+  private applyRhythmAnalysis(analysis: Awaited<ReturnType<typeof fetchEssentiaRhythmAnalysis>>) {
+    const bpm = Math.max(60, Math.min(200, analysis.bpm));
+    this._bpm = bpm;
+    this.beatInterval = 60 / bpm;
+    this.beatGrid = analysis.beats.filter((beat) => beat >= 0).sort((a, b) => a - b);
+    this._analysisStatus = "ready";
+    this._analysisConfidence = Number.isFinite(analysis.confidence) ? analysis.confidence : null;
+    this._analysisError = null;
+  }
+
+  private applyRealtimeFallback(error: unknown) {
+    this.beatGrid = [];
+    this._analysisStatus = "fallback";
+    this._analysisConfidence = null;
+    this._analysisError =
+      error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
+  }
+
+  private updateBeatFromGrid(elapsed: number) {
+    if (this._bpmLocked || this.beatGrid.length < 2) {
+      return false;
+    }
+
+    const firstBeat = this.beatGrid[0] ?? 0;
+    const secondBeat = this.beatGrid[1] ?? firstBeat + this.beatInterval;
+    const defaultInterval = Math.max(0.001, secondBeat - firstBeat, this.beatInterval);
+
+    if (elapsed <= firstBeat) {
+      this._beat = Math.max(0, elapsed / defaultInterval);
+      this._beatPhase = this._beat - Math.floor(this._beat);
+      return true;
+    }
+
+    let low = 0;
+    let high = this.beatGrid.length - 1;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const current = this.beatGrid[mid] ?? 0;
+      const next = this.beatGrid[mid + 1];
+
+      if (next !== undefined && elapsed >= next) {
+        low = mid + 1;
+        continue;
+      }
+
+      if (elapsed < current) {
+        high = mid - 1;
+        continue;
+      }
+
+      const interval = Math.max(0.001, (next ?? current + defaultInterval) - current);
+      const phase = Math.max(0, Math.min(1, (elapsed - current) / interval));
+      this._beat = mid + phase;
+      this._beatPhase = phase;
+      return true;
+    }
+
+    const lastIndex = this.beatGrid.length - 1;
+    const lastBeat = this.beatGrid[lastIndex] ?? 0;
+    const prevBeat = this.beatGrid[lastIndex - 1] ?? Math.max(0, lastBeat - defaultInterval);
+    const lastInterval = Math.max(0.001, lastBeat - prevBeat, defaultInterval);
+    const tailBeats = Math.max(0, (elapsed - lastBeat) / lastInterval);
+    this._beat = lastIndex + tailBeats;
+    this._beatPhase = tailBeats - Math.floor(tailBeats);
+    return true;
   }
 
   private async synthesizeDrumLoop(ctx: AudioContext, bpm: number, bars: number): Promise<AudioBuffer> {

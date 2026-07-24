@@ -3,6 +3,44 @@ import type { ModuleType, ModuleConfig, VideoLayer, MidiLayer } from '../App';
 import { ThreeVisualizer, ScreenOverlay, ScreenBadge, VUMeter } from './EffectModule';
 import { useAudio } from '../audio/AudioContext';
 
+type RailFeel = 0 | 1 | 2;
+
+const RAIL_INTERVALS = [
+  { label: '1BT', beats: 1 },
+  { label: '2BT', beats: 2 },
+  { label: '1BR', beats: 4 },
+  { label: '2BR', beats: 8 },
+  { label: '4BR', beats: 16 },
+  { label: '8BR', beats: 32 },
+] as const;
+
+function nextQuantizedBeat(currentBeat: number, intervalBeats: number, feel: RailFeel) {
+  const safeBeat = Math.max(0, currentBeat);
+  const base = Math.max(0.25, intervalBeats);
+
+  if (feel === 2) {
+    const dotted = base * 1.5;
+    return (Math.floor(safeBeat / dotted) + 1) * dotted;
+  }
+
+  if (feel === 1) {
+    const pairLength = base * 2;
+    const pairStart = Math.floor(safeBeat / pairLength) * pairLength;
+    const longStep = base * (4 / 3);
+    const firstBoundary = pairStart + longStep;
+    return safeBeat < firstBoundary - 1e-4 ? firstBoundary : pairStart + pairLength;
+  }
+
+  return (Math.floor(safeBeat / base) + 1) * base;
+}
+
+function formatIntervalLabel(intervalBeats: number, feel: RailFeel) {
+  const base = RAIL_INTERVALS.find((option) => option.beats === intervalBeats)?.label ?? `${intervalBeats}BT`;
+  if (feel === 1) return `${base} SW`;
+  if (feel === 2) return `${base} DOT`;
+  return base;
+}
+
 function PgmButton({ index, name, color, active, queued, onClick }: {
   index: number; name: string; color: string; active: boolean; queued: boolean; onClick: () => void;
 }) {
@@ -51,22 +89,49 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
   const { state } = useAudio();
   const [queued, setQueued] = useState<ModuleType | null>(null);
   const [autoRand, setAutoRand] = useState(false);
-  const lastBarRef = useRef(-1);
+  const [randIntervalBeats, setRandIntervalBeats] = useState(4);
+  const [randFeel, setRandFeel] = useState<RailFeel>(0);
+  const lastBeatRef = useRef(0);
+  const nextTriggerBeatRef = useRef<number | null>(null);
+  const schedulerKeyRef = useRef("");
 
   useEffect(() => {
-    const bar = Math.floor(state.beat / 4);
-    if (bar === lastBarRef.current) return;
-    const firstTick = lastBarRef.current === -1;
-    lastBarRef.current = bar;
-    if (firstTick || !state.playing) return;
-    if (queued) {
-      onSelectSource(queued);
-      setQueued(null);
-    } else if (autoRand) {
-      const others = modules.filter(m => m.id !== pgmSource);
-      onSelectSource(others[Math.floor(Math.random() * others.length)].id);
+    const currentBeat = state.beat;
+    const schedulerKey = `${randIntervalBeats}:${randFeel}:${autoRand}:${queued ?? 'none'}`;
+    const beatWentBack = currentBeat < lastBeatRef.current - 0.5;
+    const schedulerChanged = schedulerKey !== schedulerKeyRef.current;
+
+    if (!state.playing) {
+      nextTriggerBeatRef.current = null;
+      lastBeatRef.current = currentBeat;
+      schedulerKeyRef.current = schedulerKey;
+      return;
     }
-  }, [state.beat, state.playing, queued, autoRand, modules, pgmSource, onSelectSource]);
+
+    if (nextTriggerBeatRef.current === null || beatWentBack || schedulerChanged) {
+      nextTriggerBeatRef.current = nextQuantizedBeat(currentBeat, randIntervalBeats, randFeel);
+    }
+
+    while (nextTriggerBeatRef.current !== null && currentBeat + 1e-3 >= nextTriggerBeatRef.current) {
+      if (queued) {
+        onSelectSource(queued);
+        setQueued(null);
+      } else if (autoRand) {
+        const others = modules.filter(m => m.id !== pgmSource);
+        if (others.length > 0) {
+          onSelectSource(others[Math.floor(Math.random() * others.length)].id);
+        }
+      }
+      nextTriggerBeatRef.current = nextQuantizedBeat(
+        nextTriggerBeatRef.current + 1e-4,
+        randIntervalBeats,
+        randFeel
+      );
+    }
+
+    lastBeatRef.current = currentBeat;
+    schedulerKeyRef.current = schedulerKey;
+  }, [state.beat, state.playing, queued, autoRand, modules, pgmSource, onSelectSource, randIntervalBeats, randFeel]);
 
   const handleSelect = (id: ModuleType) => {
     if (id === pgmSource) { setQueued(null); return; }
@@ -76,6 +141,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
 
   const queuedModule = modules.find(m => m.id === queued);
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
+  const quantizeLabel = formatIntervalLabel(randIntervalBeats, randFeel);
 
   return (
     <div style={{
@@ -95,7 +161,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
         }}>PGM SOURCE</span>
         <button
           onClick={() => setAutoRand(v => !v)}
-          title="Auto-switch to a random channel every bar"
+          title={`Auto-switch to a random channel on the next ${quantizeLabel} boundary`}
           style={{
             height:16, paddingInline:6,
             background: autoRand ? 'linear-gradient(180deg,#ef444433,#ef444418)' : 'linear-gradient(180deg,#1a1c1f,#131517)',
@@ -110,7 +176,61 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
       </div>
       <span style={{
         fontFamily:'Share Tech Mono,monospace', fontSize:7, color:'#33383f', letterSpacing:'0.06em',
-      }}>CUTS ON NEXT BAR</span>
+      }}>{`CUTS ON NEXT ${quantizeLabel}`}</span>
+
+      <div style={{ display:'flex', flexDirection:'column', gap:3, marginTop:2 }}>
+        <div style={{ display:'flex', gap:2, flexWrap:'wrap' }}>
+          {RAIL_INTERVALS.map((option) => (
+            <button
+              key={option.label}
+              onClick={() => setRandIntervalBeats(option.beats)}
+              style={{
+                height:16,
+                minWidth:26,
+                paddingInline:4,
+                background: randIntervalBeats === option.beats ? `linear-gradient(180deg,${active.accentColor}22,${active.accentColor}12)` : 'linear-gradient(180deg,#17191c,#121416)',
+                border:`1px solid ${randIntervalBeats === option.beats ? `${active.accentColor}55` : '#1e2226'}`,
+                borderRadius:2,
+                cursor:'pointer',
+                color: randIntervalBeats === option.beats ? active.accentColor : '#556070',
+                fontFamily:'Rajdhani,sans-serif',
+                fontSize:7.5,
+                fontWeight:700,
+                letterSpacing:'0.08em',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:'flex', gap:2 }}>
+          {[
+            { label: 'STR8', value: 0 as RailFeel },
+            { label: 'SWNG', value: 1 as RailFeel },
+            { label: 'DOT', value: 2 as RailFeel },
+          ].map((option) => (
+            <button
+              key={option.label}
+              onClick={() => setRandFeel(option.value)}
+              style={{
+                height:16,
+                flex:1,
+                background: randFeel === option.value ? `linear-gradient(180deg,${active.accentColor}22,${active.accentColor}12)` : 'linear-gradient(180deg,#17191c,#121416)',
+                border:`1px solid ${randFeel === option.value ? `${active.accentColor}55` : '#1e2226'}`,
+                borderRadius:2,
+                cursor:'pointer',
+                color: randFeel === option.value ? active.accentColor : '#556070',
+                fontFamily:'Rajdhani,sans-serif',
+                fontSize:7.5,
+                fontWeight:700,
+                letterSpacing:'0.08em',
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:2 }}>
         {modules.map((m, i) => (
@@ -146,7 +266,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
         </div>
         <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:8, color: queuedModule ? queuedModule.accentColor : '#4a5260' }}>
           {queuedModule
-            ? `NEXT BAR → ${queuedModule.shortName}`
+            ? `NEXT ${quantizeLabel} → ${queuedModule.shortName}`
             : `BAR ${Math.max(1, Math.floor(state.beat / 4) + 1)} · PGM ${active.shortName}`}
         </span>
         <div style={{ display:'flex', alignItems:'flex-end', gap:2, height:18, opacity:0.6 }}>

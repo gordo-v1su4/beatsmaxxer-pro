@@ -26,6 +26,9 @@ const defaultState: AudioState = {
   duration: 0,
   trackName: 'Internal Drum Loop',
   usingUploadedTrack: false,
+  analysisStatus: 'idle',
+  analysisConfidence: null,
+  analysisError: null,
 };
 
 const Ctx = createContext<AudioContextValue>({

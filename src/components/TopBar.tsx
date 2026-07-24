@@ -39,6 +39,10 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
   };
 
   const beatOn = state.beatPhase < 0.15;
+  const analysisReady = state.analysisStatus === 'ready';
+  const analysisBusy = state.analysisStatus === 'analyzing';
+  const analysisFallback = state.analysisStatus === 'fallback';
+  const analysisFailed = state.analysisStatus === 'error';
 
   return (
     <div style={{
@@ -91,8 +95,9 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
             background: playing
               ? 'linear-gradient(180deg,#1a2a1a,#121c12)'
               : 'linear-gradient(180deg,#1c2020,#141818)',
-            border: `1px solid ${playing ? '#22c55e44' : '#1e2226'}`,
-            borderTop: `1px solid ${playing ? '#22c55e33' : '#252729'}`,
+            borderStyle: 'solid',
+            borderWidth: 1,
+            borderColor: `${playing ? '#22c55e33' : '#252729'} ${playing ? '#22c55e44' : '#1e2226'} ${playing ? '#22c55e44' : '#1e2226'} ${playing ? '#22c55e44' : '#1e2226'}`,
             borderRadius: 3, cursor:'pointer',
             color: playing ? '#22c55e' : '#4a5565',
             display:'flex', alignItems:'center', gap:4,
@@ -111,8 +116,9 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
           style={{
             height: 26, paddingInline: 8,
             background: 'linear-gradient(180deg,#191d24,#12161c)',
-            border: '1px solid #20262e',
-            borderTop: '1px solid #29313c',
+            borderStyle: 'solid',
+            borderWidth: 1,
+            borderColor: '#29313c #20262e #20262e #20262e',
             borderRadius: 3,
             cursor:'pointer',
             color: state.usingUploadedTrack ? '#38bdf8' : '#516072',
@@ -131,8 +137,9 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
             style={{
               height: 26, paddingInline: 8,
               background: 'linear-gradient(180deg,#241919,#1b1212)',
-              border: '1px solid #382020',
-              borderTop: '1px solid #462828',
+              borderStyle: 'solid',
+              borderWidth: 1,
+              borderColor: '#462828 #382020 #382020 #382020',
               borderRadius: 3,
               cursor:'pointer',
               color: '#d56b6b',
@@ -239,6 +246,39 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
 
         <div style={{ width:1, height:20, background:'#1e2226' }}/>
 
+        <div
+          title={
+            analysisFailed
+              ? state.analysisError ?? 'Essentia analysis failed'
+              : analysisReady
+                ? `Rhythm analysis active${state.analysisConfidence !== null ? ` · ${(state.analysisConfidence * 100).toFixed(0)}% confidence` : ''}`
+                : analysisFallback
+                  ? `Realtime beat fallback${state.analysisError ? ` · ${state.analysisError}` : ''}`
+                : analysisBusy
+                  ? 'Rhythm analysis is processing the uploaded song'
+                  : 'Realtime fallback beat detection'
+          }
+          style={{
+            height: 26,
+            paddingInline: 7,
+            background: 'linear-gradient(180deg,#0e1012,#0a0c0e)',
+            border: `1px solid ${analysisFailed ? '#4b2323' : analysisReady ? '#204236' : analysisBusy ? '#24425a' : '#1a1c1e'}`,
+            borderRadius: 2,
+            display:'flex',
+            alignItems:'center',
+            gap:4,
+            boxShadow: 'inset 0 2px 5px rgba(0,0,0,0.7)',
+            color: analysisFailed ? '#f87171' : analysisReady ? '#4ade80' : analysisBusy ? '#38bdf8' : '#4a5060',
+            fontFamily:'Rajdhani,sans-serif',
+            fontWeight:700,
+            fontSize:9,
+            letterSpacing:'0.1em',
+          }}
+        >
+          <Disc3 size={10} />
+          {analysisFailed ? 'RHY·ERR' : analysisReady ? 'RHY·ON' : analysisFallback ? 'RHY·RT' : analysisBusy ? 'RHY·...' : 'RHY·OFF'}
+        </div>
+
         <button
           onClick={handleTap}
           style={{
@@ -270,8 +310,9 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
           style={{
             height: 26, paddingInline: 7,
             background: fxFrozen ? 'linear-gradient(180deg,#2a1a1a,#1c1212)' : 'linear-gradient(180deg,#191b1d,#131517)',
-            border: `1px solid ${fxFrozen ? '#ef444466' : '#1a1c1e'}`,
-            borderTop: `1px solid ${fxFrozen ? '#ef444444' : '#222428'}`,
+            borderStyle: 'solid',
+            borderWidth: 1,
+            borderColor: `${fxFrozen ? '#ef444444' : '#222428'} ${fxFrozen ? '#ef444466' : '#1a1c1e'} ${fxFrozen ? '#ef444466' : '#1a1c1e'} ${fxFrozen ? '#ef444466' : '#1a1c1e'}`,
             borderRadius: 3, cursor:'pointer',
             color: fxFrozen ? '#ef4444' : '#3a4050',
             fontFamily:'Rajdhani,sans-serif', fontWeight:700, fontSize:9, letterSpacing:'0.1em',
@@ -352,8 +393,9 @@ function TopBtn({ icon, label, onClick, accent, danger }: {
         background: hov
           ? `linear-gradient(180deg,${c}18,${c}0c)`
           : 'linear-gradient(180deg,#191b1d,#131517)',
-        border: `1px solid ${hov ? c+'33' : '#1a1c1e'}`,
-        borderTop: `1px solid ${hov ? c+'22' : '#222428'}`,
+        borderStyle: 'solid',
+        borderWidth: 1,
+        borderColor: `${hov ? c+'22' : '#222428'} ${hov ? c+'33' : '#1a1c1e'} ${hov ? c+'33' : '#1a1c1e'} ${hov ? c+'33' : '#1a1c1e'}`,
         borderRadius: 3, cursor:'pointer',
         color: hov ? c : '#3a4050',
         fontFamily:'Rajdhani,sans-serif', fontWeight:700, fontSize:9, letterSpacing:'0.1em',
