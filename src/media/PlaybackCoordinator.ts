@@ -65,6 +65,11 @@ export interface PlaybackCoordinatorSnapshot {
   fallback: MediaFallback;
   rendererResourceGeneration: number;
   transport: PlaybackTransportState;
+  pressure: {
+    stage: number;
+    count: number;
+    lastAction: PressureAction | null;
+  };
 }
 
 export interface PlaybackCoordinatorOptions {
@@ -104,6 +109,8 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     },
   };
   private pressureStage = 0;
+  private pressureCount = 0;
+  private lastPressureAction: PressureAction | null = null;
   private disposed = false;
   private overlapEnabled = true;
   private rendererResourceGeneration = 0;
@@ -377,7 +384,9 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
             : this.pressureStage === 3
               ? this.disableOverlap()
               : this.selectPressureFallback();
-    this.pressureStage = Math.min(4, this.pressureStage + 1);
+    this.pressureStage = Math.min(5, this.pressureStage + 1);
+    this.pressureCount += 1;
+    this.lastPressureAction = action;
     this.report();
     return action;
   }
@@ -410,6 +419,11 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
       fallback: { ...this.fallback },
       rendererResourceGeneration: this.rendererResourceGeneration,
       transport: { ...this.transport },
+      pressure: {
+        stage: this.pressureStage,
+        count: this.pressureCount,
+        lastAction: this.lastPressureAction,
+      },
     };
   }
 

@@ -37,16 +37,44 @@ export function acquirePooledVideo(url: string) {
   return video;
 }
 
-export function releasePooledVideo(url: string) {
+export function releasePooledVideo(
+  url: string,
+  signal?: AbortSignal,
+) {
   const entry = videoPool.get(url);
-  if (!entry) return;
+  if (!entry) return Promise.resolve();
   entry.refs -= 1;
-  if (entry.refs > 0) return;
+  if (entry.refs > 0) return Promise.resolve();
+  const emptied = new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      entry.video.removeEventListener("emptied", finish);
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    };
+    const abort = () => {
+      entry.video.removeEventListener("emptied", finish);
+      reject(new DOMException("video-cleanup-aborted", "AbortError"));
+    };
+    entry.video.addEventListener("emptied", finish, { once: true });
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    queueMicrotask(() => {
+      if (
+        entry.video.networkState === HTMLMediaElement.NETWORK_EMPTY
+      ) {
+        finish();
+      }
+    });
+  });
   entry.video.pause();
   entry.video.removeAttribute("src");
   entry.video.load();
   videoPool.delete(url);
   refreshPoolTelemetry();
+  return emptied;
 }
 
 export function pooledVideoCount() {

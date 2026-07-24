@@ -12,6 +12,7 @@ import { FakeFrame } from "../../unit/media/fakes";
 
 interface FakeVideo {
   clipId: string;
+  url: string;
   currentTime: number;
   ready: boolean;
   playing: boolean;
@@ -32,13 +33,15 @@ class FakeRenderer
 {
   disposed = 0;
   presented = 0;
+  forcedFallbacks = 0;
+  fallback = {
+    path: "html-video-webgl2" as const,
+    reason: "sample-frame-probe-failed",
+  };
 
   snapshot() {
     return {
-      fallback: {
-        path: "html-video-webgl2" as const,
-        reason: "sample-frame-probe-failed",
-      },
+      fallback: this.fallback,
       deviceLost: false,
     };
   }
@@ -52,12 +55,26 @@ class FakeRenderer
     return true;
   }
 
+  forceCompatibilityFallback(reason: string) {
+    this.forcedFallbacks += 1;
+    this.fallback = {
+      path: "html-video-webgl2",
+      reason,
+    };
+    return true;
+  }
+
   dispose() {
     this.disposed += 1;
   }
 }
 
-function setup() {
+function setup(
+  options: {
+    releaseGate?: Promise<void>;
+    cleanupTimeoutMs?: number;
+  } = {},
+) {
   const registry = new ClipRegistry();
   for (let index = 0; index < 8; index += 1) {
     registry.registerUrl(
@@ -70,20 +87,28 @@ function setup() {
   let seekCalls = 0;
   const performance = new PlaybackPerformanceTracker(() => now);
   const refs = new Map<string, number>();
+  const activeVideos = new Set<FakeVideo>();
   const videos: CompatibilityVideoAdapter<FakeVideo> = {
     acquire(clip) {
-      refs.set(clip.id, (refs.get(clip.id) ?? 0) + 1);
-      return {
+      refs.set(clip.url, (refs.get(clip.url) ?? 0) + 1);
+      const video = {
         clipId: clip.id,
-        currentTime: 0,
+        url: clip.url,
+        currentTime: now / 1_000,
         ready: true,
         playing: false,
       };
+      activeVideos.add(video);
+      return video;
     },
-    release(clip) {
-      const next = Math.max(0, (refs.get(clip.id) ?? 0) - 1);
-      if (next === 0) refs.delete(clip.id);
-      else refs.set(clip.id, next);
+    release(clip, video) {
+      const finish = () => {
+      activeVideos.delete(video);
+      const next = Math.max(0, (refs.get(clip.url) ?? 0) - 1);
+      if (next === 0) refs.delete(clip.url);
+      else refs.set(clip.url, next);
+      };
+      return options.releaseGate?.then(finish) ?? finish();
     },
     ready: (video) => video.ready,
     currentTime: (video) => video.currentTime,
@@ -103,16 +128,26 @@ function setup() {
     renderer,
     videos,
     performance,
+    cleanupTimeoutMs: options.cleanupTimeoutMs,
   });
-  const present = () =>
+  const present = (
+    overrides: {
+      sourceTimeSeconds?: number;
+      sourceGeneration?: number;
+      discontinuityGeneration?: number;
+      playing?: boolean;
+    } = {},
+  ) =>
     runtime.present(
       {
         presentationTimeSeconds: now / 1_000,
-        playing: true,
-        discontinuityGeneration: 0,
+        playing: overrides.playing ?? true,
+        discontinuityGeneration:
+          overrides.discontinuityGeneration ?? 0,
       },
-      now / 1_000,
+      overrides.sourceTimeSeconds ?? now / 1_000,
       request,
+      { sourceGeneration: overrides.sourceGeneration },
     );
   return {
     registry,
@@ -125,6 +160,9 @@ function setup() {
     seekCalls: () => seekCalls,
     advance(milliseconds: number) {
       now += milliseconds;
+      for (const video of activeVideos) {
+        if (video.playing) video.currentTime += milliseconds / 1_000;
+      }
     },
   };
 }
@@ -170,7 +208,73 @@ describe("G007 multi-clip production runtime", () => {
     }
   });
 
-  test("routes eight clips through exactly PGM, prewarm, and overlap roles", () => {
+  test("validates uploads before URL allocation and revokes failed registrations", () => {
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    const revoked: string[] = [];
+    let allocations = 0;
+    URL.createObjectURL = () => `blob:failed-${++allocations}`;
+    URL.revokeObjectURL = (url) => {
+      revoked.push(url);
+    };
+
+    try {
+      const registry = new ClipRegistry();
+      expect(() =>
+        registry.registerFile(
+          "",
+          new File(["a"], "a.mp4", { type: "video/mp4" }),
+        ),
+      ).toThrow("clip-id-required");
+      expect(allocations).toBe(0);
+
+      const failingRegistry = new ClipRegistry(() => {
+        throw new Error("telemetry-failed");
+      });
+      expect(() =>
+        failingRegistry.registerFile(
+          "upload",
+          new File(["b"], "b.mp4", { type: "video/mp4" }),
+        ),
+      ).toThrow("telemetry-failed");
+      expect(revoked).toEqual(["blob:failed-1"]);
+      expect(failingRegistry.get("upload")).toBeNull();
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
+
+  test("replaces a live role when the same clip id receives a new source", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(state.present()).toBe(true);
+    const firstSource = state.runtime.snapshot().roleSources.pgm;
+    expect(state.refs.has("/fixtures/clip-0.mp4")).toBe(true);
+
+    state.registry.registerUrl(
+      "clip-0",
+      "Replacement",
+      "/fixtures/replacement.mp4",
+    );
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(state.runtime.snapshot().roleSources.pgm).not.toBe(
+      firstSource,
+    );
+    expect(state.refs.has("/fixtures/clip-0.mp4")).toBe(false);
+    expect(state.refs.has("/fixtures/replacement.mp4")).toBe(true);
+    await state.runtime.dispose();
+  });
+
+  test("routes eight clips through exactly PGM, prewarm, and overlap roles", async () => {
     const state = setup();
     state.runtime.select({
       pgm: "clip-0",
@@ -201,27 +305,107 @@ describe("G007 multi-clip production runtime", () => {
         null,
       ),
     ).toThrow("fourth-playback-lane-prohibited");
-    state.runtime.dispose();
+    await state.runtime.dispose();
     expect(state.refs.size).toBe(0);
   });
 
-  test("lets playing compatibility video advance without per-frame seeks", () => {
+  test("lets playing compatibility video advance without per-frame seeks", async () => {
     const state = setup();
     state.runtime.select({
       pgm: "clip-0",
       prewarm: null,
       overlap: null,
     });
+    expect(state.present()).toBe(true);
     state.advance(1_000);
     expect(state.present()).toBe(true);
     expect(state.seekCalls()).toBe(0);
 
     expect(state.runtime.scrub(4.25, true)).toBe(true);
     expect(state.seekCalls()).toBe(1);
-    state.runtime.dispose();
+    await state.runtime.dispose();
   });
 
-  test("measures deterministic 100-switch and 100-scrub stress without growth", () => {
+  test("seeks HTML fallback once per deterministic jump and transport discontinuity", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(
+      state.present({
+        sourceTimeSeconds: 0,
+        sourceGeneration: 0,
+      }),
+    ).toBe(true);
+
+    expect(
+      state.present({
+        sourceTimeSeconds: 3,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    expect(state.seekCalls()).toBe(1);
+    expect(
+      state.present({
+        sourceTimeSeconds: 3,
+        sourceGeneration: 1,
+      }),
+    ).toBe(true);
+    expect(state.seekCalls()).toBe(1);
+
+    expect(
+      state.present({
+        sourceTimeSeconds: 5,
+        sourceGeneration: 1,
+        discontinuityGeneration: 2,
+      }),
+    ).toBe(false);
+    expect(state.seekCalls()).toBe(2);
+    await state.runtime.dispose();
+  });
+
+  test("wires all pressure stages through runtime and observable telemetry", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: "clip-1",
+      overlap: "clip-2",
+    });
+    expect([
+      state.runtime.degradeForPressure(),
+      state.runtime.degradeForPressure(),
+      state.runtime.degradeForPressure(),
+      state.runtime.degradeForPressure(),
+      state.runtime.degradeForPressure(),
+    ]).toEqual([
+      "inactive-cache-evicted",
+      "prewarm-frames-dropped",
+      "prewarm-decoder-closed",
+      "overlap-disabled",
+      "html-fallback-selected",
+    ]);
+    const snapshot = state.runtime.snapshot();
+    expect(snapshot.coordinator.pressure).toEqual({
+      stage: 5,
+      count: 5,
+      lastAction: "html-fallback-selected",
+    });
+    expect(snapshot.roles.overlap).toBeNull();
+    expect(snapshot.coordinator.slots.pgm).toMatchObject({
+      clipId: "clip-0",
+      decoderOpen: false,
+    });
+    expect(snapshot.renderer.fallback).toEqual({
+      path: "html-video-webgl2",
+      reason: "decoded-frame-pressure",
+    });
+    expect(state.renderer.forcedFallbacks).toBe(1);
+    await state.runtime.dispose();
+  });
+
+  test("measures deterministic 100-switch and 100-scrub stress without growth", async () => {
     const state = setup();
     state.runtime.select({
       pgm: "clip-0",
@@ -241,14 +425,20 @@ describe("G007 multi-clip production runtime", () => {
     }
 
     for (let index = 0; index < 100; index += 1) {
-      expect(state.runtime.scrub(index / 10, true)).toBe(true);
+      const target = index / 10;
+      expect(state.runtime.scrub(target, true)).toBe(true);
       state.advance(7);
-      expect(state.present()).toBe(true);
+      expect(
+        state.present({ sourceTimeSeconds: target + 0.007 }),
+      ).toBe(true);
     }
     for (let index = 0; index < 30; index += 1) {
-      expect(state.runtime.scrub(index / 5, false)).toBe(true);
+      const target = index / 5;
+      expect(state.runtime.scrub(target, false)).toBe(true);
       state.advance(16);
-      expect(state.present()).toBe(true);
+      expect(
+        state.present({ sourceTimeSeconds: target + 0.016 }),
+      ).toBe(true);
     }
 
     const metrics = state.performance.snapshot();
@@ -268,7 +458,7 @@ describe("G007 multi-clip production runtime", () => {
       failures: 0,
     });
     expect(metrics.frames.lateOrDroppedRatio).toBe(0);
-    state.runtime.dispose();
+    await state.runtime.dispose();
     expect(state.refs.size).toBe(0);
     expect(state.coordinator.snapshot().slots).toEqual({
       pgm: null,
@@ -277,7 +467,7 @@ describe("G007 multi-clip production runtime", () => {
     });
   });
 
-  test("removal and renderer disposal release roles within the cleanup budget", () => {
+  test("removal and renderer disposal release roles within the cleanup budget", async () => {
     const state = setup();
     state.runtime.select({
       pgm: "clip-3",
@@ -287,7 +477,7 @@ describe("G007 multi-clip production runtime", () => {
     state.advance(10);
     state.present();
     state.advance(20);
-    expect(state.runtime.removeClip("clip-3")).toBe(true);
+    expect(await state.runtime.removeClip("clip-3")).toBe(true);
     expect(state.runtime.snapshot().roles.pgm).toBeNull();
     expect(state.registry.get("clip-3")).toBeNull();
     expect(
@@ -299,7 +489,7 @@ describe("G007 multi-clip production runtime", () => {
       prewarm: "clip-2",
       overlap: null,
     });
-    state.runtime.deactivate();
+    await state.runtime.deactivate();
     expect(state.runtime.snapshot().roles).toEqual({
       pgm: null,
       prewarm: null,
@@ -310,8 +500,48 @@ describe("G007 multi-clip production runtime", () => {
       state.performance.snapshot().latency.cleanup,
     ).toMatchObject({ count: 2, p95Ms: 0, failures: 0 });
 
-    state.runtime.dispose();
+    await state.runtime.dispose();
     expect(state.renderer.disposed).toBe(1);
     expect(state.refs.size).toBe(0);
+  });
+
+  test("settles cleanup only after resources release and fails bounded timeout", async () => {
+    let releaseGate = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const state = setup({ releaseGate: gate });
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    state.present();
+    const cleanup = state.runtime.deactivate();
+    await Promise.resolve();
+    expect(state.performance.snapshot().latency.cleanup.count).toBe(0);
+    expect(state.refs.size).toBe(1);
+    releaseGate();
+    expect(await cleanup).toBe(true);
+    expect(state.refs.size).toBe(0);
+    expect(
+      state.performance.snapshot().latency.cleanup,
+    ).toMatchObject({ count: 1, failures: 0 });
+    await state.runtime.dispose();
+
+    const never = new Promise<void>(() => {});
+    const timedOut = setup({
+      releaseGate: never,
+      cleanupTimeoutMs: 5,
+    });
+    timedOut.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(await timedOut.runtime.deactivate()).toBe(false);
+    expect(
+      timedOut.performance.snapshot().latency.cleanup,
+    ).toMatchObject({ count: 0, failures: 1 });
   });
 });

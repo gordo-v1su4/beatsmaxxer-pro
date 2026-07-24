@@ -152,6 +152,15 @@ export class MediaRendererRuntime<
     this.options.coordinator.selectPlaybackPath(this.fallback);
   }
 
+  forceCompatibilityFallback(reason = "decoded-frame-pressure") {
+    this.assertOpen();
+    this.options.webgpu?.dispose();
+    this.options.webgl?.dispose();
+    this.fallback = this.compatibilityFallback(reason);
+    this.options.coordinator.selectPlaybackPath(this.fallback);
+    return this.fallback.path === "html-video-webgl2";
+  }
+
   dispose() {
     if (this.disposed) return;
     this.disposed = true;

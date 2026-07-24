@@ -35,6 +35,9 @@ export interface QaTelemetrySnapshot {
     path: QaPlaybackPath;
     fallbackReason: string | null;
     activeLanes: number;
+    pressureStage: number;
+    pressureCount: number;
+    lastPressureAction: string | null;
   };
   frames: {
     rendered: number;
@@ -109,6 +112,9 @@ const snapshot: QaTelemetrySnapshot = {
     path: "unavailable",
     fallbackReason: null,
     activeLanes: 0,
+    pressureStage: 0,
+    pressureCount: 0,
+    lastPressureAction: null,
   },
   frames: {
     rendered: 0,
@@ -244,6 +250,9 @@ export function resetQaTelemetryForTests() {
   snapshot.playback.path = "unavailable";
   snapshot.playback.fallbackReason = null;
   snapshot.playback.activeLanes = 0;
+  snapshot.playback.pressureStage = 0;
+  snapshot.playback.pressureCount = 0;
+  snapshot.playback.lastPressureAction = null;
   snapshot.resources.decodedFrames = 0;
   snapshot.resources.activeDecoders = 0;
   snapshot.resources.gpuTextures = 0;

@@ -265,7 +265,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource, onQueueChange }: {
 }
 
 /** Program monitor strip: the selected module's mixed output, full width. */
-export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, queuedPgmSource, overlapPgmSource }: {
+export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, clipRegistryVersion, queuedPgmSource, overlapPgmSource }: {
   modules: ModuleConfig[];
   pgmSource: ModuleType;
   moduleParams: Record<ModuleType, Record<string, number>>;
@@ -273,12 +273,15 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   midiLayers: Record<ModuleType, MidiLayer | null>;
   bypassed: Record<ModuleType, boolean>;
   clipRegistry: ClipRegistry;
+  clipRegistryVersion: number;
   queuedPgmSource: ModuleType | null;
   overlapPgmSource: ModuleType | null;
 }) {
   const { state } = useAudio();
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
   const clip = videoLayers[active.id];
+  const promotedProgram =
+    active.id === 'timesampler' && !!clip && !bypassed[active.id];
 
   return (
     <div style={{
@@ -297,19 +300,22 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
       }}
         data-pgm-renderer-lane={rendererLaneForEffect(active.id)}
       >
-        <ThreeVisualizer
-          key={active.id}
-          type={active.id}
-          color={active.accentColor}
-          params={moduleParams[active.id]}
-          mode="output"
-          videoUrl={clip?.url}
-          midiLayer={midiLayers[active.id]}
-          bypassed={bypassed[active.id]}
-        />
+        {!promotedProgram && (
+          <ThreeVisualizer
+            key={active.id}
+            type={active.id}
+            color={active.accentColor}
+            params={moduleParams[active.id]}
+            mode="output"
+            videoUrl={clip?.url}
+            midiLayer={midiLayers[active.id]}
+            bypassed={bypassed[active.id]}
+          />
+        )}
         <BrowserProgramRenderer
           registry={clipRegistry}
-          pgm={clip ? active.id : null}
+          registryVersion={clipRegistryVersion}
+          pgm={promotedProgram ? active.id : null}
           prewarm={
             queuedPgmSource && videoLayers[queuedPgmSource]
               ? queuedPgmSource
@@ -320,7 +326,7 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
               ? overlapPgmSource
               : null
           }
-          promoted={active.id === 'timesampler' && !!clip}
+          promoted={promotedProgram}
           params={moduleParams[active.id]}
         />
         <ScreenOverlay/>

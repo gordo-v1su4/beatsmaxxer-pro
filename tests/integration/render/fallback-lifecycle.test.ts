@@ -222,6 +222,34 @@ describe("G006 renderer fallback lifecycle", () => {
     runtime.dispose();
   });
 
+  test("pressure forces the constructed runtime onto HTML compatibility", () => {
+    const state = setup();
+    const webgpu = new FakeDecodedRenderer("webcodecs-webgpu");
+    const webgl = new FakeDecodedRenderer("webcodecs-webgl2");
+    const html = new FakeHtmlRenderer();
+    const runtime = createMediaRendererRuntime({
+      direct,
+      capabilities: fullCapabilities,
+      coordinator: state.coordinator,
+      webgpu,
+      webgl,
+      htmlVideo: html,
+    });
+
+    expect(
+      runtime.forceCompatibilityFallback("decoded-frame-pressure"),
+    ).toBe(true);
+    expect(runtime.snapshot().fallback).toEqual({
+      path: "html-video-webgl2",
+      reason: "decoded-frame-pressure",
+    });
+    expect(webgpu.disposed).toBe(1);
+    expect(webgl.disposed).toBe(1);
+    state.lease.release();
+    state.coordinator.dispose();
+    runtime.dispose();
+  });
+
   test("reports final HTML-video cross-origin failure as native-static", () => {
     const state = setup();
     const html = new FakeHtmlRenderer();

@@ -13,13 +13,19 @@ import type {
   PlaybackCoordinator,
   PlaybackLaneRole,
   PlaybackTransportState,
+  PressureAction,
 } from "./PlaybackCoordinator";
 import type { DecodedFrameLike } from "./types";
 
 export interface CompatibilityVideoAdapter<Video extends object> {
   acquire(clip: RegisteredClip): Video;
-  release(clip: RegisteredClip, video: Video): void;
+  release(
+    clip: RegisteredClip,
+    video: Video,
+    signal?: AbortSignal,
+  ): void | Promise<void>;
   ready(video: Video): boolean;
+  seeking?(video: Video): boolean;
   currentTime(video: Video): number;
   normalizeTime?(video: Video, timeSeconds: number): number;
   seek(video: Video, timeSeconds: number): void;
@@ -30,6 +36,9 @@ interface ActiveRole<Video extends object> {
   clip: RegisteredClip;
   video: Video;
   generation: number;
+  lastSourceGeneration: number | null;
+  lastDiscontinuityGeneration: number | null;
+  lastFallbackSeekAtSeconds: number | null;
 }
 
 export interface MultiClipRoleSelection {
@@ -48,8 +57,12 @@ export interface MultiClipRendererRuntime<
     request: RenderFrameRequest,
   ): DecodedFrameSubmission<Frame> | null;
   presentHtmlVideo(video: Video, request: RenderFrameRequest): boolean;
+  forceCompatibilityFallback(reason: string): boolean;
   dispose(): void;
 }
+
+const CLEANUP_TIMEOUT_MS = 1_950;
+const PLAYING_DRIFT_TOLERANCE_SECONDS = 0.25;
 
 export class MultiClipPlaybackRuntime<
   Frame extends DecodedFrameLike,
@@ -63,9 +76,10 @@ export class MultiClipPlaybackRuntime<
   private pendingPresentation:
     | ReturnType<PlaybackPerformanceTracker["begin"]>
     | null = null;
-  private pendingClipId: string | null = null;
+  private pendingSourceKey: string | null = null;
   private hasPresented = false;
   private disposed = false;
+  private disposePromise: Promise<void> | null = null;
 
   constructor(
     private readonly options: {
@@ -74,6 +88,7 @@ export class MultiClipPlaybackRuntime<
       renderer: MultiClipRendererRuntime<Frame, Video>;
       videos: CompatibilityVideoAdapter<Video>;
       performance?: PlaybackPerformanceTracker;
+      cleanupTimeoutMs?: number;
     },
   ) {}
 
@@ -82,7 +97,7 @@ export class MultiClipPlaybackRuntime<
     latencyKind: PlaybackLatencyKind = "coldSwitch",
   ) {
     this.assertOpen();
-    const unique = {
+    const uniqueIds = {
       pgm: selection.pgm,
       prewarm:
         selection.prewarm && selection.prewarm !== selection.pgm
@@ -95,31 +110,41 @@ export class MultiClipPlaybackRuntime<
           ? selection.overlap
           : null,
     };
+    const unique = {
+      pgm: uniqueIds.pgm
+        ? this.options.registry.get(uniqueIds.pgm)
+        : null,
+      prewarm: uniqueIds.prewarm
+        ? this.options.registry.get(uniqueIds.prewarm)
+        : null,
+      overlap: uniqueIds.overlap
+        ? this.options.registry.get(uniqueIds.overlap)
+        : null,
+    };
     if (
-      this.roles.get("pgm")?.clip.id === unique.pgm &&
-      (this.roles.get("prewarm")?.clip.id ?? null) ===
-        unique.prewarm &&
-      (this.roles.get("overlap")?.clip.id ?? null) ===
-        unique.overlap
+      this.sameSource(this.roles.get("pgm"), unique.pgm) &&
+      this.sameSource(this.roles.get("prewarm"), unique.prewarm) &&
+      this.sameSource(this.roles.get("overlap"), unique.overlap)
     ) {
       return;
     }
     const wasPrewarmed =
       unique.pgm !== null &&
-      this.roles.get("prewarm")?.clip.id === unique.pgm;
+      this.sameSource(this.roles.get("prewarm"), unique.pgm);
+    const desiredSourceKey = this.sourceKey(unique.pgm);
     if (
       this.pendingPresentation?.settled === false &&
-      this.pendingClipId !== unique.pgm
+      this.pendingSourceKey !== desiredSourceKey
     ) {
       this.options.performance?.fail(this.pendingPresentation);
       this.pendingPresentation = null;
-      this.pendingClipId = null;
+      this.pendingSourceKey = null;
     }
     if (!this.pendingPresentation && unique.pgm !== null) {
       this.pendingPresentation = this.options.performance?.begin(
         wasPrewarmed ? "prewarmedSwitch" : latencyKind,
       ) ?? null;
-      this.pendingClipId = unique.pgm;
+      this.pendingSourceKey = desiredSourceKey;
     }
 
     this.syncRole("pgm", unique.pgm);
@@ -136,8 +161,10 @@ export class MultiClipPlaybackRuntime<
     this.pendingPresentation = this.options.performance?.begin(
       cached ? "cachedScrub" : "keyframeScrub",
     ) ?? null;
-    this.pendingClipId = pgm.clip.id;
+    this.pendingSourceKey = this.sourceKey(pgm.clip);
     pgm.generation = ++this.generation;
+    pgm.lastSourceGeneration = null;
+    pgm.lastFallbackSeekAtSeconds = null;
     this.options.coordinator.setLaneGeneration(
       "pgm",
       pgm.generation,
@@ -150,7 +177,10 @@ export class MultiClipPlaybackRuntime<
     transport: PlaybackTransportState,
     sourceTimeSeconds: number,
     request: RenderFrameRequest,
-    options: { late?: boolean } = {},
+    options: {
+      late?: boolean;
+      sourceGeneration?: number;
+    } = {},
   ) {
     this.assertOpen();
     this.options.coordinator.updateTransport(transport);
@@ -185,7 +215,10 @@ export class MultiClipPlaybackRuntime<
       }
       submission.receipt.release();
     } else {
-      if (!this.options.videos.ready(pgm.video)) {
+      if (
+        !this.options.videos.ready(pgm.video) ||
+        this.options.videos.seeking?.(pgm.video)
+      ) {
         if (transport.playing && this.hasPresented) {
           this.options.performance?.recordFrame({ dropped: true });
         }
@@ -197,13 +230,37 @@ export class MultiClipPlaybackRuntime<
           pgm.video,
           sourceTimeSeconds,
         ) ?? sourceTimeSeconds;
-      const tolerance = 1 / 30;
+      const drift = Math.abs(currentTime - targetTime);
+      const sourceGeneration = options.sourceGeneration ?? null;
+      const sourceJump =
+        sourceGeneration !== null &&
+        sourceGeneration !== pgm.lastSourceGeneration;
+      const discontinuity =
+        transport.discontinuityGeneration !==
+        pgm.lastDiscontinuityGeneration;
+      const boundedDrift =
+        transport.playing &&
+        drift > PLAYING_DRIFT_TOLERANCE_SECONDS &&
+        (pgm.lastFallbackSeekAtSeconds === null ||
+          transport.presentationTimeSeconds -
+            pgm.lastFallbackSeekAtSeconds >=
+            PLAYING_DRIFT_TOLERANCE_SECONDS);
       if (
-        !transport.playing &&
-        Math.abs(currentTime - targetTime) > tolerance
+        ((sourceJump || discontinuity) && drift > 1 / 30) ||
+        (!transport.playing && drift > 1 / 30) ||
+        boundedDrift
       ) {
         this.options.videos.seek(pgm.video, targetTime);
+        pgm.lastFallbackSeekAtSeconds =
+          transport.presentationTimeSeconds;
+        pgm.lastSourceGeneration = sourceGeneration;
+        pgm.lastDiscontinuityGeneration =
+          transport.discontinuityGeneration;
+        return false;
       }
+      pgm.lastSourceGeneration = sourceGeneration;
+      pgm.lastDiscontinuityGeneration =
+        transport.discontinuityGeneration;
       this.options.videos.setPlaying(pgm.video, transport.playing);
       if (!this.options.renderer.presentHtmlVideo(pgm.video, request)) {
         if (transport.playing) {
@@ -220,32 +277,63 @@ export class MultiClipPlaybackRuntime<
     if (this.pendingPresentation) {
       this.options.performance?.succeed(this.pendingPresentation);
       this.pendingPresentation = null;
-      this.pendingClipId = null;
+      this.pendingSourceKey = null;
     }
     return true;
   }
 
-  removeClip(id: string) {
+  async removeClip(id: string) {
     this.assertOpen();
     const cleanup = this.options.performance?.begin("cleanup") ?? null;
+    const controller = new AbortController();
+    const releases: Promise<void>[] = [];
     for (const [role, active] of this.roles) {
-      if (active.clip.id === id) this.releaseRole(role);
+      if (active.clip.id === id) {
+        releases.push(this.releaseRole(role, controller.signal));
+      }
     }
+    const completed = await this.awaitCleanup(
+      releases,
+      controller,
+      cleanup,
+    );
     const removed = this.options.registry.remove(id);
-    if (cleanup) this.options.performance?.succeed(cleanup);
-    return removed;
+    return removed && completed;
   }
 
-  deactivate() {
+  async deactivate() {
     this.assertOpen();
     const cleanup = this.options.performance?.begin("cleanup") ?? null;
+    const controller = new AbortController();
     this.pendingPresentation = null;
-    this.pendingClipId = null;
+    this.pendingSourceKey = null;
     this.hasPresented = false;
-    for (const role of ["pgm", "prewarm", "overlap"] as const) {
-      this.releaseRole(role);
+    const releases = (
+      ["pgm", "prewarm", "overlap"] as const
+    ).map((role) => this.releaseRole(role, controller.signal));
+    return this.awaitCleanup(releases, controller, cleanup);
+  }
+
+  degradeForPressure(): PressureAction {
+    this.assertOpen();
+    const action = this.options.coordinator.degradeForPressure();
+    if (action === "overlap-disabled") {
+      void this.releaseRole("overlap", undefined, true);
+    } else if (action === "html-fallback-selected") {
+      this.options.renderer.forceCompatibilityFallback(
+        "decoded-frame-pressure",
+      );
+      const pgm = this.roles.get("pgm");
+      if (pgm) {
+        this.options.coordinator.activate(
+          "pgm",
+          pgm.clip.id,
+          pgm.generation,
+          null,
+        );
+      }
     }
-    if (cleanup) this.options.performance?.succeed(cleanup);
+    return action;
   }
 
   snapshot() {
@@ -255,6 +343,15 @@ export class MultiClipPlaybackRuntime<
         prewarm: this.roles.get("prewarm")?.clip.id ?? null,
         overlap: this.roles.get("overlap")?.clip.id ?? null,
       },
+      roleSources: {
+        pgm: this.sourceKey(this.roles.get("pgm")?.clip ?? null),
+        prewarm: this.sourceKey(
+          this.roles.get("prewarm")?.clip ?? null,
+        ),
+        overlap: this.sourceKey(
+          this.roles.get("overlap")?.clip ?? null,
+        ),
+      },
       coordinator: this.options.coordinator.snapshot(),
       renderer: this.options.renderer.snapshot(),
       performance: this.options.performance?.snapshot() ?? null,
@@ -262,27 +359,52 @@ export class MultiClipPlaybackRuntime<
   }
 
   dispose() {
-    if (this.disposed) return;
+    if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
     this.pendingPresentation = null;
-    this.pendingClipId = null;
+    this.pendingSourceKey = null;
     this.hasPresented = false;
-    for (const role of ["pgm", "prewarm", "overlap"] as const)
-      this.releaseRole(role);
-    this.options.renderer.dispose();
-    this.options.coordinator.dispose();
+    const controller = new AbortController();
+    const cleanup = this.options.performance?.begin("cleanup") ?? null;
+    const releases = (
+      ["pgm", "prewarm", "overlap"] as const
+    ).map((role) => this.releaseRole(role, controller.signal));
+    this.disposePromise = this.awaitCleanup(
+      releases,
+      controller,
+      cleanup,
+    ).then(() => {
+      this.options.renderer.dispose();
+      this.options.coordinator.dispose();
+    });
+    return this.disposePromise;
   }
 
-  private syncRole(role: PlaybackLaneRole, clipId: string | null) {
+  private syncRole(
+    role: PlaybackLaneRole,
+    clip: RegisteredClip | null,
+  ) {
     const current = this.roles.get(role);
-    if (current?.clip.id === clipId) return;
-    this.releaseRole(role);
-    if (clipId === null) return;
-    const clip = this.options.registry.get(clipId);
+    if (this.sameSource(current, clip)) return;
+    void this.releaseRole(role);
     if (!clip) return;
     const generation = ++this.generation;
-    const video = this.options.videos.acquire(clip);
-    this.roles.set(role, { clip, video, generation });
+    this.options.registry.retain(clip);
+    let video: Video;
+    try {
+      video = this.options.videos.acquire(clip);
+    } catch (error) {
+      this.options.registry.releaseReference(clip);
+      throw error;
+    }
+    this.roles.set(role, {
+      clip,
+      video,
+      generation,
+      lastSourceGeneration: null,
+      lastDiscontinuityGeneration: null,
+      lastFallbackSeekAtSeconds: null,
+    });
     this.options.coordinator.activate(
       role,
       clip.id,
@@ -291,12 +413,71 @@ export class MultiClipPlaybackRuntime<
     );
   }
 
-  private releaseRole(role: PlaybackLaneRole) {
+  private async releaseRole(
+    role: PlaybackLaneRole,
+    signal?: AbortSignal,
+    coordinatorAlreadyReleased = false,
+  ) {
     const active = this.roles.get(role);
     if (!active) return;
     this.roles.delete(role);
-    this.options.coordinator.deactivate(role);
-    this.options.videos.release(active.clip, active.video);
+    if (!coordinatorAlreadyReleased) {
+      this.options.coordinator.deactivate(role);
+    }
+    try {
+      await this.options.videos.release(
+        active.clip,
+        active.video,
+        signal,
+      );
+    } finally {
+      this.options.registry.releaseReference(active.clip);
+    }
+  }
+
+  private sameSource(
+    active: ActiveRole<Video> | undefined,
+    clip: RegisteredClip | null,
+  ) {
+    if (!active || !clip) return !active && clip === null;
+    return (
+      active.clip.id === clip.id &&
+      active.clip.revision === clip.revision &&
+      active.clip.url === clip.url
+    );
+  }
+
+  private sourceKey(clip: RegisteredClip | null) {
+    return clip ? `${clip.id}:${clip.revision}:${clip.url}` : null;
+  }
+
+  private async awaitCleanup(
+    releases: Promise<void>[],
+    controller: AbortController,
+    token:
+      | ReturnType<PlaybackPerformanceTracker["begin"]>
+      | null,
+  ) {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const timedOut = new Promise<false>((resolve) => {
+      timeout = setTimeout(() => {
+        controller.abort();
+        resolve(false);
+      }, Math.min(
+        CLEANUP_TIMEOUT_MS,
+        Math.max(0, this.options.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS),
+      ));
+    });
+    const released = Promise.allSettled(releases).then((results) =>
+      results.every((result) => result.status === "fulfilled"),
+    );
+    const completed = await Promise.race([released, timedOut]);
+    if (timeout !== null) clearTimeout(timeout);
+    if (token) {
+      if (completed) this.options.performance?.succeed(token);
+      else this.options.performance?.fail(token);
+    }
+    return completed;
   }
 
   private assertOpen() {

@@ -148,6 +148,7 @@ export function App() {
   const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
   const [queuedPgmSource, setQueuedPgmSource] = useState<ModuleType | null>(null);
   const [overlapPgmSource, setOverlapPgmSource] = useState<ModuleType | null>(null);
+  const [clipRegistryVersion, setClipRegistryVersion] = useState(0);
   const [orderTop, setOrderTop] = useState<ModuleType[]>(MODULES.map(m => m.id));
   const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
 
@@ -172,22 +173,23 @@ export function App() {
   }, []);
 
   const setModuleVideo = useCallback((moduleId: ModuleType, file: File | null) => {
-    setVideoLayers(prev => {
-      if (!file) {
-        clipRegistryRef.current.remove(moduleId);
-        return { ...prev, [moduleId]: null };
-      }
+    if (!file) {
+      clipRegistryRef.current.remove(moduleId);
+      setVideoLayers(prev => ({ ...prev, [moduleId]: null }));
+      setClipRegistryVersion(version => version + 1);
+      return;
+    }
 
-      const clip = clipRegistryRef.current.registerFile(moduleId, file);
-      return {
-        ...prev,
-        [moduleId]: {
-          name: clip.name,
-          url: clip.url,
-          file,
-        },
-      };
-    });
+    const clip = clipRegistryRef.current.registerFile(moduleId, file);
+    setVideoLayers(prev => ({
+      ...prev,
+      [moduleId]: {
+        name: clip.name,
+        url: clip.url,
+        file,
+      },
+    }));
+    setClipRegistryVersion(version => version + 1);
   }, []);
 
   const setModuleMidi = useCallback(async (moduleId: ModuleType, file: File | null) => {
@@ -261,19 +263,17 @@ export function App() {
     const orderedModuleIds = [...MODULES.map((module) => module.id), ...MODULES_B.map((module) => module.id)];
     const requestedPgm = params.get('qaPgm') as ModuleType | null;
 
-    setVideoLayers((prev) => {
-      const next = { ...prev };
-      orderedModuleIds.forEach((moduleId, index) => {
-        const clipName = clipNames[index % clipNames.length];
-        const url = joinQaUrl(baseUrl, clipName);
-        clipRegistryRef.current.registerUrl(moduleId, clipName, url);
-        next[moduleId] = {
-          name: clipName,
-          url,
-        };
-      });
-      return next;
+    const qaLayers = {} as Partial<
+      Record<ModuleType, VideoLayer>
+    >;
+    orderedModuleIds.forEach((moduleId, index) => {
+      const clipName = clipNames[index % clipNames.length];
+      const url = joinQaUrl(baseUrl, clipName);
+      clipRegistryRef.current.registerUrl(moduleId, clipName, url);
+      qaLayers[moduleId] = { name: clipName, url };
     });
+    setVideoLayers((prev) => ({ ...prev, ...qaLayers }));
+    setClipRegistryVersion(version => version + 1);
 
     if (requestedPgm && ALL_MODULES.some((module) => module.id === requestedPgm)) {
       setPgmSource(requestedPgm);
@@ -388,6 +388,7 @@ export function App() {
               midiLayers={midiLayers}
               bypassed={bypassed}
               clipRegistry={clipRegistryRef.current}
+              clipRegistryVersion={clipRegistryVersion}
               queuedPgmSource={queuedPgmSource}
               overlapPgmSource={overlapPgmSource}
             />

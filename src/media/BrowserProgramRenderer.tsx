@@ -17,6 +17,7 @@ import { MultiClipPlaybackRuntime } from "./MultiClipPlaybackRuntime";
 
 export interface BrowserProgramRendererProps {
   registry: ClipRegistry;
+  registryVersion: number;
   pgm: ModuleType | null;
   prewarm: ModuleType | null;
   overlap: ModuleType | null;
@@ -44,6 +45,9 @@ function applyQaCommand(
         }
       | {
           action: "clear";
+        }
+      | {
+          action: "pressure";
         };
     if (command.action === "select") {
       runtime.select({
@@ -52,7 +56,9 @@ function applyQaCommand(
         overlap: command.overlap ?? null,
       });
     } else if (command.action === "clear") {
-      runtime.deactivate();
+      void runtime.deactivate();
+    } else if (command.action === "pressure") {
+      runtime.degradeForPressure();
     } else if (Number.isFinite(command.timeSeconds)) {
       runtime.scrub(command.timeSeconds, command.cached ?? true);
     }
@@ -119,6 +125,9 @@ export function BrowserProgramRenderer(
         detail.cached ?? true,
       );
     };
+    const handlePressure = () => {
+      runtimeRef.current?.degradeForPressure();
+    };
     window.addEventListener(
       "beat-surfer:multi-clip-select",
       handleQaSelect,
@@ -126,6 +135,10 @@ export function BrowserProgramRenderer(
     window.addEventListener(
       "beat-surfer:multi-clip-scrub",
       handleQaScrub,
+    );
+    window.addEventListener(
+      "beat-surfer:media-pressure",
+      handlePressure,
     );
 
     void (async () => {
@@ -168,8 +181,10 @@ export function BrowserProgramRenderer(
         performance: performanceTracker,
         videos: {
           acquire: (clip) => acquirePooledVideo(clip.url),
-          release: (clip) => releasePooledVideo(clip.url),
+          release: (clip, _video, signal) =>
+            releasePooledVideo(clip.url, signal),
           ready: (video) => video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
+          seeking: (video) => video.seeking,
           currentTime: (video) => video.currentTime,
           normalizeTime: (video, timeSeconds) =>
             Number.isFinite(video.duration) && video.duration > 0
@@ -205,6 +220,9 @@ export function BrowserProgramRenderer(
                 overlap?: string | null,
               ) => void;
               scrub: (timeSeconds: number, cached: boolean) => boolean;
+              pressure: () => ReturnType<
+                typeof runtime.degradeForPressure
+              >;
             };
           }
         ).__BEAT_SURFER_MULTI_CLIP_QA__ = {
@@ -214,6 +232,7 @@ export function BrowserProgramRenderer(
           },
           scrub: (timeSeconds, cached) =>
             runtime.scrub(timeSeconds, cached),
+          pressure: () => runtime.degradeForPressure(),
         };
       }
 
@@ -281,6 +300,8 @@ export function BrowserProgramRenderer(
               late:
                 lastPresentedAt !== null &&
                 now - lastPresentedAt > lateThresholdMs,
+              sourceGeneration:
+                live?.timeSampler.jumpGeneration,
             },
           );
           if (presented) lastPresentedAt = now;
@@ -313,8 +334,12 @@ export function BrowserProgramRenderer(
         "beat-surfer:multi-clip-scrub",
         handleQaScrub,
       );
+      window.removeEventListener(
+        "beat-surfer:media-pressure",
+        handlePressure,
+      );
       longTaskObserver?.disconnect();
-      runtimeRef.current?.dispose();
+      void runtimeRef.current?.dispose();
       runtimeRef.current = null;
       delete (
         window as unknown as {
@@ -331,7 +356,12 @@ export function BrowserProgramRenderer(
       prewarm: props.prewarm,
       overlap: props.overlap,
     });
-  }, [props.pgm, props.prewarm, props.overlap]);
+  }, [
+    props.pgm,
+    props.prewarm,
+    props.overlap,
+    props.registryVersion,
+  ]);
 
   return (
     <>

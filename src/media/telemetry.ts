@@ -71,6 +71,9 @@ export class QaMediaTelemetryBridge {
         path: snapshot.fallback.path,
         fallbackReason: snapshot.fallback.reason,
         activeLanes,
+        pressureStage: snapshot.pressure.stage,
+        pressureCount: snapshot.pressure.count,
+        lastPressureAction: snapshot.pressure.lastAction,
       },
       resources: {
         decodedFrames: snapshot.retainedFrames,
