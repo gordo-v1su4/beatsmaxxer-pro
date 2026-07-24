@@ -222,10 +222,12 @@ export class MultiClipPlaybackRuntime<
         sourceTimeSeconds * 1_000_000,
       );
       const frame = lease.frame;
+      const presentationToleranceUs =
+        PRESENTATION_TOLERANCE_SECONDS * 1_000_000;
       const frameDurationUs =
         frame.duration && frame.duration > 0
-          ? frame.duration
-          : PRESENTATION_TOLERANCE_SECONDS * 1_000_000;
+          ? Math.min(frame.duration, presentationToleranceUs)
+          : presentationToleranceUs;
       if (
         targetTimestampUs < frame.timestamp ||
         targetTimestampUs >= frame.timestamp + frameDurationUs

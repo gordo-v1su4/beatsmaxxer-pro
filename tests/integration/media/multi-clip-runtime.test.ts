@@ -6,8 +6,13 @@ import {
   type MultiClipRendererRuntime,
 } from "../../../src/media/MultiClipPlaybackRuntime";
 import { PlaybackCoordinator } from "../../../src/media/PlaybackCoordinator";
+import {
+  PresentationReceipt,
+  type FrameLease,
+} from "../../../src/media/FrameCache";
 import { PlaybackPerformanceTracker } from "../../../src/qa/performance";
 import type { RenderFrameRequest } from "../../../src/render/contracts";
+import type { MediaFallback } from "../../../src/media/types";
 import { FakeFrame } from "../../unit/media/fakes";
 
 interface FakeVideo {
@@ -33,9 +38,11 @@ class FakeRenderer
 {
   disposed = 0;
   presented = 0;
+  decodedPresented = 0;
+  decoded = false;
   forcedFallbacks = 0;
-  fallback = {
-    path: "html-video-webgl2" as const,
+  fallback: MediaFallback = {
+    path: "html-video-webgl2",
     reason: "sample-frame-probe-failed",
   };
 
@@ -46,8 +53,13 @@ class FakeRenderer
     };
   }
 
-  presentDecoded() {
-    return null;
+  presentDecoded(lease: FrameLease<FakeFrame>) {
+    if (!this.decoded) return null;
+    this.decodedPresented += 1;
+    return {
+      path: "webcodecs-webgl2" as const,
+      receipt: PresentationReceipt.submitted(lease),
+    };
   }
 
   presentHtmlVideo() {
@@ -73,6 +85,7 @@ function setup(
   options: {
     releaseGate?: Promise<void>;
     cleanupTimeoutMs?: number;
+    decoded?: boolean;
   } = {},
 ) {
   const registry = new ClipRegistry();
@@ -124,6 +137,13 @@ function setup(
   };
   const coordinator = new PlaybackCoordinator<FakeFrame>();
   const renderer = new FakeRenderer();
+  if (options.decoded) {
+    renderer.decoded = true;
+    renderer.fallback = {
+      path: "webcodecs-webgl2",
+      reason: null,
+    };
+  }
   const runtime = new MultiClipPlaybackRuntime({
     registry,
     coordinator,
@@ -405,6 +425,41 @@ describe("G007 multi-clip production runtime", () => {
     expect(
       state.performance.snapshot().latency.coldSwitch,
     ).toMatchObject({ count: 1, p95Ms: 16, failures: 0 });
+    await state.runtime.dispose();
+  });
+
+  test("caps decoded presentation acceptance to one frame cadence", async () => {
+    const state = setup({ decoded: true });
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    const lane = state.coordinator.getLane("pgm");
+    expect(lane).not.toBeNull();
+    expect(
+      state.coordinator.insertFrame(
+        "pgm",
+        {
+          clipId: "clip-0",
+          generation: lane!.generation,
+          timestampUs: 0,
+        },
+        new FakeFrame(0, 100_000),
+      ),
+    ).toBe(true);
+
+    expect(state.present({ sourceTimeSeconds: 0.09 })).toBe(false);
+    expect(state.renderer.decodedPresented).toBe(0);
+    expect(
+      state.performance.snapshot().latency.coldSwitch,
+    ).toMatchObject({ count: 0, failures: 0 });
+
+    expect(state.present({ sourceTimeSeconds: 0.02 })).toBe(true);
+    expect(state.renderer.decodedPresented).toBe(1);
+    expect(
+      state.performance.snapshot().latency.coldSwitch,
+    ).toMatchObject({ count: 1, failures: 0 });
     await state.runtime.dispose();
   });
 
