@@ -6,7 +6,14 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "test:browser": "bun run scripts/browser-smoke.ts",
+    "qa:secret-scan": "bun run scripts/secret-scan.ts"
   },
   "dependencies": {
     "@types/three": "^0.182.0",

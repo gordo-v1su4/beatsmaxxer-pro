@@ -11,6 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
+artifacts
+
+# Local environment files may contain server-side credentials.
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
