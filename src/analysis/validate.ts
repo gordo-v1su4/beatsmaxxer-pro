@@ -25,26 +25,27 @@ export const DEFAULT_AUBIO_ACCEPTANCE_CONFIG: AubioAcceptanceConfig = {
   minimum_onsets: 1,
 };
 
+export const AUBIO_FALLBACK_REASONS: readonly AubioFallbackReason[] = [
+  "invalid_bpm",
+  "insufficient_beats",
+  "low_confidence",
+  "unusable_onsets",
+];
+
 export function getAubioFallbackReason(
   attempt: AnalysisAttemptV1,
   config: AubioAcceptanceConfig = DEFAULT_AUBIO_ACCEPTANCE_CONFIG,
 ): AubioFallbackReason | null {
-  const declaredFailureReasons: AubioFallbackReason[] = [
-    "invalid_bpm",
-    "insufficient_beats",
-    "low_confidence",
-    "unusable_onsets",
-  ];
-  if (
-    attempt.status === "failed" &&
-    attempt.failure_code &&
-    declaredFailureReasons.includes(attempt.failure_code as AubioFallbackReason)
-  ) {
-    return attempt.failure_code as AubioFallbackReason;
+  if (attempt.status === "failed") {
+    return attempt.failure_code &&
+      AUBIO_FALLBACK_REASONS.includes(attempt.failure_code as AubioFallbackReason)
+      ? attempt.failure_code as AubioFallbackReason
+      : null;
   }
+  if (attempt.status !== "succeeded") return null;
+
   const rhythm = attempt.rhythm;
   if (
-    attempt.status !== "succeeded" ||
     !rhythm ||
     !Number.isFinite(rhythm.bpm) ||
     rhythm.bpm < config.minimum_bpm ||
@@ -69,7 +70,11 @@ export function getAubioFallbackReason(
 }
 
 export function isProductionProvenanceVerified(result: AnalysisResultV1) {
-  return result.effective.provider !== "unknown";
+  try {
+    return validateAnalysisResultV1(result).effective.provider !== "unknown";
+  } catch {
+    return false;
+  }
 }
 
 export function validateAnalysisResultV1(value: unknown): AnalysisResultV1 {
@@ -161,8 +166,10 @@ export function validateAnalysisResultV1(value: unknown): AnalysisResultV1 {
       throw new Error("effective Aubio attempt does not satisfy the acceptance predicate");
     }
   } else if (provider === "essentia") {
-    const reasons = ["invalid_bpm", "insufficient_beats", "low_confidence", "unusable_onsets"];
-    if (!reasons.includes(String(effective.selection_reason)) || effective.verified !== true) {
+    if (
+      !AUBIO_FALLBACK_REASONS.includes(effective.selection_reason as AubioFallbackReason) ||
+      effective.verified !== true
+    ) {
       throw new Error("Verified Essentia results require an Aubio fallback reason.");
     }
     if (
