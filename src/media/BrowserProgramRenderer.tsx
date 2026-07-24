@@ -426,6 +426,8 @@ export function BrowserProgramRenderer(
                       0,
                       (now - cadence.lastCallbackAtMs) / 1_000,
                     ),
+              expectedDisplayTimeMs:
+                cadence?.lastExpectedDisplayTimeMs ?? null,
               rvfcValidUntilMs: validUntilMs,
               rvfcFresh: hasPresentation && !expired,
               rvfcAuthoritative:

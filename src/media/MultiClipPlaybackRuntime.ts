@@ -42,6 +42,7 @@ export interface CompatibilityVideoAdapter<Video extends object> {
     durationSeconds: number | null;
     playbackRate: number | null;
     rvfcAgeSeconds: number | null;
+    expectedDisplayTimeMs: number | null;
     rvfcValidUntilMs: number | null;
     rvfcFresh: boolean;
     rvfcAuthoritative: boolean;
@@ -67,6 +68,15 @@ interface ActiveRole<Video extends object> {
   seekInFlight: boolean;
   seekCallbackSequence: number | null;
   seekTargetTimeSeconds: number | null;
+  seekRecoveryMissCallbackSequence: number | null;
+  seekCorrectionUsed: boolean;
+  targetHistory: Array<{
+    presentationTimeSeconds: number;
+    targetTimeSeconds: number;
+    sourceGeneration: number | null;
+    discontinuityGeneration: number;
+    playbackRate: number;
+  }>;
   dropEpisode: PlaybackDropReason | null;
 }
 
@@ -101,6 +111,7 @@ const PRESENTATION_TOLERANCE_SECONDS = 1 / 30;
 const STEADY_DRIFT_DIAGNOSTIC_CAPACITY = 20;
 const HTML_DECISION_DIAGNOSTIC_CAPACITY = 512;
 const HTML_DECISION_FREEZE_DRIFT_EPISODES = 16;
+const HTML_TARGET_HISTORY_CAPACITY = 128;
 
 type HtmlDecisionOutcome =
   | "accepted"
@@ -133,6 +144,7 @@ interface HtmlDecisionDiagnostic {
   validationPresentedDistanceSeconds: number | null;
   durationSeconds: number | null;
   rvfcAgeSeconds: number | null;
+  expectedDisplayTimeMs: number | null;
   rvfcValidUntilMs: number | null;
   rvfcFresh: boolean;
   rvfcAuthoritative: boolean;
@@ -305,6 +317,9 @@ export class MultiClipPlaybackRuntime<
         ? diagnostics?.callbackSequence ?? null
         : null;
     pgm.seekTargetTimeSeconds = targetTime;
+    pgm.seekRecoveryMissCallbackSequence = null;
+    pgm.seekCorrectionUsed = false;
+    pgm.targetHistory = [];
     this.options.videos.seek(pgm.video, targetTime);
     return true;
   }
@@ -390,6 +405,13 @@ export class MultiClipPlaybackRuntime<
           pgm.video,
           sourceTimeSeconds,
         ) ?? sourceTimeSeconds;
+      this.recordHtmlTarget(pgm, {
+        presentationTimeSeconds: transport.presentationTimeSeconds,
+        targetTimeSeconds: targetTime,
+        sourceGeneration,
+        discontinuityGeneration: transport.discontinuityGeneration,
+        playbackRate: requestedPlaybackRate,
+      });
       const drift =
         this.options.videos.timeDistance?.(
           pgm.video,
@@ -424,12 +446,17 @@ export class MultiClipPlaybackRuntime<
         pgm.seekInFlight &&
         pgm.seekCallbackSequence !== null &&
         callbackSequence <= pgm.seekCallbackSequence;
+      const alignedTargetTime = this.alignedHtmlTarget(
+        pgm,
+        videoDiagnostics?.callbackSequenceReliable
+          ? videoDiagnostics.expectedDisplayTimeMs
+          : null,
+        sourceGeneration,
+        transport.discontinuityGeneration,
+        videoDiagnostics?.frameDurationSeconds ?? null,
+      );
       const validationTargetTime =
-        pgm.seekInFlight &&
-        pgm.seekCallbackSequence !== null &&
-        pgm.seekTargetTimeSeconds !== null
-          ? pgm.seekTargetTimeSeconds
-          : targetTime;
+        alignedTargetTime ?? targetTime;
       const validationCurrentDistance =
         validationTargetTime === targetTime
           ? drift
@@ -468,6 +495,8 @@ export class MultiClipPlaybackRuntime<
           validationPresentedDistance,
         durationSeconds: videoDiagnostics?.durationSeconds ?? null,
         rvfcAgeSeconds: videoDiagnostics?.rvfcAgeSeconds ?? null,
+        expectedDisplayTimeMs:
+          videoDiagnostics?.expectedDisplayTimeMs ?? null,
         rvfcValidUntilMs:
           videoDiagnostics?.rvfcValidUntilMs ?? null,
         rvfcFresh: videoDiagnostics?.rvfcFresh ?? false,
@@ -551,6 +580,31 @@ export class MultiClipPlaybackRuntime<
           transport.discontinuityGeneration !==
             pgm.lastDiscontinuityGeneration);
       if (!accepted) {
+        const recoveryMiss =
+          pgm.seekInFlight && !deliberateDiscontinuity;
+        if (recoveryMiss) {
+          const firstOrRepeatedCallback =
+            pgm.seekRecoveryMissCallbackSequence === null ||
+            callbackSequence <=
+              pgm.seekRecoveryMissCallbackSequence;
+          if (firstOrRepeatedCallback || pgm.seekCorrectionUsed) {
+            if (
+              pgm.seekRecoveryMissCallbackSequence === null ||
+              callbackSequence >
+                pgm.seekRecoveryMissCallbackSequence
+            ) {
+              pgm.seekRecoveryMissCallbackSequence =
+                callbackSequence;
+            }
+            this.recordHtmlDecision({
+              ...diagnosticBase,
+              outcome: "seek-wait",
+              basis,
+              deliberateDiscontinuity: false,
+            });
+            return false;
+          }
+        }
         let outcome: HtmlDecisionOutcome = "deliberate-seek";
         if (!deliberateDiscontinuity && !pgm.seekInFlight) {
           const recorded = this.recordDroppedFrame(
@@ -580,6 +634,8 @@ export class MultiClipPlaybackRuntime<
             ? callbackSequence
             : null;
         pgm.seekTargetTimeSeconds = targetTime;
+        pgm.seekRecoveryMissCallbackSequence = null;
+        pgm.seekCorrectionUsed = recoveryMiss;
         pgm.lastSourceGeneration = sourceGeneration;
         pgm.lastDiscontinuityGeneration =
           transport.discontinuityGeneration;
@@ -589,6 +645,8 @@ export class MultiClipPlaybackRuntime<
       pgm.seekInFlight = false;
       pgm.seekCallbackSequence = null;
       pgm.seekTargetTimeSeconds = null;
+      pgm.seekRecoveryMissCallbackSequence = null;
+      pgm.seekCorrectionUsed = false;
       pgm.lastSourceGeneration = sourceGeneration;
       pgm.lastDiscontinuityGeneration =
         transport.discontinuityGeneration;
@@ -794,6 +852,9 @@ export class MultiClipPlaybackRuntime<
       seekInFlight: false,
       seekCallbackSequence: null,
       seekTargetTimeSeconds: null,
+      seekRecoveryMissCallbackSequence: null,
+      seekCorrectionUsed: false,
+      targetHistory: [],
       dropEpisode: null,
     });
     this.options.coordinator.activate(
@@ -819,6 +880,9 @@ export class MultiClipPlaybackRuntime<
     warmed.seekInFlight = false;
     warmed.seekCallbackSequence = null;
     warmed.seekTargetTimeSeconds = null;
+    warmed.seekRecoveryMissCallbackSequence = null;
+    warmed.seekCorrectionUsed = false;
+    warmed.targetHistory = [];
     warmed.dropEpisode = null;
     this.roles.set("pgm", warmed);
     this.options.coordinator.activate(
@@ -962,6 +1026,81 @@ export class MultiClipPlaybackRuntime<
       this.steadyDriftDiagnostics.shift();
     }
     this.steadyDriftDiagnostics.push(diagnostic);
+  }
+
+  private recordHtmlTarget(
+    pgm: ActiveRole<Video>,
+    sample: ActiveRole<Video>["targetHistory"][number],
+  ) {
+    const previous = pgm.targetHistory.at(-1);
+    if (
+      previous?.presentationTimeSeconds ===
+      sample.presentationTimeSeconds
+    ) {
+      pgm.targetHistory[pgm.targetHistory.length - 1] = sample;
+      return;
+    }
+    if (pgm.targetHistory.length === HTML_TARGET_HISTORY_CAPACITY) {
+      pgm.targetHistory.shift();
+    }
+    pgm.targetHistory.push(sample);
+  }
+
+  private alignedHtmlTarget(
+    pgm: ActiveRole<Video>,
+    expectedDisplayTimeMs: number | null,
+    sourceGeneration: number | null,
+    discontinuityGeneration: number,
+    frameDurationSeconds: number | null,
+  ) {
+    if (expectedDisplayTimeMs === null) return null;
+    const matching = pgm.targetHistory.filter(
+      (sample) =>
+        sample.sourceGeneration === sourceGeneration &&
+        sample.discontinuityGeneration ===
+          discontinuityGeneration,
+    );
+    if (matching.length === 0) return null;
+    const expectedSeconds = expectedDisplayTimeMs / 1_000;
+    if (
+      expectedSeconds <
+      matching[0].presentationTimeSeconds
+    ) {
+      return null;
+    }
+    let nearest = matching[0];
+    for (const sample of matching) {
+      if (
+        Math.abs(sample.presentationTimeSeconds - expectedSeconds) <
+        Math.abs(nearest.presentationTimeSeconds - expectedSeconds)
+      ) {
+        nearest = sample;
+      }
+    }
+    const latest = matching.at(-1);
+    const prior = matching.at(-2);
+    const rafInterval =
+      latest && prior
+        ? Math.max(
+            0,
+            latest.presentationTimeSeconds -
+              prior.presentationTimeSeconds,
+          )
+        : 1 / 60;
+    const alignmentBound = Math.max(
+      1 / 60,
+      rafInterval,
+      frameDurationSeconds ?? 0,
+    );
+    const offset =
+      expectedSeconds - nearest.presentationTimeSeconds;
+    if (Math.abs(offset) > alignmentBound) return null;
+    const aligned =
+      nearest.targetTimeSeconds + offset * nearest.playbackRate;
+    return (
+      this.options.videos.normalizeTime?.(pgm.video, aligned) ??
+      Math.max(0, aligned)
+    );
   }
 
   private recordHtmlDecision(
