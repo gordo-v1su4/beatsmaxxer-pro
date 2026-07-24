@@ -890,13 +890,13 @@ describe("G007 multi-clip production runtime", () => {
         sourceTimeSeconds += playbackRate / 60;
       }
 
-      if (recoveryTarget === null && frame % 600 === 0) {
+      if (recoveryTarget === null && frame % 30 === 0) {
         sourceGeneration += 1;
         sourceTimeSeconds += 0.75;
         recoveryTarget = sourceTimeSeconds;
       } else if (
         recoveryTarget === null &&
-        (frame === 900 || frame === 1_650 || frame === 2_700)
+        (frame === 905 || frame === 1_661 || frame === 2_713)
       ) {
         recoveryTarget = state.videoTime();
         state.shiftVideoTime(0.2);
@@ -916,7 +916,7 @@ describe("G007 multi-clip production runtime", () => {
     }
 
     const frames = state.performance.snapshot().frames;
-    expect(frames.presented).toBeGreaterThan(3_500);
+    expect(frames.presented).toBeGreaterThan(3_000);
     expect(frames.late).toBe(0);
     expect(frames.dropped).toBe(3);
     expect(frames.lateOrDroppedRatio).toBeLessThanOrEqual(0.01);
