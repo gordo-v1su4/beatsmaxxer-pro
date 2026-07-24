@@ -14,6 +14,10 @@ import { PlaybackPerformanceTracker } from "../../../src/qa/performance";
 import type { RenderFrameRequest } from "../../../src/render/contracts";
 import type { MediaFallback } from "../../../src/media/types";
 import { FakeFrame } from "../../unit/media/fakes";
+import {
+  circularMediaTimeDistance,
+  resetPresentedVideoCadence,
+} from "../../../src/media/BrowserProgramRenderer";
 
 interface FakeVideo {
   clipId: string;
@@ -23,6 +27,8 @@ interface FakeVideo {
   playbackRate: number;
   ready: boolean;
   playing: boolean;
+  pendingSeekTarget: number | null;
+  pendingSeekFrames: number;
 }
 
 const request: RenderFrameRequest = {
@@ -89,6 +95,7 @@ function setup(
     cleanupTimeoutMs?: number;
     decoded?: boolean;
     videoFrameRate?: number;
+    seekLatencyFrames?: () => number;
   } = {},
 ) {
   const registry = new ClipRegistry();
@@ -117,6 +124,8 @@ function setup(
         playbackRate: 1,
         ready: true,
         playing: false,
+        pendingSeekTarget: null,
+        pendingSeekFrames: 0,
       };
       activeVideos.add(video);
       return video;
@@ -131,6 +140,7 @@ function setup(
       return options.releaseGate?.then(finish) ?? finish();
     },
     ready: (video) => video.ready,
+    seeking: (video) => video.pendingSeekTarget !== null,
     currentTime: (video) => video.currentTime,
     presentationTolerance: () =>
       options.videoFrameRate
@@ -138,14 +148,22 @@ function setup(
         : 1 / 30,
     presentedTimeMatches: options.videoFrameRate
       ? (video, targetTime) =>
-          targetTime >= video.currentTime - 1e-9 &&
-          targetTime <
-            video.currentTime + 1 / options.videoFrameRate! + 1e-9
+          Math.abs(video.currentTime - targetTime) <=
+          1 / options.videoFrameRate! + 1e-9
       : undefined,
     seek: (video, timeSeconds) => {
       seekCalls += 1;
-      video.currentTime = timeSeconds;
-      video.clockTime = timeSeconds;
+      const latencyFrames = Math.max(
+        0,
+        Math.floor(options.seekLatencyFrames?.() ?? 0),
+      );
+      if (latencyFrames === 0) {
+        video.currentTime = timeSeconds;
+        video.clockTime = timeSeconds;
+      } else {
+        video.pendingSeekTarget = timeSeconds;
+        video.pendingSeekFrames = latencyFrames;
+      }
     },
     setPlaying: (video, playing) => {
       video.playing = playing;
@@ -209,9 +227,27 @@ function setup(
     setReady(ready: boolean) {
       for (const video of activeVideos) video.ready = ready;
     },
+    shiftVideoTime(seconds: number) {
+      for (const video of activeVideos) {
+        video.currentTime += seconds;
+        video.clockTime += seconds;
+      }
+    },
+    videoTime() {
+      return [...activeVideos][0]?.currentTime ?? 0;
+    },
     advance(milliseconds: number) {
       now += milliseconds;
       for (const video of activeVideos) {
+        if (video.pendingSeekTarget !== null) {
+          video.pendingSeekFrames -= 1;
+          if (video.pendingSeekFrames <= 0) {
+            video.currentTime = video.pendingSeekTarget;
+            video.clockTime = video.pendingSeekTarget;
+            video.pendingSeekTarget = null;
+          }
+          continue;
+        }
         if (video.playing) {
           video.clockTime +=
             (milliseconds / 1_000) * video.playbackRate;
@@ -227,6 +263,28 @@ function setup(
 }
 
 describe("G007 multi-clip production runtime", () => {
+  test("uses circular fallback distance and clears stale cadence on seek", () => {
+    expect(circularMediaTimeDistance(10, 9.99, 0.01)).toBeCloseTo(
+      0.02,
+    );
+    expect(circularMediaTimeDistance(10, 9.99, 0.01)).toBeLessThan(
+      1 / 30,
+    );
+    expect(circularMediaTimeDistance(10, 9.8, 0)).toBeCloseTo(0.2);
+
+    const cadence = {
+      previousMediaTime: 4.966,
+      presentedMediaTime: 5,
+      frameDurationSeconds: 1 / 30,
+    };
+    resetPresentedVideoCadence(cadence);
+    expect(cadence).toEqual({
+      previousMediaTime: null,
+      presentedMediaTime: null,
+      frameDurationSeconds: 1 / 30,
+    });
+  });
+
   test("revokes every owned upload URL on replace, remove, and disposal", () => {
     const originalCreate = URL.createObjectURL;
     const originalRevoke = URL.revokeObjectURL;
@@ -734,6 +792,72 @@ describe("G007 multi-clip production runtime", () => {
       });
       await state.runtime.dispose();
     }
+  });
+
+  test("keeps beat seeks, delayed recovery, and clock phase below 1% over 60 seconds", async () => {
+    const seekLatencies = [1, 2, 3];
+    let nextSeekLatency = 0;
+    const state = setup({
+      videoFrameRate: 30,
+      seekLatencyFrames: () =>
+        seekLatencies[nextSeekLatency++ % seekLatencies.length],
+    });
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+
+    const playbackRate = 1.0025;
+    let sourceTimeSeconds = 0;
+    let sourceGeneration = 0;
+    let recoveryTarget: number | null = null;
+    expect(state.present({ playbackRate, sourceGeneration })).toBe(true);
+
+    for (let frame = 1; frame <= 3_600; frame += 1) {
+      state.advance(1_000 / 60);
+      if (recoveryTarget === null) {
+        sourceTimeSeconds += playbackRate / 60;
+      }
+
+      if (recoveryTarget === null && frame % 600 === 0) {
+        sourceGeneration += 1;
+        sourceTimeSeconds += 0.75;
+        recoveryTarget = sourceTimeSeconds;
+      } else if (
+        recoveryTarget === null &&
+        (frame === 900 || frame === 1_650 || frame === 2_700)
+      ) {
+        recoveryTarget = state.videoTime();
+        state.shiftVideoTime(0.2);
+      }
+
+      const phaseJitter = frame % 2 === 0 ? -0.004 : 0.004;
+      const presented = state.present({
+        sourceTimeSeconds:
+          recoveryTarget ?? state.videoTime() + phaseJitter,
+        sourceGeneration,
+        playbackRate,
+        late: recoveryTarget !== null,
+      });
+      if (presented && recoveryTarget !== null) {
+        recoveryTarget = null;
+      }
+    }
+
+    const frames = state.performance.snapshot().frames;
+    expect(frames.presented).toBeGreaterThan(3_500);
+    expect(frames.late).toBe(0);
+    expect(frames.dropped).toBe(3);
+    expect(frames.lateOrDroppedRatio).toBeLessThanOrEqual(0.01);
+    expect(frames.droppedByReason).toEqual({
+      "decoded-unavailable": 0,
+      "decoded-off-target": 0,
+      "video-not-ready": 0,
+      "steady-drift": 3,
+      "renderer-rejected": 0,
+    });
+    await state.runtime.dispose();
   });
 
   test("rejects 200ms drift even with a derived 10fps interval", async () => {

@@ -28,6 +28,25 @@ export interface BrowserProgramRendererProps {
   ) => void;
 }
 
+export function circularMediaTimeDistance(
+  duration: number,
+  from: number,
+  to: number,
+) {
+  const direct = Math.abs(from - to);
+  if (!Number.isFinite(duration) || duration <= 0) return direct;
+  const normalized = direct % duration;
+  return Math.min(normalized, duration - normalized);
+}
+
+export function resetPresentedVideoCadence(cadence: {
+  previousMediaTime: number | null;
+  presentedMediaTime: number | null;
+}) {
+  cadence.previousMediaTime = null;
+  cadence.presentedMediaTime = null;
+}
+
 function applyQaCommand(
   runtime: MultiClipPlaybackRuntime<VideoFrame, HTMLVideoElement> | null,
   value: string,
@@ -252,11 +271,11 @@ export function BrowserProgramRenderer(
                 video.duration
               : Math.max(0, timeSeconds),
           timeDistance: (video, currentTime, targetTime) => {
-            const direct = Math.abs(currentTime - targetTime);
-            return Number.isFinite(video.duration) &&
-              video.duration > 0
-              ? Math.min(direct, Math.abs(video.duration - direct))
-              : direct;
+            return circularMediaTimeDistance(
+              video.duration,
+              currentTime,
+              targetTime,
+            );
           },
           presentationTolerance: (video) => {
             const frameDuration =
@@ -277,24 +296,27 @@ export function BrowserProgramRenderer(
               frameDuration === undefined
             ) {
               return (
-                Math.abs(video.currentTime - targetTime) <= 1 / 30
+                circularMediaTimeDistance(
+                  video.duration,
+                  video.currentTime,
+                  targetTime,
+                ) <= 1 / 30
               );
             }
             const interval = Math.min(0.1, frameDuration * 1.05);
-            if (
-              targetTime >= frameStart &&
-              targetTime < frameStart + interval
-            ) {
-              return true;
-            }
             return (
-              Number.isFinite(video.duration) &&
-              video.duration > 0 &&
-              frameStart + interval > video.duration &&
-              targetTime < frameStart + interval - video.duration
+              circularMediaTimeDistance(
+                video.duration,
+                frameStart,
+                targetTime,
+              ) <= interval
             );
           },
           seek: (video, timeSeconds) => {
+            const cadence = videoCadences.get(video);
+            if (cadence) {
+              resetPresentedVideoCadence(cadence);
+            }
             video.currentTime = Math.max(0, timeSeconds);
           },
           setPlaying: (video, playing) => {
