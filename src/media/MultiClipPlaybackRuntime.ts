@@ -36,6 +36,12 @@ export interface CompatibilityVideoAdapter<Video extends object> {
   ): number;
   presentationTolerance?(video: Video): number;
   presentedTimeMatches?(video: Video, targetTimeSeconds: number): boolean;
+  presentationDiagnostics?(video: Video): {
+    presentedMediaTime: number | null;
+    frameDurationSeconds: number | null;
+    durationSeconds: number | null;
+    playbackRate: number | null;
+  };
   seek(video: Video, timeSeconds: number): void;
   setPlaybackRate?(video: Video, playbackRate: number): void;
   setPlaying(video: Video, playing: boolean): void;
@@ -79,6 +85,28 @@ export interface MultiClipRendererRuntime<
 
 const CLEANUP_TIMEOUT_MS = 1_950;
 const PRESENTATION_TOLERANCE_SECONDS = 1 / 30;
+const STEADY_DRIFT_DIAGNOSTIC_CAPACITY = 20;
+
+interface SteadyDriftDiagnostic {
+  episode: number;
+  targetTimeSeconds: number;
+  currentTimeSeconds: number;
+  presentedMediaTimeSeconds: number | null;
+  frameDurationSeconds: number | null;
+  presentationToleranceSeconds: number;
+  currentDistanceSeconds: number;
+  presentedDistanceSeconds: number | null;
+  durationSeconds: number | null;
+  sourceGeneration: number | null;
+  previousSourceGeneration: number | null;
+  discontinuityGeneration: number;
+  previousDiscontinuityGeneration: number | null;
+  requestedPlaybackRate: number;
+  actualPlaybackRate: number | null;
+  seekInFlight: boolean;
+  transportTimeSeconds: number;
+  sourceTimeSeconds: number;
+}
 
 export class MultiClipPlaybackRuntime<
   Frame extends DecodedFrameLike,
@@ -98,6 +126,8 @@ export class MultiClipPlaybackRuntime<
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
   private readonly releases = new Set<TrackedRelease>();
+  private steadyDriftEpisodeCount = 0;
+  private readonly steadyDriftDiagnostics: SteadyDriftDiagnostic[] = [];
 
   constructor(
     private readonly options: {
@@ -317,7 +347,53 @@ export class MultiClipPlaybackRuntime<
             transport.discontinuityGeneration !==
               pgm.lastDiscontinuityGeneration);
         if (!deliberateDiscontinuity && !pgm.seekInFlight) {
-          this.recordDroppedFrame(transport, pgm, "steady-drift");
+          const recorded = this.recordDroppedFrame(
+            transport,
+            pgm,
+            "steady-drift",
+          );
+          if (recorded) {
+            const videoDiagnostics =
+              this.options.videos.presentationDiagnostics?.(pgm.video);
+            const presentedMediaTime =
+              videoDiagnostics?.presentedMediaTime ?? null;
+            this.recordSteadyDriftDiagnostic({
+              episode: ++this.steadyDriftEpisodeCount,
+              targetTimeSeconds: targetTime,
+              currentTimeSeconds: currentTime,
+              presentedMediaTimeSeconds: presentedMediaTime,
+              frameDurationSeconds:
+                videoDiagnostics?.frameDurationSeconds ?? null,
+              presentationToleranceSeconds: presentationTolerance,
+              currentDistanceSeconds: drift,
+              presentedDistanceSeconds:
+                presentedMediaTime === null
+                  ? null
+                  : (this.options.videos.timeDistance?.(
+                      pgm.video,
+                      presentedMediaTime,
+                      targetTime,
+                    ) ?? Math.abs(presentedMediaTime - targetTime)),
+              durationSeconds:
+                videoDiagnostics?.durationSeconds ?? null,
+              sourceGeneration,
+              previousSourceGeneration: pgm.lastSourceGeneration,
+              discontinuityGeneration:
+                transport.discontinuityGeneration,
+              previousDiscontinuityGeneration:
+                pgm.lastDiscontinuityGeneration,
+              requestedPlaybackRate: Math.max(
+                0.01,
+                options.playbackRate ?? 1,
+              ),
+              actualPlaybackRate:
+                videoDiagnostics?.playbackRate ?? null,
+              seekInFlight: pgm.seekInFlight,
+              transportTimeSeconds:
+                transport.presentationTimeSeconds,
+              sourceTimeSeconds,
+            });
+          }
         }
         this.options.videos.seek(pgm.video, targetTime);
         pgm.seekInFlight = true;
@@ -455,6 +531,14 @@ export class MultiClipPlaybackRuntime<
       coordinator: this.options.coordinator.snapshot(),
       renderer: this.options.renderer.snapshot(),
       performance: this.options.performance?.snapshot() ?? null,
+      steadyDriftDiagnostics: {
+        capacity: STEADY_DRIFT_DIAGNOSTIC_CAPACITY,
+        totalEpisodes: this.steadyDriftEpisodeCount,
+        retainedDistanceSeconds: this.summarizeSteadyDriftDistances(),
+        records: this.steadyDriftDiagnostics.map((record) => ({
+          ...record,
+        })),
+      },
     };
   }
 
@@ -652,7 +736,43 @@ export class MultiClipPlaybackRuntime<
         dropped: true,
         droppedReason: reason,
       });
+      return true;
     }
+    return false;
+  }
+
+  private recordSteadyDriftDiagnostic(
+    diagnostic: SteadyDriftDiagnostic,
+  ) {
+    if (
+      this.steadyDriftDiagnostics.length ===
+      STEADY_DRIFT_DIAGNOSTIC_CAPACITY
+    ) {
+      this.steadyDriftDiagnostics.shift();
+    }
+    this.steadyDriftDiagnostics.push(diagnostic);
+  }
+
+  private summarizeSteadyDriftDistances() {
+    if (this.steadyDriftDiagnostics.length === 0) {
+      return {
+        min: null,
+        p50: null,
+        max: null,
+      };
+    }
+    const distances = this.steadyDriftDiagnostics
+      .map(
+        (diagnostic) =>
+          diagnostic.presentedDistanceSeconds ??
+          diagnostic.currentDistanceSeconds,
+      )
+      .sort((left, right) => left - right);
+    return {
+      min: distances[0],
+      p50: distances[Math.floor((distances.length - 1) / 2)],
+      max: distances[distances.length - 1],
+    };
   }
 
   private async awaitCleanup(

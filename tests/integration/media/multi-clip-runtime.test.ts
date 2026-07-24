@@ -151,6 +151,14 @@ function setup(
           Math.abs(video.currentTime - targetTime) <=
           1 / options.videoFrameRate! + 1e-9
       : undefined,
+    presentationDiagnostics: (video) => ({
+      presentedMediaTime: video.currentTime,
+      frameDurationSeconds: options.videoFrameRate
+        ? 1 / options.videoFrameRate
+        : null,
+      durationSeconds: null,
+      playbackRate: video.playbackRate,
+    }),
     seek: (video, timeSeconds) => {
       seekCalls += 1;
       const latencyFrames = Math.max(
@@ -751,6 +759,68 @@ describe("G007 multi-clip production runtime", () => {
         "video-not-ready": 2,
       },
     });
+    await state.runtime.dispose();
+  });
+
+  test("retains at most 20 secret-free steady-drift diagnostics", async () => {
+    const state = setup({ videoFrameRate: 30 });
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(state.present()).toBe(true);
+
+    for (let episode = 1; episode <= 25; episode += 1) {
+      const targetTime = state.videoTime();
+      state.shiftVideoTime(0.2);
+      expect(
+        state.present({
+          sourceTimeSeconds: targetTime,
+          sourceGeneration: 7,
+          playbackRate: 1.0025,
+        }),
+      ).toBe(false);
+      expect(
+        state.present({
+          sourceTimeSeconds: targetTime,
+          sourceGeneration: 7,
+          playbackRate: 1.0025,
+        }),
+      ).toBe(true);
+    }
+
+    const diagnostics =
+      state.runtime.snapshot().steadyDriftDiagnostics;
+    expect(diagnostics.capacity).toBe(20);
+    expect(diagnostics.totalEpisodes).toBe(25);
+    expect(diagnostics.records).toHaveLength(20);
+    expect(diagnostics.records[0]?.episode).toBe(6);
+    expect(diagnostics.records[19]?.episode).toBe(25);
+    expect(diagnostics.retainedDistanceSeconds.min).toBeCloseTo(0.2);
+    expect(diagnostics.retainedDistanceSeconds.p50).toBeCloseTo(0.2);
+    expect(diagnostics.retainedDistanceSeconds.max).toBeCloseTo(0.2);
+    expect(diagnostics.records[0]).toMatchObject({
+      targetTimeSeconds: 0,
+      currentTimeSeconds: 0.2,
+      presentedMediaTimeSeconds: 0.2,
+      frameDurationSeconds: 1 / 30,
+      presentationToleranceSeconds: 1 / 30,
+      currentDistanceSeconds: 0.2,
+      presentedDistanceSeconds: 0.2,
+      durationSeconds: null,
+      sourceGeneration: 7,
+      previousSourceGeneration: 7,
+      discontinuityGeneration: 0,
+      previousDiscontinuityGeneration: 0,
+      requestedPlaybackRate: 1.0025,
+      actualPlaybackRate: 1.0025,
+      seekInFlight: false,
+      transportTimeSeconds: 0,
+      sourceTimeSeconds: 0,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("/fixtures/");
+    expect(JSON.stringify(diagnostics)).not.toContain("clip-0");
     await state.runtime.dispose();
   });
 

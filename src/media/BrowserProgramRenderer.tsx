@@ -312,6 +312,22 @@ export function BrowserProgramRenderer(
               ) <= interval
             );
           },
+          presentationDiagnostics: (video) => {
+            const cadence = videoCadences.get(video);
+            return {
+              presentedMediaTime:
+                cadence?.presentedMediaTime ?? null,
+              frameDurationSeconds:
+                cadence?.frameDurationSeconds ?? null,
+              durationSeconds:
+                Number.isFinite(video.duration) && video.duration > 0
+                  ? video.duration
+                  : null,
+              playbackRate: Number.isFinite(video.playbackRate)
+                ? video.playbackRate
+                : null,
+            };
+          },
           seek: (video, timeSeconds) => {
             const cadence = videoCadences.get(video);
             if (cadence) {
