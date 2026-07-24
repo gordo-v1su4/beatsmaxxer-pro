@@ -71,10 +71,21 @@ export function sampleAtTimestamp(
     ),
   );
   let selected = asset.samples[0];
+  let selectedTimestamp = Number.NEGATIVE_INFINITY;
   for (const sample of asset.samples) {
-    if (sample.timestampUs > clamped) break;
-    selected = sample;
-    if (clamped < sample.timestampUs + sample.durationUs) break;
+    if (
+      sample.timestampUs <= clamped &&
+      sample.timestampUs > selectedTimestamp
+    ) {
+      selected = sample;
+      selectedTimestamp = sample.timestampUs;
+    }
+    if (
+      sample.timestampUs <= clamped &&
+      clamped < sample.timestampUs + sample.durationUs
+    ) {
+      return sample;
+    }
   }
   return selected;
 }

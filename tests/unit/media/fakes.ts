@@ -41,6 +41,7 @@ export function mediaTrackFixture(): DemuxedVideoTrack {
       codedWidth: 1920,
       codedHeight: 1080,
       frameRate: 60,
+      decodeOrder: "dts-proven",
     },
     decoderConfig: {
       codec: "avc1.640028",
@@ -50,6 +51,7 @@ export function mediaTrackFixture(): DemuxedVideoTrack {
     },
     samples: timestamps.map((timestampUs, index) => ({
       index,
+      decodeTimestampUs: timestampUs,
       timestampUs,
       durationUs: durations[index],
       type: index === 0 || index === 3 ? "key" : "delta",

@@ -20,6 +20,16 @@ interface LeaseToken<Frame extends DecodedFrameLike> {
   release(): void;
 }
 
+export interface FrameCacheMetrics {
+  occupancy: number;
+  capacity: number;
+}
+
+export interface FrameCacheOptions<Frame extends DecodedFrameLike> {
+  onClose?: (frame: Frame) => void;
+  onMetrics?: (metrics: FrameCacheMetrics) => void;
+}
+
 export class DetachedFrameLease<Frame extends DecodedFrameLike> {
   private released = false;
 
@@ -107,7 +117,10 @@ export class FrameCache<Frame extends DecodedFrameLike> {
   private accessCounter = 0;
   private disposed = false;
 
-  constructor(public readonly capacity: number) {
+  constructor(
+    public readonly capacity: number,
+    private readonly options: FrameCacheOptions<Frame> = {},
+  ) {
     if (!Number.isInteger(capacity) || capacity <= 0) {
       throw new Error("invalid-frame-cache-capacity");
     }
@@ -148,6 +161,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
       lastAccess: ++this.accessCounter,
       pendingClose: false,
     });
+    this.reportMetrics();
     return true;
   }
 
@@ -230,6 +244,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
         if (entry.pendingClose && entry.leases === 0) {
           this.entries.delete(frameKey(entry));
           this.closeFrame(entry.frame);
+          this.reportMetrics();
         }
       },
     };
@@ -250,6 +265,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
     if (selected === null) return false;
     this.entries.delete(frameKey(selected));
     this.closeFrame(selected.frame);
+    this.reportMetrics();
     return true;
   }
 
@@ -265,11 +281,20 @@ export class FrameCache<Frame extends DecodedFrameLike> {
         this.closeFrame(entry.frame);
       }
     }
+    this.reportMetrics();
   }
 
   private closeFrame(frame: Frame) {
     if (this.closedFrames.has(frame)) return;
     this.closedFrames.add(frame);
     frame.close();
+    this.options.onClose?.(frame);
+  }
+
+  private reportMetrics() {
+    this.options.onMetrics?.({
+      occupancy: this.entries.size,
+      capacity: this.capacity,
+    });
   }
 }

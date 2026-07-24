@@ -24,6 +24,7 @@ class FakeDecoderAdapter implements VideoDecoderAdapter {
   constructor(
     readonly callbacks: DecoderCallbacks<FakeFrame>,
     private readonly holdFlush = false,
+    private readonly queueInflation = 1,
   ) {}
 
   get decodeQueueSize() {
@@ -36,7 +37,9 @@ class FakeDecoderAdapter implements VideoDecoderAdapter {
 
   decode(sample: EncodedVideoSample) {
     this.decoded.push(sample);
-    this.queue.push(sample);
+    for (let index = 0; index < this.queueInflation; index += 1) {
+      this.queue.push(sample);
+    }
     this.maxObservedQueue = Math.max(
       this.maxObservedQueue,
       this.decodeQueueSize,
@@ -209,6 +212,28 @@ describe("generation-aware WebCodecs clip decoder", () => {
     expect(adapter?.resetCount).toBe(1);
     expect(adapter?.closeCount).toBe(1);
     expect(decoder.decoderState).toBe("error");
+  });
+
+  test("closes a decoder that reports a queue above eight", async () => {
+    const asset = createClipAsset("clip-a", mediaTrackFixture());
+    let adapter: FakeDecoderAdapter | null = null;
+    const decoder = new WebCodecsClipDecoder({
+      factory: {
+        create(callbacks) {
+          adapter = new FakeDecoderAdapter(callbacks, false, 9);
+          return adapter;
+        },
+      },
+      onFrame() {},
+      maxDecodeQueueSize: 8,
+    });
+
+    await expect(
+      decoder.decodeForward(asset, 1_000_000),
+    ).rejects.toThrow("decode-queue-budget-exceeded");
+    expect(adapter?.maxObservedQueue).toBe(9);
+    expect(adapter?.resetCount).toBe(1);
+    expect(adapter?.closeCount).toBe(1);
   });
 
   test("rejects queue limits above the frozen v1 maximum", () => {

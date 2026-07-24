@@ -131,6 +131,9 @@ export class WebCodecsClipDecoder<Frame extends DecodedFrameLike> {
           };
         }
         decoder.decode(sample);
+        if (decoder.decodeQueueSize > this.maxDecodeQueueSize) {
+          throw new Error("decode-queue-budget-exceeded");
+        }
         decodedSampleIndexes.push(sample.index);
         this.reportState();
       }

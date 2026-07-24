@@ -5,3 +5,4 @@ export * from "./demux/mp4";
 export * from "./decoder/WebCodecsClipDecoder";
 export * from "./FrameCache";
 export * from "./PlaybackCoordinator";
+export * from "./telemetry";

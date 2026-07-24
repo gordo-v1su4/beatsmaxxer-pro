@@ -6,16 +6,28 @@ import type {
 } from "./types";
 
 function copySample(sample: EncodedVideoSample): EncodedVideoSample {
-  return Object.freeze({
-    ...sample,
-    data: sample.data.slice(),
+  const data = sample.data.slice();
+  const copy = {
+    index: sample.index,
+    decodeTimestampUs: sample.decodeTimestampUs,
+    timestampUs: sample.timestampUs,
+    durationUs: sample.durationUs,
+    type: sample.type,
+  } as EncodedVideoSample;
+  Object.defineProperty(copy, "data", {
+    enumerable: true,
+    configurable: false,
+    get() {
+      return data.slice();
+    },
   });
+  return Object.freeze(copy);
 }
 
 function copyDecoderConfig(
   config: VideoDecoderConfigLike,
 ): VideoDecoderConfigLike {
-  const description =
+  const storedDescription =
     config.description instanceof ArrayBuffer
       ? config.description.slice(0)
       : ArrayBuffer.isView(config.description)
@@ -25,10 +37,21 @@ function copyDecoderConfig(
             config.description.byteLength,
           ).slice()
         : undefined;
-  return {
-    ...config,
-    ...(description ? { description } : {}),
-  };
+  const copy = {
+    codec: config.codec,
+    codedWidth: config.codedWidth,
+    codedHeight: config.codedHeight,
+  } as VideoDecoderConfigLike;
+  if (storedDescription) {
+    Object.defineProperty(copy, "description", {
+      enumerable: true,
+      configurable: false,
+      get() {
+        return storedDescription.slice();
+      },
+    });
+  }
+  return copy;
 }
 
 export function createClipAsset(
@@ -45,6 +68,8 @@ export function createClipAsset(
     if (
       !Number.isFinite(sample.timestampUs) ||
       sample.timestampUs < 0 ||
+      !Number.isFinite(sample.decodeTimestampUs) ||
+      sample.decodeTimestampUs < 0 ||
       !Number.isFinite(sample.durationUs) ||
       sample.durationUs <= 0
     ) {
@@ -52,9 +77,10 @@ export function createClipAsset(
     }
     if (
       index > 0 &&
-      sample.timestampUs < samples[index - 1].timestampUs
+      sample.decodeTimestampUs <
+        samples[index - 1].decodeTimestampUs
     ) {
-      throw new Error("sample-timestamps-not-monotonic");
+      throw new Error("sample-decode-order-not-monotonic");
     }
   }
   if (samples[0].type !== "key") throw new Error("first-sample-not-keyframe");
@@ -62,14 +88,19 @@ export function createClipAsset(
   const keyframeSampleIndexes = samples
     .filter((sample) => sample.type === "key")
     .map((sample) => sample.index);
-  const first = samples[0];
-  const last = samples[samples.length - 1];
+  const startTimestampUs = Math.min(
+    ...samples.map((sample) => sample.timestampUs),
+  );
+  const endTimestampUs = Math.max(
+    ...samples.map(
+      (sample) => sample.timestampUs + sample.durationUs,
+    ),
+  );
 
   return Object.freeze({
     id,
-    startTimestampUs: first.timestampUs,
-    durationUs:
-      last.timestampUs + last.durationUs - first.timestampUs,
+    startTimestampUs,
+    durationUs: endTimestampUs - startTimestampUs,
     metadata: Object.freeze({ ...track.metadata }),
     decoderConfig: Object.freeze(copyDecoderConfig(track.decoderConfig)),
     samples: Object.freeze(samples),

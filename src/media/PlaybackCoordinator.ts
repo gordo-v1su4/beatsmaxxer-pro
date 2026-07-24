@@ -27,7 +27,7 @@ export interface LaneDecoderResource {
 export interface PlaybackLane<Frame extends DecodedFrameLike> {
   readonly role: PlaybackLaneRole;
   readonly clipId: string;
-  readonly generation: number;
+  generation: number;
   readonly cache: FrameCache<Frame>;
   decoder: LaneDecoderResource | null;
   decodeBatchActive: boolean;
@@ -67,6 +67,7 @@ export interface PlaybackCoordinatorSnapshot {
 
 export interface PlaybackCoordinatorOptions {
   onTelemetry?: (snapshot: PlaybackCoordinatorSnapshot) => void;
+  initialPlayback?: MediaFallback;
 }
 
 function isLaneRole(value: string): value is PlaybackLaneRole {
@@ -83,13 +84,15 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     overlap: null,
   };
   private readonly inactiveCaches = new Set<FrameCache<Frame>>();
+  private readonly frameOwners = new WeakMap<object, PlaybackLaneRole>();
+  private readonly leases = new Map<FrameLease<Frame>, PlaybackLaneRole>();
   private pressureStage = 0;
   private disposed = false;
   private overlapEnabled = true;
   private rendererResourceGeneration = 0;
   private fallback: MediaFallback = {
-    path: "webcodecs-webgpu",
-    reason: null,
+    path: "native-static",
+    reason: "media-core-not-selected",
   };
   private transport: PlaybackTransportState = {
     presentationTimeSeconds: 0,
@@ -97,7 +100,11 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     discontinuityGeneration: 0,
   };
 
-  constructor(private readonly options: PlaybackCoordinatorOptions = {}) {}
+  constructor(private readonly options: PlaybackCoordinatorOptions = {}) {
+    if (options.initialPlayback) {
+      this.fallback = { ...options.initialPlayback };
+    }
+  }
 
   activate(
     role: PlaybackLaneRole,
@@ -117,12 +124,28 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     if (decoder.decodeQueueSize > MAX_DECODE_QUEUE_SIZE) {
       throw new Error("decode-queue-budget-exceeded");
     }
+    if (
+      PLAYBACK_LANE_ROLES.some(
+        (existingRole) =>
+          this.slots[existingRole]?.decoder === decoder,
+      )
+    ) {
+      throw new Error("decoder-owner-alias");
+    }
+    this.releaseLeases(role);
     this.releaseLane(this.slots[role]);
     this.slots[role] = {
       role,
       clipId,
       generation,
-      cache: new FrameCache<Frame>(MAX_FRAMES_PER_LANE),
+      cache: new FrameCache<Frame>(MAX_FRAMES_PER_LANE, {
+        onClose: (frame) => {
+          if (this.frameOwners.get(frame) === role) {
+            this.frameOwners.delete(frame);
+          }
+        },
+        onMetrics: () => this.report(),
+      }),
       decoder,
       decodeBatchActive: false,
     };
@@ -133,6 +156,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 
   deactivate(role: PlaybackLaneRole) {
     this.assertRole(role);
+    this.releaseLeases(role);
     this.releaseLane(this.slots[role]);
     this.slots[role] = null;
     this.report();
@@ -143,6 +167,18 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     return this.slots[role];
   }
 
+  setLaneGeneration(role: PlaybackLaneRole, generation: number) {
+    const lane = this.requireLane(role);
+    if (!Number.isInteger(generation) || generation < lane.generation) {
+      throw new Error("invalid-lane-generation");
+    }
+    if (generation === lane.generation) return;
+    this.releaseLeases(role);
+    lane.cache.clear();
+    lane.generation = generation;
+    this.report();
+  }
+
   insertFrame(
     role: PlaybackLaneRole,
     identity: FrameIdentity,
@@ -150,6 +186,9 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     durationUs = frame.duration ?? 0,
   ) {
     const lane = this.requireLane(role);
+    if (this.frameOwners.has(frame)) {
+      throw new Error("frame-owner-alias");
+    }
     if (
       identity.clipId !== lane.clipId ||
       identity.generation !== lane.generation
@@ -158,6 +197,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
       return false;
     }
     const inserted = lane.cache.insert(identity, frame, durationUs);
+    if (inserted) this.frameOwners.set(frame, role);
     this.enforceBudgets();
     this.report();
     return inserted;
@@ -169,12 +209,14 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     owner: string,
   ) {
     const lane = this.requireLane(role);
-    return lane.cache.acquireForTimestamp(
+    const lease = lane.cache.acquireForTimestamp(
       lane.clipId,
       lane.generation,
       timestampUs,
       owner,
     );
+    if (lease) this.leases.set(lease, role);
+    return lease;
   }
 
   leaseCrossfade(
@@ -206,6 +248,9 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 
   beginDecodeBatch(role: PlaybackLaneRole) {
     const lane = this.requireLane(role);
+    if (!this.observeDecoderQueue(role)) {
+      throw new Error("decode-queue-budget-exceeded");
+    }
     if (lane.decodeBatchActive) {
       throw new Error("decode-batch-already-active");
     }
@@ -225,6 +270,26 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     this.inactiveCaches.add(cache);
   }
 
+  observeDecoderQueue(
+    role: PlaybackLaneRole,
+    queueSize = this.requireLane(role).decoder?.decodeQueueSize ?? 0,
+  ) {
+    const lane = this.requireLane(role);
+    if (queueSize <= MAX_DECODE_QUEUE_SIZE) {
+      this.report();
+      return true;
+    }
+    lane.decoder?.close();
+    lane.decoder = null;
+    lane.decodeBatchActive = false;
+    this.fallback = {
+      path: "html-video-webgl2",
+      reason: "decode-queue-budget-exceeded",
+    };
+    this.report();
+    return false;
+  }
+
   updateTransport(transport: PlaybackTransportState) {
     this.transport = { ...transport };
     this.report();
@@ -235,6 +300,13 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     if (recovered) {
       this.rendererResourceGeneration += 1;
     } else {
+      this.releaseAllLeases();
+      for (const role of PLAYBACK_LANE_ROLES) {
+        this.releaseLane(this.slots[role]);
+        this.slots[role] = null;
+      }
+      for (const cache of this.inactiveCaches) cache.dispose();
+      this.inactiveCaches.clear();
       this.fallback = {
         path: "html-video-webgl2",
         reason: "renderer-device-lost",
@@ -293,6 +365,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
+    this.releaseAllLeases();
     for (const role of PLAYBACK_LANE_ROLES) {
       this.releaseLane(this.slots[role]);
       this.slots[role] = null;
@@ -347,6 +420,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
   }
 
   private disableOverlap(): PressureAction {
+    this.releaseLeases("overlap");
     this.releaseLane(this.slots.overlap);
     this.slots.overlap = null;
     this.overlapEnabled = false;
@@ -367,6 +441,19 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     lane.decoder = null;
     lane.cache.dispose();
     lane.decodeBatchActive = false;
+  }
+
+  private releaseLeases(role: PlaybackLaneRole) {
+    for (const [lease, leaseRole] of this.leases) {
+      if (leaseRole !== role) continue;
+      lease.release();
+      this.leases.delete(lease);
+    }
+  }
+
+  private releaseAllLeases() {
+    for (const lease of this.leases.keys()) lease.release();
+    this.leases.clear();
   }
 
   private requireLane(role: PlaybackLaneRole) {

@@ -17,10 +17,12 @@ export interface VideoTrackMetadata {
   codedWidth: number;
   codedHeight: number;
   frameRate: number;
+  decodeOrder: "dts-proven" | string;
 }
 
 export interface EncodedVideoSample {
   index: number;
+  decodeTimestampUs: number;
   timestampUs: number;
   durationUs: number;
   type: "key" | "delta";

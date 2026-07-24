@@ -14,7 +14,7 @@ import { FakeFrame } from "./fakes";
 class FakeLaneDecoder implements LaneDecoderResource {
   closeCount = 0;
 
-  constructor(public readonly decodeQueueSize = 0) {}
+  constructor(public decodeQueueSize = 0) {}
 
   close() {
     this.closeCount += 1;
@@ -74,6 +74,39 @@ describe("three-lane playback coordinator", () => {
       ),
     ).toThrow("fourth-playback-lane-prohibited");
     coordinator.dispose();
+  });
+
+  test("rejects aliased decoder and frame owners across lanes", () => {
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    const decoder = new FakeLaneDecoder();
+    coordinator.activate("pgm", "a", 1, decoder);
+    expect(() =>
+      coordinator.activate("prewarm", "b", 1, decoder),
+    ).toThrow("decoder-owner-alias");
+
+    coordinator.activate(
+      "prewarm",
+      "b",
+      1,
+      new FakeLaneDecoder(),
+    );
+    const frame = new FakeFrame(0);
+    coordinator.insertFrame(
+      "pgm",
+      { clipId: "a", generation: 1, timestampUs: 0 },
+      frame,
+    );
+    expect(() =>
+      coordinator.insertFrame(
+        "prewarm",
+        { clipId: "b", generation: 1, timestampUs: 0 },
+        frame,
+      ),
+    ).toThrow("frame-owner-alias");
+
+    coordinator.dispose();
+    expect(decoder.closeCount).toBe(1);
+    expect(frame.closeCount).toBe(1);
   });
 
   test("isolates source, generation, and frame ownership across all slots", () => {
@@ -140,6 +173,17 @@ describe("three-lane playback coordinator", () => {
       ),
     ).toThrow("decode-queue-budget-exceeded");
 
+    const pgmDecoder = coordinator.getLane("pgm")?.decoder;
+    expect(pgmDecoder).toBeInstanceOf(FakeLaneDecoder);
+    (pgmDecoder as FakeLaneDecoder).decodeQueueSize = 9;
+    expect(coordinator.observeDecoderQueue("pgm")).toBe(false);
+    expect((pgmDecoder as FakeLaneDecoder).closeCount).toBe(1);
+    expect(coordinator.snapshot().fallback).toEqual({
+      path: "html-video-webgl2",
+      reason: "decode-queue-budget-exceeded",
+    });
+
+    coordinator.activate("pgm", "a2", 2, new FakeLaneDecoder());
     const end = coordinator.beginDecodeBatch("pgm");
     expect(() => coordinator.beginDecodeBatch("pgm")).toThrow(
       "decode-batch-already-active",
@@ -211,6 +255,26 @@ describe("three-lane playback coordinator", () => {
       playing: true,
       discontinuityGeneration: 7,
     });
+    const pgmDecoder = new FakeLaneDecoder();
+    const overlapDecoder = new FakeLaneDecoder();
+    coordinator.activate("pgm", "a", 1, pgmDecoder);
+    coordinator.activate("overlap", "b", 1, overlapDecoder);
+    const pgmFrame = insertFrames(
+      coordinator,
+      "pgm",
+      "a",
+      1,
+      1,
+    )[0];
+    const overlapFrame = insertFrames(
+      coordinator,
+      "overlap",
+      "b",
+      1,
+      1,
+    )[0];
+    const leases = coordinator.leaseCrossfade(0);
+    expect(leases).not.toBeNull();
     coordinator.handleRendererLoss(true);
     expect(coordinator.snapshot()).toMatchObject({
       rendererResourceGeneration: 1,
@@ -222,12 +286,19 @@ describe("three-lane playback coordinator", () => {
     });
     coordinator.handleRendererLoss(false);
     expect(coordinator.snapshot()).toMatchObject({
+      slots: { pgm: null, prewarm: null, overlap: null },
       fallback: {
         path: "html-video-webgl2",
         reason: "renderer-device-lost",
       },
       transport: { presentationTimeSeconds: 12.5 },
     });
+    expect(pgmDecoder.closeCount).toBe(1);
+    expect(overlapDecoder.closeCount).toBe(1);
+    expect(pgmFrame.closeCount).toBe(1);
+    expect(overlapFrame.closeCount).toBe(1);
+    expect(leases?.pgm.valid).toBe(false);
+    expect(leases?.overlap.valid).toBe(false);
     expect(snapshots.length).toBeGreaterThan(0);
     coordinator.dispose();
   });

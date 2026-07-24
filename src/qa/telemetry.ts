@@ -1,4 +1,9 @@
-export type QaRendererBackend = "none" | "webgl2";
+export type QaRendererBackend =
+  | "none"
+  | "webgl2"
+  | "webgpu"
+  | "webcodecs-webgl2"
+  | "html-video-webgl2";
 export type QaDecoderState =
   | "unavailable"
   | "idle"
@@ -44,17 +49,27 @@ export interface QaTelemetrySnapshot {
     sharedVideoRefs: number;
     decodedFrames: number;
     activeDecoders: number;
+    gpuTextures: number;
+    gpuBuffers: number;
+    objectUrls: number;
+    videoElements: number;
   };
 }
 
 export interface QaMediaTelemetryUpdate {
+  renderer?: Partial<QaTelemetrySnapshot["renderer"]>;
   decoder?: Partial<QaTelemetrySnapshot["decoder"]>;
   cache?: Partial<QaTelemetrySnapshot["cache"]>;
   playback?: Partial<QaTelemetrySnapshot["playback"]>;
   resources?: Partial<
     Pick<
       QaTelemetrySnapshot["resources"],
-      "decodedFrames" | "activeDecoders"
+      | "decodedFrames"
+      | "activeDecoders"
+      | "gpuTextures"
+      | "gpuBuffers"
+      | "objectUrls"
+      | "videoElements"
     >
   >;
 }
@@ -94,6 +109,10 @@ const snapshot: QaTelemetrySnapshot = {
     sharedVideoRefs: 0,
     decodedFrames: 0,
     activeDecoders: 0,
+    gpuTextures: 0,
+    gpuBuffers: 0,
+    objectUrls: 0,
+    videoElements: 0,
   },
 };
 
@@ -123,6 +142,7 @@ export function updateSharedVideoResources(entries: number, refs: number) {
 }
 
 export function updateMediaTelemetry(update: QaMediaTelemetryUpdate) {
+  if (update.renderer) Object.assign(snapshot.renderer, update.renderer);
   if (update.decoder) Object.assign(snapshot.decoder, update.decoder);
   if (update.cache) Object.assign(snapshot.cache, update.cache);
   if (update.playback) Object.assign(snapshot.playback, update.playback);
@@ -169,4 +189,8 @@ export function resetQaTelemetryForTests() {
   snapshot.playback.activeLanes = 0;
   snapshot.resources.decodedFrames = 0;
   snapshot.resources.activeDecoders = 0;
+  snapshot.resources.gpuTextures = 0;
+  snapshot.resources.gpuBuffers = 0;
+  snapshot.resources.objectUrls = 0;
+  snapshot.resources.videoElements = 0;
 }
