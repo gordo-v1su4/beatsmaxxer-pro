@@ -9,9 +9,8 @@ import {
   jumpSizeBeatsFromControl,
 } from '../timesampler/integration';
 import {
-  LUMINANCE_ACCENT_CHANNEL_CEILING,
-  LUMINANCE_ACCENT_PEAK_LIFT,
-  luminanceAccentEnvelope,
+  luminanceAccentEnvelopeForMode,
+  timeSamplerAccentShaderSource,
 } from '../render/luminanceAccent';
 import {
   recordRenderedFrame,
@@ -748,10 +747,12 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
                 liveFrame.accent.presentationTimeSeconds) *
               1_000
             : Number.POSITIVE_INFINITY;
-          m.uniforms.uLumAccent.value =
-            liveFrame?.accent?.mode === 'LUM'
-              ? luminanceAccentEnvelope(accentElapsedMs)
-              : 0;
+          m.uniforms.uLumAccent.value = liveFrame?.accent
+            ? luminanceAccentEnvelopeForMode(
+                liveFrame.accent.mode,
+                accentElapsedMs,
+              )
+            : 0;
 
           const generationChanged =
             schedule !== undefined &&
@@ -2615,27 +2616,7 @@ function getFragmentShader(type: ModuleType): string {
 
     // per-jump accent: a quick pop right after each slice jump, then clean playback
     float flash = uAux1 * exp(-uAux2 * 5.0);
-    if(hitMode < 0.5){
-      // G004 LUM: bounded uniform scaling preserves hue/saturation and reserves
-      // channel headroom instead of producing clipped exposure highlights.
-      if(uLumAccent > 0.0){
-        float targetScale = 1.0 + uLumAccent * ${LUMINANCE_ACCENT_PEAK_LIFT.toFixed(8)};
-        float maxChannel = max(cur.r, max(cur.g, cur.b));
-        float safeScale = maxChannel > 0.0
-          ? min(targetScale, ${LUMINANCE_ACCENT_CHANNEL_CEILING.toFixed(8)} / maxChannel)
-          : 1.0;
-        wet = cur * safeScale;
-      }
-    } else if(hitMode < 1.5){
-      // RGB: chroma split hit
-      float sp = flash * 0.022;
-      wet.r = sampleSource(st + vec2(sp, 0.0)).r;
-      wet.b = sampleSource(st - vec2(sp, 0.0)).b;
-      wet *= 1.0 + flash * 0.18;
-    }
-    // RGB and OFF retain their existing beat punctuation. LUM restores exactly
-    // to the dry source when its shared 240 ms envelope reaches zero.
-    if(hitMode >= 0.5) wet *= 1.0 + pulse * 0.05;
+    ${timeSamplerAccentShaderSource()}
 
     float wetAmt = uMode < 0.5 ? 1.0 : mix_;
     if(uBypass > 0.5 && uMode > 0.5) wetAmt = 0.0;
