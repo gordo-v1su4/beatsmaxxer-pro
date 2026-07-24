@@ -12,4 +12,12 @@ export function installQaTelemetryBridge() {
       snapshot: getQaTelemetrySnapshot,
     },
   });
+
+  const publishSnapshot = () => {
+    document.documentElement.dataset.beatSurferQaTelemetry = JSON.stringify(
+      getQaTelemetrySnapshot(),
+    );
+  };
+  publishSnapshot();
+  window.setInterval(publishSnapshot, 500);
 }
