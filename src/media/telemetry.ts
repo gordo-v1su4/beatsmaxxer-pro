@@ -10,7 +10,10 @@ import type {
 } from "./FrameCache";
 import type {
   PlaybackCoordinatorSnapshot,
+  PlaybackCoordinatorOptions,
 } from "./PlaybackCoordinator";
+import { PlaybackCoordinator } from "./PlaybackCoordinator";
+import type { DecodedFrameLike } from "./types";
 
 export class QaMediaTelemetryBridge {
   decoder = (
@@ -76,4 +79,19 @@ export class QaMediaTelemetryBridge {
   resources(update: NonNullable<QaMediaTelemetryUpdate["resources"]>) {
     updateMediaTelemetry({ resources: update });
   }
+}
+
+export function createQaInstrumentedPlaybackCoordinator<
+  Frame extends DecodedFrameLike,
+>(options: PlaybackCoordinatorOptions = {}) {
+  const bridge = new QaMediaTelemetryBridge();
+  const coordinator = new PlaybackCoordinator<Frame>({
+    ...options,
+    onTelemetry(snapshot) {
+      bridge.coordinator(snapshot);
+      options.onTelemetry?.(snapshot);
+    },
+  });
+  bridge.coordinator(coordinator.snapshot());
+  return coordinator;
 }

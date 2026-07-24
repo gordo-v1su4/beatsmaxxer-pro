@@ -20,6 +20,14 @@ interface LeaseToken<Frame extends DecodedFrameLike> {
   release(): void;
 }
 
+export interface FrameLeaseObserver<Frame extends DecodedFrameLike> {
+  onTransfer?(
+    previous: FrameLease<Frame>,
+    next: FrameLease<Frame>,
+  ): void;
+  onRelease?(lease: FrameLease<Frame>): void;
+}
+
 export interface FrameCacheMetrics {
   occupancy: number;
   capacity: number;
@@ -55,6 +63,7 @@ export class FrameLease<Frame extends DecodedFrameLike> {
   constructor(
     private readonly token: LeaseToken<Frame>,
     public readonly owner: string,
+    private readonly observer?: FrameLeaseObserver<Frame>,
   ) {}
 
   get frame() {
@@ -68,8 +77,10 @@ export class FrameLease<Frame extends DecodedFrameLike> {
 
   transfer(owner: string): FrameLease<Frame> {
     if (!this.valid) throw new Error("frame-lease-released");
+    const next = new FrameLease(this.token, owner, this.observer);
     this.ownsToken = false;
-    return new FrameLease(this.token, owner);
+    this.observer?.onTransfer?.(this, next);
+    return next;
   }
 
   clone(owner: string): DetachedFrameLease<Frame> {
@@ -85,6 +96,7 @@ export class FrameLease<Frame extends DecodedFrameLike> {
     if (!this.ownsToken) return;
     this.ownsToken = false;
     this.token.release();
+    this.observer?.onRelease?.(this);
   }
 }
 
@@ -168,9 +180,10 @@ export class FrameCache<Frame extends DecodedFrameLike> {
   acquire(
     identity: FrameIdentity,
     owner: string,
+    observer?: FrameLeaseObserver<Frame>,
   ): FrameLease<Frame> | null {
     const entry = this.entries.get(frameKey(identity));
-    return entry ? this.leaseEntry(entry, owner) : null;
+    return entry ? this.leaseEntry(entry, owner, observer) : null;
   }
 
   acquireForTimestamp(
@@ -178,6 +191,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
     generation: number,
     timestampUs: number,
     owner: string,
+    observer?: FrameLeaseObserver<Frame>,
   ): FrameLease<Frame> | null {
     let selected: FrameEntry<Frame> | null = null;
     for (const entry of this.entries.values()) {
@@ -202,7 +216,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
         break;
       }
     }
-    return selected ? this.leaseEntry(selected, owner) : null;
+    return selected ? this.leaseEntry(selected, owner, observer) : null;
   }
 
   clearGeneration(clipId: string, generation: number) {
@@ -230,7 +244,11 @@ export class FrameCache<Frame extends DecodedFrameLike> {
     this.clear();
   }
 
-  private leaseEntry(entry: FrameEntry<Frame>, owner: string) {
+  private leaseEntry(
+    entry: FrameEntry<Frame>,
+    owner: string,
+    observer?: FrameLeaseObserver<Frame>,
+  ) {
     if (this.disposed || entry.pendingClose) return null;
     entry.leases += 1;
     entry.lastAccess = ++this.accessCounter;
@@ -248,7 +266,7 @@ export class FrameCache<Frame extends DecodedFrameLike> {
         }
       },
     };
-    return new FrameLease(token, owner);
+    return new FrameLease(token, owner, observer);
   }
 
   private evictLeastRecentlyUsed() {

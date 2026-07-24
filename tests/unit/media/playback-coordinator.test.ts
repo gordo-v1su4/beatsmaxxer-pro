@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { FrameCache } from "../../../src/media/FrameCache";
 import {
   MAX_DECODE_QUEUE_SIZE,
   MAX_FRAMES_PER_LANE,
@@ -208,13 +207,11 @@ describe("three-lane playback coordinator", () => {
       1,
       1,
     )[0];
-    const inactive = new FrameCache<FakeFrame>(1);
     const inactiveFrame = new FakeFrame(0);
-    inactive.insert(
+    coordinator.retainInactiveFrame(
       { clipId: "inactive", generation: 1, timestampUs: 0 },
       inactiveFrame,
     );
-    coordinator.retainInactiveCache(inactive);
 
     expect([
       coordinator.degradeForPressure(),
@@ -241,6 +238,54 @@ describe("three-lane playback coordinator", () => {
       },
     });
     coordinator.dispose();
+  });
+
+  test("rejects active and inactive frame aliases across pressure disposal", () => {
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    coordinator.activate("pgm", "active", 1, new FakeLaneDecoder());
+    const activeFrame = insertFrames(
+      coordinator,
+      "pgm",
+      "active",
+      1,
+      1,
+    )[0];
+    const activeLease = coordinator.leaseFrame(
+      "pgm",
+      0,
+      "renderer",
+    );
+
+    expect(() =>
+      coordinator.retainInactiveFrame(
+        { clipId: "inactive", generation: 1, timestampUs: 0 },
+        activeFrame,
+      ),
+    ).toThrow("frame-owner-alias");
+
+    const inactiveFrame = new FakeFrame(0);
+    coordinator.retainInactiveFrame(
+      { clipId: "inactive", generation: 1, timestampUs: 0 },
+      inactiveFrame,
+    );
+    expect(coordinator.snapshot().retainedFrames).toBe(2);
+
+    expect(coordinator.degradeForPressure()).toBe(
+      "inactive-cache-evicted",
+    );
+    expect(inactiveFrame.closeCount).toBe(1);
+    expect(activeFrame.closeCount).toBe(0);
+    expect(activeLease?.valid).toBe(true);
+    expect(coordinator.snapshot().retainedFrames).toBe(1);
+
+    coordinator.dispose();
+    expect(activeLease?.valid).toBe(false);
+    expect(activeFrame.closeCount).toBe(1);
+    expect(inactiveFrame.closeCount).toBe(1);
+    expect(coordinator.snapshot()).toMatchObject({
+      activeLeases: 0,
+      retainedFrames: 0,
+    });
   });
 
   test("preserves transport across renderer recovery or fallback", () => {

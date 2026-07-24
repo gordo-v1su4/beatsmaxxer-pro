@@ -2,6 +2,7 @@ import {
   FrameCache,
   type FrameIdentity,
   type FrameLease,
+  type FrameLeaseObserver,
 } from "./FrameCache";
 import type {
   DecodedFrameLike,
@@ -58,6 +59,7 @@ export interface PlaybackCoordinatorSnapshot {
     } | null
   >;
   retainedFrames: number;
+  activeLeases: number;
   activeDecoders: number;
   overlapEnabled: boolean;
   fallback: MediaFallback;
@@ -83,9 +85,24 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     prewarm: null,
     overlap: null,
   };
-  private readonly inactiveCaches = new Set<FrameCache<Frame>>();
-  private readonly frameOwners = new WeakMap<object, PlaybackLaneRole>();
+  private readonly inactiveCache: FrameCache<Frame>;
+  private readonly frameOwners = new WeakMap<
+    object,
+    PlaybackLaneRole | "inactive"
+  >();
   private readonly leases = new Map<FrameLease<Frame>, PlaybackLaneRole>();
+  private readonly leaseObserver: FrameLeaseObserver<Frame> = {
+    onTransfer: (previous, next) => {
+      const role = this.leases.get(previous);
+      if (!role) return;
+      this.leases.delete(previous);
+      this.leases.set(next, role);
+      this.report();
+    },
+    onRelease: (lease) => {
+      if (this.leases.delete(lease)) this.report();
+    },
+  };
   private pressureStage = 0;
   private disposed = false;
   private overlapEnabled = true;
@@ -101,6 +118,17 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
   };
 
   constructor(private readonly options: PlaybackCoordinatorOptions = {}) {
+    this.inactiveCache = new FrameCache<Frame>(
+      MAX_FRAMES_PER_LANE,
+      {
+        onClose: (frame) => {
+          if (this.frameOwners.get(frame) === "inactive") {
+            this.frameOwners.delete(frame);
+          }
+        },
+        onMetrics: () => this.report(),
+      },
+    );
     if (options.initialPlayback) {
       this.fallback = { ...options.initialPlayback };
     }
@@ -214,6 +242,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
       lane.generation,
       timestampUs,
       owner,
+      this.leaseObserver,
     );
     if (lease) this.leases.set(lease, role);
     return lease;
@@ -265,9 +294,24 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
     };
   }
 
-  retainInactiveCache(cache: FrameCache<Frame>) {
+  retainInactiveFrame(
+    identity: FrameIdentity,
+    frame: Frame,
+    durationUs = frame.duration ?? 0,
+  ) {
     this.assertOpen();
-    this.inactiveCaches.add(cache);
+    if (this.frameOwners.has(frame)) {
+      throw new Error("frame-owner-alias");
+    }
+    const inserted = this.inactiveCache.insert(
+      identity,
+      frame,
+      durationUs,
+    );
+    if (inserted) this.frameOwners.set(frame, "inactive");
+    this.enforceBudgets();
+    this.report();
+    return inserted;
   }
 
   observeDecoderQueue(
@@ -305,8 +349,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
         this.releaseLane(this.slots[role]);
         this.slots[role] = null;
       }
-      for (const cache of this.inactiveCaches) cache.dispose();
-      this.inactiveCaches.clear();
+      this.inactiveCache.clear();
       this.fallback = {
         path: "html-video-webgl2",
         reason: "renderer-device-lost",
@@ -352,6 +395,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
         overlap: slot("overlap"),
       },
       retainedFrames: this.totalRetainedFrames(),
+      activeLeases: this.leases.size,
       activeDecoders: PLAYBACK_LANE_ROLES.filter(
         (role) => this.slots[role]?.decoder,
       ).length,
@@ -370,8 +414,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
       this.releaseLane(this.slots[role]);
       this.slots[role] = null;
     }
-    for (const cache of this.inactiveCaches) cache.dispose();
-    this.inactiveCaches.clear();
+    this.inactiveCache.dispose();
     this.report();
   }
 
@@ -386,6 +429,9 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
       }
     }
     let overflow = this.totalRetainedFrames() - MAX_GLOBAL_FRAMES;
+    if (overflow > 0) {
+      overflow -= this.inactiveCache.evictUnleased(overflow);
+    }
     for (const role of ["prewarm", "overlap", "pgm"] as const) {
       if (overflow <= 0) break;
       overflow -= this.slots[role]?.cache.evictUnleased(overflow) ?? 0;
@@ -396,15 +442,17 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
   }
 
   private totalRetainedFrames() {
-    return PLAYBACK_LANE_ROLES.reduce(
-      (total, role) => total + (this.slots[role]?.cache.size ?? 0),
-      0,
+    return (
+      this.inactiveCache.size +
+      PLAYBACK_LANE_ROLES.reduce(
+        (total, role) => total + (this.slots[role]?.cache.size ?? 0),
+        0,
+      )
     );
   }
 
   private evictInactive(): PressureAction {
-    for (const cache of this.inactiveCaches) cache.dispose();
-    this.inactiveCaches.clear();
+    this.inactiveCache.clear();
     return "inactive-cache-evicted";
   }
 
@@ -428,6 +476,9 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
   }
 
   private selectPressureFallback(): PressureAction {
+    this.releaseLeases("pgm");
+    this.releaseLane(this.slots.pgm);
+    this.slots.pgm = null;
     this.fallback = {
       path: "html-video-webgl2",
       reason: "decoded-frame-pressure",

@@ -85,6 +85,95 @@ function longTrack(offsetUs: number) {
 }
 
 describe("headless media-core integration", () => {
+  test("1000 acquire/release cycles do not retain lease owners", () => {
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    coordinator.activate("pgm", "leak-check", 1, new HeadlessAdapter({
+      output() {},
+      error() {},
+    }));
+    const frame = new FakeFrame(0);
+    coordinator.insertFrame(
+      "pgm",
+      { clipId: "leak-check", generation: 1, timestampUs: 0 },
+      frame,
+    );
+
+    for (let index = 0; index < 1_000; index += 1) {
+      const lease = coordinator.leaseFrame("pgm", 0, `cycle-${index}`);
+      expect(lease).not.toBeNull();
+      lease?.release();
+    }
+
+    expect(coordinator.snapshot()).toMatchObject({
+      activeLeases: 0,
+      retainedFrames: 1,
+    });
+    coordinator.dispose();
+    expect(frame.closeCount).toBe(1);
+  });
+
+  test("transferred leases remain tracked through renderer loss", () => {
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    coordinator.activate("pgm", "transfer", 1, new HeadlessAdapter({
+      output() {},
+      error() {},
+    }));
+    const frame = new FakeFrame(0);
+    coordinator.insertFrame(
+      "pgm",
+      { clipId: "transfer", generation: 1, timestampUs: 0 },
+      frame,
+    );
+    const original = coordinator.leaseFrame("pgm", 0, "compositor");
+    const transferred = original?.transfer("renderer");
+
+    expect(original?.valid).toBe(false);
+    expect(transferred?.valid).toBe(true);
+    expect(coordinator.snapshot().activeLeases).toBe(1);
+    coordinator.handleRendererLoss(false);
+
+    expect(transferred?.valid).toBe(false);
+    expect(frame.closeCount).toBe(1);
+    expect(coordinator.snapshot()).toMatchObject({
+      activeLeases: 0,
+      retainedFrames: 0,
+      slots: { pgm: null },
+    });
+  });
+
+  test("stage-five fallback tears down remaining PGM ownership", () => {
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    const decoder = new HeadlessAdapter({
+      output() {},
+      error() {},
+    });
+    coordinator.activate("pgm", "pressure", 1, decoder);
+    const frame = new FakeFrame(0);
+    coordinator.insertFrame(
+      "pgm",
+      { clipId: "pressure", generation: 1, timestampUs: 0 },
+      frame,
+    );
+    const lease = coordinator.leaseFrame("pgm", 0, "renderer");
+
+    for (let stage = 0; stage < 5; stage += 1) {
+      coordinator.degradeForPressure();
+    }
+
+    expect(lease?.valid).toBe(false);
+    expect(decoder.closed).toBe(true);
+    expect(frame.closeCount).toBe(1);
+    expect(coordinator.snapshot()).toMatchObject({
+      activeLeases: 0,
+      retainedFrames: 0,
+      slots: { pgm: null },
+      fallback: {
+        path: "html-video-webgl2",
+        reason: "decoded-frame-pressure",
+      },
+    });
+  });
+
   test("random seeks dispose stale output and retain only the selected generation", async () => {
     const asset = createClipAsset("random", longTrack(1_000_000));
     const coordinator = new PlaybackCoordinator<FakeFrame>();

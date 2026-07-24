@@ -13,6 +13,8 @@ interface ImportMeta {
 interface Window {
   readonly __BEAT_SURFER_QA_TELEMETRY__?: {
     snapshot: () => import("./qa/telemetry").QaTelemetrySnapshot;
+    mediaCoordinatorSnapshot: () =>
+      import("./media/PlaybackCoordinator").PlaybackCoordinatorSnapshot;
   };
 }
 

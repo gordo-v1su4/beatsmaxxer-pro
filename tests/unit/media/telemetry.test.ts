@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FrameCache } from "../../../src/media/FrameCache";
 import { PlaybackCoordinator } from "../../../src/media/PlaybackCoordinator";
-import { QaMediaTelemetryBridge } from "../../../src/media/telemetry";
+import {
+  QaMediaTelemetryBridge,
+  createQaInstrumentedPlaybackCoordinator,
+} from "../../../src/media/telemetry";
 import {
   getQaTelemetrySnapshot,
   resetQaTelemetryForTests,
@@ -80,6 +83,23 @@ describe("media core QA telemetry bridge", () => {
       resources: { decodedFrames: 0, activeDecoders: 0 },
     });
     cache.dispose();
+    coordinator.dispose();
+  });
+
+  test("production coordinator factory publishes media lifecycle telemetry", () => {
+    resetQaTelemetryForTests();
+    const coordinator =
+      createQaInstrumentedPlaybackCoordinator<FakeFrame>();
+    coordinator.activate("pgm", "factory", 1, {
+      decodeQueueSize: 2,
+      close() {},
+    });
+
+    expect(getQaTelemetrySnapshot()).toMatchObject({
+      playback: { activeLanes: 1 },
+      decoder: { queueSize: 2 },
+      resources: { activeDecoders: 1 },
+    });
     coordinator.dispose();
   });
 });
