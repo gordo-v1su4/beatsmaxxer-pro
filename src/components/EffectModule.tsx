@@ -5,6 +5,11 @@ import type { ModuleType, ModuleConfig, VideoLayer, MidiLayer } from '../App';
 import { Knob } from './Knob';
 import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
+import {
+  recordRenderedFrame,
+  registerWebGlRenderer,
+  updateSharedVideoResources,
+} from '../qa/telemetry';
 
 interface EffectModuleProps {
   config: ModuleConfig;
@@ -369,10 +374,19 @@ export function VUMeter({ value, color }: { value: number; color: string }) {
     (FX preview and PGM monitor), so all views stay frame-synced. */
 const sharedVideos: Record<string, { url: string; video: HTMLVideoElement; texture: THREE.VideoTexture; refs: number }> = {};
 
+function refreshSharedVideoTelemetry() {
+  const entries = Object.values(sharedVideos);
+  updateSharedVideoResources(
+    entries.length,
+    entries.reduce((total, entry) => total + entry.refs, 0),
+  );
+}
+
 function acquireSharedVideo(moduleId: string, url: string) {
   const existing = sharedVideos[moduleId];
   if (existing && existing.url === url) {
     existing.refs++;
+    refreshSharedVideoTelemetry();
     return existing;
   }
   if (existing) destroySharedVideo(moduleId);
@@ -395,6 +409,7 @@ function acquireSharedVideo(moduleId: string, url: string) {
 
   const entry = { url, video, texture, refs: 1 };
   sharedVideos[moduleId] = entry;
+  refreshSharedVideoTelemetry();
   return entry;
 }
 
@@ -402,7 +417,11 @@ function releaseSharedVideo(moduleId: string, url: string) {
   const entry = sharedVideos[moduleId];
   if (!entry || entry.url !== url) return;
   entry.refs--;
-  if (entry.refs <= 0) destroySharedVideo(moduleId);
+  if (entry.refs <= 0) {
+    destroySharedVideo(moduleId);
+  } else {
+    refreshSharedVideoTelemetry();
+  }
 }
 
 function destroySharedVideo(moduleId: string) {
@@ -413,6 +432,7 @@ function destroySharedVideo(moduleId: string) {
   entry.video.src = '';
   entry.video.load();
   delete sharedVideos[moduleId];
+  refreshSharedVideoTelemetry();
 }
 
 /** Per-module shared clock: the FX-preview instance drives the time-remap engine and
@@ -570,6 +590,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     const rtW = Math.max(1, container.clientWidth), rtH = Math.max(1, container.clientHeight);
     const rtA = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
     const rtB = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
+    const unregisterRenderer = registerWebGlRenderer(2);
     let flip = false;
 
     const copyMat = new THREE.ShaderMaterial({
@@ -1058,6 +1079,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       copyMat.uniforms.uTex.value = rtWrite.texture;
       renderer.setRenderTarget(null);
       renderer.render(copyScene, camera);
+      recordRenderedFrame(performance.now());
       flip = !flip;
 
       frameRef.current = requestAnimationFrame(animate);
@@ -1076,6 +1098,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       copyMat.dispose();
       renderer.dispose();
       mat.dispose();
+      unregisterRenderer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, color, mode]);

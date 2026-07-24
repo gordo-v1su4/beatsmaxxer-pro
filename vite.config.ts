@@ -132,6 +132,40 @@ export default defineConfig(({ mode }) => {
   };
 });
 
+async function readRequestBody(req: AsyncIterable<Uint8Array>) {
+  const chunks: Uint8Array[] = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const size = chunks.reduce((total, chunk) => total + chunk.byteLength, 0);
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+function postEssentiaBytes(
+  apiBaseUrl: string,
+  apiKey: string,
+  engine: string,
+  endpointName: "fast" | "rhythm",
+  contentType: string,
+  body: Uint8Array,
+) {
+  const endpoint = new URL(`${apiBaseUrl.replace(/\/+$/, "")}/analyze/${endpointName}`);
+  if (engine) endpoint.searchParams.set("engine", engine);
+
+  return fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": contentType,
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    },
+    body,
+  });
+}
+
 async function postEssentiaAnalysis(
   apiBaseUrl: string,
   apiKey: string,
