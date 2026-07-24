@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 artifacts
+.playwright-mcp/
 
 # Local environment files may contain server-side credentials.
 .env
