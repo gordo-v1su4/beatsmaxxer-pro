@@ -74,9 +74,23 @@ export interface QaMediaTelemetryUpdate {
   >;
 }
 
+export type QaOwnedResourceKey =
+  | "gpuTextures"
+  | "gpuBuffers";
+
+export type QaOwnedResourceDelta = Partial<
+  Record<QaOwnedResourceKey, number>
+>;
+
+export interface QaResourceRegistration {
+  add(delta: QaOwnedResourceDelta): void;
+  release(): void;
+}
+
 const FRAME_SAMPLE_LIMIT = 120;
 const frameIntervals: number[] = [];
 let lastFrameAt: number | null = null;
+const ownedResources = new Map<symbol, Record<QaOwnedResourceKey, number>>();
 
 const snapshot: QaTelemetrySnapshot = {
   renderer: {
@@ -149,6 +163,48 @@ export function updateMediaTelemetry(update: QaMediaTelemetryUpdate) {
   if (update.resources) Object.assign(snapshot.resources, update.resources);
 }
 
+export function registerQaResourceOwner(
+  initial: QaOwnedResourceDelta = {},
+): QaResourceRegistration {
+  const token = Symbol("qa-resource-owner");
+  ownedResources.set(token, {
+    gpuTextures: 0,
+    gpuBuffers: 0,
+  });
+
+  const add = (delta: QaOwnedResourceDelta) => {
+    const owned = ownedResources.get(token);
+    if (!owned) return;
+    for (const key of Object.keys(delta) as QaOwnedResourceKey[]) {
+      const value = delta[key];
+      if (value === undefined || !Number.isFinite(value)) continue;
+      owned[key] = Math.max(0, owned[key] + value);
+    }
+    refreshOwnedResourceTotals();
+  };
+  add(initial);
+
+  return {
+    add,
+    release() {
+      if (!ownedResources.delete(token)) return;
+      refreshOwnedResourceTotals();
+    },
+  };
+}
+
+function refreshOwnedResourceTotals() {
+  for (const key of [
+    "gpuTextures",
+    "gpuBuffers",
+  ] as const) {
+    snapshot.resources[key] = [...ownedResources.values()].reduce(
+      (sum, resources) => sum + resources[key],
+      0,
+    );
+  }
+}
+
 export function recordRenderedFrame(frameAt: number) {
   snapshot.frames.rendered += 1;
   if (lastFrameAt !== null) {
@@ -168,6 +224,7 @@ export function getQaTelemetrySnapshot(): QaTelemetrySnapshot {
 }
 
 export function resetQaTelemetryForTests() {
+  ownedResources.clear();
   frameIntervals.length = 0;
   lastFrameAt = null;
   snapshot.renderer.backend = "none";

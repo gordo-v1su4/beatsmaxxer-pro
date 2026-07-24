@@ -16,6 +16,10 @@ import {
   resetQaTelemetryForTests,
 } from "../../../src/qa/telemetry";
 import { FakeFrame } from "../../unit/media/fakes";
+import {
+  WebCodecsRenderer,
+  type WebGl2Backend,
+} from "../../../src/render/webgl/WebCodecsRenderer";
 
 class FakeGpuBackend implements WebGpuBackend<FakeFrame> {
   readonly events: string[] = [];
@@ -82,6 +86,15 @@ class FakeGpuBackend implements WebGpuBackend<FakeFrame> {
   dispose() {
     this.events.push("dispose");
   }
+}
+
+class FakeGlBackend implements WebGl2Backend<FakeFrame> {
+  lost = false;
+  presentSource() {}
+  onContextLost() {
+    return () => {};
+  }
+  dispose() {}
 }
 
 function request(
@@ -206,6 +219,40 @@ describe("G006 WebGPU TimeSampler vertical slice", () => {
     stale.coordinator.dispose();
     compositor.dispose();
     expect(getQaTelemetrySnapshot().resources.gpuBuffers).toBe(0);
+  });
+
+  test("sums concurrent renderer-owned resources and releases only the disposing owner", () => {
+    resetQaTelemetryForTests();
+    const telemetry = new QaMediaTelemetryBridge();
+    const compositor = new GpuCompositor(new FakeGpuBackend(), {
+      telemetry,
+    });
+    const webgl = new WebCodecsRenderer(
+      new FakeGlBackend(),
+      undefined,
+      telemetry,
+    );
+    const state = leasedFrame();
+    const submission = compositor.present(state.lease, request());
+
+    expect(getQaTelemetrySnapshot().resources).toMatchObject({
+      gpuTextures: 3,
+      gpuBuffers: 1,
+    });
+
+    compositor.dispose();
+    expect(getQaTelemetrySnapshot().resources).toMatchObject({
+      gpuTextures: 2,
+      gpuBuffers: 0,
+    });
+
+    webgl.dispose();
+    expect(getQaTelemetrySnapshot().resources).toMatchObject({
+      gpuTextures: 0,
+      gpuBuffers: 0,
+    });
+    submission.receipt.release();
+    state.coordinator.dispose();
   });
 
   test("shader sources encode the external-to-linear and LUM/RGB/OFF contract", async () => {

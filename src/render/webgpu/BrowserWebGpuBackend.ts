@@ -163,15 +163,20 @@ export class BrowserWebGpuBackend<
     const adapter = await gpu.requestAdapter();
     if (!adapter) throw new Error("webgpu-adapter-unavailable");
     const device = await adapter.requestDevice();
-    const context = canvas.getContext(
-      "webgpu" as "2d",
-    ) as unknown as BrowserGpuCanvasContext | null;
-    if (!context) throw new Error("webgpu-context-unavailable");
-    return new BrowserWebGpuBackend<Frame>(
-      device,
-      context,
-      gpu.getPreferredCanvasFormat(),
-    );
+    try {
+      const context = canvas.getContext(
+        "webgpu" as "2d",
+      ) as unknown as BrowserGpuCanvasContext | null;
+      if (!context) throw new Error("webgpu-context-unavailable");
+      return new BrowserWebGpuBackend<Frame>(
+        device,
+        context,
+        gpu.getPreferredCanvasFormat(),
+      );
+    } catch (error) {
+      device.destroy?.();
+      throw error;
+    }
   }
 
   get lost() {

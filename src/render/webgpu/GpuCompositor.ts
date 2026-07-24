@@ -4,6 +4,7 @@ import {
 } from "../../media/FrameCache";
 import type { DecodedFrameLike } from "../../media/types";
 import { QaMediaTelemetryBridge } from "../../media/telemetry";
+import type { QaResourceRegistration } from "../../qa/telemetry";
 import {
   RendererPresentationError,
   sanitizeRenderFrameRequest,
@@ -74,6 +75,7 @@ export class GpuCompositor<Frame extends DecodedFrameLike>
   private disposed = false;
   private deviceLost = false;
   private readonly stopLossListener: () => void;
+  private readonly resourceRegistration?: QaResourceRegistration;
 
   constructor(
     private readonly backend: WebGpuBackend<Frame>,
@@ -82,7 +84,7 @@ export class GpuCompositor<Frame extends DecodedFrameLike>
       onDeviceLost?: (reason: string) => void;
     } = {},
   ) {
-    this.options.telemetry?.resources({
+    this.resourceRegistration = this.options.telemetry?.registerResources({
       gpuBuffers: 1,
     });
     this.stopLossListener = backend.onDeviceLost((reason) => {
@@ -142,9 +144,7 @@ export class GpuCompositor<Frame extends DecodedFrameLike>
     this.stopLossListener();
     this.destroyLinearTexture();
     this.backend.dispose();
-    this.options.telemetry?.resources({
-      gpuBuffers: 0,
-    });
+    this.resourceRegistration?.release();
   }
 
   private ensureLinearTexture(request: RenderFrameRequest) {
@@ -160,7 +160,7 @@ export class GpuCompositor<Frame extends DecodedFrameLike>
       colorSpace: "linear-srgb",
     });
     this.dimensions = dimensions;
-    this.options.telemetry?.resources({
+    this.resourceRegistration?.add({
       gpuTextures: 1,
     });
     return this.linearTexture;
@@ -171,8 +171,8 @@ export class GpuCompositor<Frame extends DecodedFrameLike>
     this.backend.destroyTexture(this.linearTexture);
     this.linearTexture = null;
     this.dimensions = "";
-    this.options.telemetry?.resources({
-      gpuTextures: 0,
+    this.resourceRegistration?.add({
+      gpuTextures: -1,
     });
   }
 }

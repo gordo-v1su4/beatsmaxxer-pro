@@ -13,15 +13,20 @@ function compileShader(
 ) {
   const shader = gl.createShader(type);
   if (!shader) throw new Error("webgl-shader-create-failed");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    const message =
-      gl.getShaderInfoLog(shader) || "webgl-shader-compile-failed";
+  try {
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      throw new Error(
+        gl.getShaderInfoLog(shader) ||
+          "webgl-shader-compile-failed",
+      );
+    }
+    return shader;
+  } catch (error) {
     gl.deleteShader(shader);
-    throw new Error(message);
+    throw error;
   }
-  return shader;
 }
 
 function createProgram(
@@ -30,28 +35,32 @@ function createProgram(
 ) {
   const program = gl.createProgram();
   if (!program) throw new Error("webgl-program-create-failed");
-  const vertex = compileShader(
-    gl,
-    gl.VERTEX_SHADER,
-    FULLSCREEN_VERTEX_GLSL,
-  );
-  const fragment = compileShader(
-    gl,
-    gl.FRAGMENT_SHADER,
-    fragmentSource,
-  );
-  gl.attachShader(program, vertex);
-  gl.attachShader(program, fragment);
-  gl.linkProgram(program);
-  gl.deleteShader(vertex);
-  gl.deleteShader(fragment);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    const message =
-      gl.getProgramInfoLog(program) || "webgl-program-link-failed";
+  let vertex: WebGLShader | null = null;
+  let fragment: WebGLShader | null = null;
+  try {
+    vertex = compileShader(
+      gl,
+      gl.VERTEX_SHADER,
+      FULLSCREEN_VERTEX_GLSL,
+    );
+    fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+    gl.attachShader(program, vertex);
+    gl.attachShader(program, fragment);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error(
+        gl.getProgramInfoLog(program) ||
+          "webgl-program-link-failed",
+      );
+    }
+    return program;
+  } catch (error) {
     gl.deleteProgram(program);
-    throw new Error(message);
+    throw error;
+  } finally {
+    if (vertex) gl.deleteShader(vertex);
+    if (fragment) gl.deleteShader(fragment);
   }
-  return program;
 }
 
 function effectMode(request: RenderFrameRequest) {
@@ -82,18 +91,36 @@ export class BrowserWebGl2Backend<Source extends object>
     });
     if (!gl) throw new Error("webgl2-unavailable");
     this.gl = gl;
-    this.ingestProgram = createProgram(gl, EXTERNAL_TO_LINEAR_GLSL);
-    this.compositeProgram = createProgram(
-      gl,
-      TIMESAMPLER_COMPOSITE_GLSL,
-    );
-    const sourceTexture = gl.createTexture();
-    const linearTexture = gl.createTexture();
-    const framebuffer = gl.createFramebuffer();
-    const vao = gl.createVertexArray();
-    if (!sourceTexture || !linearTexture || !framebuffer || !vao) {
-      throw new Error("webgl-resource-create-failed");
+    let ingestProgram: WebGLProgram | null = null;
+    let compositeProgram: WebGLProgram | null = null;
+    let sourceTexture: WebGLTexture | null = null;
+    let linearTexture: WebGLTexture | null = null;
+    let framebuffer: WebGLFramebuffer | null = null;
+    let vao: WebGLVertexArrayObject | null = null;
+    try {
+      ingestProgram = createProgram(gl, EXTERNAL_TO_LINEAR_GLSL);
+      compositeProgram = createProgram(
+        gl,
+        TIMESAMPLER_COMPOSITE_GLSL,
+      );
+      sourceTexture = gl.createTexture();
+      linearTexture = gl.createTexture();
+      framebuffer = gl.createFramebuffer();
+      vao = gl.createVertexArray();
+      if (!sourceTexture || !linearTexture || !framebuffer || !vao) {
+        throw new Error("webgl-resource-create-failed");
+      }
+    } catch (error) {
+      if (framebuffer) gl.deleteFramebuffer(framebuffer);
+      if (sourceTexture) gl.deleteTexture(sourceTexture);
+      if (linearTexture) gl.deleteTexture(linearTexture);
+      if (vao) gl.deleteVertexArray(vao);
+      if (ingestProgram) gl.deleteProgram(ingestProgram);
+      if (compositeProgram) gl.deleteProgram(compositeProgram);
+      throw error;
     }
+    this.ingestProgram = ingestProgram;
+    this.compositeProgram = compositeProgram;
     this.sourceTexture = sourceTexture;
     this.linearTexture = linearTexture;
     this.framebuffer = framebuffer;

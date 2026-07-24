@@ -25,6 +25,9 @@ interface MediaRendererRuntimeOptions<
   webgpu?: DecodedFrameRenderer<Frame>;
   webgl?: DecodedFrameRenderer<Frame>;
   htmlVideo?: HtmlVideoRendererLike<Video>;
+  initializationFailures?: Partial<
+    Record<MediaFallback["path"], string>
+  >;
 }
 
 function reasonFrom(error: unknown, fallback: string) {
@@ -164,26 +167,64 @@ export class MediaRendererRuntime<
   }
 
   private normalizeAvailablePath() {
-    if (
-      this.fallback.path === "webcodecs-webgpu" &&
-      !this.options.webgpu
-    ) {
-      this.fallback = this.options.webgl
-        ? {
-            path: "webcodecs-webgl2",
-            reason: "webgpu-renderer-unavailable",
-          }
-        : this.compatibilityFallback(
+    if (this.fallback.path === "webcodecs-webgpu") {
+      if (this.options.webgpu) return;
+      if (this.options.webgl) {
+        this.fallback = {
+          path: "webcodecs-webgl2",
+          reason: this.initializationFailure(
+            "webcodecs-webgpu",
             "webgpu-renderer-unavailable",
-          );
+          ),
+        };
+        return;
+      }
+      if (this.options.htmlVideo) {
+        this.fallback = {
+          path: "html-video-webgl2",
+          reason:
+            this.options.initializationFailures?.[
+              "webcodecs-webgl2"
+            ] ??
+            this.initializationFailure(
+              "webcodecs-webgpu",
+              "decoded-renderer-unavailable",
+            ),
+        };
+        return;
+      }
+      this.fallback = {
+        path: "native-static",
+        reason:
+          this.options.initializationFailures?.[
+            "html-video-webgl2"
+          ] ??
+          this.options.initializationFailures?.[
+            "webcodecs-webgl2"
+          ] ??
+          this.initializationFailure(
+            "webcodecs-webgpu",
+            "live-renderer-unavailable",
+          ),
+      };
+      return;
     }
-    if (
-      this.fallback.path === "webcodecs-webgl2" &&
-      !this.options.webgl
-    ) {
-      this.fallback = this.compatibilityFallback(
+    if (this.fallback.path === "webcodecs-webgl2") {
+      if (this.options.webgl) return;
+      const reason = this.initializationFailure(
+        "webcodecs-webgl2",
         "webgl-renderer-unavailable",
       );
+      this.fallback = this.options.htmlVideo
+        ? { path: "html-video-webgl2", reason }
+        : {
+            path: "native-static",
+            reason:
+              this.options.initializationFailures?.[
+                "html-video-webgl2"
+              ] ?? reason,
+          };
+      return;
     }
     if (
       this.fallback.path === "html-video-webgl2" &&
@@ -191,9 +232,19 @@ export class MediaRendererRuntime<
     ) {
       this.fallback = {
         path: "native-static",
-        reason: "html-video-renderer-unavailable",
+        reason: this.initializationFailure(
+          "html-video-webgl2",
+          "html-video-renderer-unavailable",
+        ),
       };
     }
+  }
+
+  private initializationFailure(
+    path: MediaFallback["path"],
+    fallback: string,
+  ) {
+    return this.options.initializationFailures?.[path] ?? fallback;
   }
 
   private assertOpen() {

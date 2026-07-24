@@ -4,6 +4,7 @@ import {
 } from "../../media/FrameCache";
 import type { DecodedFrameLike } from "../../media/types";
 import type { QaMediaTelemetryBridge } from "../../media/telemetry";
+import type { QaResourceRegistration } from "../../qa/telemetry";
 import {
   RendererPresentationError,
   sanitizeRenderFrameRequest,
@@ -42,13 +43,16 @@ export class WebCodecsRenderer<Frame extends DecodedFrameLike>
   private disposed = false;
   private contextLost = false;
   private readonly stopLossListener: () => void;
+  private readonly resourceRegistration?: QaResourceRegistration;
 
   constructor(
     private readonly backend: WebGl2Backend<Frame>,
     onContextLost?: (reason: string) => void,
     private readonly telemetry?: QaMediaTelemetryBridge,
   ) {
-    this.telemetry?.resources({ gpuTextures: 2 });
+    this.resourceRegistration = this.telemetry?.registerResources({
+      gpuTextures: 2,
+    });
     this.stopLossListener = backend.onContextLost((reason) => {
       this.contextLost = true;
       onContextLost?.(reason);
@@ -91,6 +95,6 @@ export class WebCodecsRenderer<Frame extends DecodedFrameLike>
     this.disposed = true;
     this.stopLossListener();
     this.backend.dispose();
-    this.telemetry?.resources({ gpuTextures: 0 });
+    this.resourceRegistration?.release();
   }
 }

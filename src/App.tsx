@@ -108,7 +108,7 @@ const MODULES_B: ModuleConfig[] = [
   },
 ];
 
-const ALL_MODULES: ModuleConfig[] = [...MODULES, ...MODULES_B];
+export const ALL_MODULES: ModuleConfig[] = [...MODULES, ...MODULES_B];
 
 const QA_SAMPLE_CLIPS = [
   'hf_20260715_204952_1521dea1-55e8-4838-a74c-2afbb212e243.mp4',

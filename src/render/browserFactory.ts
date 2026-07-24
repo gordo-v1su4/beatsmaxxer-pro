@@ -12,6 +12,10 @@ import type { DecodedFrameLike } from "../media/types";
 import { createMediaRendererRuntime } from "./factory";
 import { probeRendererCapabilities } from "./capabilities";
 import type { RenderFrameRequest } from "./contracts";
+import type {
+  DecodedFrameRenderer,
+  HtmlVideoRendererLike,
+} from "./contracts";
 import { HtmlVideoRenderer } from "./legacy/HtmlVideoRenderer";
 import { BrowserWebGl2Backend } from "./webgl/BrowserWebGl2Backend";
 import { WebCodecsRenderer } from "./webgl/WebCodecsRenderer";
@@ -22,6 +26,65 @@ export interface BrowserMediaRendererCanvases {
   webgpu: HTMLCanvasElement;
   webgl: HTMLCanvasElement;
   htmlVideo: HTMLCanvasElement;
+}
+
+export interface BrowserRendererFactories<
+  Frame extends DecodedFrameLike,
+> {
+  createWebGpu(
+    canvas: HTMLCanvasElement,
+    telemetry: QaMediaTelemetryBridge,
+    onDeviceLost: (reason: string) => void,
+  ): Promise<DecodedFrameRenderer<Frame>>;
+  createWebGl(
+    canvas: HTMLCanvasElement,
+    telemetry: QaMediaTelemetryBridge,
+  ): DecodedFrameRenderer<Frame>;
+  createHtmlVideo(
+    canvas: HTMLCanvasElement,
+  ): HtmlVideoRendererLike<HTMLVideoElement>;
+}
+
+function defaultBrowserRendererFactories<
+  Frame extends DecodedFrameLike,
+>(): BrowserRendererFactories<Frame> {
+  return {
+    async createWebGpu(canvas, telemetry, onDeviceLost) {
+      const backend = await BrowserWebGpuBackend.create<Frame>(canvas);
+      try {
+        return new GpuCompositor(backend, {
+          telemetry,
+          onDeviceLost,
+        });
+      } catch (error) {
+        backend.dispose();
+        throw error;
+      }
+    },
+    createWebGl(canvas, telemetry) {
+      const backend = new BrowserWebGl2Backend<Frame>(canvas);
+      try {
+        return new WebCodecsRenderer(
+          backend,
+          undefined,
+          telemetry,
+        );
+      } catch (error) {
+        backend.dispose();
+        throw error;
+      }
+    },
+    createHtmlVideo(canvas) {
+      const backend =
+        new BrowserWebGl2Backend<HTMLVideoElement>(canvas);
+      try {
+        return new HtmlVideoRenderer(backend);
+      } catch (error) {
+        backend.dispose();
+        throw error;
+      }
+    },
+  };
 }
 
 export async function probeBrowserRendererCapabilities<
@@ -103,49 +166,78 @@ export async function createBrowserMediaRendererRuntime<
   capabilities: RendererCapabilities;
   coordinator: PlaybackCoordinator<Frame>;
   canvases: BrowserMediaRendererCanvases;
+  factories?: BrowserRendererFactories<Frame>;
 }) {
   const telemetry = new QaMediaTelemetryBridge();
+  const factories =
+    options.factories ?? defaultBrowserRendererFactories<Frame>();
   let runtime:
     | ReturnType<
         typeof createMediaRendererRuntime<Frame, HTMLVideoElement>
       >
     | undefined;
-  const webgpu =
+  const initializationFailures: Partial<
+    Record<
+      "webcodecs-webgpu" | "webcodecs-webgl2" | "html-video-webgl2",
+      string
+    >
+  > = {};
+  let webgpu: DecodedFrameRenderer<Frame> | undefined;
+  let webgl: DecodedFrameRenderer<Frame> | undefined;
+  let htmlVideo: HtmlVideoRendererLike<HTMLVideoElement> | undefined;
+
+  if (
     options.capabilities.webgpuExternalTexture.available &&
     options.capabilities.webgpuExternalTexture.sampleFrameProbePassed
-      ? new GpuCompositor(
-          await BrowserWebGpuBackend.create<Frame>(
-            options.canvases.webgpu,
-          ),
-          {
-            telemetry,
-            onDeviceLost(reason) {
-              runtime?.handleWebGpuDeviceLoss(reason);
-            },
-          },
-        )
-      : undefined;
-  const webgl =
+  ) {
+    try {
+      webgpu = await factories.createWebGpu(
+        options.canvases.webgpu,
+        telemetry,
+        (reason) => runtime?.handleWebGpuDeviceLoss(reason),
+      );
+    } catch {
+      initializationFailures["webcodecs-webgpu"] =
+        "webgpu-renderer-create-failed";
+    }
+  }
+  if (
     options.capabilities.webgl2VideoFrame.available &&
     options.capabilities.webgl2VideoFrame.sampleFrameProbePassed
-      ? new WebCodecsRenderer(
-          new BrowserWebGl2Backend<Frame>(options.canvases.webgl),
-          undefined,
-          telemetry,
-        )
-      : undefined;
-  const htmlVideo = options.capabilities.htmlVideo
-    ? new HtmlVideoRenderer(
-        new BrowserWebGl2Backend<HTMLVideoElement>(
-          options.canvases.htmlVideo,
-        ),
-      )
-    : undefined;
-  runtime = createMediaRendererRuntime({
-    ...options,
-    webgpu,
-    webgl,
-    htmlVideo,
-  });
-  return runtime;
+  ) {
+    try {
+      webgl = factories.createWebGl(
+        options.canvases.webgl,
+        telemetry,
+      );
+    } catch {
+      initializationFailures["webcodecs-webgl2"] =
+        "webgl-renderer-create-failed";
+    }
+  }
+  if (options.capabilities.htmlVideo) {
+    try {
+      htmlVideo = factories.createHtmlVideo(
+        options.canvases.htmlVideo,
+      );
+    } catch {
+      initializationFailures["html-video-webgl2"] =
+        "html-video-renderer-create-failed";
+    }
+  }
+  try {
+    runtime = createMediaRendererRuntime({
+      ...options,
+      webgpu,
+      webgl,
+      htmlVideo,
+      initializationFailures,
+    });
+    return runtime;
+  } catch (error) {
+    webgpu?.dispose();
+    webgl?.dispose();
+    htmlVideo?.dispose();
+    throw error;
+  }
 }

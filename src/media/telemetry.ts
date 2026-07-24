@@ -1,5 +1,8 @@
 import {
+  registerQaResourceOwner,
   updateMediaTelemetry,
+  type QaOwnedResourceDelta,
+  type QaResourceRegistration,
   type QaMediaTelemetryUpdate,
 } from "../qa/telemetry";
 import type {
@@ -78,6 +81,12 @@ export class QaMediaTelemetryBridge {
 
   resources(update: NonNullable<QaMediaTelemetryUpdate["resources"]>) {
     updateMediaTelemetry({ resources: update });
+  }
+
+  registerResources(
+    initial: QaOwnedResourceDelta = {},
+  ): QaResourceRegistration {
+    return registerQaResourceOwner(initial);
   }
 }
 

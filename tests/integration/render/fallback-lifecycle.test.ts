@@ -13,6 +13,10 @@ import {
 } from "../../../src/render/contracts";
 import { createMediaRendererRuntime } from "../../../src/render/factory";
 import {
+  createBrowserMediaRendererRuntime,
+  type BrowserRendererFactories,
+} from "../../../src/render/browserFactory";
+import {
   LEGACY_EFFECTS,
   previewPolicy,
   rendererLaneForEffect,
@@ -23,6 +27,7 @@ import {
   TIMESAMPLER_COMPOSITE_GLSL,
 } from "../../../src/render/webgl/shaders";
 import { FakeFrame } from "../../unit/media/fakes";
+import { ALL_MODULES } from "../../../src/App";
 
 const direct: DirectPlaybackProbe = {
   supported: true,
@@ -274,13 +279,18 @@ describe("G006 renderer fallback lifecycle", () => {
     });
     expect(LEGACY_EFFECTS).toEqual([
       "transition",
-      "videoecho",
-      "generative",
-      "arpeggiator",
-      "tapdelay",
       "speedramp",
-      "color",
+      "tapdelay",
+      "punch",
+      "shake",
+      "orbit",
+      "focus",
     ]);
+    expect(LEGACY_EFFECTS).toEqual(
+      ALL_MODULES.map((module) => module.id).filter(
+        (effect) => effect !== "timesampler",
+      ),
+    );
     expect(LEGACY_EFFECTS.every(
       (effect) => rendererLaneForEffect(effect) === "legacy",
     )).toBe(true);
@@ -290,5 +300,123 @@ describe("G006 renderer fallback lifecycle", () => {
     expect(TIMESAMPLER_COMPOSITE_GLSL).toContain("linearToSrgb");
     expect(TIMESAMPLER_COMPOSITE_GLSL).toContain("uEffect.x < 0.5");
     expect(TIMESAMPLER_COMPOSITE_GLSL).toContain("uEffect.x < 1.5");
+  });
+
+  test("continues from post-probe WebGPU construction failure to WebCodecs/WebGL2", async () => {
+    const state = setup();
+    const webgl = new FakeDecodedRenderer("webcodecs-webgl2");
+    const html = new FakeHtmlRenderer();
+    const factories = {
+      async createWebGpu() {
+        throw new Error("pipeline-construction-failed");
+      },
+      createWebGl() {
+        return webgl;
+      },
+      createHtmlVideo() {
+        return html;
+      },
+    } satisfies BrowserRendererFactories<FakeFrame>;
+
+    const runtime = await createBrowserMediaRendererRuntime({
+      direct,
+      capabilities: fullCapabilities,
+      coordinator: state.coordinator,
+      canvases: {
+        webgpu: {} as HTMLCanvasElement,
+        webgl: {} as HTMLCanvasElement,
+        htmlVideo: {} as HTMLCanvasElement,
+      },
+      factories,
+    });
+
+    expect(runtime.snapshot().fallback).toEqual({
+      path: "webcodecs-webgl2",
+      reason: "webgpu-renderer-create-failed",
+    });
+    const submission = runtime.presentDecoded(state.lease, request);
+    expect(submission?.path).toBe("webcodecs-webgl2");
+    submission?.receipt.release();
+    runtime.dispose();
+    state.coordinator.dispose();
+  });
+
+  test("continues every failed construction rung to native-static with the final observable reason", async () => {
+    const state = setup();
+    const factories = {
+      async createWebGpu() {
+        throw new Error("device-construction-failed");
+      },
+      createWebGl() {
+        throw new Error("context-construction-failed");
+      },
+      createHtmlVideo() {
+        throw new Error("html-context-construction-failed");
+      },
+    } satisfies BrowserRendererFactories<FakeFrame>;
+
+    const runtime = await createBrowserMediaRendererRuntime({
+      direct,
+      capabilities: fullCapabilities,
+      coordinator: state.coordinator,
+      canvases: {
+        webgpu: {} as HTMLCanvasElement,
+        webgl: {} as HTMLCanvasElement,
+        htmlVideo: {} as HTMLCanvasElement,
+      },
+      factories,
+    });
+
+    expect(runtime.snapshot().fallback).toEqual({
+      path: "native-static",
+      reason: "html-video-renderer-create-failed",
+    });
+    expect(runtime.presentDecoded(state.lease, request)).toBeNull();
+    runtime.dispose();
+    state.coordinator.dispose();
+  });
+
+  test("disposes every constructed renderer when runtime initialization throws", async () => {
+    const webgpu = new FakeDecodedRenderer("webcodecs-webgpu");
+    const webgl = new FakeDecodedRenderer("webcodecs-webgl2");
+    const html = new FakeHtmlRenderer();
+    const coordinator = new PlaybackCoordinator<FakeFrame>();
+    coordinator.selectPlaybackPath = () => {
+      throw new Error("coordinator-initialization-failed");
+    };
+
+    try {
+      await createBrowserMediaRendererRuntime({
+        direct,
+        capabilities: fullCapabilities,
+        coordinator,
+        canvases: {
+          webgpu: {} as HTMLCanvasElement,
+          webgl: {} as HTMLCanvasElement,
+          htmlVideo: {} as HTMLCanvasElement,
+        },
+        factories: {
+          async createWebGpu() {
+            return webgpu;
+          },
+          createWebGl() {
+            return webgl;
+          },
+          createHtmlVideo() {
+            return html;
+          },
+        },
+      });
+      throw new Error("expected-runtime-initialization-failure");
+    } catch (error) {
+      expect((error as Error).message).toBe(
+        "coordinator-initialization-failed",
+      );
+    }
+
+    expect(webgpu.disposed).toBe(1);
+    expect(webgl.disposed).toBe(1);
+    expect(html.disposed).toBe(1);
+    coordinator.dispose();
   });
 });
