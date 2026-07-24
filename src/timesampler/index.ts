@@ -9,6 +9,7 @@ export {
 } from "./integration";
 export type {
   LiveScheduleFrame,
+  LiveTimeSamplerAccent,
   LiveTimeSamplerInput,
   PgmFeel,
   PgmScheduleInput,

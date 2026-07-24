@@ -4,6 +4,7 @@ import { randomSlice } from "./random";
 import { createTimeSamplerState, reduceTimeSampler } from "./reducer";
 import type {
   TimeSamplerOutput,
+  TimeSamplerAccentMode,
   TimeSamplerParams,
   TimeSamplerReduction,
   TimeSamplerTriggerEvent,
@@ -48,7 +49,14 @@ export interface PgmScheduleOutput<T> {
 export interface LiveScheduleFrame<T> {
   transport: TransportSample;
   timeSampler: TimeSamplerOutput;
+  accent: LiveTimeSamplerAccent | null;
   pgm: PgmScheduleOutput<T>;
+}
+
+export interface LiveTimeSamplerAccent {
+  generation: number;
+  mode: TimeSamplerAccentMode;
+  presentationTimeSeconds: number;
 }
 
 const MODE_BY_INDEX = ["FWD", "REV", "PONG", "RND"] as const;
@@ -204,6 +212,7 @@ export class LiveScheduleRuntime<T = string> {
   private pgmNextBoundary: number | null = null;
   private pgmConfigurationKey = "";
   private pgmRandomState: number;
+  private accent: LiveTimeSamplerAccent | null = null;
 
   constructor(pgmSeed = DEFAULT_PGM_SEED) {
     this.pgmRandomState = pgmSeed >>> 0;
@@ -278,9 +287,40 @@ export class LiveScheduleRuntime<T = string> {
       orderedTransportEvents.filter(isTriggerEvent),
       this.timeSamplerInput,
     );
+    const previous = this.frame;
+    const sameTransportGeneration =
+      previous?.transport.discontinuityGeneration ===
+      transport.discontinuityGeneration;
+    const crossedBoundary =
+      previous !== null &&
+      sameTransportGeneration &&
+      timeSampler.jumpGeneration > previous.timeSampler.jumpGeneration &&
+      timeSampler.jumpReason !== "source-remap";
+
+    if (!sameTransportGeneration) {
+      this.accent = null;
+    } else if (timeSampler.accent) {
+      this.accent = {
+        generation: timeSampler.accent.generation,
+        mode: timeSampler.accent.mode,
+        presentationTimeSeconds:
+          timeSampler.accent.presentationTimeSeconds,
+      };
+    } else if (crossedBoundary) {
+      this.accent = {
+        generation: timeSampler.jumpGeneration,
+        mode: timeSamplerParamsFromControls(
+          this.timeSamplerInput.controls,
+          this.timeSamplerInput.sourceDurationSeconds,
+        ).accentMode,
+        presentationTimeSeconds: transport.presentationTimeSeconds,
+      };
+    }
+
     const frame = {
       transport,
       timeSampler,
+      accent: this.accent,
       pgm: this.advancePgm(transport),
     };
     this.frame = frame;
