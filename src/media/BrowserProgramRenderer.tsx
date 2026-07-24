@@ -23,6 +23,9 @@ export interface BrowserProgramRendererProps {
   overlap: ModuleType | null;
   promoted: boolean;
   params: Record<string, number>;
+  onRuntimeChange?: (
+    runtime: { removeClip(id: string): Promise<boolean> } | null,
+  ) => void;
 }
 
 function applyQaCommand(
@@ -191,6 +194,13 @@ export function BrowserProgramRenderer(
               ? ((timeSeconds % video.duration) + video.duration) %
                 video.duration
               : Math.max(0, timeSeconds),
+          timeDistance: (video, currentTime, targetTime) => {
+            const direct = Math.abs(currentTime - targetTime);
+            return Number.isFinite(video.duration) &&
+              video.duration > 0
+              ? Math.min(direct, Math.abs(video.duration - direct))
+              : direct;
+          },
           seek: (video, timeSeconds) => {
             video.currentTime = Math.max(0, timeSeconds);
           },
@@ -204,6 +214,9 @@ export function BrowserProgramRenderer(
         },
       });
       runtimeRef.current = runtime;
+      propsRef.current.onRuntimeChange?.({
+        removeClip: (id) => runtime.removeClip(id),
+      });
       runtime.select({
         pgm: propsRef.current.pgm,
         prewarm: propsRef.current.prewarm,
@@ -339,6 +352,7 @@ export function BrowserProgramRenderer(
         handlePressure,
       );
       longTaskObserver?.disconnect();
+      propsRef.current.onRuntimeChange?.(null);
       void runtimeRef.current?.dispose();
       runtimeRef.current = null;
       delete (

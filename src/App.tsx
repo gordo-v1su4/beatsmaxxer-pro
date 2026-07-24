@@ -153,6 +153,10 @@ export function App() {
   const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
 
   const clipRegistryRef = useRef(new ClipRegistry());
+  const clipRuntimeRef = useRef<{
+    removeClip(id: string): Promise<boolean>;
+  } | null>(null);
+  const pendingClipRemovalsRef = useRef(new Set<ModuleType>());
   const registryLifecycleRef = useRef(0);
   const overlapTimerRef = useRef<number | null>(null);
   const qaSeedRef = useRef(false);
@@ -174,12 +178,19 @@ export function App() {
 
   const setModuleVideo = useCallback((moduleId: ModuleType, file: File | null) => {
     if (!file) {
-      clipRegistryRef.current.remove(moduleId);
       setVideoLayers(prev => ({ ...prev, [moduleId]: null }));
-      setClipRegistryVersion(version => version + 1);
+      const runtime = clipRuntimeRef.current;
+      if (runtime) {
+        void runtime.removeClip(moduleId).finally(() => {
+          setClipRegistryVersion(version => version + 1);
+        });
+      } else {
+        pendingClipRemovalsRef.current.add(moduleId);
+      }
       return;
     }
 
+    pendingClipRemovalsRef.current.delete(moduleId);
     const clip = clipRegistryRef.current.registerFile(moduleId, file);
     setVideoLayers(prev => ({
       ...prev,
@@ -190,6 +201,20 @@ export function App() {
       },
     }));
     setClipRegistryVersion(version => version + 1);
+  }, []);
+
+  const handleClipRuntimeChange = useCallback((
+    runtime: { removeClip(id: string): Promise<boolean> } | null,
+  ) => {
+    clipRuntimeRef.current = runtime;
+    if (!runtime || pendingClipRemovalsRef.current.size === 0) return;
+    const pending = [...pendingClipRemovalsRef.current];
+    pendingClipRemovalsRef.current.clear();
+    void Promise.allSettled(
+      pending.map((moduleId) => runtime.removeClip(moduleId)),
+    ).then(() => {
+      setClipRegistryVersion(version => version + 1);
+    });
   }, []);
 
   const setModuleMidi = useCallback(async (moduleId: ModuleType, file: File | null) => {
@@ -391,6 +416,7 @@ export function App() {
               clipRegistryVersion={clipRegistryVersion}
               queuedPgmSource={queuedPgmSource}
               overlapPgmSource={overlapPgmSource}
+              onClipRuntimeChange={handleClipRuntimeChange}
             />
             <div style={{ height: 'clamp(420px, calc((100vw - 206px) * 9 / 64 + 244px), 544px)', flexShrink: 0.15, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
               {orderTop.map(mid => moduleById[mid]).map(module => (

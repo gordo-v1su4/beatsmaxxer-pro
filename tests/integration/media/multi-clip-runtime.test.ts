@@ -85,11 +85,13 @@ function setup(
   }
   let now = 0;
   let seekCalls = 0;
+  let acquisitions = 0;
   const performance = new PlaybackPerformanceTracker(() => now);
   const refs = new Map<string, number>();
   const activeVideos = new Set<FakeVideo>();
   const videos: CompatibilityVideoAdapter<FakeVideo> = {
     acquire(clip) {
+      acquisitions += 1;
       refs.set(clip.url, (refs.get(clip.url) ?? 0) + 1);
       const video = {
         clipId: clip.id,
@@ -103,10 +105,10 @@ function setup(
     },
     release(clip, video) {
       const finish = () => {
-      activeVideos.delete(video);
-      const next = Math.max(0, (refs.get(clip.url) ?? 0) - 1);
-      if (next === 0) refs.delete(clip.url);
-      else refs.set(clip.url, next);
+        activeVideos.delete(video);
+        const next = Math.max(0, (refs.get(clip.url) ?? 0) - 1);
+        if (next === 0) refs.delete(clip.url);
+        else refs.set(clip.url, next);
       };
       return options.releaseGate?.then(finish) ?? finish();
     },
@@ -136,6 +138,7 @@ function setup(
       sourceGeneration?: number;
       discontinuityGeneration?: number;
       playing?: boolean;
+      late?: boolean;
     } = {},
   ) =>
     runtime.present(
@@ -147,7 +150,10 @@ function setup(
       },
       overrides.sourceTimeSeconds ?? now / 1_000,
       request,
-      { sourceGeneration: overrides.sourceGeneration },
+      {
+        sourceGeneration: overrides.sourceGeneration,
+        late: overrides.late,
+      },
     );
   return {
     registry,
@@ -158,6 +164,7 @@ function setup(
     refs,
     present,
     seekCalls: () => seekCalls,
+    acquisitions: () => acquisitions,
     advance(milliseconds: number) {
       now += milliseconds;
       for (const video of activeVideos) {
@@ -366,6 +373,146 @@ describe("G007 multi-clip production runtime", () => {
     await state.runtime.dispose();
   });
 
+  test("rejects an HTML frame 200ms off target before settling switch latency", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    state.advance(8);
+
+    expect(
+      state.present({
+        sourceTimeSeconds: 0.2,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    expect(state.seekCalls()).toBe(1);
+    expect(state.renderer.presented).toBe(0);
+    expect(
+      state.performance.snapshot().latency.coldSwitch,
+    ).toMatchObject({ count: 0, failures: 0 });
+
+    state.advance(8);
+    expect(
+      state.present({
+        sourceTimeSeconds: 0.2,
+        sourceGeneration: 1,
+      }),
+    ).toBe(true);
+    expect(state.seekCalls()).toBe(1);
+    expect(
+      state.performance.snapshot().latency.coldSwitch,
+    ).toMatchObject({ count: 1, p95Ms: 16, failures: 0 });
+    await state.runtime.dispose();
+  });
+
+  test("promotes the warmed video without reacquiring or restarting its load", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: "clip-1",
+      overlap: null,
+    });
+    expect(state.acquisitions()).toBe(2);
+    expect(state.present()).toBe(true);
+
+    state.runtime.select({
+      pgm: "clip-1",
+      prewarm: "clip-2",
+      overlap: null,
+    });
+    expect(state.acquisitions()).toBe(3);
+    expect(state.runtime.snapshot().roles).toEqual({
+      pgm: "clip-1",
+      prewarm: "clip-2",
+      overlap: null,
+    });
+    state.advance(8);
+    expect(state.present()).toBe(true);
+    expect(
+      state.performance.snapshot().latency.prewarmedSwitch,
+    ).toMatchObject({ count: 1, p95Ms: 8, failures: 0 });
+    await state.runtime.dispose();
+  });
+
+  test("records unresolved scrub latency as failure on deactivate and dispose", async () => {
+    const deactivated = setup();
+    deactivated.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(deactivated.present()).toBe(true);
+    expect(deactivated.runtime.scrub(2, true)).toBe(true);
+    await deactivated.runtime.deactivate();
+    expect(
+      deactivated.performance.snapshot().latency.cachedScrub,
+    ).toMatchObject({ count: 0, failures: 1 });
+    await deactivated.runtime.dispose();
+
+    const disposed = setup();
+    disposed.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(disposed.present()).toBe(true);
+    expect(disposed.runtime.scrub(3, false)).toBe(true);
+    await disposed.runtime.dispose();
+    expect(
+      disposed.performance.snapshot().latency.keyframeScrub,
+    ).toMatchObject({ count: 0, failures: 1 });
+  });
+
+  test("keeps transition waits out of steady-state frame-drop telemetry", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(state.present()).toBe(true);
+
+    state.runtime.select({
+      pgm: "clip-1",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(
+      state.present({
+        sourceTimeSeconds: 0.2,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    state.advance(50);
+    expect(
+      state.present({
+        sourceTimeSeconds: 0.2,
+        sourceGeneration: 1,
+        playing: true,
+        late: true,
+      }),
+    ).toBe(true);
+    expect(state.performance.snapshot().frames).toMatchObject({
+      presented: 2,
+      late: 0,
+      dropped: 0,
+      lateOrDroppedRatio: 0,
+    });
+
+    state.advance(50);
+    expect(
+      state.present({
+        sourceTimeSeconds: 1,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    expect(state.performance.snapshot().frames.dropped).toBe(1);
+    await state.runtime.dispose();
+  });
+
   test("wires all pressure stages through runtime and observable telemetry", async () => {
     const state = setup();
     state.runtime.select({
@@ -543,5 +690,63 @@ describe("G007 multi-clip production runtime", () => {
     expect(
       timedOut.performance.snapshot().latency.cleanup,
     ).toMatchObject({ count: 0, failures: 1 });
+  });
+
+  test("dispose aborts and accounts for a never-resolving prior-role replacement", async () => {
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    const revoked: string[] = [];
+    let allocation = 0;
+    URL.createObjectURL = () => `blob:replacement-${++allocation}`;
+    URL.revokeObjectURL = (url) => {
+      revoked.push(url);
+    };
+
+    try {
+      const never = new Promise<void>(() => {});
+      const state = setup({
+        releaseGate: never,
+        cleanupTimeoutMs: 5,
+      });
+      state.registry.registerFile(
+        "clip-0",
+        new File(["first"], "first.mp4", { type: "video/mp4" }),
+      );
+      state.runtime.select({
+        pgm: "clip-0",
+        prewarm: null,
+        overlap: null,
+      });
+      expect(state.present()).toBe(true);
+
+      state.registry.registerFile(
+        "clip-0",
+        new File(["second"], "second.mp4", {
+          type: "video/mp4",
+        }),
+      );
+      state.runtime.select({
+        pgm: "clip-0",
+        prewarm: null,
+        overlap: null,
+      });
+      expect(revoked).toEqual([]);
+
+      await state.runtime.dispose();
+      expect(state.renderer.disposed).toBe(1);
+      expect(revoked).toEqual(["blob:replacement-1"]);
+      expect(
+        state.performance.snapshot().latency.cleanup,
+      ).toMatchObject({ count: 0, failures: 1 });
+
+      state.registry.dispose();
+      expect(revoked).toEqual([
+        "blob:replacement-1",
+        "blob:replacement-2",
+      ]);
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
   });
 });

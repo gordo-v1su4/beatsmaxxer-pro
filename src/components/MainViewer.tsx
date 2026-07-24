@@ -265,7 +265,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource, onQueueChange }: {
 }
 
 /** Program monitor strip: the selected module's mixed output, full width. */
-export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, clipRegistryVersion, queuedPgmSource, overlapPgmSource }: {
+export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, clipRegistryVersion, queuedPgmSource, overlapPgmSource, onClipRuntimeChange }: {
   modules: ModuleConfig[];
   pgmSource: ModuleType;
   moduleParams: Record<ModuleType, Record<string, number>>;
@@ -276,6 +276,9 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   clipRegistryVersion: number;
   queuedPgmSource: ModuleType | null;
   overlapPgmSource: ModuleType | null;
+  onClipRuntimeChange?: (
+    runtime: { removeClip(id: string): Promise<boolean> } | null,
+  ) => void;
 }) {
   const { state } = useAudio();
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
@@ -328,6 +331,7 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
           }
           promoted={promotedProgram}
           params={moduleParams[active.id]}
+          onRuntimeChange={onClipRuntimeChange}
         />
         <ScreenOverlay/>
         <ScreenBadge

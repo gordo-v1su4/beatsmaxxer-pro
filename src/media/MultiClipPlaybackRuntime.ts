@@ -28,6 +28,11 @@ export interface CompatibilityVideoAdapter<Video extends object> {
   seeking?(video: Video): boolean;
   currentTime(video: Video): number;
   normalizeTime?(video: Video, timeSeconds: number): number;
+  timeDistance?(
+    video: Video,
+    currentTimeSeconds: number,
+    targetTimeSeconds: number,
+  ): number;
   seek(video: Video, timeSeconds: number): void;
   setPlaying(video: Video, playing: boolean): void;
 }
@@ -38,7 +43,13 @@ interface ActiveRole<Video extends object> {
   generation: number;
   lastSourceGeneration: number | null;
   lastDiscontinuityGeneration: number | null;
-  lastFallbackSeekAtSeconds: number | null;
+  seekInFlight: boolean;
+}
+
+interface TrackedRelease {
+  clipId: string;
+  controller: AbortController;
+  promise: Promise<boolean>;
 }
 
 export interface MultiClipRoleSelection {
@@ -62,7 +73,7 @@ export interface MultiClipRendererRuntime<
 }
 
 const CLEANUP_TIMEOUT_MS = 1_950;
-const PLAYING_DRIFT_TOLERANCE_SECONDS = 0.25;
+const PRESENTATION_TOLERANCE_SECONDS = 1 / 30;
 
 export class MultiClipPlaybackRuntime<
   Frame extends DecodedFrameLike,
@@ -77,9 +88,11 @@ export class MultiClipPlaybackRuntime<
     | ReturnType<PlaybackPerformanceTracker["begin"]>
     | null = null;
   private pendingSourceKey: string | null = null;
+  private pendingLaneGeneration: number | null = null;
   private hasPresented = false;
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
+  private readonly releases = new Set<TrackedRelease>();
 
   constructor(
     private readonly options: {
@@ -136,9 +149,7 @@ export class MultiClipPlaybackRuntime<
       this.pendingPresentation?.settled === false &&
       this.pendingSourceKey !== desiredSourceKey
     ) {
-      this.options.performance?.fail(this.pendingPresentation);
-      this.pendingPresentation = null;
-      this.pendingSourceKey = null;
+      this.cancelPendingPresentation();
     }
     if (!this.pendingPresentation && unique.pgm !== null) {
       this.pendingPresentation = this.options.performance?.begin(
@@ -147,24 +158,30 @@ export class MultiClipPlaybackRuntime<
       this.pendingSourceKey = desiredSourceKey;
     }
 
-    this.syncRole("pgm", unique.pgm);
+    if (wasPrewarmed && unique.pgm) {
+      this.promotePrewarmToPgm(unique.pgm);
+    } else {
+      this.syncRole("pgm", unique.pgm);
+    }
     this.syncRole("prewarm", unique.prewarm);
     this.syncRole("overlap", unique.overlap);
+    this.pendingLaneGeneration = this.pendingPresentation
+      ? this.roles.get("pgm")?.generation ?? null
+      : null;
   }
 
   scrub(timeSeconds: number, cached: boolean) {
     this.assertOpen();
     const pgm = this.roles.get("pgm");
     if (!pgm) return false;
-    this.pendingPresentation?.settled === false &&
-      this.options.performance?.fail(this.pendingPresentation);
+    this.cancelPendingPresentation();
     this.pendingPresentation = this.options.performance?.begin(
       cached ? "cachedScrub" : "keyframeScrub",
     ) ?? null;
     this.pendingSourceKey = this.sourceKey(pgm.clip);
     pgm.generation = ++this.generation;
+    this.pendingLaneGeneration = pgm.generation;
     pgm.lastSourceGeneration = null;
-    pgm.lastFallbackSeekAtSeconds = null;
     this.options.coordinator.setLaneGeneration(
       "pgm",
       pgm.generation,
@@ -198,9 +215,23 @@ export class MultiClipPlaybackRuntime<
         "multi-clip-renderer",
       );
       if (!lease) {
-        if (transport.playing) {
-          this.options.performance?.recordFrame({ dropped: true });
-        }
+        this.recordDroppedFrame(transport);
+        return false;
+      }
+      const targetTimestampUs = Math.round(
+        sourceTimeSeconds * 1_000_000,
+      );
+      const frame = lease.frame;
+      const frameDurationUs =
+        frame.duration && frame.duration > 0
+          ? frame.duration
+          : PRESENTATION_TOLERANCE_SECONDS * 1_000_000;
+      if (
+        targetTimestampUs < frame.timestamp ||
+        targetTimestampUs >= frame.timestamp + frameDurationUs
+      ) {
+        lease.release();
+        this.recordDroppedFrame(transport);
         return false;
       }
       const submission = this.options.renderer.presentDecoded(
@@ -208,9 +239,7 @@ export class MultiClipPlaybackRuntime<
         request,
       );
       if (!submission) {
-        if (transport.playing) {
-          this.options.performance?.recordFrame({ dropped: true });
-        }
+        this.recordDroppedFrame(transport);
         return false;
       }
       submission.receipt.release();
@@ -219,9 +248,7 @@ export class MultiClipPlaybackRuntime<
         !this.options.videos.ready(pgm.video) ||
         this.options.videos.seeking?.(pgm.video)
       ) {
-        if (transport.playing && this.hasPresented) {
-          this.options.performance?.recordFrame({ dropped: true });
-        }
+        if (!pgm.seekInFlight) this.recordDroppedFrame(transport);
         return false;
       }
       const currentTime = this.options.videos.currentTime(pgm.video);
@@ -230,95 +257,113 @@ export class MultiClipPlaybackRuntime<
           pgm.video,
           sourceTimeSeconds,
         ) ?? sourceTimeSeconds;
-      const drift = Math.abs(currentTime - targetTime);
+      const drift =
+        this.options.videos.timeDistance?.(
+          pgm.video,
+          currentTime,
+          targetTime,
+        ) ?? Math.abs(currentTime - targetTime);
       const sourceGeneration = options.sourceGeneration ?? null;
-      const sourceJump =
-        sourceGeneration !== null &&
-        sourceGeneration !== pgm.lastSourceGeneration;
-      const discontinuity =
-        transport.discontinuityGeneration !==
-        pgm.lastDiscontinuityGeneration;
-      const boundedDrift =
-        transport.playing &&
-        drift > PLAYING_DRIFT_TOLERANCE_SECONDS &&
-        (pgm.lastFallbackSeekAtSeconds === null ||
-          transport.presentationTimeSeconds -
-            pgm.lastFallbackSeekAtSeconds >=
-            PLAYING_DRIFT_TOLERANCE_SECONDS);
-      if (
-        ((sourceJump || discontinuity) && drift > 1 / 30) ||
-        (!transport.playing && drift > 1 / 30) ||
-        boundedDrift
-      ) {
+      if (drift > PRESENTATION_TOLERANCE_SECONDS) {
+        const deliberateDiscontinuity =
+          (pgm.lastSourceGeneration !== null &&
+            sourceGeneration !== null &&
+            sourceGeneration !== pgm.lastSourceGeneration) ||
+          (pgm.lastDiscontinuityGeneration !== null &&
+            transport.discontinuityGeneration !==
+              pgm.lastDiscontinuityGeneration);
+        if (!deliberateDiscontinuity) {
+          this.recordDroppedFrame(transport);
+        }
         this.options.videos.seek(pgm.video, targetTime);
-        pgm.lastFallbackSeekAtSeconds =
-          transport.presentationTimeSeconds;
+        pgm.seekInFlight = true;
         pgm.lastSourceGeneration = sourceGeneration;
         pgm.lastDiscontinuityGeneration =
           transport.discontinuityGeneration;
         return false;
       }
+      pgm.seekInFlight = false;
       pgm.lastSourceGeneration = sourceGeneration;
       pgm.lastDiscontinuityGeneration =
         transport.discontinuityGeneration;
       this.options.videos.setPlaying(pgm.video, transport.playing);
       if (!this.options.renderer.presentHtmlVideo(pgm.video, request)) {
-        if (transport.playing) {
-          this.options.performance?.recordFrame({ dropped: true });
-        }
+        this.recordDroppedFrame(transport);
         return false;
       }
     }
 
+    const settlesPendingPresentation =
+      this.pendingPresentation !== null &&
+      this.pendingLaneGeneration === pgm.generation;
     const late =
-      transport.playing && this.hasPresented && options.late;
+      !settlesPendingPresentation &&
+      transport.playing &&
+      this.hasPresented &&
+      options.late;
     this.hasPresented = true;
     this.options.performance?.recordFrame({ late });
     if (this.pendingPresentation) {
-      this.options.performance?.succeed(this.pendingPresentation);
+      if (settlesPendingPresentation) {
+        this.options.performance?.succeed(this.pendingPresentation);
+      } else {
+        this.options.performance?.fail(this.pendingPresentation);
+      }
       this.pendingPresentation = null;
       this.pendingSourceKey = null;
+      this.pendingLaneGeneration = null;
     }
     return true;
   }
 
   async removeClip(id: string) {
     this.assertOpen();
+    const requestedClip = this.options.registry.get(id);
+    if (!requestedClip) return false;
+    if (this.roles.get("pgm")?.clip.id === id) {
+      this.cancelPendingPresentation();
+    }
     const cleanup = this.options.performance?.begin("cleanup") ?? null;
-    const controller = new AbortController();
-    const releases: Promise<void>[] = [];
+    const releases: TrackedRelease[] = [];
     for (const [role, active] of this.roles) {
       if (active.clip.id === id) {
-        releases.push(this.releaseRole(role, controller.signal));
+        const release = this.startReleaseRole(role);
+        if (release) releases.push(release);
+      }
+    }
+    for (const release of this.releases) {
+      if (release.clipId === id && !releases.includes(release)) {
+        releases.push(release);
       }
     }
     const completed = await this.awaitCleanup(
       releases,
-      controller,
       cleanup,
     );
-    const removed = this.options.registry.remove(id);
+    const currentClip = this.options.registry.get(id);
+    const removed =
+      currentClip !== null &&
+      this.sameClipSource(currentClip, requestedClip) &&
+      this.options.registry.remove(id);
     return removed && completed;
   }
 
   async deactivate() {
     this.assertOpen();
     const cleanup = this.options.performance?.begin("cleanup") ?? null;
-    const controller = new AbortController();
-    this.pendingPresentation = null;
-    this.pendingSourceKey = null;
+    this.cancelPendingPresentation();
     this.hasPresented = false;
-    const releases = (
-      ["pgm", "prewarm", "overlap"] as const
-    ).map((role) => this.releaseRole(role, controller.signal));
-    return this.awaitCleanup(releases, controller, cleanup);
+    for (const role of ["pgm", "prewarm", "overlap"] as const) {
+      this.startReleaseRole(role);
+    }
+    return this.awaitCleanup([...this.releases], cleanup);
   }
 
   degradeForPressure(): PressureAction {
     this.assertOpen();
     const action = this.options.coordinator.degradeForPressure();
     if (action === "overlap-disabled") {
-      void this.releaseRole("overlap", undefined, true);
+      this.startReleaseRole("overlap", true);
     } else if (action === "html-fallback-selected") {
       this.options.renderer.forceCompatibilityFallback(
         "decoded-frame-pressure",
@@ -361,17 +406,14 @@ export class MultiClipPlaybackRuntime<
   dispose() {
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
-    this.pendingPresentation = null;
-    this.pendingSourceKey = null;
+    this.cancelPendingPresentation();
     this.hasPresented = false;
-    const controller = new AbortController();
     const cleanup = this.options.performance?.begin("cleanup") ?? null;
-    const releases = (
-      ["pgm", "prewarm", "overlap"] as const
-    ).map((role) => this.releaseRole(role, controller.signal));
+    for (const role of ["pgm", "prewarm", "overlap"] as const) {
+      this.startReleaseRole(role);
+    }
     this.disposePromise = this.awaitCleanup(
-      releases,
-      controller,
+      [...this.releases],
       cleanup,
     ).then(() => {
       this.options.renderer.dispose();
@@ -386,7 +428,7 @@ export class MultiClipPlaybackRuntime<
   ) {
     const current = this.roles.get(role);
     if (this.sameSource(current, clip)) return;
-    void this.releaseRole(role);
+    this.startReleaseRole(role);
     if (!clip) return;
     const generation = ++this.generation;
     this.options.registry.retain(clip);
@@ -403,12 +445,34 @@ export class MultiClipPlaybackRuntime<
       generation,
       lastSourceGeneration: null,
       lastDiscontinuityGeneration: null,
-      lastFallbackSeekAtSeconds: null,
+      seekInFlight: false,
     });
     this.options.coordinator.activate(
       role,
       clip.id,
       generation,
+      null,
+    );
+  }
+
+  private promotePrewarmToPgm(clip: RegisteredClip) {
+    const warmed = this.roles.get("prewarm");
+    if (!warmed || !this.sameSource(warmed, clip)) {
+      this.syncRole("pgm", clip);
+      return;
+    }
+    this.startReleaseRole("pgm");
+    this.roles.delete("prewarm");
+    this.options.coordinator.deactivate("prewarm");
+    warmed.generation = ++this.generation;
+    warmed.lastSourceGeneration = null;
+    warmed.lastDiscontinuityGeneration = null;
+    warmed.seekInFlight = false;
+    this.roles.set("pgm", warmed);
+    this.options.coordinator.activate(
+      "pgm",
+      warmed.clip.id,
+      warmed.generation,
       null,
     );
   }
@@ -425,14 +489,58 @@ export class MultiClipPlaybackRuntime<
       this.options.coordinator.deactivate(role);
     }
     try {
-      await this.options.videos.release(
-        active.clip,
-        active.video,
-        signal,
+      const release = Promise.resolve(
+        this.options.videos.release(
+          active.clip,
+          active.video,
+          signal,
+        ),
       );
+      if (!signal) {
+        await release;
+      } else {
+        await Promise.race([
+          release,
+          new Promise<never>((_, reject) => {
+            const abort = () =>
+              reject(
+                new DOMException(
+                  "video-cleanup-aborted",
+                  "AbortError",
+                ),
+              );
+            if (signal.aborted) abort();
+            else signal.addEventListener("abort", abort, { once: true });
+          }),
+        ]);
+      }
     } finally {
       this.options.registry.releaseReference(active.clip);
     }
+  }
+
+  private startReleaseRole(
+    role: PlaybackLaneRole,
+    coordinatorAlreadyReleased = false,
+  ) {
+    const active = this.roles.get(role);
+    if (!active) return null;
+    const controller = new AbortController();
+    const tracked = {} as TrackedRelease;
+    tracked.clipId = active.clip.id;
+    tracked.controller = controller;
+    tracked.promise = this.releaseRole(
+      role,
+      controller.signal,
+      coordinatorAlreadyReleased,
+    )
+      .then(() => true)
+      .catch(() => false)
+      .finally(() => {
+        this.releases.delete(tracked);
+      });
+    this.releases.add(tracked);
+    return tracked;
   }
 
   private sameSource(
@@ -447,13 +555,42 @@ export class MultiClipPlaybackRuntime<
     );
   }
 
+  private sameClipSource(
+    left: RegisteredClip,
+    right: RegisteredClip,
+  ) {
+    return (
+      left.id === right.id &&
+      left.revision === right.revision &&
+      left.url === right.url
+    );
+  }
+
   private sourceKey(clip: RegisteredClip | null) {
     return clip ? `${clip.id}:${clip.revision}:${clip.url}` : null;
   }
 
+  private cancelPendingPresentation() {
+    if (this.pendingPresentation?.settled === false) {
+      this.options.performance?.fail(this.pendingPresentation);
+    }
+    this.pendingPresentation = null;
+    this.pendingSourceKey = null;
+    this.pendingLaneGeneration = null;
+  }
+
+  private recordDroppedFrame(transport: PlaybackTransportState) {
+    if (
+      transport.playing &&
+      this.hasPresented &&
+      this.pendingPresentation === null
+    ) {
+      this.options.performance?.recordFrame({ dropped: true });
+    }
+  }
+
   private async awaitCleanup(
-    releases: Promise<void>[],
-    controller: AbortController,
+    releases: TrackedRelease[],
     token:
       | ReturnType<PlaybackPerformanceTracker["begin"]>
       | null,
@@ -461,16 +598,18 @@ export class MultiClipPlaybackRuntime<
     let timeout: ReturnType<typeof setTimeout> | null = null;
     const timedOut = new Promise<false>((resolve) => {
       timeout = setTimeout(() => {
-        controller.abort();
+        for (const release of releases) {
+          release.controller.abort();
+        }
         resolve(false);
       }, Math.min(
         CLEANUP_TIMEOUT_MS,
         Math.max(0, this.options.cleanupTimeoutMs ?? CLEANUP_TIMEOUT_MS),
       ));
     });
-    const released = Promise.allSettled(releases).then((results) =>
-      results.every((result) => result.status === "fulfilled"),
-    );
+    const released = Promise.all(
+      releases.map((release) => release.promise),
+    ).then((results) => results.every(Boolean));
     const completed = await Promise.race([released, timedOut]);
     if (timeout !== null) clearTimeout(timeout);
     if (token) {
