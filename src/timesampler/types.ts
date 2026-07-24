@@ -75,6 +75,9 @@ export interface TimeSamplerState {
   discontinuityGeneration: number;
   nextBoundaryBeat: number;
   sliceStartedBeat: number;
+  sourceAnchorTransportSeconds: number;
+  sourceAnchorOffsetSeconds: number;
+  beatIntervalSeconds: number;
   rndSeed: number;
   rndState: number;
   forcedJumpSeed: number;

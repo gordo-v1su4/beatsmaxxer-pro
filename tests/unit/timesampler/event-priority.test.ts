@@ -165,6 +165,40 @@ describe("TimeSampler event priority", () => {
     expect(consumed.nextState.forcedJumpState).not.toBe(0x12345678);
   });
 
+  test("a delayed timestamped trigger is consumed at its actual next boundary", () => {
+    const params = { ...PARAMS, mode: "REV" as const };
+    const initial = createTimeSamplerState(sample(0), params);
+    let dense = reduceTimeSampler(
+      initial.nextState,
+      sample(1),
+      [],
+      params,
+    );
+    dense = reduceTimeSampler(
+      dense.nextState,
+      sample(2),
+      [{ type: "manual-trigger", transportSeconds: 1.2 }],
+      params,
+    );
+    dense = reduceTimeSampler(dense.nextState, sample(3), [], params);
+    dense = reduceTimeSampler(dense.nextState, sample(3.1), [], params);
+
+    const sparse = reduceTimeSampler(
+      initial.nextState,
+      sample(3.1),
+      [{ type: "manual-trigger", transportSeconds: 1.2 }],
+      params,
+    );
+
+    expect(sparse.output).toEqual(dense.output);
+    expect(sparse.nextState.forcedJumpState).toBe(
+      dense.nextState.forcedJumpState,
+    );
+    expect(sparse.nextState.pendingTrigger).toBeNull();
+    expect(sparse.output.jumpReason).toBeNull();
+    expect(sparse.output.accent).toBeNull();
+  });
+
   test("onset cooldown starts at acceptance and includes exactly 250 ms", () => {
     const initial = createTimeSamplerState(sample(0), PARAMS);
     const accepted = reduceTimeSampler(

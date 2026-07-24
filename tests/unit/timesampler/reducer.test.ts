@@ -163,6 +163,67 @@ describe("TimeSampler schedule matrix", () => {
     });
   });
 
+  test("catch-up exposes only a boundary at the current sample", () => {
+    const initial = createTimeSamplerState(sample(0), BASE_PARAMS);
+    let dense = initial;
+    for (const beat of [1, 2, 3]) {
+      dense = reduceTimeSampler(dense.nextState, sample(beat), [], BASE_PARAMS);
+    }
+    const sparseExact = reduceTimeSampler(
+      initial.nextState,
+      sample(3),
+      [],
+      BASE_PARAMS,
+    );
+
+    expect(sparseExact.output).toEqual(dense.output);
+
+    const denseAfter = reduceTimeSampler(
+      dense.nextState,
+      sample(3 + 1e-6),
+      [],
+      BASE_PARAMS,
+    );
+    const sparseAfter = reduceTimeSampler(
+      initial.nextState,
+      sample(3 + 1e-6),
+      [],
+      BASE_PARAMS,
+    );
+
+    expect(sparseAfter.output).toEqual(denseAfter.output);
+    expect(sparseAfter.output.jumpReason).toBeNull();
+    expect(sparseAfter.output.accent).toBeNull();
+  });
+
+  test("source progress uses audio-master elapsed time across tempo changes", () => {
+    const initial = createTimeSamplerState(
+      sample(0, { beatIntervalSeconds: 0.5 }),
+      BASE_PARAMS,
+    );
+    const beforeTempoChange = reduceTimeSampler(
+      initial.nextState,
+      sample(0.5, {
+        transportSeconds: 0.25,
+        beatIntervalSeconds: 0.5,
+      }),
+      [],
+      BASE_PARAMS,
+    );
+    const afterTempoChange = reduceTimeSampler(
+      beforeTempoChange.nextState,
+      sample(0.75, {
+        transportSeconds: 0.5,
+        beatIntervalSeconds: 1,
+      }),
+      [],
+      BASE_PARAMS,
+    );
+
+    expect(beforeTempoChange.output.sourceTimestampSeconds).toBe(0.25);
+    expect(afterTempoChange.output.sourceTimestampSeconds).toBe(0.5);
+  });
+
   test("a source shorter than a requested slice has one effective slice", () => {
     const params = {
       ...BASE_PARAMS,
@@ -215,7 +276,52 @@ describe("TimeSampler parameter and discontinuity transitions", () => {
     );
 
     expect(changed.output.targetPlaybackRate).toBe(2);
+    expect(changed.output.sourceTimestampSeconds).toBe(
+      initial.output.sourceTimestampSeconds + 0.25,
+    );
     expect(changed.output.jumpGeneration).toBe(0);
+    expect(changed.output.accent).toBeNull();
+  });
+
+  test("rate changes that alter effective slices emit a deterministic remap", () => {
+    const params = {
+      ...BASE_PARAMS,
+      sourceDurationSeconds: 1,
+      mode: "REV" as const,
+      playbackRate: 1,
+    };
+    const initial = createTimeSamplerState(
+      sample(0, { beatIntervalSeconds: 0.2 }),
+      params,
+    );
+    const before = reduceTimeSampler(
+      initial.nextState,
+      sample(0.25, {
+        transportSeconds: 0.05,
+        beatIntervalSeconds: 0.2,
+      }),
+      [],
+      params,
+    );
+    const changed = reduceTimeSampler(
+      before.nextState,
+      sample(0.25, {
+        transportSeconds: 0.05,
+        beatIntervalSeconds: 0.2,
+      }),
+      [],
+      { ...params, playbackRate: 10 },
+    );
+
+    expect(before.output.effectiveSliceCount).toBe(4);
+    expect(changed.output.effectiveSliceCount).toBe(1);
+    expect(changed.output.sourceTimestampSeconds).not.toBe(
+      before.output.sourceTimestampSeconds,
+    );
+    expect(changed.output.jumpGeneration).toBe(
+      before.output.jumpGeneration + 1,
+    );
+    expect(changed.output.jumpReason).toBe("source-remap");
     expect(changed.output.accent).toBeNull();
   });
 

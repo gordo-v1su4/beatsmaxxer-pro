@@ -82,20 +82,22 @@ function sourceTimestamp(
     state.sourceDurationSeconds,
     state.sliceCount,
     state.jumpSizeBeats,
-    sample.beatIntervalSeconds,
+    state.beatIntervalSeconds,
     state.playbackRate,
   );
   const slice = clampSlice(state.activeSlice, count);
   const sliceDuration = state.sourceDurationSeconds / count;
   const sliceStart = slice * sliceDuration;
-  const elapsedBeats = Math.max(0, sample.beatPosition - state.sliceStartedBeat);
   const elapsedSeconds =
-    elapsedBeats *
-    positiveFinite(sample.beatIntervalSeconds, 0) *
+    Math.max(0, sample.transportSeconds - state.sourceAnchorTransportSeconds) *
     state.playbackRate;
   const timestamp = Math.min(
     state.sourceDurationSeconds,
-    sliceStart + Math.min(sliceDuration, elapsedSeconds),
+    sliceStart +
+      Math.min(
+        sliceDuration,
+        state.sourceAnchorOffsetSeconds + elapsedSeconds,
+      ),
   );
 
   return Number.isFinite(timestamp) ? Math.max(0, timestamp) : 0;
@@ -113,7 +115,7 @@ function outputFor(
       state.sourceDurationSeconds,
       state.sliceCount,
       state.jumpSizeBeats,
-      sample.beatIntervalSeconds,
+      state.beatIntervalSeconds,
       state.playbackRate,
     ),
     sourceTimestampSeconds: sourceTimestamp(state, sample),
@@ -144,6 +146,9 @@ export function createTimeSamplerState(
     discontinuityGeneration: sample.discontinuityGeneration,
     nextBoundaryBeat: boundaryAfter(sample.beatPosition, params.jumpSizeBeats),
     sliceStartedBeat: sample.beatPosition,
+    sourceAnchorTransportSeconds: sample.transportSeconds,
+    sourceAnchorOffsetSeconds: 0,
+    beatIntervalSeconds: positiveFinite(sample.beatIntervalSeconds, 0),
     rndSeed: params.randomSeed,
     rndState: params.randomSeed,
     forcedJumpSeed: params.forcedJumpSeed ?? params.randomSeed,
@@ -274,13 +279,14 @@ function processBoundary(
   state: TimeSamplerState,
   sample: TimeSamplerTransportSample,
   boundaryBeat: number,
+  boundaryTransportSeconds: number,
 ): { reason: "scheduled" | "forced"; accent: TimeSamplerAccentEvent } {
   applyQueuedParams(state, boundaryBeat);
   const count = effectiveSliceCount(
     state.sourceDurationSeconds,
     state.sliceCount,
     state.jumpSizeBeats,
-    sample.beatIntervalSeconds,
+    state.beatIntervalSeconds,
     state.playbackRate,
   );
   let reason: "scheduled" | "forced" = "scheduled";
@@ -305,6 +311,8 @@ function processBoundary(
 
   state.activeSlice = clampSlice(state.activeSlice, count);
   state.sliceStartedBeat = boundaryBeat;
+  state.sourceAnchorTransportSeconds = boundaryTransportSeconds;
+  state.sourceAnchorOffsetSeconds = 0;
   state.jumpGeneration += 1;
 
   return {
@@ -312,7 +320,7 @@ function processBoundary(
     accent: {
       generation: state.jumpGeneration,
       mode: state.accentMode,
-      transportSeconds: sample.transportSeconds,
+      transportSeconds: boundaryTransportSeconds,
       presentationTimeSeconds: sample.presentationTimeSeconds,
     },
   };
@@ -326,7 +334,7 @@ function resetForDiscontinuity(
     state.sourceDurationSeconds,
     state.sliceCount,
     state.jumpSizeBeats,
-    sample.beatIntervalSeconds,
+    state.beatIntervalSeconds,
     state.playbackRate,
   );
   state.activeSlice = initialSlice(state.mode, count);
@@ -339,11 +347,66 @@ function resetForDiscontinuity(
     state.jumpSizeBeats,
   );
   state.sliceStartedBeat = sample.beatPosition;
+  state.sourceAnchorTransportSeconds = sample.transportSeconds;
+  state.sourceAnchorOffsetSeconds = 0;
   state.pendingTrigger = null;
   state.lastAcceptedOnsetTransportSeconds = null;
   state.queuedParams = null;
   state.rndState = state.rndSeed;
   state.forcedJumpState = state.forcedJumpSeed;
+}
+
+function boundaryTransportSeconds(
+  state: TimeSamplerState,
+  sample: TimeSamplerTransportSample,
+  boundaryBeat: number,
+): number {
+  if (Math.abs(sample.beatPosition - boundaryBeat) <= BOUNDARY_EPSILON) {
+    return sample.transportSeconds;
+  }
+
+  const interval = positiveFinite(
+    sample.beatIntervalSeconds,
+    state.beatIntervalSeconds,
+  );
+  const estimated =
+    sample.transportSeconds -
+    (sample.beatPosition - boundaryBeat) * interval;
+
+  return Math.min(
+    sample.transportSeconds,
+    Math.max(state.lastTransportSeconds, estimated),
+  );
+}
+
+function orderedTimedTriggers(
+  events: readonly TimeSamplerTriggerEvent[],
+  sample: TimeSamplerTransportSample,
+): TimeSamplerTriggerEvent[] {
+  return events
+    .map((event, index) => ({
+      event: {
+        ...event,
+        transportSeconds: event.transportSeconds ?? sample.transportSeconds,
+      },
+      index,
+    }))
+    .sort(
+      (left, right) =>
+        (left.event.transportSeconds ?? 0) -
+          (right.event.transportSeconds ?? 0) || left.index - right.index,
+    )
+    .map(({ event }) => event);
+}
+
+function sourceSliceStart(
+  state: TimeSamplerState,
+  effectiveCount: number,
+): number {
+  return (
+    clampSlice(state.activeSlice, effectiveCount) *
+    (state.sourceDurationSeconds / effectiveCount)
+  );
 }
 
 export function reduceTimeSampler(
@@ -362,87 +425,138 @@ export function reduceTimeSampler(
     sample.transportSeconds + SOURCE_EPSILON < state.lastTransportSeconds ||
     sample.beatPosition + BOUNDARY_EPSILON < state.lastBeatPosition;
 
-  state.playbackRate = params.playbackRate;
-  state.accentMode = params.accentMode;
-  if (params.randomSeed !== state.rndSeed) {
-    state.rndSeed = params.randomSeed;
-    state.rndState = params.randomSeed;
-  }
-  const forcedJumpSeed = params.forcedJumpSeed ?? params.randomSeed;
-  if (forcedJumpSeed !== state.forcedJumpSeed) {
-    state.forcedJumpSeed = forcedJumpSeed;
-    state.forcedJumpState = forcedJumpSeed;
-  }
-  state.activeSlice = clampSlice(
-    state.activeSlice,
-    effectiveSliceCount(
-      state.sourceDurationSeconds,
-      state.sliceCount,
-      state.jumpSizeBeats,
-      sample.beatIntervalSeconds,
-      state.playbackRate,
-    ),
-  );
-  const oldSourceTimestamp = sourceTimestamp(state, sample);
-
   if (discontinuity) {
+    state.playbackRate = params.playbackRate;
+    state.accentMode = params.accentMode;
+    state.beatIntervalSeconds = positiveFinite(sample.beatIntervalSeconds, 0);
     state.sourceDurationSeconds = params.sourceDurationSeconds;
     state.sliceCount = params.sliceCount;
+    state.rndSeed = params.randomSeed;
+    state.forcedJumpSeed = params.forcedJumpSeed ?? params.randomSeed;
     resetForDiscontinuity(state, sample);
     jumpReason = "discontinuity";
   } else {
-    const structuralChange =
-      params.sourceDurationSeconds !== state.sourceDurationSeconds ||
-      params.sliceCount !== state.sliceCount;
-
-    if (structuralChange) {
-      state.sourceDurationSeconds = params.sourceDurationSeconds;
-      state.sliceCount = params.sliceCount;
-      const count = effectiveSliceCount(
-        state.sourceDurationSeconds,
-        state.sliceCount,
-        state.jumpSizeBeats,
-        sample.beatIntervalSeconds,
-        state.playbackRate,
-      );
-      state.activeSlice = clampSlice(state.activeSlice, count);
-      if (
-        Math.abs(sourceTimestamp(state, sample) - oldSourceTimestamp) >
-        SOURCE_EPSILON
+    const timedTriggers = orderedTimedTriggers(orderedTriggerEvents, sample);
+    let triggerIndex = 0;
+    const acceptTriggersThrough = (transportSeconds: number) => {
+      const accepted: TimeSamplerTriggerEvent[] = [];
+      while (
+        triggerIndex < timedTriggers.length &&
+        (timedTriggers[triggerIndex].transportSeconds ??
+          sample.transportSeconds) <=
+          transportSeconds + SOURCE_EPSILON
       ) {
-        state.jumpGeneration += 1;
-        jumpReason = "source-remap";
+        accepted.push(timedTriggers[triggerIndex]);
+        triggerIndex += 1;
       }
-    }
+      acceptTriggers(state, sample, accepted);
+    };
 
     while (
       state.nextBoundaryBeat <
       sample.beatPosition - BOUNDARY_EPSILON
     ) {
       const boundaryBeat = state.nextBoundaryBeat;
-      const boundary = processBoundary(state, sample, boundaryBeat);
-      jumpReason = boundary.reason;
-      accent = boundary.accent;
+      const boundaryTime = boundaryTransportSeconds(
+        state,
+        sample,
+        boundaryBeat,
+      );
+      acceptTriggersThrough(boundaryTime);
+      processBoundary(state, sample, boundaryBeat, boundaryTime);
       if (state.nextBoundaryBeat === boundaryBeat) {
         state.nextBoundaryBeat = boundaryBeat + state.jumpSizeBeats;
       }
     }
 
+    const oldCount = effectiveSliceCount(
+      state.sourceDurationSeconds,
+      state.sliceCount,
+      state.jumpSizeBeats,
+      state.beatIntervalSeconds,
+      state.playbackRate,
+    );
+    const oldSourceTimestamp = sourceTimestamp(state, sample);
+    const oldSliceStart = sourceSliceStart(state, oldCount);
+    const oldOffset = Math.max(0, oldSourceTimestamp - oldSliceStart);
+    const oldPlaybackRate = state.playbackRate;
+    const structuralChange =
+      params.sourceDurationSeconds !== state.sourceDurationSeconds ||
+      params.sliceCount !== state.sliceCount;
+    const rateChange = params.playbackRate !== oldPlaybackRate;
+
+    state.playbackRate = params.playbackRate;
+    state.accentMode = params.accentMode;
+    state.beatIntervalSeconds = positiveFinite(
+      sample.beatIntervalSeconds,
+      state.beatIntervalSeconds,
+    );
+    state.sourceDurationSeconds = params.sourceDurationSeconds;
+    state.sliceCount = params.sliceCount;
+
+    if (params.randomSeed !== state.rndSeed) {
+      state.rndSeed = params.randomSeed;
+      state.rndState = params.randomSeed;
+    }
+    const forcedJumpSeed = params.forcedJumpSeed ?? params.randomSeed;
+    if (forcedJumpSeed !== state.forcedJumpSeed) {
+      state.forcedJumpSeed = forcedJumpSeed;
+      state.forcedJumpState = forcedJumpSeed;
+    }
+
+    const newCount = effectiveSliceCount(
+      state.sourceDurationSeconds,
+      state.sliceCount,
+      state.jumpSizeBeats,
+      state.beatIntervalSeconds,
+      state.playbackRate,
+    );
+    const effectiveCountChange = newCount !== oldCount;
+    state.activeSlice = clampSlice(state.activeSlice, newCount);
+
+    if (structuralChange || rateChange || effectiveCountChange) {
+      const newSliceDuration = state.sourceDurationSeconds / newCount;
+      state.sourceAnchorTransportSeconds = sample.transportSeconds;
+      state.sourceAnchorOffsetSeconds = Math.min(
+        newSliceDuration,
+        oldOffset,
+      );
+      const remappedSourceTimestamp = sourceTimestamp(state, sample);
+      if (
+        Math.abs(remappedSourceTimestamp - oldSourceTimestamp) > SOURCE_EPSILON
+      ) {
+        state.jumpGeneration += 1;
+        jumpReason = "source-remap";
+      }
+    }
+
     state.queuedParams = queuedParamsFrom(state, params);
-    acceptTriggers(state, sample, orderedTriggerEvents);
 
     if (
       Math.abs(state.nextBoundaryBeat - sample.beatPosition) <=
       BOUNDARY_EPSILON
     ) {
       const boundaryBeat = state.nextBoundaryBeat;
-      const boundary = processBoundary(state, sample, boundaryBeat);
+      const boundaryTime = boundaryTransportSeconds(
+        state,
+        sample,
+        boundaryBeat,
+      );
+      acceptTriggersThrough(boundaryTime);
+      const boundary = processBoundary(
+        state,
+        sample,
+        boundaryBeat,
+        boundaryTime,
+      );
       jumpReason = boundary.reason;
       accent = boundary.accent;
       if (state.nextBoundaryBeat === boundaryBeat) {
         state.nextBoundaryBeat = boundaryBeat + state.jumpSizeBeats;
       }
     }
+
+    acceptTriggersThrough(sample.transportSeconds);
   }
 
   state.lastTransportSeconds = sample.transportSeconds;
