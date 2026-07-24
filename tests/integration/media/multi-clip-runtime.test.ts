@@ -568,6 +568,64 @@ describe("G007 multi-clip production runtime", () => {
     await state.runtime.dispose();
   });
 
+  test("counts one steady miss but not deliberate jump recovery frames", async () => {
+    const state = setup();
+    state.runtime.select({
+      pgm: "clip-0",
+      prewarm: null,
+      overlap: null,
+    });
+    expect(
+      state.present({
+        sourceTimeSeconds: 0,
+        sourceGeneration: 0,
+      }),
+    ).toBe(true);
+
+    expect(
+      state.present({
+        sourceTimeSeconds: 1,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    state.advance(50);
+    expect(
+      state.present({
+        sourceTimeSeconds: 1.05,
+        sourceGeneration: 1,
+        late: true,
+      }),
+    ).toBe(true);
+    expect(state.performance.snapshot().frames).toMatchObject({
+      presented: 2,
+      late: 0,
+      dropped: 0,
+    });
+
+    expect(
+      state.present({
+        sourceTimeSeconds: 2,
+        sourceGeneration: 1,
+      }),
+    ).toBe(false);
+    expect(state.performance.snapshot().frames.dropped).toBe(1);
+    state.advance(50);
+    expect(
+      state.present({
+        sourceTimeSeconds: 2.05,
+        sourceGeneration: 1,
+        late: true,
+      }),
+    ).toBe(true);
+    expect(state.performance.snapshot().frames).toMatchObject({
+      presented: 3,
+      late: 0,
+      dropped: 1,
+      lateOrDroppedRatio: 0.25,
+    });
+    await state.runtime.dispose();
+  });
+
   test("wires all pressure stages through runtime and observable telemetry", async () => {
     const state = setup();
     state.runtime.select({

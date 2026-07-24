@@ -203,6 +203,7 @@ export class MultiClipPlaybackRuntime<
     this.options.coordinator.updateTransport(transport);
     const pgm = this.roles.get("pgm");
     if (!pgm) return false;
+    let settlesIntentionalSeek = false;
 
     const fallback = this.options.renderer.snapshot().fallback.path;
     if (
@@ -274,7 +275,7 @@ export class MultiClipPlaybackRuntime<
           (pgm.lastDiscontinuityGeneration !== null &&
             transport.discontinuityGeneration !==
               pgm.lastDiscontinuityGeneration);
-        if (!deliberateDiscontinuity) {
+        if (!deliberateDiscontinuity && !pgm.seekInFlight) {
           this.recordDroppedFrame(transport);
         }
         this.options.videos.seek(pgm.video, targetTime);
@@ -284,6 +285,7 @@ export class MultiClipPlaybackRuntime<
           transport.discontinuityGeneration;
         return false;
       }
+      settlesIntentionalSeek = pgm.seekInFlight;
       pgm.seekInFlight = false;
       pgm.lastSourceGeneration = sourceGeneration;
       pgm.lastDiscontinuityGeneration =
@@ -300,6 +302,7 @@ export class MultiClipPlaybackRuntime<
       this.pendingLaneGeneration === pgm.generation;
     const late =
       !settlesPendingPresentation &&
+      !settlesIntentionalSeek &&
       transport.playing &&
       this.hasPresented &&
       options.late;

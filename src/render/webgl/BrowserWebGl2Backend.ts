@@ -3,6 +3,7 @@ import type { WebGl2Backend } from "./WebCodecsRenderer";
 import {
   EXTERNAL_TO_LINEAR_GLSL,
   FULLSCREEN_VERTEX_GLSL,
+  FULLSCREEN_VERTEX_UNFLIPPED_GLSL,
   TIMESAMPLER_COMPOSITE_GLSL,
 } from "./shaders";
 
@@ -32,6 +33,7 @@ function compileShader(
 function createProgram(
   gl: WebGL2RenderingContext,
   fragmentSource: string,
+  vertexSource = FULLSCREEN_VERTEX_GLSL,
 ) {
   const program = gl.createProgram();
   if (!program) throw new Error("webgl-program-create-failed");
@@ -41,7 +43,7 @@ function createProgram(
     vertex = compileShader(
       gl,
       gl.VERTEX_SHADER,
-      FULLSCREEN_VERTEX_GLSL,
+      vertexSource,
     );
     fragment = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
     gl.attachShader(program, vertex);
@@ -68,6 +70,13 @@ function effectMode(request: RenderFrameRequest) {
     return 2;
   }
   return request.accentMode === "LUM" ? 0 : 1;
+}
+
+function configureSampledTexture(gl: WebGL2RenderingContext) {
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
 export class BrowserWebGl2Backend<Source extends object>
@@ -102,6 +111,7 @@ export class BrowserWebGl2Backend<Source extends object>
       compositeProgram = createProgram(
         gl,
         TIMESAMPLER_COMPOSITE_GLSL,
+        FULLSCREEN_VERTEX_UNFLIPPED_GLSL,
       );
       sourceTexture = gl.createTexture();
       linearTexture = gl.createTexture();
@@ -125,6 +135,9 @@ export class BrowserWebGl2Backend<Source extends object>
     this.linearTexture = linearTexture;
     this.framebuffer = framebuffer;
     this.vao = vao;
+    gl.bindTexture(gl.TEXTURE_2D, this.linearTexture);
+    configureSampledTexture(gl);
+    gl.bindTexture(gl.TEXTURE_2D, null);
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
   }
 
@@ -149,10 +162,7 @@ export class BrowserWebGl2Backend<Source extends object>
     );
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    configureSampledTexture(gl);
     gl.texImage2D(
       gl.TEXTURE_2D,
       0,
@@ -218,6 +228,9 @@ export class BrowserWebGl2Backend<Source extends object>
     );
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.flush();
+    if (gl.getError() !== gl.NO_ERROR) {
+      throw new Error("webgl-draw-failed");
+    }
   }
 
   onContextLost(callback: (reason: string) => void) {
