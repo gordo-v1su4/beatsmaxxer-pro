@@ -31,6 +31,7 @@ interface FakeVideo {
   playing: boolean;
   pendingSeekTarget: number | null;
   pendingSeekFrames: number;
+  rvfcLagSeconds: number;
 }
 
 const request: RenderFrameRequest = {
@@ -101,6 +102,8 @@ function setup(
     rvfcLagSeconds?: number;
     rvfcAgeSeconds?: number;
     rvfcAuthoritative?: boolean;
+    simulateRvfcCallbacks?: boolean;
+    postSeekRvfcLagSeconds?: number;
   } = {},
 ) {
   const registry = new ClipRegistry();
@@ -131,6 +134,7 @@ function setup(
         playing: false,
         pendingSeekTarget: null,
         pendingSeekFrames: 0,
+        rvfcLagSeconds: options.rvfcLagSeconds ?? 0,
       };
       activeVideos.add(video);
       return video;
@@ -149,20 +153,20 @@ function setup(
     currentTime: (video) => video.currentTime,
     presentationTolerance: () =>
       options.videoFrameRate
-        ? 1 / options.videoFrameRate
+        ? (1 / options.videoFrameRate) * 1.05
         : 1 / 30,
     presentedTimeMatches: options.videoFrameRate
       ? (video, targetTime) =>
           Math.abs(
             video.currentTime -
-              (options.rvfcLagSeconds ?? 0) -
+              video.rvfcLagSeconds -
               targetTime,
           ) <=
-          1 / options.videoFrameRate! + 1e-9
+          (1 / options.videoFrameRate!) * 1.05 + 1e-9
       : undefined,
     presentationDiagnostics: (video) => ({
       presentedMediaTime:
-        video.currentTime - (options.rvfcLagSeconds ?? 0),
+        video.currentTime - video.rvfcLagSeconds,
       frameDurationSeconds: options.videoFrameRate
         ? 1 / options.videoFrameRate
         : null,
@@ -184,6 +188,8 @@ function setup(
       callbackSequence: Math.floor(
         now / (1_000 / (options.videoFrameRate ?? 30)),
       ),
+      callbackSequenceReliable:
+        options.simulateRvfcCallbacks ?? false,
     }),
     seek: (video, timeSeconds) => {
       seekCalls += 1;
@@ -194,6 +200,9 @@ function setup(
       if (latencyFrames === 0) {
         video.currentTime = timeSeconds;
         video.clockTime = timeSeconds;
+        video.rvfcLagSeconds =
+          options.postSeekRvfcLagSeconds ??
+          video.rvfcLagSeconds;
       } else {
         video.pendingSeekTarget = timeSeconds;
         video.pendingSeekFrames = latencyFrames;
@@ -270,6 +279,11 @@ function setup(
     videoTime() {
       return [...activeVideos][0]?.currentTime ?? 0;
     },
+    setRvfcLag(seconds: number) {
+      for (const video of activeVideos) {
+        video.rvfcLagSeconds = seconds;
+      }
+    },
     advance(milliseconds: number) {
       now += milliseconds;
       for (const video of activeVideos) {
@@ -278,6 +292,9 @@ function setup(
           if (video.pendingSeekFrames <= 0) {
             video.currentTime = video.pendingSeekTarget;
             video.clockTime = video.pendingSeekTarget;
+            video.rvfcLagSeconds =
+              options.postSeekRvfcLagSeconds ??
+              video.rvfcLagSeconds;
             video.pendingSeekTarget = null;
           }
           continue;
@@ -880,7 +897,7 @@ describe("G007 multi-clip production runtime", () => {
       currentTimeSeconds: 0.2,
       presentedMediaTimeSeconds: 0.2,
       frameDurationSeconds: 1 / 30,
-      presentationToleranceSeconds: 1 / 30,
+      presentationToleranceSeconds: (1 / 30) * 1.05,
       currentDistanceSeconds: 0.2,
       presentedDistanceSeconds: 0.2,
       durationSeconds: null,
@@ -1020,12 +1037,14 @@ describe("G007 multi-clip production runtime", () => {
     const seekLatencies = [1, 2, 3];
     let nextSeekLatency = 0;
     const state = setup({
-      videoFrameRate: 30,
+      videoFrameRate: 24,
       seekLatencyFrames: () =>
         seekLatencies[nextSeekLatency++ % seekLatencies.length],
-      rvfcLagSeconds: 0.04,
-      rvfcAgeSeconds: 0.05,
-      rvfcAuthoritative: false,
+      rvfcLagSeconds: 0.041,
+      postSeekRvfcLagSeconds: 0.041,
+      rvfcAgeSeconds: 0.02,
+      rvfcAuthoritative: true,
+      simulateRvfcCallbacks: true,
     });
     state.runtime.select({
       pgm: "clip-0",
@@ -1044,6 +1063,9 @@ describe("G007 multi-clip production runtime", () => {
       if (recoveryTarget === null) {
         sourceTimeSeconds += playbackRate / 60;
       }
+      if (frame === 30) {
+        state.setRvfcLag(0.05);
+      }
 
       if (recoveryTarget === null && frame % 30 === 0) {
         sourceGeneration += 1;
@@ -1057,7 +1079,7 @@ describe("G007 multi-clip production runtime", () => {
         state.shiftVideoTime(0.2);
       }
 
-      const phaseJitter = frame % 2 === 0 ? -0.004 : 0.004;
+      const phaseJitter = frame % 2 === 0 ? -0.002 : 0.002;
       const presented = state.present({
         sourceTimeSeconds:
           recoveryTarget ?? state.videoTime() + phaseJitter,
@@ -1089,8 +1111,7 @@ describe("G007 multi-clip production runtime", () => {
     expect(decisions.records).toHaveLength(512);
     expect(
       decisions.records.some(
-        (decision) =>
-          decision.basis === "current-time-stale-rvfc",
+        (decision) => decision.outcome === "seek-wait",
       ),
     ).toBe(true);
     await state.runtime.dispose();

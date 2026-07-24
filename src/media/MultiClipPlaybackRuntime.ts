@@ -51,6 +51,7 @@ export interface CompatibilityVideoAdapter<Video extends object> {
     rvfcSuperseded: boolean;
     latestRawDeltaSeconds: number | null;
     callbackSequence: number;
+    callbackSequenceReliable: boolean;
   };
   seek(video: Video, timeSeconds: number): void;
   setPlaybackRate?(video: Video, playbackRate: number): void;
@@ -64,6 +65,8 @@ interface ActiveRole<Video extends object> {
   lastSourceGeneration: number | null;
   lastDiscontinuityGeneration: number | null;
   seekInFlight: boolean;
+  seekCallbackSequence: number | null;
+  seekTargetTimeSeconds: number | null;
   dropEpisode: PlaybackDropReason | null;
 }
 
@@ -119,12 +122,15 @@ interface HtmlDecisionDiagnostic {
   outcome: HtmlDecisionOutcome;
   basis: HtmlDecisionBasis;
   targetTimeSeconds: number;
+  validationTargetTimeSeconds: number;
   currentTimeSeconds: number;
   presentedMediaTimeSeconds: number | null;
   frameDurationSeconds: number | null;
   presentationToleranceSeconds: number;
   currentDistanceSeconds: number;
   presentedDistanceSeconds: number | null;
+  validationCurrentDistanceSeconds: number;
+  validationPresentedDistanceSeconds: number | null;
   durationSeconds: number | null;
   rvfcAgeSeconds: number | null;
   rvfcValidUntilMs: number | null;
@@ -136,6 +142,7 @@ interface HtmlDecisionDiagnostic {
   rvfcSuperseded: boolean;
   latestRawDeltaSeconds: number | null;
   callbackSequence: number;
+  callbackSequenceReliable: boolean;
   sourceGeneration: number | null;
   previousSourceGeneration: number | null;
   discontinuityGeneration: number;
@@ -144,6 +151,7 @@ interface HtmlDecisionDiagnostic {
   actualPlaybackRate: number | null;
   seekInFlight: boolean;
   videoSeeking: boolean;
+  postSeekCallbackPending: boolean;
   deliberateDiscontinuity: boolean;
   transportTimeSeconds: number;
   sourceTimeSeconds: number;
@@ -286,7 +294,18 @@ export class MultiClipPlaybackRuntime<
       "pgm",
       pgm.generation,
     );
-    this.options.videos.seek(pgm.video, Math.max(0, timeSeconds));
+    const targetTime = Math.max(0, timeSeconds);
+    const diagnostics =
+      this.options.videos.presentationDiagnostics?.(pgm.video);
+    pgm.seekInFlight = true;
+    pgm.seekCallbackSequence =
+      diagnostics?.callbackSequenceReliable &&
+      (diagnostics.presentedMediaTime !== null ||
+        diagnostics.callbackSequence > 0)
+        ? diagnostics?.callbackSequence ?? null
+        : null;
+    pgm.seekTargetTimeSeconds = targetTime;
+    this.options.videos.seek(pgm.video, targetTime);
     return true;
   }
 
@@ -399,9 +418,43 @@ export class MultiClipPlaybackRuntime<
             ) ?? Math.abs(presentedMediaTime - targetTime));
       const videoSeeking =
         this.options.videos.seeking?.(pgm.video) ?? false;
+      const callbackSequence =
+        videoDiagnostics?.callbackSequence ?? 0;
+      const postSeekCallbackPending =
+        pgm.seekInFlight &&
+        pgm.seekCallbackSequence !== null &&
+        callbackSequence <= pgm.seekCallbackSequence;
+      const validationTargetTime =
+        pgm.seekInFlight &&
+        pgm.seekCallbackSequence !== null &&
+        pgm.seekTargetTimeSeconds !== null
+          ? pgm.seekTargetTimeSeconds
+          : targetTime;
+      const validationCurrentDistance =
+        validationTargetTime === targetTime
+          ? drift
+          : (this.options.videos.timeDistance?.(
+              pgm.video,
+              currentTime,
+              validationTargetTime,
+            ) ?? Math.abs(currentTime - validationTargetTime));
+      const validationPresentedDistance =
+        presentedMediaTime === null
+          ? null
+          : validationTargetTime === targetTime
+            ? presentedDistance
+            : (this.options.videos.timeDistance?.(
+                pgm.video,
+                presentedMediaTime,
+                validationTargetTime,
+              ) ??
+              Math.abs(
+                presentedMediaTime - validationTargetTime,
+              ));
       const diagnosticBase = {
         clipId: pgm.clip.id,
         targetTimeSeconds: targetTime,
+        validationTargetTimeSeconds: validationTargetTime,
         currentTimeSeconds: currentTime,
         presentedMediaTimeSeconds: presentedMediaTime,
         frameDurationSeconds:
@@ -409,6 +462,10 @@ export class MultiClipPlaybackRuntime<
         presentationToleranceSeconds: presentationTolerance,
         currentDistanceSeconds: drift,
         presentedDistanceSeconds: presentedDistance,
+        validationCurrentDistanceSeconds:
+          validationCurrentDistance,
+        validationPresentedDistanceSeconds:
+          validationPresentedDistance,
         durationSeconds: videoDiagnostics?.durationSeconds ?? null,
         rvfcAgeSeconds: videoDiagnostics?.rvfcAgeSeconds ?? null,
         rvfcValidUntilMs:
@@ -425,7 +482,9 @@ export class MultiClipPlaybackRuntime<
           videoDiagnostics?.rvfcSuperseded ?? false,
         latestRawDeltaSeconds:
           videoDiagnostics?.latestRawDeltaSeconds ?? null,
-        callbackSequence: videoDiagnostics?.callbackSequence ?? 0,
+        callbackSequence,
+        callbackSequenceReliable:
+          videoDiagnostics?.callbackSequenceReliable ?? false,
         sourceGeneration,
         previousSourceGeneration: pgm.lastSourceGeneration,
         discontinuityGeneration: transport.discontinuityGeneration,
@@ -435,6 +494,7 @@ export class MultiClipPlaybackRuntime<
         actualPlaybackRate: videoDiagnostics?.playbackRate ?? null,
         seekInFlight: pgm.seekInFlight,
         videoSeeking,
+        postSeekCallbackPending,
         transportTimeSeconds: transport.presentationTimeSeconds,
         sourceTimeSeconds,
       };
@@ -454,12 +514,22 @@ export class MultiClipPlaybackRuntime<
         });
         return false;
       }
+      if (postSeekCallbackPending) {
+        this.recordHtmlDecision({
+          ...diagnosticBase,
+          outcome: "seek-wait",
+          basis: "none",
+          deliberateDiscontinuity: false,
+        });
+        return false;
+      }
       const presentedTimeMatches =
         this.options.videos.presentedTimeMatches?.(
           pgm.video,
-          targetTime,
+          validationTargetTime,
         );
-      const currentTimeMatches = drift <= presentationTolerance;
+      const currentTimeMatches =
+        validationCurrentDistance <= presentationTolerance;
       const rvfcIsAuthoritative =
         presentedTimeMatches !== undefined &&
         (videoDiagnostics?.rvfcAuthoritative ?? false);
@@ -504,6 +574,12 @@ export class MultiClipPlaybackRuntime<
         });
         this.options.videos.seek(pgm.video, targetTime);
         pgm.seekInFlight = true;
+        pgm.seekCallbackSequence =
+          videoDiagnostics?.callbackSequenceReliable &&
+          (presentedMediaTime !== null || callbackSequence > 0)
+            ? callbackSequence
+            : null;
+        pgm.seekTargetTimeSeconds = targetTime;
         pgm.lastSourceGeneration = sourceGeneration;
         pgm.lastDiscontinuityGeneration =
           transport.discontinuityGeneration;
@@ -511,6 +587,8 @@ export class MultiClipPlaybackRuntime<
       }
       settlesIntentionalSeek = pgm.seekInFlight;
       pgm.seekInFlight = false;
+      pgm.seekCallbackSequence = null;
+      pgm.seekTargetTimeSeconds = null;
       pgm.lastSourceGeneration = sourceGeneration;
       pgm.lastDiscontinuityGeneration =
         transport.discontinuityGeneration;
@@ -714,6 +792,8 @@ export class MultiClipPlaybackRuntime<
       lastSourceGeneration: null,
       lastDiscontinuityGeneration: null,
       seekInFlight: false,
+      seekCallbackSequence: null,
+      seekTargetTimeSeconds: null,
       dropEpisode: null,
     });
     this.options.coordinator.activate(
@@ -737,6 +817,8 @@ export class MultiClipPlaybackRuntime<
     warmed.lastSourceGeneration = null;
     warmed.lastDiscontinuityGeneration = null;
     warmed.seekInFlight = false;
+    warmed.seekCallbackSequence = null;
+    warmed.seekTargetTimeSeconds = null;
     warmed.dropEpisode = null;
     this.roles.set("pgm", warmed);
     this.options.coordinator.activate(

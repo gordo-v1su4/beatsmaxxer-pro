@@ -445,6 +445,7 @@ export function BrowserProgramRenderer(
               latestRawDeltaSeconds:
                 cadence?.latestRawDeltaSeconds ?? null,
               callbackSequence: cadence?.callbackSequence ?? 0,
+              callbackSequenceReliable: cadence !== undefined,
             };
           },
           seek: (video, timeSeconds) => {
