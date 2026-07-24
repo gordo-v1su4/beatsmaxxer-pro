@@ -1,5 +1,13 @@
 export { randomSlice, xorshift32 } from "./random";
 export {
+  DeterministicPgmSchedule,
+  LiveTimeSamplerSchedule,
+  jumpSizeBeatsFromControl,
+  liveTimeSamplerSchedule,
+  nextQuantizedBeat,
+  timeSamplerParamsFromControls,
+} from "./integration";
+export {
   createTimeSamplerState,
   reduceTimeSampler,
 } from "./reducer";

@@ -6,6 +6,12 @@ import { Knob } from './Knob';
 import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
 import {
+  jumpSizeBeatsFromControl,
+  liveTimeSamplerSchedule,
+  timeSamplerParamsFromControls,
+} from '../timesampler/integration';
+import type { TimeSamplerTriggerEvent } from '../timesampler/types';
+import {
   recordRenderedFrame,
   registerWebGlRenderer,
   updateSharedVideoResources,
@@ -435,8 +441,7 @@ function destroySharedVideo(moduleId: string) {
   refreshSharedVideoTelemetry();
 }
 
-/** Per-module shared clock: the FX-preview instance drives the time-remap engine and
-    writes here; the PGM monitor instance follows, so test-pattern clocks match too. */
+/** Legacy per-module clocks for effects that have not moved to a shared schedule. */
 const moduleClocks: Record<string, { srcTime: number; aux1: number; aux2: number }> = {};
 
 /** True if transport moved from tPrev to tNow across any MIDI note-on time (looping by loopDur). */
@@ -685,6 +690,11 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         m.uniforms.uTime.value = timeRef.current;
         m.uniforms.uSrcTime.value = timeRef.current;
 
+        const renderTransport = audioEngine.getTransportSample(now / 1_000);
+        m.uniforms.uBeat.value = renderTransport.beatPosition;
+        m.uniforms.uBeatPhase.value = renderTransport.beatPhase;
+        m.uniforms.uPlaying.value = renderTransport.playing ? 1.0 : 0.0;
+        m.uniforms.uTransportSec.value = renderTransport.transportSeconds;
         const uBeat = m.uniforms.uBeat.value;
         const st = loopRef.current;
 
@@ -697,7 +707,98 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         const isDriver = mode === 'effect';
         const clock = (moduleClocks[type] ??= { srcTime: 0, aux1: 0, aux2: 0 });
 
-        if (!isDriver) {
+        if (type === 'timesampler') {
+          const prm = paramsRef.current;
+          const transport = renderTransport;
+          const controls = {
+            mode: prm.mode,
+            size: prm.size,
+            slices: prm.slices,
+            loops: prm.loops,
+            rate: prm.rate,
+            accent: prm.accent,
+          };
+          const mappedParams = timeSamplerParamsFromControls(controls, 1);
+          const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
+          const hasDuration = !!(
+            video &&
+            Number.isFinite(video.duration) &&
+            video.duration > 0.05
+          );
+          const sourceDurationSeconds = hasDuration
+            ? video!.duration
+            : Math.max(
+                1,
+                mappedParams.jumpSizeBeats *
+                  transport.beatIntervalSeconds *
+                  mappedParams.sliceCount *
+                  mappedParams.playbackRate,
+              );
+          const transportTriggers = audioEngine
+            .drainTransportEvents()
+            .filter(
+              (event): event is typeof event & TimeSamplerTriggerEvent =>
+                event.type === 'manual-trigger' ||
+                event.type === 'midi-trigger' ||
+                event.type === 'onset-trigger',
+            );
+          const schedule = liveTimeSamplerSchedule.sample(
+            transport,
+            transportTriggers,
+            {
+              controls,
+              sourceDurationSeconds,
+              midiNotes: midiLayerRef.current?.notes,
+              midiDurationSeconds: midiLayerRef.current?.duration,
+              onsetStrength: onsetStr,
+              onsetSensitivity: m.uniforms.uP0.value.w,
+              bypassed: m.uniforms.uBypass.value > 0.5,
+            },
+          );
+
+          const generationChanged = st.lastTrigCount !== schedule.jumpGeneration;
+          st.lastTrigCount = schedule.jumpGeneration;
+          st.sliceIdx = schedule.activeSlice;
+          st.srcTime = schedule.sourceTimestampSeconds;
+          st.lastTransportSec = transport.transportSeconds;
+
+          if (video) {
+            const targetRate = Math.max(
+              0.0625,
+              Math.min(4, schedule.targetPlaybackRate),
+            );
+            if (Math.abs(video.playbackRate - targetRate) > 0.005) {
+              video.playbackRate = targetRate;
+            }
+
+            const targetTime = Math.max(
+              0,
+              Math.min(video.duration - 0.02, schedule.sourceTimestampSeconds),
+            );
+            const drift = Math.abs(video.currentTime - targetTime);
+            const canResync = now / 1_000 - st.lastVideoSeekAt > 0.35;
+            if (
+              (generationChanged && drift > 0.04) ||
+              (canResync && drift > 0.35)
+            ) {
+              video.currentTime = targetTime;
+              st.lastVideoSeekAt = now / 1_000;
+            }
+          }
+
+          const jumpSizeBeats = jumpSizeBeatsFromControl(prm.size);
+          const boundaryPhase =
+            ((transport.beatPosition / jumpSizeBeats) % 1 + 1) % 1;
+          m.uniforms.uBeat.value = transport.beatPosition;
+          m.uniforms.uBeatPhase.value = transport.beatPhase;
+          m.uniforms.uPlaying.value = transport.playing ? 1.0 : 0.0;
+          m.uniforms.uTransportSec.value = transport.transportSeconds;
+          m.uniforms.uSrcTime.value = schedule.sourceTimestampSeconds;
+          m.uniforms.uAux1.value =
+            m.uniforms.uBypass.value > 0.5 ? 0.0 : 1.0;
+          m.uniforms.uAux2.value = boundaryPhase;
+        }
+        else if (!isDriver) {
           // follower (PGM monitor): mirror the driver module's clock so every
           // screen showing this module stays in sync
           m.uniforms.uSrcTime.value = clock.srcTime;
@@ -821,139 +922,6 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           m.uniforms.uAux2.value = st.isStuttering
             ? Math.min(1, Math.max(0, (uBeat - st.stutterStartBeat) / segFor(st.beatsPassed)))
             : 0.0;
-        }
-        else if (type === 'timesampler') {
-          const prm = paramsRef.current;
-          const mode_ = Math.round(m.uniforms.uP0.value.x);
-          const sizeP = m.uniforms.uP0.value.y;
-          const sens = m.uniforms.uP0.value.w;
-          const nSlices = Math.max(2, Math.round(prm.slices ?? 8));
-          const loopCount = Math.max(1, Math.round(prm.loops ?? 2));
-          const rate = 0.25 + m.uniforms.uP1.value.x * 1.75;
-          const bypass = m.uniforms.uBypass.value > 0.5;
-          const chunkBeats = sizeP < 0.2 ? 0.25 : sizeP < 0.4 ? 0.5 : sizeP < 0.6 ? 1 : sizeP < 0.8 ? 2 : 4;
-          const bpm = Math.max(40, m.uniforms.uBPM.value || 128);
-          const cycleSec = Math.max(1 / 30, chunkBeats * (60 / bpm));
-
-          const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
-          const hasDur = !!(video && Number.isFinite(video.duration) && video.duration > 0.05);
-          const dur = hasDur
-            ? Math.max(video!.duration, 0.05)
-            : Math.max(cycleSec * Math.max(nSlices, 2) * rate, cycleSec * 2);
-          const loopSourceSpanSec = Math.max(1 / 60, Math.min(dur, cycleSec * rate));
-          const maxLoopStart = Math.max(0, dur - loopSourceSpanSec - 0.02);
-          const contentStart = hasDur ? Math.min(maxLoopStart, Math.max(0.08, dur * 0.06)) : 0;
-          const contentEnd = hasDur
-            ? Math.max(contentStart, maxLoopStart - Math.min(Math.max(0.04, dur * 0.04), Math.max(0, maxLoopStart - contentStart)))
-            : maxLoopStart;
-          const sliceStride = nSlices > 1 ? (contentEnd - contentStart) / (nSlices - 1) : 0;
-
-          const tNow = audioEngine.getState().time;
-          const tPrev = st.lastTransportSec;
-          const beatReset = uBeat < st.lastBeat - 0.5;
-          const timeBack = tPrev >= 0 && tNow < tPrev - 0.25;
-          const midi = midiLayerRef.current;
-          const useMidi = !!(midi?.notes?.length);
-          let midiHit = false;
-          if (!bypass && !beatReset && !timeBack && useMidi && playingRef.current && tPrev >= 0) {
-            const lastT = midi!.notes[midi!.notes.length - 1]!.time;
-            const loopDur = Math.max(midi!.duration || 0, lastT + 0.05, 0.25);
-            const jump = Math.abs(tNow - tPrev) > Math.min(2, loopDur * 0.5);
-            if (!jump) midiHit = midiNoteCrossed(midi!.notes, tPrev, tNow, loopDur);
-          }
-          st.lastTransportSec = tNow;
-
-          const jumpTo = (idx: number, seekNow: boolean) => {
-            st.sliceIdx = ((idx % nSlices) + nSlices) % nSlices;
-            st.loopStartSec = Math.max(0, Math.min(maxLoopStart, contentStart + st.sliceIdx * sliceStride));
-            st.loopSourceSpanSec = loopSourceSpanSec;
-            st.srcTime = st.loopStartSec;
-            if (video && seekNow) {
-              const nextTime = Math.max(0, Math.min(dur - 0.02, st.loopStartSec));
-              if (Math.abs(video.currentTime - nextTime) > Math.max(0.04, st.loopSourceSpanSec * 0.12)) {
-                video.currentTime = nextTime;
-                st.lastVideoSeekAt = timeRef.current;
-              }
-            }
-          };
-
-          const nextSliceIdx = () => {
-            if (st.pendingSliceIdx >= 0) {
-              const queued = st.pendingSliceIdx;
-              st.pendingSliceIdx = -1;
-              return queued;
-            }
-            if (mode_ === 1) return st.sliceIdx - 1;                           // REV
-            if (mode_ === 2) {                                                 // PONG
-              if (st.sliceIdx + st.pongDir < 0 || st.sliceIdx + st.pongDir >= nSlices) st.pongDir *= -1;
-              return st.sliceIdx + st.pongDir;
-            }
-            if (mode_ === 3) return Math.floor(Math.random() * nSlices);       // RND
-            return st.sliceIdx + 1;                                            // FWD
-          };
-
-          const beatsNow = playingRef.current ? uBeat : timeRef.current * (bpm / 60);
-          const step = Math.floor(beatsNow / chunkBeats);
-          const cycleProgress = Math.min(1, Math.max(0, (beatsNow - step * chunkBeats) / chunkBeats));
-          const modeChanged = st.lastMode !== mode_;
-          const sliceCountChanged = st.lastSliceCount !== nSlices;
-          if (bypass || beatReset || timeBack || st.lastStep < 0 || Math.abs(st.loopSourceSpanSec - loopSourceSpanSec) > 0.08 || modeChanged || sliceCountChanged) {
-            st.lastStep = step;
-            st.lastMode = mode_;
-            st.lastSliceCount = nSlices;
-            st.pongDir = mode_ === 1 ? -1 : 1;
-            st.loopsOnSlice = 0;
-            st.pendingSliceIdx = -1;
-            if (modeChanged && st.lastStep >= 0) {
-              jumpTo(nextSliceIdx(), true);
-            } else {
-              jumpTo(Math.min(Math.max(st.sliceIdx, 0), nSlices - 1), true);
-            }
-            st.stutterStartBeat = step * chunkBeats;
-          } else if (step !== st.lastStep) {
-            st.lastStep = step;
-            if (st.loopsOnSlice + 1 >= loopCount) {
-              st.loopsOnSlice = 0;
-              jumpTo(nextSliceIdx(), true);
-            } else {
-              st.loopsOnSlice += 1;
-              jumpTo(st.sliceIdx, true);
-            }
-            st.stutterStartBeat = step * chunkBeats;
-          }
-
-          const thr = 0.08 + (1 - sens) * 1.1;
-          if (!bypass && ((useMidi && midiHit) ||
-              (!useMidi && playingRef.current && onsetStr > thr && timeRef.current - st.lastTrigAt > 0.25))) {
-            st.pendingSliceIdx = Math.floor(Math.random() * nSlices);
-            st.lastTrigAt = timeRef.current;
-          }
-
-          const targetSrcTime = Math.max(0, Math.min(dur - 0.02, st.loopStartSec + cycleProgress * st.loopSourceSpanSec));
-          if (video) {
-            const targetRate = Math.max(0.0625, Math.min(4, st.loopSourceSpanSec / cycleSec));
-            if (Math.abs(video.playbackRate - targetRate) > 0.01) video.playbackRate = targetRate;
-            const drift = Math.abs(video.currentTime - targetSrcTime);
-            const seekCooldown = Math.max(0.3, Math.min(0.65, st.loopSourceSpanSec));
-            const hardDrift = Math.max(0.35, st.loopSourceSpanSec * 0.75);
-            const canResync = timeRef.current - st.lastVideoSeekAt > seekCooldown;
-            if (canResync && drift > hardDrift) {
-              video.currentTime = targetSrcTime;
-              st.lastVideoSeekAt = timeRef.current;
-              st.srcTime = targetSrcTime;
-            } else if (timeRef.current - st.lastVideoSeekAt < 0.12) {
-              st.srcTime = targetSrcTime;
-            } else {
-              st.srcTime = video.currentTime;
-            }
-          } else {
-            st.srcTime = targetSrcTime;
-          }
-          st.lastBeat = uBeat;
-
-          m.uniforms.uSrcTime.value = st.srcTime;
-          m.uniforms.uAux1.value = bypass ? 0.0 : 1.0;
-          m.uniforms.uAux2.value = cycleProgress;
         }
         else if (type === 'transition') {
           // Transition clock: fires at the end of every N-beat cycle, on MIDI notes,

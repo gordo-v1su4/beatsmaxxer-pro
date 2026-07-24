@@ -42,17 +42,23 @@ const Ctx = createContext<AudioContextValue>({
   clearUploadedTrack: () => {},
 });
 
+const UI_SNAPSHOT_INTERVAL_MS = 100;
+
 export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AudioState>(audioEngine.getState());
   const [playing, setPlaying] = useState(false);
   const rafRef = useRef<number>(0);
+  const lastSnapshotRef = useRef(0);
   const tapTimesRef = useRef<number[]>([]);
 
   useEffect(() => {
-    const poll = () => {
-      const next = audioEngine.getState();
-      setState(next);
-      setPlaying(next.playing);
+    const poll = (now: number) => {
+      if (now - lastSnapshotRef.current >= UI_SNAPSHOT_INTERVAL_MS) {
+        const next = audioEngine.getState();
+        setState(next);
+        setPlaying(next.playing);
+        lastSnapshotRef.current = now;
+      }
       rafRef.current = requestAnimationFrame(poll);
     };
     rafRef.current = requestAnimationFrame(poll);

@@ -2,8 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import type { ModuleType, ModuleConfig, VideoLayer, MidiLayer } from '../App';
 import { ThreeVisualizer, ScreenOverlay, ScreenBadge, VUMeter } from './EffectModule';
 import { useAudio } from '../audio/AudioContext';
+import { audioEngine } from '../audio/AudioEngine';
+import {
+  DeterministicPgmSchedule,
+  type PgmFeel,
+} from '../timesampler/integration';
 
-type RailFeel = 0 | 1 | 2;
+type RailFeel = PgmFeel;
 
 const RAIL_INTERVALS = [
   { label: '1BT', beats: 1 },
@@ -13,26 +18,6 @@ const RAIL_INTERVALS = [
   { label: '4BR', beats: 16 },
   { label: '8BR', beats: 32 },
 ] as const;
-
-function nextQuantizedBeat(currentBeat: number, intervalBeats: number, feel: RailFeel) {
-  const safeBeat = Math.max(0, currentBeat);
-  const base = Math.max(0.25, intervalBeats);
-
-  if (feel === 2) {
-    const dotted = base * 1.5;
-    return (Math.floor(safeBeat / dotted) + 1) * dotted;
-  }
-
-  if (feel === 1) {
-    const pairLength = base * 2;
-    const pairStart = Math.floor(safeBeat / pairLength) * pairLength;
-    const longStep = base * (4 / 3);
-    const firstBoundary = pairStart + longStep;
-    return safeBeat < firstBoundary - 1e-4 ? firstBoundary : pairStart + pairLength;
-  }
-
-  return (Math.floor(safeBeat / base) + 1) * base;
-}
 
 function formatIntervalLabel(intervalBeats: number, feel: RailFeel) {
   const base = RAIL_INTERVALS.find((option) => option.beats === intervalBeats)?.label ?? `${intervalBeats}BT`;
@@ -91,51 +76,51 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
   const [autoRand, setAutoRand] = useState(false);
   const [randIntervalBeats, setRandIntervalBeats] = useState(4);
   const [randFeel, setRandFeel] = useState<RailFeel>(0);
-  const lastBeatRef = useRef(0);
-  const nextTriggerBeatRef = useRef<number | null>(null);
-  const schedulerKeyRef = useRef("");
+  const schedulerRef = useRef(
+    new DeterministicPgmSchedule<ModuleType>(0x6d2b79f5),
+  );
 
   useEffect(() => {
-    const currentBeat = state.beat;
-    const schedulerKey = `${randIntervalBeats}:${randFeel}:${autoRand}:${queued ?? 'none'}`;
-    const beatWentBack = currentBeat < lastBeatRef.current - 0.5;
-    const schedulerChanged = schedulerKey !== schedulerKeyRef.current;
+    let frameId = 0;
+    const sampleSchedule = (now: number) => {
+      const transport = audioEngine.getTransportSample(now / 1_000);
+      const result = schedulerRef.current.sample(transport, {
+        active: pgmSource,
+        sources: modules.map((module) => module.id),
+        queued,
+        autoRandom: autoRand,
+        intervalBeats: randIntervalBeats,
+        feel: randFeel,
+      });
 
-    if (!state.playing) {
-      nextTriggerBeatRef.current = null;
-      lastBeatRef.current = currentBeat;
-      schedulerKeyRef.current = schedulerKey;
-      return;
-    }
-
-    if (nextTriggerBeatRef.current === null || beatWentBack || schedulerChanged) {
-      nextTriggerBeatRef.current = nextQuantizedBeat(currentBeat, randIntervalBeats, randFeel);
-    }
-
-    while (nextTriggerBeatRef.current !== null && currentBeat + 1e-3 >= nextTriggerBeatRef.current) {
-      if (queued) {
-        onSelectSource(queued);
-        setQueued(null);
-      } else if (autoRand) {
-        const others = modules.filter(m => m.id !== pgmSource);
-        if (others.length > 0) {
-          onSelectSource(others[Math.floor(Math.random() * others.length)].id);
-        }
+      if (result.selected !== null && result.selected !== pgmSource) {
+        onSelectSource(result.selected);
       }
-      nextTriggerBeatRef.current = nextQuantizedBeat(
-        nextTriggerBeatRef.current + 1e-4,
-        randIntervalBeats,
-        randFeel
-      );
-    }
+      if (result.consumedQueued) {
+        setQueued(null);
+      }
+      frameId = requestAnimationFrame(sampleSchedule);
+    };
 
-    lastBeatRef.current = currentBeat;
-    schedulerKeyRef.current = schedulerKey;
-  }, [state.beat, state.playing, queued, autoRand, modules, pgmSource, onSelectSource, randIntervalBeats, randFeel]);
+    frameId = requestAnimationFrame(sampleSchedule);
+    return () => cancelAnimationFrame(frameId);
+  }, [
+    queued,
+    autoRand,
+    modules,
+    pgmSource,
+    onSelectSource,
+    randIntervalBeats,
+    randFeel,
+  ]);
 
   const handleSelect = (id: ModuleType) => {
     if (id === pgmSource) { setQueued(null); return; }
-    if (!state.playing) { setQueued(null); onSelectSource(id); return; }
+    if (!audioEngine.getTransportSample().playing) {
+      setQueued(null);
+      onSelectSource(id);
+      return;
+    }
     setQueued(prev => (prev === id ? null : id));
   };
 
