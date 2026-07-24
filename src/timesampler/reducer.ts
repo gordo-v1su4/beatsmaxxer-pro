@@ -41,12 +41,10 @@ function effectiveSliceCount(
   requestedSliceCount: number,
   jumpSizeBeats: number,
   beatIntervalSeconds: number,
-  playbackRate: number,
 ): number {
   const requestedSliceDuration =
     jumpSizeBeats *
-    positiveFinite(beatIntervalSeconds, 0) *
-    positiveFinite(playbackRate, 1);
+    positiveFinite(beatIntervalSeconds, 0);
 
   if (
     sourceDurationSeconds <= 0 ||
@@ -83,7 +81,6 @@ function sourceTimestamp(
     state.sliceCount,
     state.jumpSizeBeats,
     state.beatIntervalSeconds,
-    state.playbackRate,
   );
   const slice = clampSlice(state.activeSlice, count);
   const sliceDuration = state.sourceDurationSeconds / count;
@@ -116,7 +113,6 @@ function outputFor(
       state.sliceCount,
       state.jumpSizeBeats,
       state.beatIntervalSeconds,
-      state.playbackRate,
     ),
     sourceTimestampSeconds: sourceTimestamp(state, sample),
     targetPlaybackRate: state.playbackRate,
@@ -136,7 +132,6 @@ export function createTimeSamplerState(
     params.sliceCount,
     params.jumpSizeBeats,
     sample.beatIntervalSeconds,
-    params.playbackRate,
   );
   const state: TimeSamplerState = {
     activeSlice: initialSlice(params.mode, count),
@@ -287,7 +282,6 @@ function processBoundary(
     state.sliceCount,
     state.jumpSizeBeats,
     state.beatIntervalSeconds,
-    state.playbackRate,
   );
   let reason: "scheduled" | "forced" = "scheduled";
 
@@ -335,7 +329,6 @@ function resetForDiscontinuity(
     state.sliceCount,
     state.jumpSizeBeats,
     state.beatIntervalSeconds,
-    state.playbackRate,
   );
   state.activeSlice = initialSlice(state.mode, count);
   state.pongDirection = 1;
@@ -361,6 +354,16 @@ function boundaryTransportSeconds(
   sample: TimeSamplerTransportSample,
   boundaryBeat: number,
 ): number {
+  if (sample.transportSecondsAtBeat) {
+    return Math.min(
+      sample.transportSeconds,
+      Math.max(
+        state.lastTransportSeconds,
+        sample.transportSecondsAtBeat(boundaryBeat),
+      ),
+    );
+  }
+
   if (Math.abs(sample.beatPosition - boundaryBeat) <= BOUNDARY_EPSILON) {
     return sample.transportSeconds;
   }
@@ -474,16 +477,14 @@ export function reduceTimeSampler(
       state.sliceCount,
       state.jumpSizeBeats,
       state.beatIntervalSeconds,
-      state.playbackRate,
     );
     const oldSourceTimestamp = sourceTimestamp(state, sample);
     const oldSliceStart = sourceSliceStart(state, oldCount);
     const oldOffset = Math.max(0, oldSourceTimestamp - oldSliceStart);
-    const oldPlaybackRate = state.playbackRate;
+    const rateChange = params.playbackRate !== state.playbackRate;
     const structuralChange =
       params.sourceDurationSeconds !== state.sourceDurationSeconds ||
       params.sliceCount !== state.sliceCount;
-    const rateChange = params.playbackRate !== oldPlaybackRate;
 
     state.playbackRate = params.playbackRate;
     state.accentMode = params.accentMode;
@@ -509,12 +510,11 @@ export function reduceTimeSampler(
       state.sliceCount,
       state.jumpSizeBeats,
       state.beatIntervalSeconds,
-      state.playbackRate,
     );
     const effectiveCountChange = newCount !== oldCount;
     state.activeSlice = clampSlice(state.activeSlice, newCount);
 
-    if (structuralChange || rateChange || effectiveCountChange) {
+    if (structuralChange || effectiveCountChange) {
       const newSliceDuration = state.sourceDurationSeconds / newCount;
       state.sourceAnchorTransportSeconds = sample.transportSeconds;
       state.sourceAnchorOffsetSeconds = Math.min(
@@ -528,6 +528,9 @@ export function reduceTimeSampler(
         state.jumpGeneration += 1;
         jumpReason = "source-remap";
       }
+    } else if (rateChange) {
+      state.sourceAnchorTransportSeconds = sample.transportSeconds;
+      state.sourceAnchorOffsetSeconds = oldOffset;
     }
 
     state.queuedParams = queuedParamsFrom(state, params);

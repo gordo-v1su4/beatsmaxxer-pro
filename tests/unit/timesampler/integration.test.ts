@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { TransportSample } from "../../../src/audio/transport";
+import type {
+  TransportEvent,
+  TransportSample,
+} from "../../../src/audio/transport";
 import {
-  DeterministicPgmSchedule,
+  LiveScheduleRuntime,
   LiveTimeSamplerSchedule,
   jumpSizeBeatsFromControl,
   timeSamplerParamsFromControls,
@@ -23,6 +26,8 @@ function transport(
     beatIntervalSeconds: 0.5,
     beatIndex: Math.floor(beatPosition),
     source: "bpm-fallback",
+    fallbackReason: null,
+    transportSecondsAtBeat: (beat) => beat * 0.5,
     ...overrides,
   };
 }
@@ -35,6 +40,12 @@ const CONTROLS = {
   rate: 43,
   accent: 0,
 };
+
+function triggerEvents(
+  events: ReturnType<LiveScheduleRuntime["generatedTriggerEvents"]>,
+): TransportEvent[] {
+  return events.map((event, sequence) => ({ ...event, sequence }));
+}
 
 describe("live TimeSampler integration", () => {
   test("maps production controls to the frozen reducer contract", () => {
@@ -52,18 +63,40 @@ describe("live TimeSampler integration", () => {
     });
   });
 
-  test("multiple consumers share an identical sample without double reduction", () => {
-    const schedule = new LiveTimeSamplerSchedule();
-    const input = {
+  test("preview and PGM read one centrally reduced frame", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
       controls: CONTROLS,
       sourceDurationSeconds: 8,
-    };
+    });
 
-    const preview = schedule.sample(transport(0), [], input);
-    const pgm = schedule.sample(transport(0), [], input);
+    const advanced = runtime.advance(transport(0), []);
+    const preview = runtime.getFrame();
+    const pgm = runtime.getFrame();
 
-    expect(pgm).toEqual(preview);
-    expect(pgm.jumpGeneration).toBe(0);
+    expect(preview).toBe(advanced);
+    expect(pgm).toBe(advanced);
+    expect(pgm?.timeSampler.jumpGeneration).toBe(0);
+  });
+
+  test("local consumer onset values cannot independently reduce shared state", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      onsetSensitivity: 0.5,
+    });
+    runtime.advance(transport(0), []);
+    runtime.generatedTriggerEvents(transport(0), 0);
+
+    const current = transport(0.5);
+    const generated = runtime.generatedTriggerEvents(current, 1.5);
+    const frame = runtime.advance(current, triggerEvents(generated));
+
+    expect(generated).toEqual([
+      { type: "onset-trigger", transportSeconds: 0.25 },
+    ]);
+    expect(runtime.getFrame()).toBe(frame);
   });
 
   test("an initial transport trigger is not dropped during schedule creation", () => {
@@ -113,46 +146,39 @@ describe("live TimeSampler integration", () => {
     expect(laterPresentation.jumpGeneration).toBe(first.jumpGeneration);
   });
 
-  test("MIDI scanning is shared and consumes one deterministic forced jump", () => {
-    const schedule = new LiveTimeSamplerSchedule();
-    const input = {
+  test("central MIDI scanning emits one timestamped deterministic trigger", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
       controls: CONTROLS,
       sourceDurationSeconds: 8,
       midiNotes: [{ time: 0.6 }],
       midiDurationSeconds: 2,
-    };
-    schedule.sample(transport(0), [], input);
-    schedule.sample(
-      transport(1.5, { transportSeconds: 0.75 }),
-      [],
-      input,
-    );
-    const boundary = schedule.sample(
-      transport(2, { transportSeconds: 1 }),
-      [],
-      input,
-    );
+    });
 
-    expect(boundary.jumpReason).toBe("forced");
-    expect(boundary.activeSlice).toBe(2);
-    expect(boundary.jumpGeneration).toBe(2);
+    runtime.generatedTriggerEvents(transport(0), 0);
+    const current = transport(1.5, { transportSeconds: 0.75 });
+    const events = runtime.generatedTriggerEvents(current, 0);
+    runtime.advance(transport(0), []);
+    const frame = runtime.advance(current, triggerEvents(events));
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("midi-trigger");
+    expect(events[0]?.transportSeconds).toBeCloseTo(0.6);
+    expect(frame.timeSampler.jumpGeneration).toBe(1);
+    expect(frame.timeSampler.jumpReason).toBeNull();
+
+    const boundary = runtime.advance(transport(2), []);
+    expect(boundary.timeSampler.jumpReason).toBe("forced");
+    expect(boundary.timeSampler.activeSlice).toBe(2);
   });
 });
 
-describe("deterministic PGM schedule", () => {
+describe("central deterministic PGM schedule", () => {
   const sources = ["a", "b", "c", "d"] as const;
 
-  test("queued selection wins over auto-random at the same boundary", () => {
-    const schedule = new DeterministicPgmSchedule<string>();
-    schedule.sample(transport(0), {
-      active: "a",
-      sources,
-      queued: "c",
-      autoRandom: true,
-      intervalBeats: 1,
-      feel: 0,
-    });
-    const boundary = schedule.sample(transport(1), {
+  test("queued selection wins over auto-random in the shared advance", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configurePgm({
       active: "a",
       sources,
       queued: "c",
@@ -161,14 +187,17 @@ describe("deterministic PGM schedule", () => {
       feel: 0,
     });
 
-    expect(boundary.selected).toBe("c");
-    expect(boundary.consumedQueued).toBe(true);
+    runtime.advance(transport(0), []);
+    const boundary = runtime.advance(transport(1), []);
+
+    expect(boundary.pgm.selected).toBe("c");
+    expect(boundary.pgm.consumedQueued).toBe(true);
   });
 
   test("seeded auto switching replays identically under sparse sampling", () => {
     const run = () => {
-      const schedule = new DeterministicPgmSchedule<string>(0x12345678);
-      schedule.sample(transport(0), {
+      const runtime = new LiveScheduleRuntime<string>(0x12345678);
+      runtime.configurePgm({
         active: "a",
         sources,
         queued: null,
@@ -176,22 +205,16 @@ describe("deterministic PGM schedule", () => {
         intervalBeats: 1,
         feel: 0,
       });
-      return schedule.sample(transport(4), {
-        active: "a",
-        sources,
-        queued: null,
-        autoRandom: true,
-        intervalBeats: 1,
-        feel: 0,
-      });
+      runtime.advance(transport(0), []);
+      return runtime.advance(transport(4), []).pgm;
     };
 
     expect(run()).toEqual(run());
   });
 
   test("discontinuity re-arms the next boundary without an immediate cut", () => {
-    const schedule = new DeterministicPgmSchedule<string>();
-    schedule.sample(transport(0), {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configurePgm({
       active: "a",
       sources,
       queued: "b",
@@ -199,19 +222,13 @@ describe("deterministic PGM schedule", () => {
       intervalBeats: 4,
       feel: 0,
     });
-    const seek = schedule.sample(
+    runtime.advance(transport(0), []);
+    const seek = runtime.advance(
       transport(7.5, { discontinuityGeneration: 1 }),
-      {
-        active: "a",
-        sources,
-        queued: "b",
-        autoRandom: false,
-        intervalBeats: 4,
-        feel: 0,
-      },
+      [],
     );
 
-    expect(seek.selected).toBeNull();
-    expect(seek.nextBoundaryBeat).toBe(8);
+    expect(seek.pgm.selected).toBeNull();
+    expect(seek.pgm.nextBoundaryBeat).toBe(8);
   });
 });

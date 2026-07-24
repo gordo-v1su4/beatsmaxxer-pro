@@ -10,6 +10,12 @@
 
 import { fetchEssentiaRhythmAnalysis, fetchRhythmAnalysisFromUrl } from "./essentia";
 import { TransportClock, type TransportSample } from "./transport";
+import {
+  liveScheduleRuntime,
+  type LiveScheduleFrame,
+  type LiveTimeSamplerInput,
+  type PgmScheduleInput,
+} from "../timesampler/integration";
 
 export interface AudioState {
   bpm: number;
@@ -63,7 +69,9 @@ export class AudioEngine {
   private beatGrid: number[] = [];
   private onsetHistory: number[] = [];
   private prevEnergy = 0;
+  private bassEma = 0.08;
   private onsetCooldown = 0;
+  private pgmSelectionListeners = new Set<(source: string) => void>();
 
   private rafId = 0;
   private syntheticStartTime = 0;
@@ -85,6 +93,7 @@ export class AudioEngine {
       this.transportClock.setPlaying(true, 0);
       this.onsetHistory = [];
       this.prevEnergy = 0;
+      this.bassEma = 0.08;
       this.onsetCooldown = 0;
       this.startTicking();
       return;
@@ -107,6 +116,7 @@ export class AudioEngine {
     this.transportClock.setPlaying(true, 0);
     this.onsetHistory = [];
     this.prevEnergy = 0;
+    this.bassEma = 0.08;
     this.onsetCooldown = 0;
     this.startTicking();
   }
@@ -115,6 +125,7 @@ export class AudioEngine {
     const stoppedAt = this.getTransportTime();
     this._playing = false;
     this.transportClock.setPlaying(false, stoppedAt);
+    this.advanceLiveSchedule(this.getTransportSample(), 0);
 
     if (this.mediaElement) {
       this.mediaElement.pause();
@@ -241,6 +252,7 @@ export class AudioEngine {
     this.transportClock.sourceChanged(0);
     this.onsetHistory = [];
     this.prevEnergy = 0;
+    this.bassEma = 0.08;
     this.onsetCooldown = 0;
     this._analysisStatus = "analyzing";
     this._analysisConfidence = null;
@@ -329,6 +341,50 @@ export class AudioEngine {
 
   drainTransportEvents() {
     return this.transportClock.drainEvents();
+  }
+
+  configureTimeSampler(input: LiveTimeSamplerInput) {
+    liveScheduleRuntime.configureTimeSampler(input);
+  }
+
+  configurePgmSchedule(input: PgmScheduleInput<string>) {
+    liveScheduleRuntime.configurePgm(input);
+  }
+
+  getLiveScheduleFrame(): LiveScheduleFrame<string> | null {
+    return liveScheduleRuntime.getFrame();
+  }
+
+  subscribePgmSelection(listener: (source: string) => void) {
+    this.pgmSelectionListeners.add(listener);
+    return () => {
+      this.pgmSelectionListeners.delete(listener);
+    };
+  }
+
+  private advanceLiveSchedule(
+    transport: TransportSample,
+    onsetStrength: number,
+  ) {
+    for (const event of liveScheduleRuntime.generatedTriggerEvents(
+      transport,
+      onsetStrength,
+    )) {
+      this.transportClock.queueEvent({
+        ...event,
+        transportSeconds: event.transportSeconds ?? transport.transportSeconds,
+      });
+    }
+
+    const frame = liveScheduleRuntime.advance(
+      transport,
+      this.transportClock.drainEvents(),
+    );
+    if (frame.pgm.selected !== null) {
+      for (const listener of this.pgmSelectionListeners) {
+        listener(frame.pgm.selected);
+      }
+    }
   }
 
   private startTicking() {
@@ -428,6 +484,11 @@ export class AudioEngine {
     const energy = this._bassAmp;
     const diff = energy - this.prevEnergy;
     this.prevEnergy = energy;
+    this.bassEma = this.bassEma * 0.92 + energy * 0.08;
+    const onsetStrength = Math.max(
+      0,
+      Math.min(1.5, energy / Math.max(0.02, this.bassEma) - 1),
+    );
 
     if (this.onsetCooldown > 0) this.onsetCooldown--;
 
@@ -460,6 +521,8 @@ export class AudioEngine {
 
       this.onsetCooldown = 6;
     }
+
+    this.advanceLiveSchedule(transport, onsetStrength);
   };
 
   private computeBands(buf: Uint8Array): number[] {

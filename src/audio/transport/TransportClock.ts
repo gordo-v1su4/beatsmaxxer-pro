@@ -27,6 +27,7 @@ export interface TransportSample extends BeatGridSample {
   presentationTimeSeconds: number;
   playing: boolean;
   discontinuityGeneration: number;
+  transportSecondsAtBeat: (beatPosition: number) => number;
 }
 
 export interface TransportClockOptions {
@@ -81,7 +82,9 @@ export class TransportClock {
       this.lastPresentationTimeSeconds,
       finiteNonNegative(reading.presentationTimeSeconds),
     );
-    const beat = this.beatGrid.sample(transportSeconds, reading.bypassHostedGrid);
+    const beatGrid = this.beatGrid;
+    const bypassHostedGrid = reading.bypassHostedGrid;
+    const beat = beatGrid.sample(transportSeconds, bypassHostedGrid);
 
     this.lastTransportSeconds = transportSeconds;
     this.lastPresentationTimeSeconds = presentationTimeSeconds;
@@ -95,6 +98,8 @@ export class TransportClock {
       presentationTimeSeconds,
       playing: reading.playing,
       discontinuityGeneration: this.generation,
+      transportSecondsAtBeat: (beatPosition) =>
+        beatGrid.transportSecondsAtBeat(beatPosition, bypassHostedGrid),
     };
   }
 

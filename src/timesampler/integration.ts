@@ -1,4 +1,5 @@
 import type { TransportSample } from "../audio/transport";
+import type { TransportEvent } from "../audio/transport/events";
 import { randomSlice } from "./random";
 import { createTimeSamplerState, reduceTimeSampler } from "./reducer";
 import type {
@@ -22,20 +23,38 @@ export interface TimeSamplerControlParams {
 export interface LiveTimeSamplerInput {
   controls: TimeSamplerControlParams;
   sourceDurationSeconds: number;
+  sourceKey?: string;
   midiNotes?: readonly { time: number }[];
   midiDurationSeconds?: number;
-  onsetStrength?: number;
   onsetSensitivity?: number;
   bypassed?: boolean;
+}
+
+export interface PgmScheduleInput<T> {
+  active: T;
+  sources: readonly T[];
+  queued: T | null;
+  autoRandom: boolean;
+  intervalBeats: number;
+  feel: PgmFeel;
+}
+
+export interface PgmScheduleOutput<T> {
+  selected: T | null;
+  consumedQueued: boolean;
+  nextBoundaryBeat: number | null;
+}
+
+export interface LiveScheduleFrame<T> {
+  transport: TransportSample;
+  timeSampler: TimeSamplerOutput;
+  pgm: PgmScheduleOutput<T>;
 }
 
 const MODE_BY_INDEX = ["FWD", "REV", "PONG", "RND"] as const;
 const ACCENT_BY_INDEX = ["LUM", "RGB", "OFF"] as const;
 const DEFAULT_RANDOM_SEED = 0x12345678;
-
-function positiveModulo(value: number, modulus: number) {
-  return ((value % modulus) + modulus) % modulus;
-}
+const DEFAULT_PGM_SEED = 0x6d2b79f5;
 
 export function jumpSizeBeatsFromControl(size = 50) {
   if (size < 20) return 0.25;
@@ -67,43 +86,41 @@ export function timeSamplerParamsFromControls(
   };
 }
 
-function crossedMidiNote(
+function nextMidiNoteTime(
   notes: readonly { time: number }[],
   previousSeconds: number,
   currentSeconds: number,
   loopDurationSeconds: number,
-): boolean {
+): number | null {
   if (
     notes.length === 0 ||
     loopDurationSeconds <= 0 ||
     currentSeconds <= previousSeconds
   ) {
-    return false;
+    return null;
   }
 
-  const previous = positiveModulo(previousSeconds, loopDurationSeconds);
-  const current = positiveModulo(currentSeconds, loopDurationSeconds);
-  const wrapped =
-    current < previous ||
-    currentSeconds - previousSeconds >= loopDurationSeconds;
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const { time } of notes) {
+    const normalized =
+      ((time % loopDurationSeconds) + loopDurationSeconds) %
+      loopDurationSeconds;
+    const cycle =
+      Math.floor((previousSeconds - normalized) / loopDurationSeconds) + 1;
+    const candidate = normalized + cycle * loopDurationSeconds;
+    if (candidate <= currentSeconds && candidate < earliest) {
+      earliest = candidate;
+    }
+  }
 
-  return notes.some(({ time }) => {
-    const note = positiveModulo(time, loopDurationSeconds);
-    return wrapped
-      ? note > previous || note <= current
-      : note > previous && note <= current;
-  });
+  return Number.isFinite(earliest) ? earliest : null;
 }
 
 export class LiveTimeSamplerSchedule {
   private reduction: TimeSamplerReduction | null = null;
-  private lastTriggerScanSeconds: number | null = null;
-  private lastSampleKey = "";
 
   reset() {
     this.reduction = null;
-    this.lastTriggerScanSeconds = null;
-    this.lastSampleKey = "";
   }
 
   sample(
@@ -115,76 +132,14 @@ export class LiveTimeSamplerSchedule {
       input.controls,
       input.sourceDurationSeconds,
     );
-    const sampleKey = [
-      transport.transportSeconds,
-      transport.beatPosition,
-      transport.discontinuityGeneration,
-      input.sourceDurationSeconds,
-      input.controls.mode,
-      input.controls.size,
-      input.controls.slices,
-      input.controls.loops,
-      input.controls.rate,
-      input.controls.accent,
-      input.bypassed,
-      input.onsetStrength,
-      input.onsetSensitivity,
-      input.midiNotes?.length,
-      input.midiDurationSeconds,
-    ].join(":");
-    if (
-      this.reduction !== null &&
-      orderedTransportTriggers.length === 0 &&
-      sampleKey === this.lastSampleKey
-    ) {
-      return this.reduction.output;
-    }
-    const triggers = [...orderedTransportTriggers];
-
-    if (!input.bypassed && this.lastTriggerScanSeconds !== null) {
-      const notes = input.midiNotes ?? [];
-      if (notes.length > 0) {
-        const lastNote = notes[notes.length - 1]?.time ?? 0;
-        const loopDuration = Math.max(
-          input.midiDurationSeconds ?? 0,
-          lastNote + 0.05,
-          0.25,
-        );
-        if (
-          crossedMidiNote(
-            notes,
-            this.lastTriggerScanSeconds,
-            transport.transportSeconds,
-            loopDuration,
-          )
-        ) {
-          triggers.push({
-            type: "midi-trigger",
-            transportSeconds: transport.transportSeconds,
-          });
-        }
-      } else {
-        const threshold =
-          0.08 + (1 - (input.onsetSensitivity ?? 0.5)) * 1.1;
-        if (
-          transport.playing &&
-          (input.onsetStrength ?? 0) > threshold
-        ) {
-          triggers.push({
-            type: "onset-trigger",
-            transportSeconds: transport.transportSeconds,
-          });
-        }
-      }
-    }
 
     if (this.reduction === null) {
       this.reduction = createTimeSamplerState(transport, params);
-      if (triggers.length > 0) {
+      if (orderedTransportTriggers.length > 0) {
         this.reduction = reduceTimeSampler(
           this.reduction.nextState,
           transport,
-          triggers,
+          orderedTransportTriggers,
           params,
         );
       }
@@ -192,13 +147,11 @@ export class LiveTimeSamplerSchedule {
       this.reduction = reduceTimeSampler(
         this.reduction.nextState,
         transport,
-        triggers,
+        orderedTransportTriggers,
         params,
       );
     }
 
-    this.lastTriggerScanSeconds = transport.transportSeconds;
-    this.lastSampleKey = sampleKey;
     return this.reduction.output;
   }
 }
@@ -228,48 +181,120 @@ export function nextQuantizedBeat(
   return (Math.floor(safeBeat / base) + 1) * base;
 }
 
-export interface PgmScheduleInput<T> {
-  active: T;
-  sources: readonly T[];
-  queued: T | null;
-  autoRandom: boolean;
-  intervalBeats: number;
-  feel: PgmFeel;
+function isTriggerEvent(event: TransportEvent): event is TransportEvent &
+  TimeSamplerTriggerEvent {
+  return (
+    event.type === "manual-trigger" ||
+    event.type === "midi-trigger" ||
+    event.type === "onset-trigger"
+  );
 }
 
-export interface PgmScheduleOutput<T> {
-  selected: T | null;
-  consumedQueued: boolean;
-  nextBoundaryBeat: number | null;
-}
+export class LiveScheduleRuntime<T = string> {
+  private readonly timeSampler = new LiveTimeSamplerSchedule();
+  private timeSamplerInput: LiveTimeSamplerInput = {
+    controls: {},
+    sourceDurationSeconds: 1,
+  };
+  private pgmInput: PgmScheduleInput<T> | null = null;
+  private frame: LiveScheduleFrame<T> | null = null;
+  private lastTriggerScanSeconds: number | null = null;
+  private lastTriggerGeneration: number | null = null;
+  private pgmGeneration: number | null = null;
+  private pgmNextBoundary: number | null = null;
+  private pgmConfigurationKey = "";
+  private pgmRandomState: number;
 
-export class DeterministicPgmSchedule<T> {
-  private discontinuityGeneration: number | null = null;
-  private nextBoundary: number | null = null;
-  private configurationKey = "";
-  private randomState: number;
-
-  constructor(seed = 0x6d2b79f5) {
-    this.randomState = seed >>> 0;
+  constructor(pgmSeed = DEFAULT_PGM_SEED) {
+    this.pgmRandomState = pgmSeed >>> 0;
   }
 
-  sample(
-    transport: Pick<
-      TransportSample,
-      "beatPosition" | "playing" | "discontinuityGeneration"
-    >,
-    input: PgmScheduleInput<T>,
-  ): PgmScheduleOutput<T> {
-    const configurationKey = `${input.intervalBeats}:${input.feel}:${input.autoRandom}`;
+  configureTimeSampler(input: LiveTimeSamplerInput) {
+    this.timeSamplerInput = { ...input };
+  }
+
+  configurePgm(input: PgmScheduleInput<T>) {
+    this.pgmInput = {
+      ...input,
+      sources: [...input.sources],
+    };
+  }
+
+  generatedTriggerEvents(
+    transport: TransportSample,
+    onsetStrength: number,
+  ): TimeSamplerTriggerEvent[] {
+    const input = this.timeSamplerInput;
     const discontinuity =
-      this.discontinuityGeneration !== transport.discontinuityGeneration;
-    const configurationChanged = configurationKey !== this.configurationKey;
+      this.lastTriggerGeneration !== transport.discontinuityGeneration;
+    const previousSeconds = discontinuity
+      ? null
+      : this.lastTriggerScanSeconds;
 
-    this.discontinuityGeneration = transport.discontinuityGeneration;
-    this.configurationKey = configurationKey;
+    this.lastTriggerGeneration = transport.discontinuityGeneration;
+    this.lastTriggerScanSeconds = transport.transportSeconds;
 
-    if (!transport.playing) {
-      this.nextBoundary = null;
+    if (input.bypassed || previousSeconds === null) {
+      return [];
+    }
+
+    const notes = input.midiNotes ?? [];
+    if (notes.length > 0) {
+      const lastNote = notes[notes.length - 1]?.time ?? 0;
+      const loopDuration = Math.max(
+        input.midiDurationSeconds ?? 0,
+        lastNote + 0.05,
+        0.25,
+      );
+      const noteTime = nextMidiNoteTime(
+        notes,
+        previousSeconds,
+        transport.transportSeconds,
+        loopDuration,
+      );
+      return noteTime === null
+        ? []
+        : [{ type: "midi-trigger", transportSeconds: noteTime }];
+    }
+
+    const threshold =
+      0.08 + (1 - (input.onsetSensitivity ?? 0.5)) * 1.1;
+    return transport.playing && onsetStrength > threshold
+      ? [
+          {
+            type: "onset-trigger",
+            transportSeconds: transport.transportSeconds,
+          },
+        ]
+      : [];
+  }
+
+  advance(
+    transport: TransportSample,
+    orderedTransportEvents: readonly TransportEvent[],
+  ): LiveScheduleFrame<T> {
+    const timeSampler = this.timeSampler.sample(
+      transport,
+      orderedTransportEvents.filter(isTriggerEvent),
+      this.timeSamplerInput,
+    );
+    const frame = {
+      transport,
+      timeSampler,
+      pgm: this.advancePgm(transport),
+    };
+    this.frame = frame;
+    return frame;
+  }
+
+  getFrame() {
+    return this.frame;
+  }
+
+  private advancePgm(transport: TransportSample): PgmScheduleOutput<T> {
+    const input = this.pgmInput;
+    if (input === null || !transport.playing) {
+      this.pgmNextBoundary = null;
       return {
         selected: null,
         consumedQueued: false,
@@ -277,12 +302,22 @@ export class DeterministicPgmSchedule<T> {
       };
     }
 
+    const configurationKey =
+      `${input.intervalBeats}:${input.feel}:${input.autoRandom}`;
+    const discontinuity =
+      this.pgmGeneration !== transport.discontinuityGeneration;
+    const configurationChanged =
+      configurationKey !== this.pgmConfigurationKey;
+
+    this.pgmGeneration = transport.discontinuityGeneration;
+    this.pgmConfigurationKey = configurationKey;
+
     if (
-      this.nextBoundary === null ||
+      this.pgmNextBoundary === null ||
       discontinuity ||
       configurationChanged
     ) {
-      this.nextBoundary = nextQuantizedBeat(
+      this.pgmNextBoundary = nextQuantizedBeat(
         transport.beatPosition,
         input.intervalBeats,
         input.feel,
@@ -292,29 +327,30 @@ export class DeterministicPgmSchedule<T> {
     let selected: T | null = null;
     let consumedQueued = false;
     while (
-      this.nextBoundary !== null &&
-      transport.beatPosition + 1e-9 >= this.nextBoundary
+      this.pgmNextBoundary !== null &&
+      transport.beatPosition + 1e-9 >= this.pgmNextBoundary
     ) {
       if (input.queued !== null && !consumedQueued) {
         selected = input.queued;
         consumedQueued = true;
+        this.pgmInput = { ...input, queued: null };
       } else if (input.autoRandom) {
         const candidates = input.sources.filter(
           (source) => source !== (selected ?? input.active),
         );
         if (candidates.length > 0) {
           const random = randomSlice(
-            this.randomState,
+            this.pgmRandomState,
             candidates.length,
             -1,
           );
-          this.randomState = random.state;
+          this.pgmRandomState = random.state;
           selected = candidates[random.slice] ?? null;
         }
       }
 
-      this.nextBoundary = nextQuantizedBeat(
-        this.nextBoundary + 1e-4,
+      this.pgmNextBoundary = nextQuantizedBeat(
+        this.pgmNextBoundary + 1e-4,
         input.intervalBeats,
         input.feel,
       );
@@ -323,9 +359,9 @@ export class DeterministicPgmSchedule<T> {
     return {
       selected,
       consumedQueued,
-      nextBoundaryBeat: this.nextBoundary,
+      nextBoundaryBeat: this.pgmNextBoundary,
     };
   }
 }
 
-export const liveTimeSamplerSchedule = new LiveTimeSamplerSchedule();
+export const liveScheduleRuntime = new LiveScheduleRuntime<string>();

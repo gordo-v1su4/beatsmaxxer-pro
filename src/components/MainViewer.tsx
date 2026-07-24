@@ -1,12 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import type { ModuleType, ModuleConfig, VideoLayer, MidiLayer } from '../App';
 import { ThreeVisualizer, ScreenOverlay, ScreenBadge, VUMeter } from './EffectModule';
 import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
-import {
-  DeterministicPgmSchedule,
-  type PgmFeel,
-} from '../timesampler/integration';
+import type { PgmFeel } from '../timesampler/integration';
 
 type RailFeel = PgmFeel;
 
@@ -76,43 +73,33 @@ export function PgmRail({ modules, pgmSource, onSelectSource }: {
   const [autoRand, setAutoRand] = useState(false);
   const [randIntervalBeats, setRandIntervalBeats] = useState(4);
   const [randFeel, setRandFeel] = useState<RailFeel>(0);
-  const schedulerRef = useRef(
-    new DeterministicPgmSchedule<ModuleType>(0x6d2b79f5),
-  );
-
   useEffect(() => {
-    let frameId = 0;
-    const sampleSchedule = (now: number) => {
-      const transport = audioEngine.getTransportSample(now / 1_000);
-      const result = schedulerRef.current.sample(transport, {
-        active: pgmSource,
-        sources: modules.map((module) => module.id),
-        queued,
-        autoRandom: autoRand,
-        intervalBeats: randIntervalBeats,
-        feel: randFeel,
-      });
-
-      if (result.selected !== null && result.selected !== pgmSource) {
-        onSelectSource(result.selected);
-      }
-      if (result.consumedQueued) {
-        setQueued(null);
-      }
-      frameId = requestAnimationFrame(sampleSchedule);
-    };
-
-    frameId = requestAnimationFrame(sampleSchedule);
-    return () => cancelAnimationFrame(frameId);
+    audioEngine.configurePgmSchedule({
+      active: pgmSource,
+      sources: modules.map((module) => module.id),
+      queued,
+      autoRandom: autoRand,
+      intervalBeats: randIntervalBeats,
+      feel: randFeel,
+    });
   }, [
     queued,
     autoRand,
     modules,
     pgmSource,
-    onSelectSource,
     randIntervalBeats,
     randFeel,
   ]);
+
+  useEffect(() => {
+    return audioEngine.subscribePgmSelection((source) => {
+      const selected = source as ModuleType;
+      if (selected !== pgmSource) {
+        onSelectSource(selected);
+      }
+      setQueued((current) => current === selected ? null : current);
+    });
+  }, [pgmSource, onSelectSource]);
 
   const handleSelect = (id: ModuleType) => {
     if (id === pgmSource) { setQueued(null); return; }

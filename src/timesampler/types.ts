@@ -17,6 +17,7 @@ export interface TimeSamplerTransportSample {
   beatPhase: number;
   beatIntervalSeconds: number;
   presentationTimeSeconds: number;
+  transportSecondsAtBeat?: (beatPosition: number) => number;
 }
 
 export interface TimeSamplerTriggerEvent {

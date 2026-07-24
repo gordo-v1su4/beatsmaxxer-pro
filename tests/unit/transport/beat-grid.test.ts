@@ -33,6 +33,15 @@ describe("BeatGrid", () => {
     expect(sample.beatIntervalSeconds).toBeCloseTo(0.7);
   });
 
+  test("maps fractional beat positions back to exact hosted-grid time", () => {
+    const grid = new BeatGrid([0, 0.4, 1.1, 1.5], 120);
+
+    expect(grid.transportSecondsAtBeat(0.5)).toBeCloseTo(0.2);
+    expect(grid.transportSecondsAtBeat(1.5)).toBeCloseTo(0.75);
+    expect(grid.transportSecondsAtBeat(2.5)).toBeCloseTo(1.3);
+    expect(grid.transportSecondsAtBeat(4)).toBeCloseTo(1.9);
+  });
+
   test("BPM bypass preserves the hosted grid", () => {
     const grid = new BeatGrid([0, 0.4, 1], 120);
 

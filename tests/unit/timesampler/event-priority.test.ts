@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TransportClock } from "../../../src/audio/transport";
 import {
   createTimeSamplerState,
   reduceTimeSampler,
@@ -197,6 +198,68 @@ describe("TimeSampler event priority", () => {
     expect(sparse.nextState.pendingTrigger).toBeNull();
     expect(sparse.output.jumpReason).toBeNull();
     expect(sparse.output.accent).toBeNull();
+  });
+
+  test("variable-tempo sparse catch-up uses exact historical boundary times", () => {
+    const params = { ...PARAMS, mode: "REV" as const };
+    const makeClock = () =>
+      new TransportClock({
+        beats: [0, 0.4, 1.1, 1.5, 2.4],
+        bpm: 120,
+      });
+    const read = (clock: TransportClock, transportSeconds: number) =>
+      clock.sample({
+        transportSeconds,
+        audioOutputTimeSeconds: transportSeconds,
+        performanceTimeSeconds: transportSeconds,
+        presentationTimeSeconds: transportSeconds,
+        playing: true,
+      });
+
+    const denseClock = makeClock();
+    let dense = createTimeSamplerState(read(denseClock, 0), params);
+    dense = reduceTimeSampler(
+      dense.nextState,
+      read(denseClock, 0.4),
+      [],
+      params,
+    );
+    dense = reduceTimeSampler(
+      dense.nextState,
+      read(denseClock, 1.1),
+      [{ type: "manual-trigger", transportSeconds: 0.8 }],
+      params,
+    );
+    dense = reduceTimeSampler(
+      dense.nextState,
+      read(denseClock, 1.5),
+      [],
+      params,
+    );
+    dense = reduceTimeSampler(
+      dense.nextState,
+      read(denseClock, 1.6),
+      [],
+      params,
+    );
+
+    const sparseClock = makeClock();
+    const sparseInitial = createTimeSamplerState(
+      read(sparseClock, 0),
+      params,
+    );
+    const sparse = reduceTimeSampler(
+      sparseInitial.nextState,
+      read(sparseClock, 1.6),
+      [{ type: "manual-trigger", transportSeconds: 0.8 }],
+      params,
+    );
+
+    expect(sparse.output).toEqual(dense.output);
+    expect(sparse.nextState.activeSlice).toBe(dense.nextState.activeSlice);
+    expect(sparse.nextState.forcedJumpState).toBe(
+      dense.nextState.forcedJumpState,
+    );
   });
 
   test("onset cooldown starts at acceptance and includes exactly 250 ms", () => {

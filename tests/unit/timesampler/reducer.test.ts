@@ -283,7 +283,7 @@ describe("TimeSampler parameter and discontinuity transitions", () => {
     expect(changed.output.accent).toBeNull();
   });
 
-  test("rate changes that alter effective slices emit a deterministic remap", () => {
+  test("rate changes never alter slice topology or remap the source", () => {
     const params = {
       ...BASE_PARAMS,
       sourceDurationSeconds: 1,
@@ -314,14 +314,12 @@ describe("TimeSampler parameter and discontinuity transitions", () => {
     );
 
     expect(before.output.effectiveSliceCount).toBe(4);
-    expect(changed.output.effectiveSliceCount).toBe(1);
-    expect(changed.output.sourceTimestampSeconds).not.toBe(
+    expect(changed.output.effectiveSliceCount).toBe(4);
+    expect(changed.output.sourceTimestampSeconds).toBe(
       before.output.sourceTimestampSeconds,
     );
-    expect(changed.output.jumpGeneration).toBe(
-      before.output.jumpGeneration + 1,
-    );
-    expect(changed.output.jumpReason).toBe("source-remap");
+    expect(changed.output.jumpGeneration).toBe(before.output.jumpGeneration);
+    expect(changed.output.jumpReason).toBeNull();
     expect(changed.output.accent).toBeNull();
   });
 

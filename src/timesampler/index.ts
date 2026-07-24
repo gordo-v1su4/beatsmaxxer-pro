@@ -1,11 +1,19 @@
 export { randomSlice, xorshift32 } from "./random";
 export {
-  DeterministicPgmSchedule,
+  LiveScheduleRuntime,
   LiveTimeSamplerSchedule,
   jumpSizeBeatsFromControl,
-  liveTimeSamplerSchedule,
+  liveScheduleRuntime,
   nextQuantizedBeat,
   timeSamplerParamsFromControls,
+} from "./integration";
+export type {
+  LiveScheduleFrame,
+  LiveTimeSamplerInput,
+  PgmFeel,
+  PgmScheduleInput,
+  PgmScheduleOutput,
+  TimeSamplerControlParams,
 } from "./integration";
 export {
   createTimeSamplerState,

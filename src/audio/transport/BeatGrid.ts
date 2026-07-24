@@ -141,4 +141,46 @@ export class BeatGrid {
       fallbackReason: null,
     };
   }
+
+  transportSecondsAtBeat(
+    beatPosition: number,
+    bypassHostedGrid = false,
+  ): number {
+    const position = Number.isFinite(beatPosition) ? beatPosition : 0;
+
+    if (bypassHostedGrid || !this.status.usingHostedGrid) {
+      return Math.max(0, position * this.fallbackIntervalSeconds);
+    }
+
+    const beats = this.beats;
+    const beatIndex = Math.floor(position);
+    const phase = position - beatIndex;
+
+    if (beatIndex < 0) {
+      const interval = Math.max(
+        MIN_INTERVAL_SECONDS,
+        beats[1] - beats[0],
+      );
+      return Math.max(0, beats[0] + position * interval);
+    }
+
+    if (beatIndex >= beats.length - 1) {
+      const lastIndex = beats.length - 1;
+      const interval = Math.max(
+        MIN_INTERVAL_SECONDS,
+        beats[lastIndex] - beats[lastIndex - 1],
+      );
+      return Math.max(
+        0,
+        beats[lastIndex] + (position - lastIndex) * interval,
+      );
+    }
+
+    const start = beats[beatIndex];
+    const interval = Math.max(
+      MIN_INTERVAL_SECONDS,
+      beats[beatIndex + 1] - start,
+    );
+    return Math.max(0, start + phase * interval);
+  }
 }

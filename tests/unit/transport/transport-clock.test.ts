@@ -33,6 +33,7 @@ describe("TransportClock", () => {
     });
     expect(second.transportSeconds).toBe(first.transportSeconds);
     expect(second.beatPosition).toBe(first.beatPosition);
+    expect(second.transportSecondsAtBeat(1)).toBe(0.5);
   });
 
   test("keeps presentation timestamps monotonic without advancing transport", () => {

@@ -7,10 +7,7 @@ import { useAudio } from '../audio/AudioContext';
 import { audioEngine } from '../audio/AudioEngine';
 import {
   jumpSizeBeatsFromControl,
-  liveTimeSamplerSchedule,
-  timeSamplerParamsFromControls,
 } from '../timesampler/integration';
-import type { TimeSamplerTriggerEvent } from '../timesampler/types';
 import {
   recordRenderedFrame,
   registerWebGlRenderer,
@@ -718,7 +715,6 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             rate: prm.rate,
             accent: prm.accent,
           };
-          const mappedParams = timeSamplerParamsFromControls(controls, 1);
           const video = m.uniforms.uHasVideo.value > 0.5 ? videoRef.current : null;
           const hasDuration = !!(
             video &&
@@ -727,42 +723,31 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           );
           const sourceDurationSeconds = hasDuration
             ? video!.duration
-            : Math.max(
-                1,
-                mappedParams.jumpSizeBeats *
-                  transport.beatIntervalSeconds *
-                  mappedParams.sliceCount *
-                  mappedParams.playbackRate,
-              );
-          const transportTriggers = audioEngine
-            .drainTransportEvents()
-            .filter(
-              (event): event is typeof event & TimeSamplerTriggerEvent =>
-                event.type === 'manual-trigger' ||
-                event.type === 'midi-trigger' ||
-                event.type === 'onset-trigger',
-            );
-          const schedule = liveTimeSamplerSchedule.sample(
-            transport,
-            transportTriggers,
-            {
+            : 8;
+          if (isDriver) {
+            audioEngine.configureTimeSampler({
               controls,
               sourceDurationSeconds,
+              sourceKey: videoUrl ?? 'test-pattern',
               midiNotes: midiLayerRef.current?.notes,
               midiDurationSeconds: midiLayerRef.current?.duration,
-              onsetStrength: onsetStr,
               onsetSensitivity: m.uniforms.uP0.value.w,
               bypassed: m.uniforms.uBypass.value > 0.5,
-            },
-          );
+            });
+          }
+          const schedule = audioEngine.getLiveScheduleFrame()?.timeSampler;
 
-          const generationChanged = st.lastTrigCount !== schedule.jumpGeneration;
-          st.lastTrigCount = schedule.jumpGeneration;
-          st.sliceIdx = schedule.activeSlice;
-          st.srcTime = schedule.sourceTimestampSeconds;
+          const generationChanged =
+            schedule !== undefined &&
+            st.lastTrigCount !== schedule.jumpGeneration;
+          if (schedule) {
+            st.lastTrigCount = schedule.jumpGeneration;
+            st.sliceIdx = schedule.activeSlice;
+            st.srcTime = schedule.sourceTimestampSeconds;
+          }
           st.lastTransportSec = transport.transportSeconds;
 
-          if (video) {
+          if (video && schedule) {
             const targetRate = Math.max(
               0.0625,
               Math.min(4, schedule.targetPlaybackRate),
@@ -793,7 +778,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           m.uniforms.uBeatPhase.value = transport.beatPhase;
           m.uniforms.uPlaying.value = transport.playing ? 1.0 : 0.0;
           m.uniforms.uTransportSec.value = transport.transportSeconds;
-          m.uniforms.uSrcTime.value = schedule.sourceTimestampSeconds;
+          m.uniforms.uSrcTime.value = schedule?.sourceTimestampSeconds ?? 0;
           m.uniforms.uAux1.value =
             m.uniforms.uBypass.value > 0.5 ? 0.0 : 1.0;
           m.uniforms.uAux2.value = boundaryPhase;
