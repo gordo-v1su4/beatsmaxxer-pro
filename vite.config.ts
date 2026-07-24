@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     env.VITE_ESSENTIA_API_BASE_URL ||
     env.VITE_ESSENTIA_API_URL ||
     "https://essentia.v1su4.dev";
-  const essentiaApiKey = env.ESSENTIA_API_KEY || env.VITE_ESSENTIA_API_KEY || "";
+  const essentiaApiKey = env.ESSENTIA_API_KEY || "";
   const essentiaAnalysisEngine = env.ESSENTIA_ANALYSIS_ENGINE || env.VITE_ESSENTIA_ANALYSIS_ENGINE || "aubio";
   const qaMediaDir = env.QA_MEDIA_DIR || "/Users/robertspaniolo/Downloads/new-test-media-for-pss";
 
@@ -29,6 +29,48 @@ export default defineConfig(({ mode }) => {
       {
         name: "qa-rhythm-bridge",
         configureServer(server) {
+          server.middlewares.use("/__api/analyze", async (req, res) => {
+            try {
+              const requestUrl = new URL(req.url || "/", "http://127.0.0.1:5174");
+              const endpointName = requestUrl.pathname.replace(/^\/+/, "");
+              if (req.method !== "POST" || (endpointName !== "fast" && endpointName !== "rhythm")) {
+                res.statusCode = 404;
+                res.end();
+                return;
+              }
+
+              const contentType = req.headers["content-type"];
+              if (!contentType) {
+                res.statusCode = 400;
+                res.setHeader("Content-Type", "application/json");
+                res.end(JSON.stringify({ detail: "Missing content type" }));
+                return;
+              }
+
+              const body = await readRequestBody(req);
+              const upstream = await postEssentiaBytes(
+                essentiaApiBaseUrl,
+                essentiaApiKey,
+                essentiaAnalysisEngine,
+                endpointName,
+                contentType,
+                body,
+              );
+              const text = await upstream.text();
+              res.statusCode = upstream.status;
+              res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
+              res.end(text);
+            } catch (error) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(
+                JSON.stringify({
+                  detail: error instanceof Error ? error.message : "Analysis proxy failed",
+                }),
+              );
+            }
+          });
+
           server.middlewares.use("/__qa/rhythm", async (req, res) => {
             try {
               const requestUrl = new URL(req.url || "/__qa/rhythm", "http://127.0.0.1:5175");
@@ -76,7 +118,6 @@ export default defineConfig(({ mode }) => {
     ],
     define: {
       __APP_ESSENTIA_API_BASE_URL__: JSON.stringify(essentiaApiBaseUrl),
-      __APP_ESSENTIA_API_KEY__: JSON.stringify(essentiaApiKey),
       __APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine),
     },
     server: {
