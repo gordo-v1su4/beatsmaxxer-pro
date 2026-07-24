@@ -11,7 +11,7 @@ import {
   type RhythmV1,
   type StructuralSegmentV1,
 } from "../contracts";
-import { validateAnalysisResultV1 } from "../validate";
+import { getAubioFallbackReason, validateAnalysisResultV1 } from "../validate";
 
 const LEGACY_SAMPLE_RATE_HZ = 44_100;
 const LEGACY_WARNING = "legacy-sync";
@@ -91,7 +91,8 @@ export function normalizeLegacySyncAnalysis(payload: unknown): AnalysisResultV1 
   const providerConfig = objectValue(record.provider_config ?? record.engine_config);
   const hasVerifiedProvider = reportedProvider !== null && providerVersion !== null && providerConfig !== null;
 
-  const aubioAttempt = createUnavailableAttempt();
+  const preservedAubioAttempt = normalizePreservedAubioAttempt(record.aubio_attempt, sampleRate);
+  const aubioAttempt = preservedAubioAttempt ?? createUnavailableAttempt();
   let essentiaAttempt: EssentiaAttemptV1 | undefined;
   if (hasVerifiedProvider && reportedProvider === "aubio") {
     Object.assign(aubioAttempt, {
@@ -113,7 +114,18 @@ export function normalizeLegacySyncAnalysis(payload: unknown): AnalysisResultV1 
   }
 
   const fallbackReason = normalizeFallbackReason(record.fallback_reason);
-  const effective = hasVerifiedProvider && reportedProvider === "aubio"
+  const aubioRejectionReason = getAubioFallbackReason(aubioAttempt);
+  const aubioAccepted =
+    hasVerifiedProvider &&
+    reportedProvider === "aubio" &&
+    getAubioFallbackReason(aubioAttempt) === null;
+  const essentiaAccepted =
+    hasVerifiedProvider &&
+    reportedProvider === "essentia" &&
+    preservedAubioAttempt !== null &&
+    fallbackReason !== null &&
+    fallbackReason === aubioRejectionReason;
+  const effective = aubioAccepted
     ? {
         provider: "aubio" as const,
         selection_reason: "primary_accepted" as const,
@@ -121,7 +133,7 @@ export function normalizeLegacySyncAnalysis(payload: unknown): AnalysisResultV1 
         rhythm,
         onsets,
       }
-    : hasVerifiedProvider && reportedProvider === "essentia" && fallbackReason
+    : essentiaAccepted
       ? {
           provider: "essentia" as const,
           selection_reason: fallbackReason,
@@ -153,8 +165,8 @@ export function normalizeLegacySyncAnalysis(payload: unknown): AnalysisResultV1 
         version: stringValue(record.decoder_version),
       },
       aubio: {
-        version: hasVerifiedProvider && reportedProvider === "aubio" ? providerVersion : null,
-        config: hasVerifiedProvider && reportedProvider === "aubio" ? providerConfig : null,
+        version: aubioAttempt.version,
+        config: aubioAttempt.config,
       },
       ...(hasVerifiedProvider && reportedProvider === "essentia"
         ? { essentia: { version: providerVersion, config: providerConfig } }
@@ -172,6 +184,51 @@ export function normalizeLegacySyncAnalysis(payload: unknown): AnalysisResultV1 
       ...(!hasVerifiedProvider || effective.provider === "unknown" ? [PROVIDENCE_WARNING] : []),
     ],
   });
+}
+
+function normalizePreservedAubioAttempt(
+  value: unknown,
+  sampleRate: number,
+): AnalysisAttemptV1 | null {
+  const record = objectValue(value);
+  if (!record) return null;
+  const status = normalizeAttemptStatus(record.status);
+  const version = stringValue(record.version);
+  const config = objectValue(record.config);
+  if (!status || !version || !config) return null;
+
+  const bpm = finiteNumber(record.bpm);
+  const confidence = finiteNumber(record.confidence);
+  const beats = normalizeTimes(record.beats, sampleRate);
+  const onsets = normalizeTimes(record.onsets, sampleRate);
+  const hasRhythm = bpm !== null && bpm > 0 && confidence !== null;
+  return {
+    status,
+    version,
+    config,
+    ...(hasRhythm
+      ? {
+          rhythm: {
+            bpm,
+            confidence: clampConfidence(confidence),
+            beats,
+          },
+          onsets,
+        }
+      : {}),
+    ...(stringValue(record.failure_code)
+      ? { failure_code: stringValue(record.failure_code)! }
+      : {}),
+  };
+}
+
+function normalizeAttemptStatus(value: unknown): AnalysisAttemptV1["status"] | null {
+  return value === "succeeded" ||
+    value === "failed" ||
+    value === "not_attempted" ||
+    value === "unverified"
+    ? value
+    : null;
 }
 
 function postLegacyEndpoint(

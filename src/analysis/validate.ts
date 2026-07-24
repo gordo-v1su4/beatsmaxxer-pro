@@ -4,6 +4,7 @@ import {
   type AnalysisEventV1,
   type AnalysisResultV1,
   type AubioFallbackReason,
+  type EssentiaAttemptV1,
   type RhythmV1,
   type StructuralSegmentV1,
 } from "./contracts";
@@ -28,6 +29,19 @@ export function getAubioFallbackReason(
   attempt: AnalysisAttemptV1,
   config: AubioAcceptanceConfig = DEFAULT_AUBIO_ACCEPTANCE_CONFIG,
 ): AubioFallbackReason | null {
+  const declaredFailureReasons: AubioFallbackReason[] = [
+    "invalid_bpm",
+    "insufficient_beats",
+    "low_confidence",
+    "unusable_onsets",
+  ];
+  if (
+    attempt.status === "failed" &&
+    attempt.failure_code &&
+    declaredFailureReasons.includes(attempt.failure_code as AubioFallbackReason)
+  ) {
+    return attempt.failure_code as AubioFallbackReason;
+  }
   const rhythm = attempt.rhythm;
   if (
     attempt.status !== "succeeded" ||
@@ -79,7 +93,13 @@ export function validateAnalysisResultV1(value: unknown): AnalysisResultV1 {
 
   validateProvenance(result.provenance);
   const attempts = requireRecord(result.attempts, "attempts");
-  validateAttempt(attempts.aubio, "attempts.aubio", sampleRate, duration);
+  const aubioAttempt = validateAttempt(
+    attempts.aubio,
+    "attempts.aubio",
+    sampleRate,
+    duration,
+  ) as unknown as AnalysisAttemptV1;
+  let essentiaAttempt: EssentiaAttemptV1 | undefined;
   if (attempts.essentia !== undefined) {
     const essentia = validateAttempt(
       attempts.essentia,
@@ -87,6 +107,7 @@ export function validateAnalysisResultV1(value: unknown): AnalysisResultV1 {
       sampleRate,
       duration,
     );
+    essentiaAttempt = essentia as unknown as EssentiaAttemptV1;
     const rawSegments = essentia.structural_segments;
     if (rawSegments !== undefined) {
       if (!Array.isArray(rawSegments)) {
@@ -114,10 +135,76 @@ export function validateAnalysisResultV1(value: unknown): AnalysisResultV1 {
     if (effective.selection_reason !== "primary_accepted" || effective.verified !== true) {
       throw new Error("Verified Aubio results require primary_accepted selection.");
     }
+    if (aubioAttempt.status !== "succeeded" || !aubioAttempt.rhythm || !aubioAttempt.onsets) {
+      throw new Error("effective Aubio requires a succeeded Aubio attempt");
+    }
+    if (aubioAttempt.version === null || aubioAttempt.config === null) {
+      throw new Error("effective Aubio requires complete attempt provenance");
+    }
+    const provenance = requireRecord(result.provenance, "provenance");
+    const aubioProvenance = requireRecord(provenance.aubio, "provenance.aubio");
+    if (
+      aubioProvenance.version === null ||
+      aubioProvenance.config === null ||
+      aubioProvenance.version !== aubioAttempt.version ||
+      !deepEqual(aubioProvenance.config, aubioAttempt.config)
+    ) {
+      throw new Error("effective Aubio requires complete provider provenance");
+    }
+    if (
+      !deepEqual(effective.rhythm, aubioAttempt.rhythm) ||
+      !deepEqual(effective.onsets, aubioAttempt.onsets)
+    ) {
+      throw new Error("effective Aubio must match the preserved Aubio attempt");
+    }
+    if (getAubioFallbackReason(aubioAttempt) !== null) {
+      throw new Error("effective Aubio attempt does not satisfy the acceptance predicate");
+    }
   } else if (provider === "essentia") {
     const reasons = ["invalid_bpm", "insufficient_beats", "low_confidence", "unusable_onsets"];
     if (!reasons.includes(String(effective.selection_reason)) || effective.verified !== true) {
       throw new Error("Verified Essentia results require an Aubio fallback reason.");
+    }
+    if (
+      !essentiaAttempt ||
+      essentiaAttempt.status !== "succeeded" ||
+      !essentiaAttempt.rhythm ||
+      !essentiaAttempt.onsets
+    ) {
+      throw new Error("effective Essentia requires a succeeded Essentia attempt");
+    }
+    if (essentiaAttempt.version === null || essentiaAttempt.config === null) {
+      throw new Error("effective Essentia requires complete attempt provenance");
+    }
+    const provenance = requireRecord(result.provenance, "provenance");
+    const essentiaProvenance = requireRecord(provenance.essentia, "provenance.essentia");
+    if (
+      essentiaProvenance.version === null ||
+      essentiaProvenance.config === null ||
+      essentiaProvenance.version !== essentiaAttempt.version ||
+      !deepEqual(essentiaProvenance.config, essentiaAttempt.config)
+    ) {
+      throw new Error("effective Essentia requires complete provider provenance");
+    }
+    if (
+      !deepEqual(effective.rhythm, essentiaAttempt.rhythm) ||
+      !deepEqual(effective.onsets, essentiaAttempt.onsets)
+    ) {
+      throw new Error("effective Essentia must match the preserved Essentia attempt");
+    }
+    if (aubioAttempt.version === null || aubioAttempt.config === null) {
+      throw new Error("effective Essentia requires preserved Aubio provenance");
+    }
+    const aubioProvenance = requireRecord(provenance.aubio, "provenance.aubio");
+    if (
+      aubioProvenance.version !== aubioAttempt.version ||
+      !deepEqual(aubioProvenance.config, aubioAttempt.config)
+    ) {
+      throw new Error("effective Essentia requires preserved Aubio provenance");
+    }
+    const fallbackReason = getAubioFallbackReason(aubioAttempt);
+    if (fallbackReason !== effective.selection_reason) {
+      throw new Error("Essentia selection reason must match the Aubio fallback predicate");
     }
   } else if (
     effective.selection_reason !== "legacy_unverified" ||
@@ -273,4 +360,32 @@ function requireNonEmptyString(value: unknown, path: string) {
 
 function requireNullableString(value: unknown, path: string) {
   if (value !== null) requireNonEmptyString(value, path);
+}
+
+function deepEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((entry, index) => deepEqual(entry, right[index]))
+    );
+  }
+  if (
+    left &&
+    right &&
+    typeof left === "object" &&
+    typeof right === "object"
+  ) {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+    return (
+      deepEqual(leftKeys, rightKeys) &&
+      leftKeys.every((key) => deepEqual(leftRecord[key], rightRecord[key]))
+    );
+  }
+  return false;
 }
