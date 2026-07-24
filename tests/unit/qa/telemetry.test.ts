@@ -4,6 +4,7 @@ import {
   recordRenderedFrame,
   registerWebGlRenderer,
   resetQaTelemetryForTests,
+  updateMediaTelemetry,
   updateSharedVideoResources,
 } from "../../../src/qa/telemetry";
 
@@ -44,6 +45,30 @@ describe("QA telemetry", () => {
       decoder: { state: "unavailable", queueSize: null },
       cache: { occupancy: null, capacity: null },
       resources: { sharedVideos: 2, sharedVideoRefs: 3 },
+    });
+  });
+
+  test("records observable media lane and resource state", () => {
+    updateMediaTelemetry({
+      decoder: { state: "decoding", queueSize: 4 },
+      cache: { occupancy: 18, capacity: 32 },
+      playback: {
+        path: "webcodecs-webgl2",
+        fallbackReason: "webgpu-unavailable",
+        activeLanes: 3,
+      },
+      resources: { decodedFrames: 18, activeDecoders: 3 },
+    });
+
+    expect(getQaTelemetrySnapshot()).toMatchObject({
+      decoder: { state: "decoding", queueSize: 4 },
+      cache: { occupancy: 18, capacity: 32 },
+      playback: {
+        path: "webcodecs-webgl2",
+        fallbackReason: "webgpu-unavailable",
+        activeLanes: 3,
+      },
+      resources: { decodedFrames: 18, activeDecoders: 3 },
     });
   });
 });

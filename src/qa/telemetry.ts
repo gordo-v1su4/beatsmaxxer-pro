@@ -1,4 +1,17 @@
 export type QaRendererBackend = "none" | "webgl2";
+export type QaDecoderState =
+  | "unavailable"
+  | "idle"
+  | "configured"
+  | "decoding"
+  | "closed"
+  | "error";
+export type QaPlaybackPath =
+  | "unavailable"
+  | "webcodecs-webgpu"
+  | "webcodecs-webgl2"
+  | "html-video-webgl2"
+  | "native-static";
 
 export interface QaTelemetrySnapshot {
   renderer: {
@@ -6,12 +19,17 @@ export interface QaTelemetrySnapshot {
     active: number;
   };
   decoder: {
-    state: "unavailable";
-    queueSize: null;
+    state: QaDecoderState;
+    queueSize: number | null;
   };
   cache: {
-    occupancy: null;
-    capacity: null;
+    occupancy: number | null;
+    capacity: number | null;
+  };
+  playback: {
+    path: QaPlaybackPath;
+    fallbackReason: string | null;
+    activeLanes: number;
   };
   frames: {
     rendered: number;
@@ -24,7 +42,21 @@ export interface QaTelemetrySnapshot {
     renderTargets: number;
     sharedVideos: number;
     sharedVideoRefs: number;
+    decodedFrames: number;
+    activeDecoders: number;
   };
+}
+
+export interface QaMediaTelemetryUpdate {
+  decoder?: Partial<QaTelemetrySnapshot["decoder"]>;
+  cache?: Partial<QaTelemetrySnapshot["cache"]>;
+  playback?: Partial<QaTelemetrySnapshot["playback"]>;
+  resources?: Partial<
+    Pick<
+      QaTelemetrySnapshot["resources"],
+      "decodedFrames" | "activeDecoders"
+    >
+  >;
 }
 
 const FRAME_SAMPLE_LIMIT = 120;
@@ -44,6 +76,11 @@ const snapshot: QaTelemetrySnapshot = {
     occupancy: null,
     capacity: null,
   },
+  playback: {
+    path: "unavailable",
+    fallbackReason: null,
+    activeLanes: 0,
+  },
   frames: {
     rendered: 0,
     lastIntervalMs: null,
@@ -55,6 +92,8 @@ const snapshot: QaTelemetrySnapshot = {
     renderTargets: 0,
     sharedVideos: 0,
     sharedVideoRefs: 0,
+    decodedFrames: 0,
+    activeDecoders: 0,
   },
 };
 
@@ -81,6 +120,13 @@ export function registerWebGlRenderer(renderTargetCount: number) {
 export function updateSharedVideoResources(entries: number, refs: number) {
   snapshot.resources.sharedVideos = Math.max(0, entries);
   snapshot.resources.sharedVideoRefs = Math.max(0, refs);
+}
+
+export function updateMediaTelemetry(update: QaMediaTelemetryUpdate) {
+  if (update.decoder) Object.assign(snapshot.decoder, update.decoder);
+  if (update.cache) Object.assign(snapshot.cache, update.cache);
+  if (update.playback) Object.assign(snapshot.playback, update.playback);
+  if (update.resources) Object.assign(snapshot.resources, update.resources);
 }
 
 export function recordRenderedFrame(frameAt: number) {
@@ -114,4 +160,13 @@ export function resetQaTelemetryForTests() {
   snapshot.resources.renderTargets = 0;
   snapshot.resources.sharedVideos = 0;
   snapshot.resources.sharedVideoRefs = 0;
+  snapshot.decoder.state = "unavailable";
+  snapshot.decoder.queueSize = null;
+  snapshot.cache.occupancy = null;
+  snapshot.cache.capacity = null;
+  snapshot.playback.path = "unavailable";
+  snapshot.playback.fallbackReason = null;
+  snapshot.playback.activeLanes = 0;
+  snapshot.resources.decodedFrames = 0;
+  snapshot.resources.activeDecoders = 0;
 }
