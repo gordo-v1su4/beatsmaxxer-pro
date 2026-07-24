@@ -9,6 +9,7 @@
  */
 
 import { fetchEssentiaRhythmAnalysis, fetchRhythmAnalysisFromUrl } from "./essentia";
+import { TransportClock, type TransportSample } from "./transport";
 
 export interface AudioState {
   bpm: number;
@@ -59,7 +60,6 @@ export class AudioEngine {
   private _analysisConfidence: number | null = null;
   private _analysisError: string | null = null;
 
-  private beatInterval = 60 / DEFAULT_BPM;
   private beatGrid: number[] = [];
   private onsetHistory: number[] = [];
   private prevEnergy = 0;
@@ -68,6 +68,7 @@ export class AudioEngine {
   private rafId = 0;
   private syntheticStartTime = 0;
   private analysisRequestId = 0;
+  private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
 
   async start() {
     await this.ensureContext();
@@ -81,6 +82,7 @@ export class AudioEngine {
       this.mediaElement.currentTime = 0;
       await this.mediaElement.play();
       this._playing = true;
+      this.transportClock.setPlaying(true, 0);
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.onsetCooldown = 0;
@@ -102,6 +104,7 @@ export class AudioEngine {
     this._trackName = DEFAULT_TRACK_NAME;
     this._usingUploadedTrack = false;
     this._playing = true;
+    this.transportClock.setPlaying(true, 0);
     this.onsetHistory = [];
     this.prevEnergy = 0;
     this.onsetCooldown = 0;
@@ -109,7 +112,9 @@ export class AudioEngine {
   }
 
   stop() {
+    const stoppedAt = this.getTransportTime();
     this._playing = false;
+    this.transportClock.setPlaying(false, stoppedAt);
 
     if (this.mediaElement) {
       this.mediaElement.pause();
@@ -132,6 +137,9 @@ export class AudioEngine {
     this._bassAmp = 0;
     this._highAmp = 0;
     this._fftBands = new Array(8).fill(0);
+    if (stoppedAt !== 0) {
+      this.transportClock.seek(0);
+    }
   }
 
   async loadAudioFile(file: File) {
@@ -197,8 +205,9 @@ export class AudioEngine {
     this._usingUploadedTrack = false;
     this._trackName = DEFAULT_TRACK_NAME;
     this._bpm = DEFAULT_BPM;
-    this.beatInterval = 60 / this._bpm;
     this.beatGrid = [];
+    this.transportClock.setBeatGrid([], this._bpm, 0);
+    this.transportClock.sourceChanged(0);
     this._analysisStatus = "idle";
     this._analysisConfidence = null;
     this._analysisError = null;
@@ -227,8 +236,9 @@ export class AudioEngine {
     this._usingUploadedTrack = true;
     this._trackName = trackName;
     this._bpm = DEFAULT_BPM;
-    this.beatInterval = 60 / this._bpm;
     this.beatGrid = [];
+    this.transportClock.setBeatGrid([], this._bpm, 0);
+    this.transportClock.sourceChanged(0);
     this.onsetHistory = [];
     this.prevEnergy = 0;
     this.onsetCooldown = 0;
@@ -263,8 +273,8 @@ export class AudioEngine {
   /** Manual BPM (typed or tap tempo). Locks out the auto-estimator until unlockBPM(). */
   setBPM(bpm: number) {
     this._bpm = Math.max(60, Math.min(200, bpm));
-    this.beatInterval = 60 / this._bpm;
     this._bpmLocked = true;
+    this.transportClock.setBpm(this._bpm, this.getTransportTime());
   }
 
   unlockBPM() {
@@ -272,6 +282,7 @@ export class AudioEngine {
   }
 
   getState(): AudioState {
+    const transport = this.getTransportSample();
     return {
       bpm: this._bpm,
       bpmLocked: this._bpmLocked,
@@ -282,7 +293,7 @@ export class AudioEngine {
       highAmp: this._highAmp,
       fftBands: this._fftBands,
       playing: this._playing,
-      time: this.getTransportTime(),
+      time: transport.transportSeconds,
       duration: this.mediaElement?.duration || 0,
       trackName: this._trackName,
       usingUploadedTrack: this._usingUploadedTrack,
@@ -290,6 +301,34 @@ export class AudioEngine {
       analysisConfidence: this._analysisConfidence,
       analysisError: this._analysisError,
     };
+  }
+
+  /**
+   * High-frequency timing read for render consumers.
+   *
+   * This path is independent of React snapshots and is always sampled from the
+   * audio/media clock rather than advancing from RAF time.
+   */
+  getTransportSample(presentationTimeSeconds = performance.now() / 1_000): TransportSample {
+    const outputTimestamp = this.ctx?.getOutputTimestamp?.();
+    const audioOutputTimeSeconds = outputTimestamp?.contextTime ?? this.ctx?.currentTime ?? 0;
+    const performanceTimeSeconds =
+      outputTimestamp?.performanceTime !== undefined
+        ? outputTimestamp.performanceTime / 1_000
+        : presentationTimeSeconds;
+
+    return this.transportClock.sample({
+      transportSeconds: this.getTransportTime(),
+      audioOutputTimeSeconds,
+      performanceTimeSeconds,
+      presentationTimeSeconds,
+      playing: this._playing,
+      bypassHostedGrid: this._bpmLocked,
+    });
+  }
+
+  drainTransportEvents() {
+    return this.transportClock.drainEvents();
   }
 
   private startTicking() {
@@ -350,15 +389,10 @@ export class AudioEngine {
 
     if (!this._playing) return;
 
-    const elapsed = this.getTransportTime();
-    if (!this.updateBeatFromGrid(elapsed)) {
-      if (!Number.isFinite(this.beatInterval) || this.beatInterval <= 0) {
-        this._bpm = DEFAULT_BPM;
-        this.beatInterval = 60 / DEFAULT_BPM;
-      }
-      this._beat = elapsed / this.beatInterval;
-      this._beatPhase = (elapsed % this.beatInterval) / this.beatInterval;
-    }
+    const transport = this.getTransportSample();
+    const elapsed = transport.transportSeconds;
+    this._beat = transport.beatPosition;
+    this._beatPhase = transport.beatPhase;
 
     if (this.analyserFull) {
       const td = new Uint8Array(this.analyserFull.fftSize);
@@ -420,7 +454,7 @@ export class AudioEngine {
           const med = sorted[Math.floor(sorted.length / 2)];
           const snapped = this.snapBPM(Math.round(med));
           this._bpm = this._bpm * 0.88 + snapped * 0.12;
-          this.beatInterval = 60 / this._bpm;
+          this.transportClock.setBpm(this._bpm, elapsed);
         }
       }
 
@@ -457,8 +491,8 @@ export class AudioEngine {
   private applyRhythmAnalysis(analysis: Awaited<ReturnType<typeof fetchEssentiaRhythmAnalysis>>) {
     const bpm = Math.max(60, Math.min(200, analysis.bpm));
     this._bpm = bpm;
-    this.beatInterval = 60 / bpm;
     this.beatGrid = analysis.beats.filter((beat) => beat >= 0).sort((a, b) => a - b);
+    this.transportClock.setBeatGrid(this.beatGrid, bpm, this.getTransportTime());
     this._analysisStatus = "ready";
     this._analysisConfidence = Number.isFinite(analysis.confidence) ? analysis.confidence : null;
     this._analysisError = null;
@@ -466,60 +500,11 @@ export class AudioEngine {
 
   private applyRealtimeFallback(error: unknown) {
     this.beatGrid = [];
+    this.transportClock.setBeatGrid([], this._bpm, this.getTransportTime());
     this._analysisStatus = "fallback";
     this._analysisConfidence = null;
     this._analysisError =
       error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
-  }
-
-  private updateBeatFromGrid(elapsed: number) {
-    if (this._bpmLocked || this.beatGrid.length < 2) {
-      return false;
-    }
-
-    const firstBeat = this.beatGrid[0] ?? 0;
-    const secondBeat = this.beatGrid[1] ?? firstBeat + this.beatInterval;
-    const defaultInterval = Math.max(0.001, secondBeat - firstBeat, this.beatInterval);
-
-    if (elapsed <= firstBeat) {
-      this._beat = Math.max(0, elapsed / defaultInterval);
-      this._beatPhase = this._beat - Math.floor(this._beat);
-      return true;
-    }
-
-    let low = 0;
-    let high = this.beatGrid.length - 1;
-
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      const current = this.beatGrid[mid] ?? 0;
-      const next = this.beatGrid[mid + 1];
-
-      if (next !== undefined && elapsed >= next) {
-        low = mid + 1;
-        continue;
-      }
-
-      if (elapsed < current) {
-        high = mid - 1;
-        continue;
-      }
-
-      const interval = Math.max(0.001, (next ?? current + defaultInterval) - current);
-      const phase = Math.max(0, Math.min(1, (elapsed - current) / interval));
-      this._beat = mid + phase;
-      this._beatPhase = phase;
-      return true;
-    }
-
-    const lastIndex = this.beatGrid.length - 1;
-    const lastBeat = this.beatGrid[lastIndex] ?? 0;
-    const prevBeat = this.beatGrid[lastIndex - 1] ?? Math.max(0, lastBeat - defaultInterval);
-    const lastInterval = Math.max(0.001, lastBeat - prevBeat, defaultInterval);
-    const tailBeats = Math.max(0, (elapsed - lastBeat) / lastInterval);
-    this._beat = lastIndex + tailBeats;
-    this._beatPhase = tailBeats - Math.floor(tailBeats);
-    return true;
   }
 
   private async synthesizeDrumLoop(ctx: AudioContext, bpm: number, bars: number): Promise<AudioBuffer> {
