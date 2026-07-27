@@ -59,7 +59,7 @@ try {
   }
 
   const sampleUrl =
-    "http://127.0.0.1:5174/?qa=sample-media&qaAutoplay=0&qaPgm=timesampler";
+    "http://127.0.0.1:5174/?qa=gems&qaAutoplay=1&qaPgm=timesampler";
   const sampleMedia = await fetch(sampleUrl);
   if (!sampleMedia.ok) {
     throw new Error(`Sample media QA route failed: ${sampleMedia.status}`);
@@ -69,16 +69,18 @@ try {
     throw new Error("Sample media page did not include app root");
   }
 
-  const multiClip = await waitForDataset(sampleUrl, "beatSurferMultiClip");
-  if (multiClip?.error) {
-    throw new Error(`Multi-clip runtime error: ${String(multiClip.error)}`);
+  const manifest = await fetch("http://127.0.0.1:5174/__qa/media/manifest.json");
+  if (!manifest.ok) {
+    throw new Error(`QA media manifest failed: ${manifest.status}`);
+  }
+  const manifestJson = (await manifest.json()) as { clips?: string[]; audio?: string | null };
+  if (!manifestJson.clips?.length) {
+    throw new Error("QA media manifest did not include any video clips");
   }
 
   console.log(
-    "Browser smoke passed: Vite served baseline and sample-media QA routes.",
-    multiClip?.renderer
-      ? `Renderer path: ${(multiClip.renderer as { fallback?: { path?: string } }).fallback?.path ?? "unknown"}`
-      : "Renderer telemetry pending hydration",
+    "Browser smoke passed: Vite served baseline and gems QA routes.",
+    `Clips: ${manifestJson.clips.length}, audio: ${manifestJson.audio ?? "none"}`,
   );
 } finally {
   server.kill();

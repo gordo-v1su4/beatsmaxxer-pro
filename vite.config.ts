@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
-import { createReadStream } from "fs";
+import { createReadStream, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
@@ -20,9 +20,7 @@ export default defineConfig(({ mode }) => {
     "https://essentia.v1su4.dev";
   const essentiaApiKey = env.ESSENTIA_API_KEY || "";
   const essentiaAnalysisEngine = env.ESSENTIA_ANALYSIS_ENGINE || env.VITE_ESSENTIA_ANALYSIS_ENGINE || "aubio";
-  const qaMediaDir =
-    env.QA_MEDIA_DIR ||
-    path.resolve(__dirname, "../../../Downloads/new-test-media-for-pss");
+  const qaMediaDir = resolveQaMediaDir(env, __dirname);
 
   return {
     plugins: [
@@ -32,6 +30,41 @@ export default defineConfig(({ mode }) => {
       {
         name: "qa-rhythm-bridge",
         configureServer(server) {
+          console.log(`[qa-media] serving fixtures from ${qaMediaDir}`);
+          server.middlewares.use("/__qa/media/manifest.json", async (_req, res) => {
+            try {
+              const entries = await fs.readdir(qaMediaDir);
+              const clips = entries
+                .filter((name) => /\.(mp4|webm|mov)$/i.test(name))
+                .sort((left, right) => left.localeCompare(right));
+              const audioCandidates = entries
+                .filter((name) => /\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(name))
+                .sort((left, right) => left.localeCompare(right));
+              res.statusCode = 200;
+              res.setHeader("Content-Type", "application/json");
+              res.setHeader("Cache-Control", "no-store");
+              res.end(
+                JSON.stringify({
+                  root: qaMediaDir,
+                  clips,
+                  audio: audioCandidates[0] ?? null,
+                  audios: audioCandidates,
+                }),
+              );
+            } catch (error) {
+              res.statusCode = 500;
+              res.setHeader("Content-Type", "application/json");
+              res.end(
+                JSON.stringify({
+                  detail:
+                    error instanceof Error
+                      ? error.message
+                      : "QA media manifest failed",
+                }),
+              );
+            }
+          });
+
           server.middlewares.use("/__qa/media", async (req, res) => {
             try {
               const relativePath = decodeURIComponent(
@@ -216,6 +249,26 @@ export default defineConfig(({ mode }) => {
     },
   };
 });
+
+function resolveQaMediaDir(
+  env: Record<string, string>,
+  projectDir: string,
+) {
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const candidates = [
+    env.QA_MEDIA_DIR,
+    path.resolve(projectDir, "tests/fixtures/media"),
+    home ? path.resolve(home, "Desktop/Gems") : "",
+    path.resolve(projectDir, "../../../Desktop/Gems"),
+    path.resolve(projectDir, "../../../Downloads/new-test-media-for-pss"),
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return path.resolve(projectDir, "tests/fixtures/media");
+}
 
 function mediaMimeType(filePath: string) {
   const extension = path.extname(filePath).toLowerCase();

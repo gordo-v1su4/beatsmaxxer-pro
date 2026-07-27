@@ -280,45 +280,75 @@ export function App() {
     if (!import.meta.env.DEV || qaSeedRef.current) return;
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('qa') !== 'sample-media') return;
+    const qaMode = params.get("qa");
+    if (qaMode !== "sample-media" && qaMode !== "gems") return;
 
     qaSeedRef.current = true;
 
-    const baseUrl = (params.get('qaMediaBase') || '/__qa/media').trim();
-    const audioName = (params.get('qaAudio') || QA_SAMPLE_AUDIO).trim();
-    const clipNames = (params.get('qaClips') || QA_SAMPLE_CLIPS.join(','))
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean);
-    const orderedModuleIds = [...MODULES.map((module) => module.id), ...MODULES_B.map((module) => module.id)];
-    const requestedPgm = params.get('qaPgm') as ModuleType | null;
-
-    const qaLayers = {} as Partial<
-      Record<ModuleType, VideoLayer>
-    >;
-    orderedModuleIds.forEach((moduleId, index) => {
-      const clipName = clipNames[index % clipNames.length];
-      const url = joinQaUrl(baseUrl, clipName);
-      clipRegistryRef.current.registerUrl(moduleId, clipName, url);
-      qaLayers[moduleId] = { name: clipName, url };
-    });
-    setVideoLayers((prev) => ({ ...prev, ...qaLayers }));
-    setClipRegistryVersion(version => version + 1);
-
-    if (requestedPgm && ALL_MODULES.some((module) => module.id === requestedPgm)) {
-      setPgmSource(requestedPgm);
-    }
+    const baseUrl = (params.get("qaMediaBase") || "/__qa/media").trim();
+    const orderedModuleIds = [
+      ...MODULES.map((module) => module.id),
+      ...MODULES_B.map((module) => module.id),
+    ];
+    const requestedPgm = params.get("qaPgm") as ModuleType | null;
 
     void (async () => {
+      let clipNames = (params.get("qaClips") || QA_SAMPLE_CLIPS.join(","))
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      let audioName = (params.get("qaAudio") || QA_SAMPLE_AUDIO).trim();
+
+      if (qaMode === "gems" || params.get("qaManifest") === "1") {
+        try {
+          const manifest = (await fetch(`${baseUrl}/manifest.json`).then((response) =>
+            response.json(),
+          )) as {
+            clips?: string[];
+            audio?: string | null;
+          };
+          if (manifest.clips?.length) {
+            clipNames = manifest.clips;
+          }
+          if (manifest.audio) {
+            audioName = manifest.audio;
+          }
+        } catch (error) {
+          console.error("Failed to load QA media manifest", error);
+        }
+      }
+
+      const qaLayers = {} as Partial<Record<ModuleType, VideoLayer>>;
+      orderedModuleIds.forEach((moduleId, index) => {
+        const clipName = clipNames[index % clipNames.length];
+        if (!clipName) return;
+        const url = joinQaUrl(baseUrl, clipName);
+        clipRegistryRef.current.registerUrl(moduleId, clipName, url);
+        qaLayers[moduleId] = { name: clipName, url };
+      });
+      setVideoLayers((prev) => ({ ...prev, ...qaLayers }));
+      setClipRegistryVersion((version) => version + 1);
+
+      if (
+        requestedPgm &&
+        ALL_MODULES.some((module) => module.id === requestedPgm)
+      ) {
+        setPgmSource(requestedPgm);
+      }
+
       try {
-        await audioEngine.loadAudioUrl(joinQaUrl(baseUrl, audioName), audioName, {
-          analysisUrl: `/__qa/rhythm?file=${encodeURIComponent(audioName)}`,
-        });
-        if (params.get('qaAutoplay') !== '0') {
+        await audioEngine.loadAudioUrl(
+          joinQaUrl(baseUrl, audioName),
+          audioName,
+          {
+            analysisUrl: `/__qa/rhythm?file=${encodeURIComponent(audioName)}`,
+          },
+        );
+        if (params.get("qaAutoplay") !== "0") {
           await audioEngine.start();
         }
       } catch (error) {
-        console.error('Failed to preload QA sample media', error);
+        console.error("Failed to preload QA sample media", error);
       }
     })();
   }, []);
