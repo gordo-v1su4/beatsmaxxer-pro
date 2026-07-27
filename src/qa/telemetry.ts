@@ -48,7 +48,11 @@ export interface QaTelemetrySnapshot {
   resources: {
     renderers: number;
     renderTargets: number;
+    mediaOwners: number;
+    mediaOwnerRefs: number;
+    /** @deprecated use mediaOwners */
     sharedVideos: number;
+    /** @deprecated use mediaOwnerRefs */
     sharedVideoRefs: number;
     decodedFrames: number;
     activeDecoders: number;
@@ -125,6 +129,8 @@ const snapshot: QaTelemetrySnapshot = {
   resources: {
     renderers: 0,
     renderTargets: 0,
+    mediaOwners: 0,
+    mediaOwnerRefs: 0,
     sharedVideos: 0,
     sharedVideoRefs: 0,
     decodedFrames: 0,
@@ -156,9 +162,16 @@ export function registerWebGlRenderer(renderTargetCount: number) {
   };
 }
 
+export function updateMediaOwnerResources(entries: number, refs: number) {
+  snapshot.resources.mediaOwners = Math.max(0, entries);
+  snapshot.resources.mediaOwnerRefs = Math.max(0, refs);
+  snapshot.resources.sharedVideos = snapshot.resources.mediaOwners;
+  snapshot.resources.sharedVideoRefs = snapshot.resources.mediaOwnerRefs;
+}
+
+/** @deprecated use updateMediaOwnerResources */
 export function updateSharedVideoResources(entries: number, refs: number) {
-  snapshot.resources.sharedVideos = Math.max(0, entries);
-  snapshot.resources.sharedVideoRefs = Math.max(0, refs);
+  updateMediaOwnerResources(entries, refs);
 }
 
 export function updateMediaTelemetry(update: QaMediaTelemetryUpdate) {
@@ -241,6 +254,8 @@ export function resetQaTelemetryForTests() {
   snapshot.frames.maxIntervalMs = null;
   snapshot.resources.renderers = 0;
   snapshot.resources.renderTargets = 0;
+  snapshot.resources.mediaOwners = 0;
+  snapshot.resources.mediaOwnerRefs = 0;
   snapshot.resources.sharedVideos = 0;
   snapshot.resources.sharedVideoRefs = 0;
   snapshot.decoder.state = "unavailable";

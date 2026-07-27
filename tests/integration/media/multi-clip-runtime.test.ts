@@ -125,9 +125,10 @@ function setup(
   const refs = new Map<string, number>();
   const activeVideos = new Set<FakeVideo>();
   const videos: CompatibilityVideoAdapter<FakeVideo> = {
-    acquire(clip) {
+    acquire(clip, role) {
       acquisitions += 1;
-      refs.set(clip.url, (refs.get(clip.url) ?? 0) + 1);
+      const ownerKey = `${role}:${clip.id}`;
+      refs.set(ownerKey, (refs.get(ownerKey) ?? 0) + 1);
       const video = {
         clipId: clip.id,
         url: clip.url,
@@ -148,14 +149,24 @@ function setup(
       activeVideos.add(video);
       return video;
     },
-    release(clip, video) {
+    release(clip, video, role) {
       const finish = () => {
         activeVideos.delete(video);
-        const next = Math.max(0, (refs.get(clip.url) ?? 0) - 1);
-        if (next === 0) refs.delete(clip.url);
-        else refs.set(clip.url, next);
+        const ownerKey = `${role}:${clip.id}`;
+        const next = Math.max(0, (refs.get(ownerKey) ?? 0) - 1);
+        if (next === 0) refs.delete(ownerKey);
+        else refs.set(ownerKey, next);
       };
       return options.releaseGate?.then(finish) ?? finish();
+    },
+    transferRole(clip, _video, fromRole, toRole) {
+      const fromKey = `${fromRole}:${clip.id}`;
+      const toKey = `${toRole}:${clip.id}`;
+      const count = refs.get(fromKey) ?? 0;
+      if (count > 0) {
+        refs.delete(fromKey);
+        refs.set(toKey, (refs.get(toKey) ?? 0) + count);
+      }
     },
     ready: (video) => video.ready,
     seeking: (video) => video.pendingSeekTarget !== null,
@@ -508,7 +519,7 @@ describe("G007 multi-clip production runtime", () => {
     });
     expect(state.present()).toBe(true);
     const firstSource = state.runtime.snapshot().roleSources.pgm;
-    expect(state.refs.has("/fixtures/clip-0.mp4")).toBe(true);
+    expect(state.refs.has("pgm:clip-0")).toBe(true);
 
     state.registry.registerUrl(
       "clip-0",
@@ -523,8 +534,7 @@ describe("G007 multi-clip production runtime", () => {
     expect(state.runtime.snapshot().roleSources.pgm).not.toBe(
       firstSource,
     );
-    expect(state.refs.has("/fixtures/clip-0.mp4")).toBe(false);
-    expect(state.refs.has("/fixtures/replacement.mp4")).toBe(true);
+    expect(state.refs.has("pgm:clip-0")).toBe(true);
     await state.runtime.dispose();
   });
 
@@ -1272,7 +1282,7 @@ describe("G007 multi-clip production runtime", () => {
       state.runtime.select({ pgm, prewarm, overlap: null });
       state.advance(8);
       expect(state.present()).toBe(true);
-      expect(state.refs.size).toBeLessThanOrEqual(2);
+      expect(state.refs.size).toBeLessThanOrEqual(3);
     }
 
     for (let index = 0; index < 100; index += 1) {

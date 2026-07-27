@@ -8,6 +8,7 @@ import {
   EXTERNAL_TEXTURE_INGEST_WGSL,
   TIMESAMPLER_COMPOSITE_WGSL,
 } from "./shaders";
+import { getSharedWebGpuDevice } from "./SharedGpuDevice";
 
 interface BrowserGpu {
   requestAdapter(): Promise<{
@@ -162,7 +163,9 @@ export class BrowserWebGpuBackend<
     if (!gpu) throw new Error("webgpu-unavailable");
     const adapter = await gpu.requestAdapter();
     if (!adapter) throw new Error("webgpu-adapter-unavailable");
-    const device = await adapter.requestDevice();
+    const device =
+      ((await getSharedWebGpuDevice()) as BrowserGpuDevice | null) ??
+      (await adapter.requestDevice());
     try {
       const context = canvas.getContext(
         "webgpu" as "2d",

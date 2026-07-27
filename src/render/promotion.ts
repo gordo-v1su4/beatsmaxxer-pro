@@ -3,24 +3,34 @@ import type { ModuleType } from "../App";
 export type RendererLane = "promoted" | "legacy";
 
 export const RENDERER_LANE_BY_EFFECT = {
-  transition: "legacy",
-  speedramp: "legacy",
-  tapdelay: "legacy",
+  transition: "promoted",
+  speedramp: "promoted",
+  tapdelay: "promoted",
   timesampler: "promoted",
-  punch: "legacy",
-  shake: "legacy",
-  orbit: "legacy",
-  focus: "legacy",
+  punch: "promoted",
+  shake: "promoted",
+  orbit: "promoted",
+  focus: "promoted",
 } as const satisfies Record<ModuleType, RendererLane>;
 
-export const WEBGPU_PROMOTED_EFFECTS = ["timesampler"] as const satisfies
-  readonly ModuleType[];
+export const WEBGPU_PROMOTED_EFFECTS = [
+  "transition",
+  "speedramp",
+  "tapdelay",
+  "timesampler",
+  "punch",
+  "shake",
+  "orbit",
+  "focus",
+] as const satisfies readonly ModuleType[];
 
 export const LEGACY_EFFECTS = (
-  Object.keys(RENDERER_LANE_BY_EFFECT) as ModuleType[]
-).filter(
-  (effect) => RENDERER_LANE_BY_EFFECT[effect] === "legacy",
-);
+  Object.entries(RENDERER_LANE_BY_EFFECT) as Array<
+    [ModuleType, RendererLane]
+  >
+)
+  .filter(([, lane]) => lane === "legacy")
+  .map(([effect]) => effect);
 
 export function rendererLaneForEffect(effect: ModuleType): RendererLane {
   return RENDERER_LANE_BY_EFFECT[effect];

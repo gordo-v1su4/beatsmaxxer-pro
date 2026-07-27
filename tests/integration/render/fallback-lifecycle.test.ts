@@ -287,7 +287,7 @@ describe("G006 renderer fallback lifecycle", () => {
     runtime.dispose();
   });
 
-  test("requires successful sample probes and preserves the seven legacy effects", async () => {
+  test("requires successful sample probes and preserves promoted renderer lanes", async () => {
     const capabilities = await probeRendererCapabilities({
       secureContext: true,
       probeWebGpuExternalTexture: async () => false,
@@ -305,23 +305,12 @@ describe("G006 renderer fallback lifecycle", () => {
       },
       htmlVideo: true,
     });
-    expect(LEGACY_EFFECTS).toEqual([
-      "transition",
-      "speedramp",
-      "tapdelay",
-      "punch",
-      "shake",
-      "orbit",
-      "focus",
-    ]);
-    expect(LEGACY_EFFECTS).toEqual(
-      ALL_MODULES.map((module) => module.id).filter(
-        (effect) => effect !== "timesampler",
+    expect(LEGACY_EFFECTS).toEqual([]);
+    expect(
+      ALL_MODULES.every(
+        (module) => rendererLaneForEffect(module.id) === "promoted",
       ),
-    );
-    expect(LEGACY_EFFECTS.every(
-      (effect) => rendererLaneForEffect(effect) === "legacy",
-    )).toBe(true);
+    ).toBe(true);
     expect(rendererLaneForEffect("timesampler")).toBe("promoted");
     expect(previewPolicy(false)).toBe("poster-only");
     expect(EXTERNAL_TO_LINEAR_GLSL).toContain("srgbToLinear");

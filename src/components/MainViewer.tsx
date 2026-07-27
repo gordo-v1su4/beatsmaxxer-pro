@@ -283,8 +283,7 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   const { state } = useAudio();
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
   const clip = videoLayers[active.id];
-  const promotedProgram =
-    active.id === 'timesampler' && !!clip && !bypassed[active.id];
+  const promotedProgram = !!clip && !bypassed[active.id];
 
   return (
     <div style={{

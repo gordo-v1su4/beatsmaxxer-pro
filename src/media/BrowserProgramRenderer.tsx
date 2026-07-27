@@ -1,19 +1,25 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModuleType } from "../App";
 import { audioEngine } from "../audio/AudioEngine";
 import { PlaybackPerformanceTracker } from "../qa/performance";
 import {
   createBrowserMediaRendererRuntime,
+  probeBrowserRendererCapabilities,
   type BrowserMediaRendererCanvases,
 } from "../render/browserFactory";
 import type { RenderFrameRequest } from "../render/contracts";
-import {
-  acquirePooledVideo,
-  releasePooledVideo,
-} from "../render/legacy/HtmlVideoRenderer";
 import { createQaInstrumentedPlaybackCoordinator } from "./telemetry";
 import type { ClipRegistry } from "./ClipRegistry";
 import { MultiClipPlaybackRuntime } from "./MultiClipPlaybackRuntime";
+import {
+  mediaOwnerId,
+  mediaOwnerRegistry,
+} from "./MediaOwnerRegistry";
+import { isHtmlVideoQaFallbackEnabled } from "./qaFallback";
+import { mediaEngine } from "./MediaEngine";
+import { probeClipDirectPlayback } from "./clipProbe";
+import type { PlaybackLaneRole } from "./PlaybackCoordinator";
+import type { DirectPlaybackProbe } from "./capabilities";
 
 export interface BrowserProgramRendererProps {
   registry: ClipRegistry;
@@ -127,6 +133,21 @@ function accentMode(params: Record<string, number>) {
   return (["LUM", "RGB", "OFF"] as const)[index];
 }
 
+function renderEffectForModule(
+  moduleId: ModuleType | null,
+): RenderFrameRequest["effect"] {
+  if (!moduleId) return "source";
+  if (moduleId === "timesampler") return "timesampler";
+  if (
+    moduleId === "transition" ||
+    moduleId === "speedramp" ||
+    moduleId === "tapdelay"
+  ) {
+    return moduleId;
+  }
+  return "source";
+}
+
 export function BrowserProgramRenderer(
   props: BrowserProgramRendererProps,
 ) {
@@ -139,6 +160,18 @@ export function BrowserProgramRenderer(
     );
   const propsRef = useRef(props);
   propsRef.current = props;
+  const overlapStartedAtRef = useRef<number | null>(null);
+  const previousOverlapRef = useRef<ModuleType | null>(null);
+
+  useEffect(() => {
+    if (props.overlap && props.overlap !== previousOverlapRef.current) {
+      overlapStartedAtRef.current = performance.now();
+    }
+    if (!props.overlap) {
+      overlapStartedAtRef.current = null;
+    }
+    previousOverlapRef.current = props.overlap;
+  }, [props.overlap]);
 
   useEffect(() => {
     const canvases: BrowserMediaRendererCanvases = {
@@ -151,6 +184,12 @@ export function BrowserProgramRenderer(
     let longTaskObserver: PerformanceObserver | null = null;
     let lastQaCommand = "";
     let lastPresentedAt: number | null = null;
+    let coordinator: ReturnType<
+      typeof createQaInstrumentedPlaybackCoordinator<VideoFrame>
+    > | null = null;
+    let decodeScheduler: ReturnType<
+      typeof mediaEngine.attachDecodeScheduler
+    > | null = null;
     const performanceTracker = new PlaybackPerformanceTracker();
     const videoCadences = new Map<
       HTMLVideoElement,
@@ -277,30 +316,96 @@ export function BrowserProgramRenderer(
     );
 
     void (async () => {
-      const coordinator =
+      coordinator =
         createQaInstrumentedPlaybackCoordinator<VideoFrame>();
+      const qaHtmlFallback = isHtmlVideoQaFallbackEnabled();
+      const probeRequest: RenderFrameRequest = {
+        width: 2,
+        height: 2,
+        effect: "timesampler",
+        accentMode: "OFF",
+        accentEnvelope: 0,
+        rgbOffset: 0,
+        mix: 1,
+      };
+      let capabilities = {
+        webgpuExternalTexture: {
+          available: false,
+          sampleFrameProbePassed: false,
+        },
+        webgl2VideoFrame: {
+          available: false,
+          sampleFrameProbePassed: false,
+        },
+        htmlVideo:
+          qaHtmlFallback &&
+          canvases.htmlVideo.getContext("webgl2") !== null,
+      };
+      if (
+        typeof VideoFrame !== "undefined" &&
+        globalThis.isSecureContext
+      ) {
+        try {
+          const sampleCanvas = document.createElement("canvas");
+          sampleCanvas.width = 2;
+          sampleCanvas.height = 2;
+          const ctx = sampleCanvas.getContext("2d");
+          if (ctx) {
+            ctx.fillStyle = "#808080";
+            ctx.fillRect(0, 0, 2, 2);
+            capabilities = await probeBrowserRendererCapabilities({
+              createSampleFrame: async () =>
+                new VideoFrame(sampleCanvas, { timestamp: 0 }),
+              request: probeRequest,
+              canvases,
+            });
+            if (!qaHtmlFallback) {
+              capabilities = {
+                ...capabilities,
+                htmlVideo: false,
+              };
+            }
+          }
+        } catch {
+          // Probes failed; decoded path unavailable until demuxer wired.
+        }
+      }
+      let direct: DirectPlaybackProbe = {
+        supported: false,
+        reason: "webcodecs-unavailable",
+        config: {
+          codec: "avc1.640028",
+          codedWidth: 1920,
+          codedHeight: 1080,
+        },
+      };
+      const probeClip =
+        propsRef.current.registry.get(
+          propsRef.current.pgm ?? "",
+        ) ?? propsRef.current.registry.list()[0] ?? null;
+      if (probeClip) {
+        try {
+          direct = await probeClipDirectPlayback(probeClip);
+        } catch {
+          direct = {
+            supported: false,
+            reason: "decoder-probe-failed",
+            config: direct.config,
+          };
+        }
+      } else if (
+        typeof VideoDecoder !== "undefined" &&
+        globalThis.isSecureContext
+      ) {
+        direct = {
+          supported: true,
+          reason: null,
+          config: direct.config,
+        };
+      }
       const renderer = await createBrowserMediaRendererRuntime({
-        direct: {
-          supported: false,
-          reason: "sample-frame-probe-failed",
-          config: {
-            codec: "avc1.640028",
-            codedWidth: 1920,
-            codedHeight: 1080,
-          },
-        },
-        capabilities: {
-          webgpuExternalTexture: {
-            available: false,
-            sampleFrameProbePassed: false,
-          },
-          webgl2VideoFrame: {
-            available: false,
-            sampleFrameProbePassed: false,
-          },
-          htmlVideo:
-            canvases.htmlVideo.getContext("webgl2") !== null,
-        },
+        direct,
+        capabilities,
         coordinator,
         canvases,
       });
@@ -309,20 +414,44 @@ export function BrowserProgramRenderer(
         coordinator.dispose();
         return;
       }
+      decodeScheduler = mediaEngine.attachDecodeScheduler(
+        coordinator,
+        (state, queueSize) => {
+          if (import.meta.env.DEV) {
+            document.documentElement.dataset.beatSurferDecoderState =
+              JSON.stringify({ state, queueSize });
+          }
+        },
+      );
       const runtime = new MultiClipPlaybackRuntime({
         registry: props.registry,
         coordinator,
         renderer,
         performance: performanceTracker,
         videos: {
-          acquire: (clip) => {
-            const video = acquirePooledVideo(clip.url);
+          acquire: (clip, role: PlaybackLaneRole) => {
+            const ownerId = mediaOwnerId(role, clip.id);
+            const video = mediaOwnerRegistry.acquireHtmlVideo(
+              ownerId,
+              clip.url,
+            );
             observeVideoCadence(video);
             return video;
           },
-          release: (clip, video, signal) => {
+          release: (clip, video, role, signal) => {
             stopVideoCadence(video);
-            return releasePooledVideo(clip.url, signal);
+            return mediaOwnerRegistry.releaseAsync(
+              mediaOwnerId(role, clip.id),
+              clip.url,
+              signal,
+            );
+          },
+          transferRole: (clip, _video, fromRole, toRole) => {
+            mediaOwnerRegistry.transferHtmlVideo(
+              mediaOwnerId(fromRole, clip.id),
+              mediaOwnerId(toRole, clip.id),
+              clip.url,
+            );
           },
           ready: (video) => video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
           seeking: (video) => video.seeking,
@@ -535,18 +664,62 @@ export function BrowserProgramRenderer(
         }
         const transport = audioEngine.getTransportSample();
         const live = audioEngine.getLiveScheduleFrame();
-        const canvas = htmlRef.current;
-        if (canvas && current.promoted) {
+        if (current.promoted) {
           const now = performance.now();
-          const rect = canvas.getBoundingClientRect();
-          const width = Math.max(1, Math.round(rect.width));
-          const height = Math.max(1, Math.round(rect.height));
-          if (canvas.width !== width) canvas.width = width;
-          if (canvas.height !== height) canvas.height = height;
+          const fallbackPath = runtime.snapshot().renderer.fallback.path;
+          const activeCanvas =
+            fallbackPath === "webcodecs-webgpu"
+              ? webgpuRef.current
+              : fallbackPath === "webcodecs-webgl2"
+                ? webglRef.current
+                : htmlRef.current;
+          if (activeCanvas) {
+            const rect = activeCanvas.getBoundingClientRect();
+            const width = Math.max(1, Math.round(rect.width));
+            const height = Math.max(1, Math.round(rect.height));
+            if (activeCanvas.width !== width) activeCanvas.width = width;
+            if (activeCanvas.height !== height) activeCanvas.height = height;
+          }
+          const sourceTimeSeconds =
+            live?.timeSampler.sourceTimestampSeconds ??
+            transport.transportSeconds;
+          if (
+            fallbackPath === "webcodecs-webgpu" ||
+            fallbackPath === "webcodecs-webgl2"
+          ) {
+            const roles = runtime.snapshot().roles;
+            for (const role of ["pgm", "prewarm", "overlap"] as const) {
+              const clipId = roles[role];
+              if (!clipId) {
+                decodeScheduler?.disposeLane(role);
+                continue;
+              }
+              const clip = propsRef.current.registry.get(clipId);
+              if (!clip) continue;
+              const lane = coordinator?.getLane(role);
+              decodeScheduler?.syncLane(
+                role,
+                clip,
+                lane?.generation ?? 0,
+              );
+              if (role === "pgm" && decodeScheduler) {
+                void decodeScheduler
+                  .ensurePresentationFrame({
+                    role,
+                    clip,
+                    generation: lane?.generation ?? 0,
+                    timestampUs: Math.round(
+                      sourceTimeSeconds * 1_000_000,
+                    ),
+                  })
+                  .catch(() => {});
+              }
+            }
+          }
           const request: RenderFrameRequest = {
-            width,
-            height,
-            effect: "timesampler",
+            width: activeCanvas?.width ?? 1,
+            height: activeCanvas?.height ?? 1,
+            effect: renderEffectForModule(current.pgm),
             accentMode: accentMode(current.params),
             accentEnvelope: live?.accent ? 1 : 0,
             rgbOffset: 0.02,
@@ -555,11 +728,21 @@ export function BrowserProgramRenderer(
               Math.max(0, (current.params.mix ?? 100) / 100),
             ),
           };
-          const fallbackPath = runtime.snapshot().renderer.fallback.path;
           const lateThresholdMs =
             fallbackPath === "html-video-webgl2"
               ? (1_000 / 30) * 1.5
               : (1_000 / 60) * 1.5;
+          const overlapStartedAt = overlapStartedAtRef.current;
+          const crossfadeAlpha =
+            current.overlap && overlapStartedAt !== null
+              ? Math.min(
+                  1,
+                  Math.max(
+                    0,
+                    (now - overlapStartedAt) / 250,
+                  ),
+                )
+              : undefined;
           const presented = runtime.present(
             {
               presentationTimeSeconds:
@@ -568,8 +751,7 @@ export function BrowserProgramRenderer(
               discontinuityGeneration:
                 transport.discontinuityGeneration,
             },
-            live?.timeSampler.sourceTimestampSeconds ??
-              transport.transportSeconds,
+            sourceTimeSeconds,
             request,
             {
               late:
@@ -579,6 +761,7 @@ export function BrowserProgramRenderer(
                 live?.timeSampler.jumpGeneration,
               playbackRate:
                 live?.timeSampler.targetPlaybackRate,
+              crossfadeAlpha,
             },
           );
           if (presented) lastPresentedAt = now;
@@ -620,6 +803,11 @@ export function BrowserProgramRenderer(
         stopVideoCadence(video);
       }
       propsRef.current.onRuntimeChange?.(null);
+      if (coordinator) {
+        mediaEngine.detachDecodeScheduler(coordinator);
+      }
+      decodeScheduler = null;
+      coordinator = null;
       void runtimeRef.current?.dispose();
       runtimeRef.current = null;
       delete (
@@ -643,6 +831,24 @@ export function BrowserProgramRenderer(
     props.overlap,
     props.registryVersion,
   ]);
+
+  const [activePath, setActivePath] = useState<
+    | "webcodecs-webgpu"
+    | "webcodecs-webgl2"
+    | "html-video-webgl2"
+    | "native-static"
+  >("native-static");
+
+  useEffect(() => {
+    if (!props.promoted) return;
+    const id = window.setInterval(() => {
+      const path =
+        runtimeRef.current?.snapshot().renderer.fallback.path ??
+        "native-static";
+      setActivePath(path);
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [props.promoted]);
 
   return (
     <>
@@ -670,11 +876,40 @@ export function BrowserProgramRenderer(
           inset: 0,
           width: "100%",
           height: "100%",
-          display: props.promoted ? "block" : "none",
+          display:
+            props.promoted && activePath === "html-video-webgl2"
+              ? "block"
+              : "none",
         }}
       />
-      <canvas ref={webgpuRef} hidden />
-      <canvas ref={webglRef} hidden />
+      <canvas
+        ref={webgpuRef}
+        data-g007-program-canvas-webgpu
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          display:
+            props.promoted && activePath === "webcodecs-webgpu"
+              ? "block"
+              : "none",
+        }}
+      />
+      <canvas
+        ref={webglRef}
+        data-g007-program-canvas-webgl
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          display:
+            props.promoted && activePath === "webcodecs-webgl2"
+              ? "block"
+              : "none",
+        }}
+      />
     </>
   );
 }

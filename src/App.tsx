@@ -6,6 +6,7 @@ import { AudioProvider } from './audio/AudioContext';
 import { audioEngine } from './audio/AudioEngine';
 import { parseMidi, type MidiNote } from './audio/MidiParser';
 import { ClipRegistry } from './media/ClipRegistry';
+import { mediaEngine } from './media/MediaEngine';
 
 export type ModuleType =
   | 'transition' | 'speedramp' | 'tapdelay' | 'timesampler'
@@ -157,6 +158,10 @@ export function App() {
     removeClip(id: string): Promise<boolean>;
   } | null>(null);
   const pendingClipRemovalsRef = useRef(new Set<ModuleType>());
+
+  useEffect(() => {
+    void mediaEngine.demux;
+  }, []);
   const registryLifecycleRef = useRef(0);
   const overlapTimerRef = useRef<number | null>(null);
   const qaSeedRef = useRef(false);

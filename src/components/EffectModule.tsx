@@ -15,8 +15,12 @@ import {
 import {
   recordRenderedFrame,
   registerWebGlRenderer,
-  updateSharedVideoResources,
 } from '../qa/telemetry';
+import {
+  mediaOwnerId,
+  mediaOwnerRegistry,
+} from '../media/MediaOwnerRegistry';
+import { getEffectClock, writeEffectClock } from '../media/EffectSchedule';
 import {
   previewPolicy,
   rendererLaneForEffect,
@@ -384,74 +388,6 @@ export function VUMeter({ value, color }: { value: number; color: string }) {
   );
 }
 
-/** One video element + texture per module, shared by every screen showing that module
-    (FX preview and PGM monitor), so all views stay frame-synced. */
-const sharedVideos: Record<string, { url: string; video: HTMLVideoElement; texture: THREE.VideoTexture; refs: number }> = {};
-
-function refreshSharedVideoTelemetry() {
-  const entries = Object.values(sharedVideos);
-  updateSharedVideoResources(
-    entries.length,
-    entries.reduce((total, entry) => total + entry.refs, 0),
-  );
-}
-
-function acquireSharedVideo(moduleId: string, url: string) {
-  const existing = sharedVideos[moduleId];
-  if (existing && existing.url === url) {
-    existing.refs++;
-    refreshSharedVideoTelemetry();
-    return existing;
-  }
-  if (existing) destroySharedVideo(moduleId);
-
-  const video = document.createElement('video');
-  video.src = url;
-  video.muted = true;
-  video.loop = true;
-  video.autoplay = true;
-  video.playsInline = true;
-  video.crossOrigin = 'anonymous';
-  video.preload = 'metadata';
-  video.play().catch(() => {});
-
-  const texture = new THREE.VideoTexture(video);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
-
-  const entry = { url, video, texture, refs: 1 };
-  sharedVideos[moduleId] = entry;
-  refreshSharedVideoTelemetry();
-  return entry;
-}
-
-function releaseSharedVideo(moduleId: string, url: string) {
-  const entry = sharedVideos[moduleId];
-  if (!entry || entry.url !== url) return;
-  entry.refs--;
-  if (entry.refs <= 0) {
-    destroySharedVideo(moduleId);
-  } else {
-    refreshSharedVideoTelemetry();
-  }
-}
-
-function destroySharedVideo(moduleId: string) {
-  const entry = sharedVideos[moduleId];
-  if (!entry) return;
-  entry.texture.dispose();
-  entry.video.pause();
-  entry.video.src = '';
-  entry.video.load();
-  delete sharedVideos[moduleId];
-  refreshSharedVideoTelemetry();
-}
-
-/** Legacy per-module clocks for effects that have not moved to a shared schedule. */
-const moduleClocks: Record<string, { srcTime: number; aux1: number; aux2: number }> = {};
-
 /** True if transport moved from tPrev to tNow across any MIDI note-on time (looping by loopDur). */
 function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number, loopDur: number): boolean {
   if (notes.length === 0 || loopDur <= 0) return false;
@@ -714,7 +650,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         const onsetStr = Math.max(0, Math.min(1.5, bassNow / Math.max(0.02, st.bassEma) - 1.0));
 
         const isDriver = mode === 'effect';
-        const clock = (moduleClocks[type] ??= { srcTime: 0, aux1: 0, aux2: 0 });
+        const clock = getEffectClock(type);
 
         if (type === 'timesampler') {
           const prm = paramsRef.current;
@@ -1039,9 +975,11 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         }
 
         if (isDriver) {
-          clock.srcTime = m.uniforms.uSrcTime.value;
-          clock.aux1 = m.uniforms.uAux1.value;
-          clock.aux2 = m.uniforms.uAux2.value;
+          writeEffectClock(type, {
+            srcTime: m.uniforms.uSrcTime.value,
+            aux1: m.uniforms.uAux1.value,
+            aux2: m.uniforms.uAux2.value,
+          });
         }
       }
 
@@ -1140,9 +1078,14 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       return;
     }
 
-    // shared per-module video: every screen of this module samples the same frames
-    const entry = acquireSharedVideo(type, videoUrl);
-    const video = entry.video;
+    const ownerKind = mode === 'effect' ? 'preview' : 'pgm';
+    const ownerId = mediaOwnerId(ownerKind, type);
+    const video = mediaOwnerRegistry.acquireHtmlVideo(ownerId, videoUrl);
+    const texture = new THREE.VideoTexture(video);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
     const applyRes = () => {
       if (m && video.videoWidth > 0 && video.videoHeight > 0) {
         m.uniforms.uVideoRes.value.set(video.videoWidth, video.videoHeight);
@@ -1151,9 +1094,9 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     applyRes();
     video.addEventListener('loadedmetadata', applyRes);
     videoRef.current = video;
-    videoTextureRef.current = entry.texture;
+    videoTextureRef.current = texture;
 
-    m.uniforms.uVideoTex.value = entry.texture;
+    m.uniforms.uVideoTex.value = texture;
     m.uniforms.uHasVideo.value = 1.0;
 
     // If transport is already rolling when the shared clip attaches, resume it now
@@ -1164,10 +1107,11 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
     return () => {
       video.removeEventListener('loadedmetadata', applyRes);
-      releaseSharedVideo(type, videoUrl);
+      texture.dispose();
+      mediaOwnerRegistry.release(ownerId, videoUrl);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoUrl, type]);
+  }, [videoUrl, type, mode]);
 
   // absolute so the canvas's own size can never prop open the aspect-ratio box
   return (

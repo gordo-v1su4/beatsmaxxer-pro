@@ -5,7 +5,12 @@ import type {
 import type { DecodedFrameLike, MediaFallback } from "../media/types";
 import type { TimeSamplerAccentMode } from "../timesampler/types";
 
-export type PromotedRenderEffect = "source" | "timesampler";
+export type PromotedRenderEffect =
+  | "source"
+  | "timesampler"
+  | "transition"
+  | "speedramp"
+  | "tapdelay";
 
 export interface RenderFrameRequest {
   width: number;
@@ -15,6 +20,8 @@ export interface RenderFrameRequest {
   accentEnvelope: number;
   rgbOffset: number;
   mix: number;
+  /** 0 = PGM only, 1 = overlap only during channel crossfade. */
+  crossfadeAlpha?: number;
 }
 
 export interface DecodedFrameSubmission<

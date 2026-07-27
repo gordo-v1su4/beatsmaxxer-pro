@@ -19,12 +19,19 @@ import type {
 import type { DecodedFrameLike } from "./types";
 
 export interface CompatibilityVideoAdapter<Video extends object> {
-  acquire(clip: RegisteredClip): Video;
+  acquire(clip: RegisteredClip, role: PlaybackLaneRole): Video;
   release(
     clip: RegisteredClip,
     video: Video,
+    role: PlaybackLaneRole,
     signal?: AbortSignal,
   ): void | Promise<void>;
+  transferRole?(
+    clip: RegisteredClip,
+    video: Video,
+    fromRole: PlaybackLaneRole,
+    toRole: PlaybackLaneRole,
+  ): void;
   ready(video: Video): boolean;
   seeking?(video: Video): boolean;
   currentTime(video: Video): number;
@@ -332,6 +339,7 @@ export class MultiClipPlaybackRuntime<
       late?: boolean;
       sourceGeneration?: number;
       playbackRate?: number;
+      crossfadeAlpha?: number;
     } = {},
   ) {
     this.assertOpen();
@@ -345,11 +353,29 @@ export class MultiClipPlaybackRuntime<
       fallback === "webcodecs-webgpu" ||
       fallback === "webcodecs-webgl2"
     ) {
-      const lease = this.options.coordinator.leaseFrame(
-        "pgm",
-        Math.round(sourceTimeSeconds * 1_000_000),
-        "multi-clip-renderer",
+      const targetTimestampUs = Math.round(
+        sourceTimeSeconds * 1_000_000,
       );
+      const crossfadeAlpha = options.crossfadeAlpha ?? 0;
+      const overlapActive =
+        crossfadeAlpha > 0 &&
+        crossfadeAlpha < 1 &&
+        this.roles.get("overlap") !== undefined;
+      let crossfade: {
+        pgm: FrameLease<Frame>;
+        overlap: FrameLease<Frame>;
+      } | null = null;
+      const lease = overlapActive
+        ? (crossfade =
+            this.options.coordinator.leaseCrossfade(
+              targetTimestampUs,
+              "multi-clip-renderer",
+            ))?.pgm ?? null
+        : this.options.coordinator.leaseFrame(
+            "pgm",
+            targetTimestampUs,
+            "multi-clip-renderer",
+          );
       if (!lease) {
         this.recordDroppedFrame(
           transport,
@@ -358,9 +384,6 @@ export class MultiClipPlaybackRuntime<
         );
         return false;
       }
-      const targetTimestampUs = Math.round(
-        sourceTimeSeconds * 1_000_000,
-      );
       const frame = lease.frame;
       const presentationToleranceUs =
         PRESENTATION_TOLERANCE_SECONDS * 1_000_000;
@@ -373,6 +396,7 @@ export class MultiClipPlaybackRuntime<
         targetTimestampUs >= frame.timestamp + frameDurationUs
       ) {
         lease.release();
+        crossfade?.overlap.release();
         this.recordDroppedFrame(
           transport,
           pgm,
@@ -382,9 +406,13 @@ export class MultiClipPlaybackRuntime<
       }
       const submission = this.options.renderer.presentDecoded(
         lease,
-        request,
+        {
+          ...request,
+          crossfadeAlpha: overlapActive ? crossfadeAlpha : undefined,
+        },
       );
       if (!submission) {
+        crossfade?.overlap.release();
         this.recordDroppedFrame(
           transport,
           pgm,
@@ -393,6 +421,7 @@ export class MultiClipPlaybackRuntime<
         return false;
       }
       submission.receipt.release();
+      crossfade?.overlap.release();
     } else {
       const sourceGeneration = options.sourceGeneration ?? null;
       const requestedPlaybackRate = Math.max(
@@ -838,7 +867,7 @@ export class MultiClipPlaybackRuntime<
     this.options.registry.retain(clip);
     let video: Video;
     try {
-      video = this.options.videos.acquire(clip);
+      video = this.options.videos.acquire(clip, role);
     } catch (error) {
       this.options.registry.releaseReference(clip);
       throw error;
@@ -874,6 +903,12 @@ export class MultiClipPlaybackRuntime<
     this.startReleaseRole("pgm");
     this.roles.delete("prewarm");
     this.options.coordinator.deactivate("prewarm");
+    this.options.videos.transferRole?.(
+      warmed.clip,
+      warmed.video,
+      "prewarm",
+      "pgm",
+    );
     warmed.generation = ++this.generation;
     warmed.lastSourceGeneration = null;
     warmed.lastDiscontinuityGeneration = null;
@@ -909,6 +944,7 @@ export class MultiClipPlaybackRuntime<
         this.options.videos.release(
           active.clip,
           active.video,
+          role,
           signal,
         ),
       );

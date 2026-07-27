@@ -5,7 +5,7 @@ import {
   registerWebGlRenderer,
   resetQaTelemetryForTests,
   updateMediaTelemetry,
-  updateSharedVideoResources,
+  updateMediaOwnerResources,
 } from "../../../src/qa/telemetry";
 
 describe("QA telemetry", () => {
@@ -40,11 +40,11 @@ describe("QA telemetry", () => {
   });
 
   test("reports unavailable decoder and cache without invented values", () => {
-    updateSharedVideoResources(2, 3);
+    updateMediaOwnerResources(2, 3);
     expect(getQaTelemetrySnapshot()).toMatchObject({
       decoder: { state: "unavailable", queueSize: null },
       cache: { occupancy: null, capacity: null },
-      resources: { sharedVideos: 2, sharedVideoRefs: 3 },
+      resources: { mediaOwners: 2, mediaOwnerRefs: 3, sharedVideos: 2, sharedVideoRefs: 3 },
     });
   });
 
