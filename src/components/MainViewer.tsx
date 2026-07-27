@@ -284,6 +284,12 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   const active = modules.find(m => m.id === pgmSource) ?? modules[0];
   const clip = videoLayers[active.id];
   const promotedProgram = !!clip && !bypassed[active.id];
+  const [pgmRendererPath, setPgmRendererPath] = useState<
+    | "webcodecs-webgpu"
+    | "webcodecs-webgl2"
+    | "html-video-webgl2"
+    | "native-static"
+  >("native-static");
 
   return (
     <div style={{
@@ -314,6 +320,18 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
             bypassed={bypassed[active.id]}
           />
         )}
+        {promotedProgram && pgmRendererPath === 'native-static' && (
+          <ThreeVisualizer
+            key={`${active.id}-fallback`}
+            type={active.id}
+            color={active.accentColor}
+            params={moduleParams[active.id]}
+            mode="output"
+            videoUrl={clip?.url}
+            midiLayer={midiLayers[active.id]}
+            bypassed={bypassed[active.id]}
+          />
+        )}
         <BrowserProgramRenderer
           registry={clipRegistry}
           registryVersion={clipRegistryVersion}
@@ -331,6 +349,7 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
           promoted={promotedProgram}
           params={moduleParams[active.id]}
           onRuntimeChange={onClipRuntimeChange}
+          onFallbackPathChange={setPgmRendererPath}
         />
         <ScreenOverlay/>
         <ScreenBadge

@@ -32,6 +32,13 @@ export interface BrowserProgramRendererProps {
   onRuntimeChange?: (
     runtime: { removeClip(id: string): Promise<boolean> } | null,
   ) => void;
+  onFallbackPathChange?: (
+    path:
+      | "webcodecs-webgpu"
+      | "webcodecs-webgl2"
+      | "html-video-webgl2"
+      | "native-static",
+  ) => void;
 }
 
 export function circularMediaTimeDistance(
@@ -359,12 +366,6 @@ export function BrowserProgramRenderer(
               request: probeRequest,
               canvases,
             });
-            if (!qaHtmlFallback) {
-              capabilities = {
-                ...capabilities,
-                htmlVideo: false,
-              };
-            }
           }
         } catch {
           // Probes failed; decoded path unavailable until demuxer wired.
@@ -393,14 +394,13 @@ export function BrowserProgramRenderer(
             config: direct.config,
           };
         }
-      } else if (
-        typeof VideoDecoder !== "undefined" &&
-        globalThis.isSecureContext
-      ) {
-        direct = {
-          supported: true,
-          reason: null,
-          config: direct.config,
+      }
+      // Keep HTML video available when the decoded path is not viable so PGM
+      // still shows pixels. Only suppress HTML when WebCodecs probe passed.
+      if (!qaHtmlFallback && direct.supported) {
+        capabilities = {
+          ...capabilities,
+          htmlVideo: false,
         };
       }
       const renderer = await createBrowserMediaRendererRuntime({
@@ -605,6 +605,9 @@ export function BrowserProgramRenderer(
         },
       });
       runtimeRef.current = runtime;
+      const path = runtime.snapshot().renderer.fallback.path;
+      setActivePath(path);
+      propsRef.current.onFallbackPathChange?.(path);
       propsRef.current.onRuntimeChange?.({
         removeClip: (id) => runtime.removeClip(id),
       });
@@ -667,6 +670,11 @@ export function BrowserProgramRenderer(
         if (current.promoted) {
           const now = performance.now();
           const fallbackPath = runtime.snapshot().renderer.fallback.path;
+          if (fallbackPath !== activePathRef.current) {
+            activePathRef.current = fallbackPath;
+            setActivePath(fallbackPath);
+            propsRef.current.onFallbackPathChange?.(fallbackPath);
+          }
           const activeCanvas =
             fallbackPath === "webcodecs-webgpu"
               ? webgpuRef.current
@@ -817,7 +825,7 @@ export function BrowserProgramRenderer(
       ).__BEAT_SURFER_MULTI_CLIP_QA__;
       delete document.documentElement.dataset.beatSurferMultiClip;
     };
-  }, [props.registry]);
+  }, [props.registry, props.registryVersion]);
 
   useEffect(() => {
     runtimeRef.current?.select({
@@ -838,17 +846,8 @@ export function BrowserProgramRenderer(
     | "html-video-webgl2"
     | "native-static"
   >("native-static");
-
-  useEffect(() => {
-    if (!props.promoted) return;
-    const id = window.setInterval(() => {
-      const path =
-        runtimeRef.current?.snapshot().renderer.fallback.path ??
-        "native-static";
-      setActivePath(path);
-    }, 250);
-    return () => window.clearInterval(id);
-  }, [props.promoted]);
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
 
   return (
     <>
