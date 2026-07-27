@@ -48,7 +48,7 @@ describe("legacy synchronous analysis adapter", () => {
       fetch,
     });
 
-    expect(new URL(requestUrl).searchParams.toString()).toBe("engine=aubio");
+    expect(new URL(requestUrl).searchParams.toString()).toBe("");
     expect(requestHeaders).toBeUndefined();
   });
 

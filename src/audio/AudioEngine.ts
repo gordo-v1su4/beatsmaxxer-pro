@@ -8,7 +8,7 @@
  * - Lightweight onset-based BPM estimation from bass energy
  */
 
-import { fetchEssentiaRhythmAnalysis, fetchRhythmAnalysisFromUrl } from "./essentia";
+import { fetchEssentiaRhythmAnalysis } from "./essentia";
 import { TransportClock, type TransportSample } from "./transport";
 import {
   liveScheduleRuntime,
@@ -186,30 +186,36 @@ export class AudioEngine {
     }
   }
 
-  async loadAudioUrl(url: string, trackName: string, options?: { analysisUrl?: string }) {
+  async loadAudioUrl(url: string, trackName: string) {
     await this.ensureContext();
     if (!this.ctx || !this.gainNode) return;
 
     this.stop();
     this.disposeMediaElement();
 
-    this.attachMediaElement(url, trackName);
-    this.prepareUploadedTrack(trackName);
-
     const requestId = ++this.analysisRequestId;
 
+    // Buffer the track once and play it from memory. Streaming the element
+    // straight off the URL competes with the video previews for the browser's
+    // per-host connection pool and makes playback stall mid-song.
+    let file: File | null = null;
     try {
-      const analysis = options?.analysisUrl
-        ? await fetchRhythmAnalysisFromUrl(options.analysisUrl)
-        : await (async () => {
-            const response = await fetch(url);
-            if (!response.ok) {
-              throw new Error(`Failed to fetch QA audio source (${response.status})`);
-            }
-            const blob = await response.blob();
-            const file = new File([blob], trackName, { type: blob.type || 'audio/wav' });
-            return fetchEssentiaRhythmAnalysis(file);
-          })();
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio source (${response.status})`);
+      }
+      const blob = await response.blob();
+      file = new File([blob], trackName, { type: blob.type || "audio/wav" });
+      this.objectUrl = URL.createObjectURL(blob);
+      this.attachMediaElement(this.objectUrl, trackName);
+    } catch {
+      this.attachMediaElement(url, trackName);
+    }
+    this.prepareUploadedTrack(trackName);
+
+    try {
+      if (!file) throw new Error("Audio source unavailable for analysis");
+      const analysis = await fetchEssentiaRhythmAnalysis(file);
       if (requestId !== this.analysisRequestId) return;
       this.applyRhythmAnalysis(analysis);
     } catch (error) {
@@ -256,6 +262,7 @@ export class AudioEngine {
   private prepareUploadedTrack(trackName: string) {
     this._usingUploadedTrack = true;
     this._trackName = trackName;
+    this._bpmLocked = false;
     this._bpm = DEFAULT_BPM;
     this.beatGrid = [];
     this.transportClock.setBeatGrid([], this._bpm, 0);

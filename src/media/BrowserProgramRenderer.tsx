@@ -440,27 +440,28 @@ export function BrowserProgramRenderer(
         renderer,
         performance: performanceTracker,
         videos: {
-          acquire: (clip, role: PlaybackLaneRole) => {
-            const ownerId = mediaOwnerId(role, clip.id);
+          // Every lane role resolves to the clip's shared decode lane, so a clip
+          // that is previewed, prewarmed, and on air still decodes only once.
+          acquire: (clip, _role: PlaybackLaneRole) => {
             const video = mediaOwnerRegistry.acquireHtmlVideo(
-              ownerId,
+              mediaOwnerId("clip", clip.id),
               clip.url,
             );
             observeVideoCadence(video);
             return video;
           },
-          release: (clip, video, role, signal) => {
+          release: (clip, video, _role, signal) => {
             stopVideoCadence(video);
             return mediaOwnerRegistry.releaseAsync(
-              mediaOwnerId(role, clip.id),
+              mediaOwnerId("clip", clip.id),
               clip.url,
               signal,
             );
           },
-          transferRole: (clip, _video, fromRole, toRole) => {
+          transferRole: (clip, _video, _fromRole, _toRole) => {
             mediaOwnerRegistry.transferHtmlVideo(
-              mediaOwnerId(fromRole, clip.id),
-              mediaOwnerId(toRole, clip.id),
+              mediaOwnerId("clip", clip.id),
+              mediaOwnerId("clip", clip.id),
               clip.url,
             );
           },

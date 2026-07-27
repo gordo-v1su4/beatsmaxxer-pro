@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Undo2, Redo2, Shuffle, X, AlignJustify, Play, Square, Upload, Music4, Disc3, Pause } from 'lucide-react';
+import { Undo2, Redo2, Shuffle, X, AlignJustify, Play, Square, Upload, Music4, Disc3, Pause, Film } from 'lucide-react';
 import { useAudio } from '../audio/AudioContext';
 import { shaderCtl } from './EffectModule';
 
@@ -8,14 +8,18 @@ interface TopBarProps {
   onClear: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
+  onLoadClips?: (files: File[]) => void;
+  loadedClipCount?: number;
+  clipSlotCount?: number;
 }
 
-export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
+export function TopBar({ onRandomize, onClear, onUndo, onRedo, onLoadClips, loadedClipCount = 0, clipSlotCount = 0 }: TopBarProps) {
   const { state, playing, togglePlay, setBPM, unlockBPM, tapTempo, loadAudioFile, clearUploadedTrack } = useAudio();
   const [tapFlash, setTapFlash] = useState(false);
   const [bpmEdit, setBpmEdit] = useState<string | null>(null);
   const [fxFrozen, setFxFrozen] = useState(false);
   const audioInputRef = useRef<HTMLInputElement>(null);
+  const clipsInputRef = useRef<HTMLInputElement>(null);
 
   const commitBpm = () => {
     if (bpmEdit !== null) {
@@ -65,6 +69,19 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
         type="file"
         accept="audio/*"
         onChange={handleAudioUpload}
+        style={{ display: 'none' }}
+      />
+
+      <input
+        ref={clipsInputRef}
+        type="file"
+        accept="video/*"
+        multiple
+        onChange={(e) => {
+          const files = [...(e.target.files ?? [])];
+          if (files.length > 0) onLoadClips?.(files);
+          e.target.value = '';
+        }}
         style={{ display: 'none' }}
       />
 
@@ -130,6 +147,32 @@ export function TopBar({ onRandomize, onClear, onUndo, onRedo }: TopBarProps) {
           <Upload size={10} />
           SONG
         </button>
+
+        {onLoadClips && (
+          <button
+            onClick={() => clipsInputRef.current?.click()}
+            title={`Load clips into empty slots (${loadedClipCount}/${clipSlotCount} filled)`}
+            style={{
+              height: 26, paddingInline: 8,
+              background: 'linear-gradient(180deg,#191d24,#12161c)',
+              borderStyle: 'solid',
+              borderWidth: 1,
+              borderColor: '#29313c #20262e #20262e #20262e',
+              borderRadius: 3,
+              cursor:'pointer',
+              color: loadedClipCount > 0 ? '#a78bfa' : '#516072',
+              display:'flex', alignItems:'center', gap:4,
+              fontFamily:'Rajdhani,sans-serif', fontWeight:700, fontSize:9, letterSpacing:'0.1em',
+              boxShadow: loadedClipCount > 0 ? '0 0 8px rgba(167,139,250,0.18)' : 'inset 0 1px 3px rgba(0,0,0,0.5)',
+            }}
+          >
+            <Film size={10} />
+            CLIPS
+            <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:8, color:'#4a5060' }}>
+              {loadedClipCount}/{clipSlotCount}
+            </span>
+          </button>
+        )}
 
         {state.usingUploadedTrack && (
           <button

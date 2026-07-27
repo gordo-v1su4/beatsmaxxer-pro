@@ -281,7 +281,13 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   ) => void;
 }) {
   const { state } = useAudio();
-  const active = modules.find(m => m.id === pgmSource) ?? modules[0];
+  // The requested source only goes to air once its renderer has a real frame.
+  // Until then `liveSource` keeps the outgoing picture up, so a cut never blanks.
+  const [liveSource, setLiveSource] = useState<ModuleType>(pgmSource);
+  const active = modules.find(m => m.id === liveSource) ?? modules[0];
+  const incoming = pgmSource !== active.id
+    ? modules.find(m => m.id === pgmSource) ?? null
+    : null;
   const clip = videoLayers[active.id];
   const promotedProgram = !!clip && !bypassed[active.id];
   const [pgmRendererPath, setPgmRendererPath] = useState<
@@ -290,6 +296,23 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
     | "html-video-webgl2"
     | "native-static"
   >("native-static");
+
+  /** True when this source is painted by a Three.js canvas rather than the
+      promoted WebCodecs renderer, which manages its own clip continuity. */
+  const usesNativeCanvas = (id: ModuleType) =>
+    !(videoLayers[id] && !bypassed[id]) || pgmRendererPath === 'native-static';
+  const incomingHolds = !!incoming && usesNativeCanvas(incoming.id);
+
+  useEffect(() => {
+    if (!incoming) return;
+    if (!incomingHolds) {
+      setLiveSource(pgmSource);
+      return;
+    }
+    // Never strand the program on a stale source if the incoming clip stalls.
+    const timeout = window.setTimeout(() => setLiveSource(pgmSource), 1200);
+    return () => window.clearTimeout(timeout);
+  }, [incoming, incomingHolds, pgmSource]);
 
   return (
     <div style={{
@@ -308,7 +331,9 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
       }}
         data-pgm-renderer-lane={rendererLaneForEffect(active.id)}
       >
-        {!promotedProgram && (
+        {/* Keyed by module id so the incoming instance is promoted in place
+            rather than remounted, which is what used to blank the cut. */}
+        {usesNativeCanvas(active.id) && (
           <ThreeVisualizer
             key={active.id}
             type={active.id}
@@ -320,16 +345,18 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
             bypassed={bypassed[active.id]}
           />
         )}
-        {promotedProgram && pgmRendererPath === 'native-static' && (
+        {incoming && incomingHolds && (
           <ThreeVisualizer
-            key={`${active.id}-fallback`}
-            type={active.id}
-            color={active.accentColor}
-            params={moduleParams[active.id]}
+            key={incoming.id}
+            type={incoming.id}
+            color={incoming.accentColor}
+            params={moduleParams[incoming.id]}
             mode="output"
-            videoUrl={clip?.url}
-            midiLayer={midiLayers[active.id]}
-            bypassed={bypassed[active.id]}
+            videoUrl={videoLayers[incoming.id]?.url}
+            midiLayer={midiLayers[incoming.id]}
+            bypassed={bypassed[incoming.id]}
+            hidden
+            onFirstFrame={() => setLiveSource(incoming.id)}
           />
         )}
         <BrowserProgramRenderer

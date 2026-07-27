@@ -1,6 +1,16 @@
 import { updateMediaOwnerResources } from "../qa/telemetry";
 
-export type MediaOwnerKind = "preview" | "pgm" | "prewarm" | "overlap";
+/**
+ * "clip" is the shared decode lane: preview and PGM consumers of the same clip
+ * hold refs on one element instead of decoding the file twice. The role-specific
+ * kinds remain for callers that genuinely need an independent element.
+ */
+export type MediaOwnerKind =
+  | "clip"
+  | "preview"
+  | "pgm"
+  | "prewarm"
+  | "overlap";
 
 export type MediaOwnerId = `${MediaOwnerKind}:${string}`;
 
@@ -19,6 +29,15 @@ interface HtmlVideoOwnerEntry {
   generation: number;
 }
 
+/**
+ * Spacing between decoder starts. Bringing every lane up in the same tick makes
+ * the clips contend for the connection pool and the decoder, which shows up as
+ * dropped frames across all of them rather than a slower ramp on one.
+ */
+const DECODER_START_STAGGER_MS = 250;
+
+let nextDecoderStartAt = 0;
+
 function createVideoElement(url: string) {
   const video = document.createElement("video");
   video.src = url;
@@ -28,6 +47,22 @@ function createVideoElement(url: string) {
   video.crossOrigin = "anonymous";
   video.preload = "auto";
   return video;
+}
+
+function startStaggered(video: HTMLVideoElement) {
+  const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const startAt = Math.max(now, nextDecoderStartAt);
+  nextDecoderStartAt = startAt + DECODER_START_STAGGER_MS;
+  const delay = startAt - now;
+  if (delay <= 0) {
+    video.play().catch(() => {});
+    return;
+  }
+  setTimeout(() => {
+    // The owner may have been released before its slot came up.
+    if (!video.isConnected && video.src === "") return;
+    video.play().catch(() => {});
+  }, delay);
 }
 
 function refreshTelemetry(
@@ -56,7 +91,7 @@ export class MediaOwnerRegistry {
     }
 
     const video = createVideoElement(url);
-    video.play().catch(() => {});
+    startStaggered(video);
     this.owners.set(ownerId, {
       ownerId,
       url,
@@ -143,6 +178,23 @@ export class MediaOwnerRegistry {
     return this.owners.size;
   }
 
+  decodeStats() {
+    return [...this.owners.values()].map((entry) => {
+      const quality = entry.video.getVideoPlaybackQuality?.();
+      return {
+        ownerId: entry.ownerId,
+        readyState: entry.video.readyState,
+        paused: entry.video.paused,
+        currentTime: entry.video.currentTime,
+        width: entry.video.videoWidth,
+        height: entry.video.videoHeight,
+        refs: entry.refs,
+        totalFrames: quality?.totalVideoFrames ?? null,
+        droppedFrames: quality?.droppedVideoFrames ?? null,
+      };
+    });
+  }
+
   hasOwner(ownerId: MediaOwnerId) {
     return this.owners.has(ownerId);
   }
@@ -154,6 +206,9 @@ export class MediaOwnerRegistry {
   ) {
     const entry = this.owners.get(fromOwnerId);
     if (!entry || entry.url !== url) return null;
+    // Shared-lane owners resolve every role to the same id; moving it onto
+    // itself would double the ref count and then destroy the live element.
+    if (fromOwnerId === toOwnerId) return entry.video;
     const existingTarget = this.owners.get(toOwnerId);
     if (existingTarget && existingTarget.url !== url) {
       this.destroyOwner(toOwnerId);

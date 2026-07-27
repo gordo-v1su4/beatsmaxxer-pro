@@ -36,10 +36,23 @@ interface EffectModuleProps {
   onToggleMute: () => void;
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
+  onSetVideoLayers?: (files: File[]) => void;
   midiLayer: MidiLayer | null;
   onSetMidiLayer: (file: File | null) => void;
   isOnAir?: boolean;
   onModuleDrop?: (draggedId: ModuleType) => void;
+}
+
+/** Route a picked/dropped batch to the multi-slot handler, falling back to a single load. */
+function applyVideoFiles(
+  files: File[],
+  onSetVideoLayer: (file: File | null) => void,
+  onSetVideoLayers?: (files: File[]) => void,
+) {
+  const clips = files.filter(file => file.type.startsWith('video/'));
+  if (clips.length === 0) return;
+  if (clips.length > 1 && onSetVideoLayers) onSetVideoLayers(clips);
+  else onSetVideoLayer(clips[0]);
 }
 
 function Screw() {
@@ -204,175 +217,6 @@ export function ScreenBadge({ text, color }: { text: string; color: string }) {
   );
 }
 
-function LightweightTestCard({ color, label }: { color: string; label: string }) {
-  return (
-    <div style={{
-      position: 'absolute',
-      inset: 0,
-      background: `
-        linear-gradient(180deg,
-          rgba(255,255,255,0.08) 0%,
-          rgba(255,255,255,0.02) 16%,
-          rgba(7,9,11,0.98) 16%,
-          rgba(7,9,11,0.98) 100%
-        ),
-        repeating-linear-gradient(
-          90deg,
-          #d8d8d1 0%,
-          #d8d8d1 14.28%,
-          #d4c65c 14.28%,
-          #d4c65c 28.56%,
-          #6dcfd9 28.56%,
-          #6dcfd9 42.84%,
-          #67cb51 42.84%,
-          #67cb51 57.12%,
-          #b54ddd 57.12%,
-          #b54ddd 71.4%,
-          #ba4c3e 71.4%,
-          #ba4c3e 85.68%,
-          #3957dc 85.68%,
-          #3957dc 100%
-        )
-      `,
-    }}>
-      <div style={{
-        position: 'absolute',
-        inset: '18% 0 0 0',
-        background: `
-          linear-gradient(180deg, rgba(9,11,14,0.05), rgba(9,11,14,0.78)),
-          linear-gradient(90deg, transparent 24.8%, rgba(255,255,255,0.14) 25%, transparent 25.2%, transparent 49.8%, rgba(255,255,255,0.14) 50%, transparent 50.2%, transparent 74.8%, rgba(255,255,255,0.14) 75%, transparent 75.2%),
-          linear-gradient(0deg, transparent 24.8%, rgba(255,255,255,0.10) 25%, transparent 25.2%, transparent 49.8%, rgba(255,255,255,0.10) 50%, transparent 50.2%, transparent 74.8%, rgba(255,255,255,0.10) 75%, transparent 75.2%)
-        `,
-      }}/>
-      <div style={{
-        position: 'absolute',
-        left: '50%',
-        top: '54%',
-        width: '30%',
-        height: '20%',
-        transform: 'translate(-50%, -50%)',
-        border: `1px solid ${color}88`,
-        boxShadow: `0 0 22px ${color}30`,
-        background: `radial-gradient(circle at 50% 50%, ${color}20 0%, rgba(0,0,0,0) 72%)`,
-      }}/>
-      <div style={{
-        position: 'absolute',
-        left: '50%',
-        top: '54%',
-        width: '58%',
-        transform: 'translateX(-50%)',
-        textAlign: 'center',
-        color,
-        opacity: 0.9,
-        fontFamily: 'Rajdhani,sans-serif',
-        fontWeight: 700,
-        fontSize: 12,
-        letterSpacing: '0.18em',
-        textTransform: 'uppercase',
-        textShadow: `0 0 12px ${color}55`,
-      }}>
-        {label}
-      </div>
-    </div>
-  );
-}
-
-function LightweightSourcePreview({ videoUrl, color, label, animated = false }: { videoUrl?: string | null; color: string; label: string; animated?: boolean }) {
-  const previewRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const video = previewRef.current;
-    if (!video || !videoUrl) return;
-
-    let cancelled = false;
-    let loadedHandler: (() => void) | null = null;
-    let seekedHandler: (() => void) | null = null;
-
-    const settleStillFrame = () => {
-      if (cancelled) return;
-
-      const freezeFrame = () => {
-        if (!cancelled) video.pause();
-      };
-
-      if (Number.isFinite(video.duration) && video.duration > 0.08) {
-        const previewTime = Math.min(
-          Math.max(video.duration * 0.12, 0.02),
-          Math.max(0.02, video.duration - 0.04)
-        );
-        if (Math.abs(video.currentTime - previewTime) > 0.02) {
-          seekedHandler = () => {
-            seekedHandler = null;
-            freezeFrame();
-          };
-          video.addEventListener('seeked', seekedHandler, { once: true });
-          video.currentTime = previewTime;
-          return;
-        }
-      }
-
-      freezeFrame();
-    };
-
-    const primePreview = async () => {
-      if (animated) {
-        await video.play().catch(() => {});
-        return;
-      }
-
-      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-        settleStillFrame();
-      } else {
-        loadedHandler = () => {
-          loadedHandler = null;
-          settleStillFrame();
-        };
-        video.addEventListener('loadedmetadata', loadedHandler, { once: true });
-      }
-    };
-
-    void primePreview();
-
-    return () => {
-      cancelled = true;
-      if (loadedHandler) video.removeEventListener('loadeddata', loadedHandler);
-      if (seekedHandler) video.removeEventListener('seeked', seekedHandler);
-      video.pause();
-    };
-  }, [animated, videoUrl]);
-
-  return (
-    <div
-      data-preview-policy={previewPolicy(animated)}
-      style={{ position: 'absolute', inset: 0, overflow: 'hidden', background: '#000' }}
-    >
-      {videoUrl ? (
-        <video
-          ref={previewRef}
-          key={videoUrl}
-          src={videoUrl}
-          muted
-          loop={animated}
-          autoPlay={animated}
-          playsInline
-          preload="metadata"
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-            filter: 'saturate(0.88) contrast(0.96) brightness(0.9)',
-          }}
-        />
-      ) : (
-        <LightweightTestCard color={color} label={label} />
-      )}
-    </div>
-  );
-}
-
 export function VUMeter({ value, color }: { value: number; color: string }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:1, height:36, justifyContent:'flex-end' }}>
@@ -403,9 +247,13 @@ function midiNoteCrossed(notes: { time: number }[], tPrev: number, tNow: number,
   return false;
 }
 
-export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypassed, isOnAir }: {
+export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer, bypassed, isOnAir, hidden, onFirstFrame }: {
   type: ModuleType; color: string; params: Record<string,number>; mode: 'effect'|'output'; videoUrl?: string | null;
   midiLayer?: MidiLayer | null; bypassed?: boolean; isOnAir?: boolean;
+  /** Kept rendering but invisible, so a program cut can wait for real footage. */
+  hidden?: boolean;
+  /** Fires once this instance has drawn its actual source, not a placeholder. */
+  onFirstFrame?: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer|null>(null);
@@ -414,6 +262,12 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   const timeRef = useRef<number>(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
+  // Bumped by requestVideoFrameCallback; 0 means "no cadence signal yet".
+  const videoFrameSeqRef = useRef(0);
+  const videoUrlRef = useRef(videoUrl);
+  videoUrlRef.current = videoUrl;
+  const onFirstFrameRef = useRef(onFirstFrame);
+  onFirstFrameRef.current = onFirstFrame;
   const imageTextureRef = useRef<THREE.Texture | null>(null);
   const midiLayerRef = useRef<MidiLayer | null>(null);
   const playingRef = useRef(false);
@@ -554,6 +408,19 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     const rtW = Math.max(1, container.clientWidth), rtH = Math.max(1, container.clientHeight);
     const rtA = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
     const rtB = new THREE.WebGLRenderTarget(rtW, rtH, rtOpts);
+    // A freshly allocated (or resized) target holds undefined memory. sanitize()
+    // cannot rescue that because garbage reading as 1.0 is a legal white, and the
+    // feedback loop then holds the whiteout for seconds. Start both from black.
+    const clearFeedback = () => {
+      const prevTarget = renderer.getRenderTarget();
+      renderer.setRenderTarget(rtA);
+      renderer.clear(true, false, false);
+      renderer.setRenderTarget(rtB);
+      renderer.clear(true, false, false);
+      renderer.setRenderTarget(prevTarget);
+    };
+    renderer.setClearColor(0x000000, 1);
+    clearFeedback();
     const unregisterRenderer = registerWebGlRenderer(2);
     let flip = false;
 
@@ -593,6 +460,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         uVideoRes:   { value: new THREE.Vector2(16, 9) },
         uVideoTex:   { value: fallbackTexture },
         uHasVideo:   { value: 0.0 },
+        // Set before the first draw so a remount mid-cut never flashes the test card.
+        uAwaitingVideo: { value: videoUrlRef.current ? 1.0 : 0.0 },
         uTransportSec: { value: 0.0 },
       },
       vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position,1.0); }`,
@@ -614,6 +483,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       renderer.setSize(w, h);
       rtA.setSize(w, h);
       rtB.setSize(w, h);
+      // setSize reallocates the textures, so the feedback history is undefined again.
+      clearFeedback();
       mat.uniforms.uResolution.value.set(w, h);
     };
     const ro = new ResizeObserver(onResize);
@@ -621,6 +492,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
     let last = performance.now();
     let lastDraw = 0;
+    let lastDrawnVideoFrame = -1;
+    let firstFrameSent = false;
     const animate = () => {
       const now = performance.now();
       if (shaderCtl.paused) {
@@ -629,16 +502,30 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         frameRef.current = requestAnimationFrame(animate);
         return;
       }
-      const frameBudgetMs = mode === 'output'
-        ? 1000 / 30
-        : bypassedRef.current
-          ? 1000 / 8
-          : isOnAirRef.current
-            ? 1000 / 24
-            : 1000 / 12;
-      if (frameBudgetMs > 0 && now - lastDraw < frameBudgetMs) {
-        frameRef.current = requestAnimationFrame(animate);
-        return;
+      // Interactive previews follow the clip's own frame cadence. A wall-clock
+      // 24fps budget quantizes to 20fps against a 60Hz rAF, so a sixth of every
+      // clip's decoded frames were paid for and then thrown away. PGM/output
+      // keeps its own budget so the program path is untouched.
+      const followVideoCadence =
+        mode !== 'output' && !bypassedRef.current && videoFrameSeqRef.current > 0;
+      if (followVideoCadence) {
+        const fresh = videoFrameSeqRef.current !== lastDrawnVideoFrame;
+        // Still refresh slowly when the transport is parked so param edits show.
+        if (!fresh && now - lastDraw < 1000 / 15) {
+          frameRef.current = requestAnimationFrame(animate);
+          return;
+        }
+        lastDrawnVideoFrame = videoFrameSeqRef.current;
+      } else {
+        const frameBudgetMs = mode === 'output'
+          ? 1000 / 30
+          : bypassedRef.current
+            ? 1000 / 8
+            : 1000 / 24;
+        if (frameBudgetMs > 0 && now - lastDraw < frameBudgetMs) {
+          frameRef.current = requestAnimationFrame(animate);
+          return;
+        }
       }
       lastDraw = now;
       const dt = (now - last) * 0.001;
@@ -722,7 +609,10 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           }
           st.lastTransportSec = transport.transportSeconds;
 
-          if (video && schedule) {
+          // Only the driver may move the shared element. The PGM follower samples
+          // the same texture, so a second seeker would just fight the driver and
+          // stall the decode for a frame on every slice jump.
+          if (isDriver && video && schedule) {
             const targetRate = Math.max(
               0.0625,
               Math.min(4, schedule.targetPlaybackRate),
@@ -1012,9 +902,25 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       recordRenderedFrame(performance.now());
       flip = !flip;
 
+      // Announce the first frame that shows the real source. A program cut waits
+      // on this so the outgoing picture holds instead of blanking.
+      if (!firstFrameSent) {
+        const showingSource = videoUrlRef.current
+          ? !!mat && mat.uniforms.uHasVideo.value > 0.5
+          : true;
+        if (showingSource) {
+          firstFrameSent = true;
+          onFirstFrameRef.current?.();
+        }
+      }
+
       frameRef.current = requestAnimationFrame(animate);
     };
-    animate();
+    // With a clip loaded, wait one frame so the video-attach effect below has run
+    // and the first painted frame is real footage. Without one, draw the test card
+    // immediately so the panel is never blank.
+    if (videoUrlRef.current) frameRef.current = requestAnimationFrame(animate);
+    else animate();
 
     return () => {
       cancelAnimationFrame(frameRef.current);
@@ -1087,14 +993,17 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
     if (!videoUrl) {
       m.uniforms.uHasVideo.value = 0.0;
+      m.uniforms.uAwaitingVideo.value = 0.0;
       if (imageTextureRef.current) {
         m.uniforms.uVideoTex.value = imageTextureRef.current;
       }
       return;
     }
+    m.uniforms.uAwaitingVideo.value = 1.0;
 
-    const ownerKind = mode === 'effect' ? 'preview' : 'pgm';
-    const ownerId = mediaOwnerId(ownerKind, type);
+    // The FX preview and the PGM monitor render the same module clip, so they
+    // share one decode lane rather than each opening their own decoder.
+    const ownerId = mediaOwnerId('clip', type);
     const video = mediaOwnerRegistry.acquireHtmlVideo(ownerId, videoUrl);
     const texture = new THREE.VideoTexture(video);
     texture.minFilter = THREE.LinearFilter;
@@ -1119,14 +1028,31 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       ) {
         m.uniforms.uVideoTex.value = texture;
         m.uniforms.uHasVideo.value = 1.0;
+        m.uniforms.uAwaitingVideo.value = 0.0;
         applyRes();
       }
     };
     video.addEventListener('loadeddata', applyVideoReady);
     video.addEventListener('canplay', applyVideoReady);
     applyVideoReady();
+    // If the clip never decodes, stop holding black and show the test card again.
+    const awaitTimeout = window.setTimeout(() => {
+      m.uniforms.uAwaitingVideo.value = 0.0;
+    }, 1500);
     videoRef.current = video;
     videoTextureRef.current = texture;
+
+    // Track the clip's real presentation cadence so the render loop can draw
+    // once per decoded frame instead of guessing with a wall clock.
+    let cadenceHandle = 0;
+    const supportsCadence = typeof video.requestVideoFrameCallback === 'function';
+    if (supportsCadence) {
+      const onVideoFrame = () => {
+        videoFrameSeqRef.current += 1;
+        cadenceHandle = video.requestVideoFrameCallback(onVideoFrame);
+      };
+      cadenceHandle = video.requestVideoFrameCallback(onVideoFrame);
+    }
 
     // If transport is already rolling when the shared clip attaches, resume it now
     // instead of waiting for the next play/pause state transition.
@@ -1135,8 +1061,13 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     }
 
     return () => {
+      window.clearTimeout(awaitTimeout);
       video.removeEventListener('loadeddata', applyVideoReady);
       video.removeEventListener('canplay', applyVideoReady);
+      if (cadenceHandle && supportsCadence) {
+        video.cancelVideoFrameCallback(cadenceHandle);
+      }
+      videoFrameSeqRef.current = 0;
       texture.dispose();
       mediaOwnerRegistry.release(ownerId, videoUrl);
     };
@@ -1149,15 +1080,21 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       ref={containerRef}
       data-renderer-lane={rendererLaneForEffect(type)}
       data-preview-policy={previewPolicy(!!isOnAir || mode === 'output')}
-      style={{ position:'absolute', inset:0, overflow:'hidden' }}
+      style={{
+        position:'absolute', inset:0, overflow:'hidden',
+        // Keep rendering while invisible so it is warm the moment the cut lands.
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? 'none' : undefined,
+      }}
     />
   );
 }
 
-function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer }: {
+function MediaPatchBay({ color, videoLayer, onSetVideoLayer, onSetVideoLayers, midiLayer, onSetMidiLayer }: {
   color: string;
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
+  onSetVideoLayers?: (files: File[]) => void;
   midiLayer: MidiLayer | null;
   onSetMidiLayer: (file: File | null) => void;
 }) {
@@ -1187,11 +1124,18 @@ function MediaPatchBay({ color, videoLayer, onSetVideoLayer, midiLayer, onSetMid
       flexShrink:0,
     }}>
       {/* Video upload */}
-      <input ref={videoInputRef} type="file" accept="video/*"
-        onChange={(e) => { onSetVideoLayer(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
+      <input ref={videoInputRef} type="file" accept="video/*" multiple
+        onChange={(e) => {
+          applyVideoFiles([...(e.target.files ?? [])], onSetVideoLayer, onSetVideoLayers);
+          e.currentTarget.value = '';
+        }}
         style={{ display:'none' }}
       />
-      <button onClick={() => videoInputRef.current?.click()} style={uploadBtnStyle(!!videoLayer)}>
+      <button
+        onClick={() => videoInputRef.current?.click()}
+        title="Load clip — select multiple to fill empty slots"
+        style={uploadBtnStyle(!!videoLayer)}
+      >
         <Upload size={8} /> CLIP
       </button>
 
@@ -1358,14 +1302,12 @@ function MidiTimeline({ color, midiLayer }: {
   );
 }
 
-function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, bypassed, isOnAir }: {
-  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void; bypassed: boolean; isOnAir?: boolean;
+function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, onSetVideoLayers, midiLayer, onSetMidiLayer, bypassed, isOnAir }: {
+  type: ModuleType; color: string; params: Record<string,number>; videoLayer: VideoLayer | null; onSetVideoLayer: (file: File | null) => void; onSetVideoLayers?: (files: File[]) => void; midiLayer: MidiLayer | null; onSetMidiLayer: (file: File | null) => void; bypassed: boolean; isOnAir?: boolean;
 }) {
   const { state } = useAudio();
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
-  const showLivePreview = !!isOnAir;
-
   const onDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
     if (!e.dataTransfer.types.includes('Files')) return;
@@ -1381,10 +1323,11 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
     e.preventDefault();
     dragDepth.current = 0;
     setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (!file) return;
-    if (file.type.startsWith('video/')) onSetVideoLayer(file);
-    else if (/\.midi?$/i.test(file.name)) onSetMidiLayer(file);
+    const files = [...(e.dataTransfer.files ?? [])];
+    if (files.length === 0) return;
+    applyVideoFiles(files, onSetVideoLayer, onSetVideoLayers);
+    const midi = files.find(file => /\.midi?$/i.test(file.name));
+    if (midi) onSetMidiLayer(midi);
   };
 
   return (
@@ -1395,22 +1338,18 @@ function DualScreen({ type, color, params, videoLayer, onSetVideoLayer, midiLaye
       onDrop={onDrop}
       style={{ position:'relative', display:'flex', flexDirection:'column', flexShrink:0, background:'#000', borderBottom:'2px solid #0d0e0f' }}
     >
-      <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
+      <MediaPatchBay color={color} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} onSetVideoLayers={onSetVideoLayers} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} />
       {midiLayer && <MidiTimeline color={color} midiLayer={midiLayer} />}
       <div style={{ position:'relative', width:'min(100%, calc(300px * 16 / 9))', alignSelf:'center', aspectRatio:'16/9', background:'#000', flexShrink:0 }}>
-        {showLivePreview ? (
-          <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} isOnAir={isOnAir} />
-        ) : (
-          <LightweightSourcePreview videoUrl={videoLayer?.url} color={color} label={type.toUpperCase()} />
-        )}
+        <ThreeVisualizer type={type} color={color} params={params} mode="effect" videoUrl={videoLayer?.url} midiLayer={midiLayer} bypassed={bypassed} isOnAir={isOnAir} />
         <ScreenOverlay/>
-        <ScreenBadge text={showLivePreview ? 'FX PREVIEW · 100% WET' : 'SRC STANDBY · LOW GPU'} color={color}/>
+        <ScreenBadge text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'} color={color}/>
         <div style={{ position:'absolute', bottom:4, left:5, zIndex:10, background:'rgba(0,0,0,0.7)', borderRadius:2, padding:'0px 4px' }}>
           <span style={{ fontFamily:'Share Tech Mono,monospace', fontSize:6.5, color:'#566070', letterSpacing:'0.08em' }}>
             {videoLayer ? 'SRC · CLIP' : 'SRC · TEST PATTERN'}
           </span>
         </div>
-        {showLivePreview && state.beatPhase < 0.08 && state.playing && (
+        {isOnAir && state.beatPhase < 0.08 && state.playing && (
           <div style={{ position:'absolute', inset:0, zIndex:4, pointerEvents:'none', border:`1px solid ${color}44`, borderRadius:0, boxShadow:`inset 0 0 12px ${color}22` }}/>
         )}
       </div>
@@ -1823,7 +1762,7 @@ function MixSection({ params, onUpdate, color, presets }: {
   );
 }
 
-export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, midiLayer, onSetMidiLayer, isOnAir, onModuleDrop }: EffectModuleProps) {
+export function EffectModule({ config, params, onUpdateParam, bypassed, muted, onToggleBypass, onToggleMute, videoLayer, onSetVideoLayer, onSetVideoLayers, midiLayer, onSetMidiLayer, isOnAir, onModuleDrop }: EffectModuleProps) {
   const { id, name, accentColor } = config;
   const [collapsed, setCollapsed] = useState(false);
   return (
@@ -1886,7 +1825,7 @@ export function EffectModule({ config, params, onUpdateParam, bypassed, muted, o
         <Screw/>
       </div>
 
-      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} bypassed={bypassed} isOnAir={isOnAir} />
+      <DualScreen type={id} color={accentColor} params={params} videoLayer={videoLayer} onSetVideoLayer={onSetVideoLayer} onSetVideoLayers={onSetVideoLayers} midiLayer={midiLayer} onSetMidiLayer={onSetMidiLayer} bypassed={bypassed} isOnAir={isOnAir} />
 
       {!collapsed && (
         <div style={{ flex:'0 1 auto', display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
@@ -1928,6 +1867,7 @@ function getFragmentShader(type: ModuleType): string {
     uniform sampler2D uVideoTex;
     uniform sampler2D uPrevTex;
     uniform float uHasVideo;
+    uniform float uAwaitingVideo;
     uniform float uSrcTime;
     uniform float uAux1;
     uniform float uAux2;
@@ -2008,9 +1948,11 @@ function getFragmentShader(type: ModuleType): string {
       vec3 src = vec3(0.0);
       if(uHasVideo > 0.5){
         src = sampleVideo(uv);
-      } else {
+      } else if(uAwaitingVideo < 0.5){
         src = testPattern(uv);
       }
+      // A clip is loaded but its texture has not attached yet: stay black rather
+      // than punching a frame of colour bars into the cut.
       return sanitize(src);
     }
 
@@ -2683,7 +2625,7 @@ const COMPACT_CONTROLS: Partial<Record<ModuleType, CompactSpec>> = {
 };
 
 /** Slim second-row module: header, FX-preview screen, and a single knob row. */
-export function CompactModule({ config, params, onUpdateParam, bypassed, onToggleBypass, videoLayer, onSetVideoLayer, isOnAir, onModuleDrop }: {
+export function CompactModule({ config, params, onUpdateParam, bypassed, onToggleBypass, videoLayer, onSetVideoLayer, onSetVideoLayers, isOnAir, onModuleDrop }: {
   config: ModuleConfig;
   params: Record<string, number>;
   onUpdateParam: (param: string, value: number) => void;
@@ -2691,6 +2633,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
   onToggleBypass: () => void;
   videoLayer: VideoLayer | null;
   onSetVideoLayer: (file: File | null) => void;
+  onSetVideoLayers?: (files: File[]) => void;
   isOnAir?: boolean;
   onModuleDrop?: (draggedId: ModuleType) => void;
 }) {
@@ -2713,8 +2656,7 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
         setDragOver(false);
         const dragged = e.dataTransfer.getData('text/x-module') as ModuleType;
         if (dragged && onModuleDrop) { onModuleDrop(dragged); return; }
-        const file = e.dataTransfer.files?.[0];
-        if (file?.type.startsWith('video/')) onSetVideoLayer(file);
+        applyVideoFiles([...(e.dataTransfer.files ?? [])], onSetVideoLayer, onSetVideoLayers);
       }}
       style={{
         flex: 1, minWidth: 0,
@@ -2749,13 +2691,16 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
           }}>ON AIR</span>
         )}
         <div style={{ flex: 1 }} />
-        <input ref={fileRef} type="file" accept="video/*"
-          onChange={(e) => { onSetVideoLayer(e.target.files?.[0] ?? null); e.currentTarget.value = ''; }}
+        <input ref={fileRef} type="file" accept="video/*" multiple
+          onChange={(e) => {
+            applyVideoFiles([...(e.target.files ?? [])], onSetVideoLayer, onSetVideoLayers);
+            e.currentTarget.value = '';
+          }}
           style={{ display: 'none' }}
         />
         <button
           onClick={() => fileRef.current?.click()}
-          title={videoLayer ? videoLayer.name : 'Load clip'}
+          title={videoLayer ? videoLayer.name : 'Load clip — select multiple to fill empty slots'}
           style={{
             height: 14, paddingInline: 4,
             background: 'linear-gradient(180deg,#191d22,#121519)',
@@ -2788,9 +2733,9 @@ export function CompactModule({ config, params, onUpdateParam, bypassed, onToggl
       </div>
 
       <div style={{ position: 'relative', width: 'min(100%, calc(300px * 16 / 9))', alignSelf: 'center', aspectRatio: '16/9', background: '#000', flexShrink: 0 }}>
-        <LightweightSourcePreview videoUrl={videoLayer?.url} color={accentColor} label={name} />
+        <ThreeVisualizer type={id} color={accentColor} params={params} mode="effect" videoUrl={videoLayer?.url} bypassed={bypassed} isOnAir={isOnAir} />
         <ScreenOverlay />
-        <ScreenBadge text={`SRC · ${videoLayer ? 'CLIP' : 'TEST'}`} color={accentColor} />
+        <ScreenBadge text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'} color={accentColor} />
       </div>
 
       {!collapsed && (

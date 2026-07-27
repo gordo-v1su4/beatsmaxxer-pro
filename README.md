@@ -1,33 +1,51 @@
 # Beat Surfer Pro
 
-Beat Surfer Pro is a browser-based audiovisual prototype built with React, Vite, Tailwind CSS 4, and Three.js. The interface mimics a hardware effects rack: you can browse presets, tweak macro controls, upload audio, tap tempo, and drive four visual effect modules from live audio analysis.
+<p align="center">
+  <img src="docs/beat-surfer-pro.webp" alt="Beat Surfer Pro — eight module FX previews and PGM monitor running live clips" width="100%" />
+</p>
+
+Browser-based audio-reactive video FX rack with a broadcast-style program monitor. Load clips into eight modules, cut them on the beat, and drive shader effects from live rhythm analysis — all in one self-contained HTML build.
+
+`#vj` `#beat-sync` `#webgpu` `#webcodecs` `#threejs` `#react` `#vite` `#bun` `#realtime-video` `#shader-fx` `#audio-reactive` `#music-video` `#program-monitor` `#singlefile`
+
+## Why this stack works
+
+Most browser VJ toys either (a) play one clip at a time, or (b) melt when you push eight high-bitrate sources plus GPU shaders. Beat Surfer Pro is built around the opposite constraint: **keep every clip hot, keep the cut clean, keep the timeline on the music.**
+
+| Layer | Tech | Why it matters |
+|-------|------|----------------|
+| UI | React 19 + Tailwind CSS 4 | Hardware-rack layout that stays readable under live tweaking |
+| Build | Vite 8 (Rolldown) + Bun | Fast HMR in dev; one self-contained HTML file for shipping via `vite-plugin-singlefile` |
+| 3D / FX | Three.js WebGL shaders | Per-module wet previews with ping-pong feedback (stutters, ramps, focus pulls) |
+| Decode | Shared HTMLVideo / WebCodecs pipeline | One decode lane per clip shared by preview + PGM — no double-decoder tax |
+| Rhythm | Essentia `/analyze/fast` + Web Audio fallback | Server BPM/beat grid when available; realtime onset fallback when offline |
+| Transport | Quantized PGM rail | Ableton-style launch: arm a channel, cut lands on the next bar |
+
+What makes it feel different from a generic “audio visualizer”:
+
+- **Eight concurrent clips**, not one. Shared decode + staggered startup keep pressure down.
+- **Beat-locked cuts** on the left rail (1BT–8BR, swing/dotted feel), not click-and-pray.
+- **Module FX that matter** — TRANSITION, SPEEDRAMP, TAPDELAY, TIMESAMPLER, plus camera rack (PUNCH ZOOM / HANDHELD / DRIFT CAM / RACK FOCUS).
+- **Program monitor above the rack** so what you cut is what you see, with ON AIR tallies.
+- **Ships as a single HTML file** — drop it anywhere static hosting works.
 
 ## Stack
 
 - React 19
-- Vite 8
+- Vite 8 + `vite-plugin-singlefile`
 - Tailwind CSS 4
 - Three.js
+- Web Audio API + Essentia rhythm service
 - Bun for local workflow
 
-## What It Does
-
-- Renders a rack-style interface with four effect modules: `SHAPER`, `DOWNSAMPLER`, `TAPDELAY`, and `BUBBLEGRAINS`
-- Analyzes live playback data including BPM, beat phase, amplitude, bass energy, high-frequency energy, and 8-band FFT data
-- Lets you upload your own audio track or fall back to an internal synthesized drum loop
-- Lets you upload video clips per module and run shader-driven visual effects against them
-- Includes preset browsing, macro controls, randomize, clear, transport controls, and tap tempo
-
 ## Local Development
-
-This repo should be run with Bun.
 
 ```bash
 bun install
 bun run dev
 ```
 
-The Vite dev server is configured for `http://localhost:5174`.
+Dev server: `http://localhost:5174`.
 
 ## Build
 
@@ -35,17 +53,13 @@ The Vite dev server is configured for `http://localhost:5174`.
 bun run build
 ```
 
-The app uses `vite-plugin-singlefile`, so the production build is bundled for simple static hosting from `dist/`.
+Production output lands in `dist/` as a single self-contained HTML file.
 
 ## Preview Production Build
 
 ```bash
 bun run preview
 ```
-
-## Vite Reference
-
-- See [`docs/vite-8-notes.md`](./docs/vite-8-notes.md) for the current Vite 8 reference links, migration notes, and repo-specific follow-ups.
 
 ## Project Structure
 
@@ -59,10 +73,13 @@ src/
     TopBar.tsx              Transport, BPM, upload, and session actions
     PresetBrowser.tsx       Preset list and macro controls
     EffectModule.tsx        Module UI and Three.js visualizers
+    MainViewer.tsx          PGM monitor and left-rail source switcher
     Knob.tsx                Reusable rack-style knob control
+  media/                    Clip registry, shared decode owners, program runtime
 ```
 
 ## Notes
 
-- Use Bun for installs and scripts even though the repo currently also contains a `package-lock.json`.
-- The default package name in `package.json` is still `react-vite-tailwind`, so the app branding and package metadata are not fully aligned yet.
+- Use Bun for installs and scripts.
+- Path alias `@/` maps to `src/`.
+- See [`docs/vite-8-notes.md`](./docs/vite-8-notes.md) for Vite 8 reference notes.

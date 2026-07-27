@@ -2,12 +2,15 @@ import { getQaTelemetrySnapshot } from "./telemetry";
 import { createQaInstrumentedPlaybackCoordinator } from "../media/telemetry";
 import type { DecodedFrameLike } from "../media/types";
 import { probeBrowserRendererCapabilities } from "../render/browserFactory";
+import { mediaOwnerRegistry } from "../media/MediaOwnerRegistry";
+
+declare const __APP_QA_MEDIA_AUTOLOAD__: boolean;
 
 export function installQaTelemetryBridge() {
   if (!import.meta.env.DEV || typeof window === "undefined") return;
 
   const params = new URLSearchParams(window.location.search);
-  if (!params.has("qa")) return;
+  if (!params.has("qa") && !__APP_QA_MEDIA_AUTOLOAD__) return;
 
   const mediaCoordinator =
     createQaInstrumentedPlaybackCoordinator<DecodedFrameLike>();
@@ -16,6 +19,7 @@ export function installQaTelemetryBridge() {
     value: {
       snapshot: getQaTelemetrySnapshot,
       mediaCoordinatorSnapshot: () => mediaCoordinator.snapshot(),
+      videoDecodeStats: () => mediaOwnerRegistry.decodeStats(),
     },
   });
 

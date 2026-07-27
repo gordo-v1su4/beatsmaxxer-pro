@@ -15,10 +15,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Path mapping */
+    /* Path mapping. baseUrl is still required for `paths` today; silence the
+       TS 6 deprecation until the TS 7 migration drops the need for it. */
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
 
     /* Linting */

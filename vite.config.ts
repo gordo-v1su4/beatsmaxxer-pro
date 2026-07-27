@@ -18,9 +18,21 @@ export default defineConfig(({ mode }) => {
     env.VITE_ESSENTIA_API_BASE_URL ||
     env.VITE_ESSENTIA_API_URL ||
     "https://essentia.v1su4.dev";
-  const essentiaApiKey = env.ESSENTIA_API_KEY || "";
-  const essentiaAnalysisEngine = env.ESSENTIA_ANALYSIS_ENGINE || env.VITE_ESSENTIA_ANALYSIS_ENGINE || "aubio";
+  const essentiaApiKey = (
+    env.ESSENTIA_API_KEY ||
+    env.VITE_ESSENTIA_API_KEY ||
+    ""
+  ).trim();
+  const essentiaAnalysisEngine = (
+    env.ESSENTIA_ANALYSIS_ENGINE ||
+    env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
+    ""
+  ).trim();
   const qaMediaDir = resolveQaMediaDir(env, __dirname);
+  // Auto-seed the QA media session on a bare "/" load so reloads that drop the
+  // query string (embedded browsers, clicked terminal links) still get clips.
+  const qaMediaAutoload =
+    !!env.QA_MEDIA_DIR || qaMediaDir === path.resolve(__dirname, "test_media");
 
   return {
     plugins: [
@@ -221,8 +233,7 @@ export default defineConfig(({ mode }) => {
               };
 
               if (!essentiaApiKey) {
-                respondWithLocalRhythm();
-                return;
+                console.warn("[qa-rhythm] ESSENTIA_API_KEY missing; trying upstream without credentials");
               }
 
               const formData = new FormData();
@@ -233,9 +244,11 @@ export default defineConfig(({ mode }) => {
                 essentiaAnalysisEngine,
                 formData
               );
-              if ([401, 403].includes(upstream.status)) {
-                respondWithLocalRhythm();
-                return;
+              if (!upstream.ok) {
+                if ([401, 403].includes(upstream.status) || !essentiaApiKey) {
+                  respondWithLocalRhythm();
+                  return;
+                }
               }
               const text = await upstream.text();
               res.statusCode = upstream.status;
@@ -257,6 +270,7 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_ESSENTIA_API_BASE_URL__: JSON.stringify(essentiaApiBaseUrl),
       __APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine),
+      __APP_QA_MEDIA_AUTOLOAD__: JSON.stringify(qaMediaAutoload),
     },
     server: {
       port: 5174,
@@ -351,13 +365,12 @@ function estimateWavDurationSeconds(bytes: Buffer) {
 function postEssentiaBytes(
   apiBaseUrl: string,
   apiKey: string,
-  engine: string,
+  _engine: string,
   endpointName: "fast" | "rhythm",
   contentType: string,
   body: ArrayBuffer,
 ) {
   const endpoint = new URL(`${apiBaseUrl.replace(/\/+$/, "")}/analyze/${endpointName}`);
-  if (engine) endpoint.searchParams.set("engine", engine);
 
   return fetch(endpoint, {
     method: "POST",
@@ -372,10 +385,10 @@ function postEssentiaBytes(
 async function postEssentiaAnalysis(
   apiBaseUrl: string,
   apiKey: string,
-  engine: string,
+  _engine: string,
   formData: FormData
 ) {
-  const fastResponse = await postEssentiaEndpoint(apiBaseUrl, apiKey, engine, "fast", formData);
+  const fastResponse = await postEssentiaEndpoint(apiBaseUrl, apiKey, "fast", formData);
   if (
     fastResponse.ok ||
     ![404, 405, 422, 500].includes(fastResponse.status)
@@ -383,23 +396,21 @@ async function postEssentiaAnalysis(
     return fastResponse;
   }
 
-  return postEssentiaEndpoint(apiBaseUrl, apiKey, engine, "rhythm", formData);
+  return postEssentiaEndpoint(apiBaseUrl, apiKey, "rhythm", formData);
 }
 
 function postEssentiaEndpoint(
   apiBaseUrl: string,
   apiKey: string,
-  engine: string,
   endpointName: "fast" | "rhythm",
   formData: FormData
 ) {
   const endpoint = new URL(`${apiBaseUrl.replace(/\/+$/, "")}/analyze/${endpointName}`);
-  if (engine) endpoint.searchParams.set("engine", engine);
 
   return fetch(endpoint, {
     method: "POST",
     headers: {
-      "X-API-Key": apiKey,
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
     },
     body: formData,
   });

@@ -238,8 +238,6 @@ function postLegacyEndpoint(
   formData: FormData,
 ) {
   const endpoint = options.endpointFor(endpointName);
-  const engineHint = options.engineHint?.trim();
-  if (engineHint) endpoint.searchParams.set("engine", engineHint);
   return fetchImpl(endpoint.toString(), { method: "POST", body: formData });
 }
 

@@ -40,3 +40,8 @@ artifacts
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+
+# Local QA / scratch (large media, Chrome profiles, benchmarks)
+.tmp/
+test_media/
+docs/preview.png

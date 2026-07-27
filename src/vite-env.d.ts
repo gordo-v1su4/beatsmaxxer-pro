@@ -15,6 +15,9 @@ interface Window {
     snapshot: () => import("./qa/telemetry").QaTelemetrySnapshot;
     mediaCoordinatorSnapshot: () =>
       import("./media/PlaybackCoordinator").PlaybackCoordinatorSnapshot;
+    videoDecodeStats: () => ReturnType<
+      import("./media/MediaOwnerRegistry").MediaOwnerRegistry["decodeStats"]
+    >;
   };
 }
 

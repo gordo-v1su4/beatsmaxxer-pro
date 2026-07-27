@@ -125,6 +125,8 @@ const QA_SAMPLE_CLIPS = [
 
 const QA_SAMPLE_AUDIO = 'redline.wav';
 
+declare const __APP_QA_MEDIA_AUTOLOAD__: boolean;
+
 function moduleRecord<T>(value: T): Record<ModuleType, T> {
   return Object.fromEntries(ALL_MODULES.map(m => [m.id, value])) as Record<ModuleType, T>;
 }
@@ -158,6 +160,12 @@ export function App() {
     removeClip(id: string): Promise<boolean>;
   } | null>(null);
   const pendingClipRemovalsRef = useRef(new Set<ModuleType>());
+  const videoLayersRef = useRef(videoLayers);
+  videoLayersRef.current = videoLayers;
+  const loadedClipCount = ALL_MODULES.reduce(
+    (total, module) => total + (videoLayers[module.id] ? 1 : 0),
+    0,
+  );
 
   useEffect(() => {
     void mediaEngine.demux;
@@ -205,6 +213,40 @@ export function App() {
         file,
       },
     }));
+    setClipRegistryVersion(version => version + 1);
+  }, []);
+
+  /**
+   * Load a batch of clips at once. The first file lands on `startModuleId` when
+   * given, and the rest fill empty slots in module order so a multi-select drop
+   * populates the rack without overwriting clips the user already loaded.
+   */
+  const setModuleVideos = useCallback((files: File[], startModuleId?: ModuleType) => {
+    const clips = files.filter(file => file.type.startsWith('video/'));
+    if (clips.length === 0) return;
+
+    const current = videoLayersRef.current;
+    const targets: ModuleType[] = [];
+    if (startModuleId) targets.push(startModuleId);
+    for (const module of ALL_MODULES) {
+      if (targets.length >= clips.length) break;
+      if (module.id === startModuleId) continue;
+      if (current[module.id]) continue;
+      targets.push(module.id);
+    }
+    // Nothing but the drop target was free, so only that slot gets filled.
+    if (targets.length === 0) return;
+
+    const assigned: Partial<Record<ModuleType, VideoLayer>> = {};
+    targets.forEach((moduleId, index) => {
+      const file = clips[index];
+      if (!file) return;
+      pendingClipRemovalsRef.current.delete(moduleId);
+      const clip = clipRegistryRef.current.registerFile(moduleId, file);
+      assigned[moduleId] = { name: clip.name, url: clip.url, file };
+    });
+
+    setVideoLayers(prev => ({ ...prev, ...assigned }));
     setClipRegistryVersion(version => version + 1);
   }, []);
 
@@ -280,7 +322,8 @@ export function App() {
     if (!import.meta.env.DEV || qaSeedRef.current) return;
 
     const params = new URLSearchParams(window.location.search);
-    const qaMode = params.get("qa");
+    const qaMode =
+      params.get("qa") ?? (__APP_QA_MEDIA_AUTOLOAD__ ? "test-media" : null);
     if (qaMode !== "sample-media" && qaMode !== "gems" && qaMode !== "test-media") return;
 
     qaSeedRef.current = true;
@@ -318,6 +361,30 @@ export function App() {
         }
       }
 
+      // Buffer the song before the clips so the audio download is not queued
+      // behind eight concurrent video streams.
+      let startTransport: (() => void) | null = null;
+      try {
+        await audioEngine.loadAudioUrl(joinQaUrl(baseUrl, audioName), audioName);
+        if (params.get("qaAutoplay") !== "0") {
+          const tryAutoplay = async () => {
+            try {
+              await audioEngine.start();
+            } catch (error) {
+              console.warn("QA autoplay blocked; click PLAY or tap the page", error);
+            }
+          };
+          startTransport = () => {
+            void tryAutoplay();
+            window.addEventListener("pointerdown", () => {
+              void tryAutoplay();
+            }, { once: true });
+          };
+        }
+      } catch (error) {
+        console.error("Failed to preload QA sample media", error);
+      }
+
       const qaLayers = {} as Partial<Record<ModuleType, VideoLayer>>;
       orderedModuleIds.forEach((moduleId, index) => {
         const clipName = clipNames[index % clipNames.length];
@@ -336,30 +403,7 @@ export function App() {
         setPgmSource(requestedPgm);
       }
 
-      try {
-        await audioEngine.loadAudioUrl(
-          joinQaUrl(baseUrl, audioName),
-          audioName,
-          {
-            analysisUrl: `/__qa/rhythm?file=${encodeURIComponent(audioName)}`,
-          },
-        );
-        if (params.get("qaAutoplay") !== "0") {
-          const tryAutoplay = async () => {
-            try {
-              await audioEngine.start();
-            } catch (error) {
-              console.warn("QA autoplay blocked; click PLAY or tap the page", error);
-            }
-          };
-          void tryAutoplay();
-          window.addEventListener("pointerdown", () => {
-            void tryAutoplay();
-          }, { once: true });
-        }
-      } catch (error) {
-        console.error("Failed to preload QA sample media", error);
-      }
+      startTransport?.();
     })();
   }, []);
 
@@ -404,7 +448,13 @@ export function App() {
         overflow: 'hidden',
         fontFamily: 'Rajdhani, sans-serif',
       }}>
-        <TopBar onRandomize={randomize} onClear={clear} />
+        <TopBar
+          onRandomize={randomize}
+          onClear={clear}
+          onLoadClips={(files) => setModuleVideos(files)}
+          loadedClipCount={loadedClipCount}
+          clipSlotCount={ALL_MODULES.length}
+        />
 
         <div style={{
           flex: 1,
@@ -476,6 +526,7 @@ export function App() {
                   onToggleMute={() => toggleMute(module.id)}
                   videoLayer={videoLayers[module.id]}
                   onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
+                  onSetVideoLayers={(files) => setModuleVideos(files, module.id)}
                   midiLayer={midiLayers[module.id]}
                   onSetMidiLayer={(file) => setModuleMidi(module.id, file)}
                   isOnAir={pgmSource === module.id}
@@ -494,6 +545,7 @@ export function App() {
                   onToggleBypass={() => toggleBypass(module.id)}
                   videoLayer={videoLayers[module.id]}
                   onSetVideoLayer={(file) => setModuleVideo(module.id, file)}
+                  onSetVideoLayers={(files) => setModuleVideos(files, module.id)}
                   isOnAir={pgmSource === module.id}
                   onModuleDrop={(dragged) => reorderModules(dragged, module.id)}
                 />
