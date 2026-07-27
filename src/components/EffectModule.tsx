@@ -1107,13 +1107,27 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         m.uniforms.uVideoRes.value.set(video.videoWidth, video.videoHeight);
       }
     };
-    applyRes();
-    video.addEventListener('loadedmetadata', applyRes);
+    m.uniforms.uHasVideo.value = 0.0;
+    if (imageTextureRef.current) {
+      m.uniforms.uVideoTex.value = imageTextureRef.current;
+    }
+
+    const applyVideoReady = () => {
+      if (
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0
+      ) {
+        m.uniforms.uVideoTex.value = texture;
+        m.uniforms.uHasVideo.value = 1.0;
+        applyRes();
+      }
+    };
+    video.addEventListener('loadeddata', applyVideoReady);
+    video.addEventListener('canplay', applyVideoReady);
+    applyVideoReady();
     videoRef.current = video;
     videoTextureRef.current = texture;
-
-    m.uniforms.uVideoTex.value = texture;
-    m.uniforms.uHasVideo.value = 1.0;
 
     // If transport is already rolling when the shared clip attaches, resume it now
     // instead of waiting for the next play/pause state transition.
@@ -1122,7 +1136,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     }
 
     return () => {
-      video.removeEventListener('loadedmetadata', applyRes);
+      video.removeEventListener('loadeddata', applyVideoReady);
+      video.removeEventListener('canplay', applyVideoReady);
       texture.dispose();
       mediaOwnerRegistry.release(ownerId, videoUrl);
     };

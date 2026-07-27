@@ -209,6 +209,22 @@ export default defineConfig(({ mode }) => {
                 : ext === ".m4a" ? "audio/mp4"
                 : "application/octet-stream";
 
+              const respondWithLocalRhythm = () => {
+                const durationSeconds =
+                  ext === ".wav"
+                    ? estimateWavDurationSeconds(bytes)
+                    : 8;
+                res.statusCode = 200;
+                res.setHeader("Content-Type", "application/json");
+                res.setHeader("Cache-Control", "no-store");
+                res.end(JSON.stringify(buildQaRhythmStub(durationSeconds)));
+              };
+
+              if (!essentiaApiKey) {
+                respondWithLocalRhythm();
+                return;
+              }
+
               const formData = new FormData();
               formData.set("file", new File([bytes], path.basename(filePath), { type: mimeType }));
               const upstream = await postEssentiaAnalysis(
@@ -217,6 +233,10 @@ export default defineConfig(({ mode }) => {
                 essentiaAnalysisEngine,
                 formData
               );
+              if ([401, 403].includes(upstream.status)) {
+                respondWithLocalRhythm();
+                return;
+              }
               const text = await upstream.text();
               res.statusCode = upstream.status;
               res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
@@ -295,6 +315,36 @@ async function readRequestBody(req: AsyncIterable<Uint8Array>) {
     offset += chunk.byteLength;
   }
   return buffer;
+}
+
+function buildQaRhythmStub(durationSeconds: number) {
+  const duration = Math.max(1, Math.min(600, durationSeconds));
+  const bpm = 128;
+  const interval = 60 / bpm;
+  const beats: number[] = [];
+  for (let time = 0; time < duration; time += interval) {
+    beats.push(Number(time.toFixed(4)));
+  }
+  return {
+    bpm,
+    beats,
+    confidence: 0.35,
+    duration,
+    onsets: beats,
+    sample_rate: 44_100,
+  };
+}
+
+function estimateWavDurationSeconds(bytes: Buffer) {
+  if (bytes.byteLength < 44) return 8;
+  const channels = bytes.readUInt16LE(22);
+  const sampleRate = bytes.readUInt32LE(24);
+  const bitsPerSample = bytes.readUInt16LE(34);
+  const dataBytes = bytes.byteLength - 44;
+  if (!channels || !sampleRate || !bitsPerSample) return 8;
+  const bytesPerSecond = sampleRate * channels * (bitsPerSample / 8);
+  if (bytesPerSecond <= 0) return 8;
+  return dataBytes / bytesPerSecond;
 }
 
 function postEssentiaBytes(

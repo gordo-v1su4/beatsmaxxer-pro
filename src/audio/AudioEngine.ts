@@ -83,12 +83,22 @@ export class AudioEngine {
     if (!this.ctx) return;
 
     if (this.ctx.state === 'suspended') {
-      await this.ctx.resume();
+      try {
+        await this.ctx.resume();
+      } catch {
+        // Autoplay policy may block resume until a user gesture.
+      }
     }
 
     if (this._usingUploadedTrack && this.mediaElement) {
       this.mediaElement.currentTime = 0;
-      await this.mediaElement.play();
+      try {
+        await this.mediaElement.play();
+      } catch {
+        this._playing = false;
+        this.transportClock.setPlaying(false, 0);
+        return;
+      }
       this._playing = true;
       this.transportClock.setPlaying(true, 0);
       this.onsetHistory = [];

@@ -149,6 +149,15 @@ export class BrowserWebGl2Backend<Source extends object>
     const { gl } = this;
     if (this.lost) throw new Error("webgl-context-lost");
     if (
+      typeof HTMLVideoElement !== "undefined" &&
+      source instanceof HTMLVideoElement &&
+      (source.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        source.videoWidth <= 0 ||
+        source.videoHeight <= 0)
+    ) {
+      return;
+    }
+    if (
       this.canvas.width !== request.width ||
       this.canvas.height !== request.height
     ) {

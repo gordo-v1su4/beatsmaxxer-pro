@@ -24,9 +24,10 @@ fn srgbToLinear(value: vec3f) -> vec3f {
 }
 
 @group(0) @binding(0) var sourceFrame: texture_external;
+@group(0) @binding(1) var externalSampler: sampler;
 
 @fragment fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
-  let converted = textureSampleBaseClampToEdge(sourceFrame, input.uv);
+  let converted = textureSampleBaseClampToEdge(sourceFrame, externalSampler, input.uv);
   return vec4f(srgbToLinear(converted.rgb), converted.a);
 }
 `;

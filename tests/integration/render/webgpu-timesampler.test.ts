@@ -257,6 +257,10 @@ describe("G006 WebGPU TimeSampler vertical slice", () => {
 
   test("shader sources encode the external-to-linear and LUM/RGB/OFF contract", async () => {
     expect(EXTERNAL_TEXTURE_INGEST_WGSL).toContain("texture_external");
+    expect(EXTERNAL_TEXTURE_INGEST_WGSL).toContain("externalSampler");
+    expect(EXTERNAL_TEXTURE_INGEST_WGSL).toContain(
+      "textureSampleBaseClampToEdge(sourceFrame, externalSampler, input.uv)",
+    );
     expect(EXTERNAL_TEXTURE_INGEST_WGSL).toContain("srgbToLinear");
     expect(TIMESAMPLER_COMPOSITE_WGSL).toContain("linearToSrgb");
     expect(TIMESAMPLER_COMPOSITE_WGSL).toContain(

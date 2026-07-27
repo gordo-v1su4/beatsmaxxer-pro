@@ -215,7 +215,10 @@ export class BrowserWebGpuBackend<
     const encoder = this.device.createCommandEncoder();
     const bindGroup = this.device.createBindGroup({
       layout: this.ingestPipeline.getBindGroupLayout(0),
-      entries: [{ binding: 0, resource: externalTexture }],
+      entries: [
+        { binding: 0, resource: externalTexture },
+        { binding: 1, resource: this.sampler },
+      ],
     });
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
