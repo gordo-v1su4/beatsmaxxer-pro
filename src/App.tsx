@@ -281,7 +281,7 @@ export function App() {
 
     const params = new URLSearchParams(window.location.search);
     const qaMode = params.get("qa");
-    if (qaMode !== "sample-media" && qaMode !== "gems") return;
+    if (qaMode !== "sample-media" && qaMode !== "gems" && qaMode !== "test-media") return;
 
     qaSeedRef.current = true;
 
@@ -299,7 +299,7 @@ export function App() {
         .filter(Boolean);
       let audioName = (params.get("qaAudio") || QA_SAMPLE_AUDIO).trim();
 
-      if (qaMode === "gems" || params.get("qaManifest") === "1") {
+      if (qaMode === "gems" || qaMode === "test-media" || params.get("qaManifest") === "1") {
         try {
           const manifest = (await fetch(`${baseUrl}/manifest.json`).then((response) =>
             response.json(),

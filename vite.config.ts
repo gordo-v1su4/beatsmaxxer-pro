@@ -277,6 +277,7 @@ function resolveQaMediaDir(
   const home = process.env.HOME || process.env.USERPROFILE || "";
   const candidates = [
     env.QA_MEDIA_DIR,
+    path.resolve(projectDir, "test_media"),
     path.resolve(projectDir, "tests/fixtures/media"),
     home ? path.resolve(home, "Desktop/Gems") : "",
     path.resolve(projectDir, "../../../Desktop/Gems"),

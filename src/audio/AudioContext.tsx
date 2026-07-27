@@ -68,7 +68,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const togglePlay = async () => {
     if (!playing) {
       await audioEngine.start();
-      setPlaying(true);
+      setPlaying(audioEngine.getState().playing);
     } else {
       audioEngine.stop();
       setPlaying(false);

@@ -796,7 +796,8 @@ export class MultiClipPlaybackRuntime<
     return action;
   }
 
-  snapshot() {
+  snapshot(options: { includeDiagnosticRecords?: boolean } = {}) {
+    const includeDiagnosticRecords = options.includeDiagnosticRecords ?? true;
     return {
       roles: {
         pgm: this.roles.get("pgm")?.clip.id ?? null,
@@ -819,9 +820,11 @@ export class MultiClipPlaybackRuntime<
         capacity: STEADY_DRIFT_DIAGNOSTIC_CAPACITY,
         totalEpisodes: this.steadyDriftEpisodeCount,
         retainedDistanceSeconds: this.summarizeSteadyDriftDistances(),
-        records: this.steadyDriftDiagnostics.map((record) => ({
-          ...record,
-        })),
+        records: includeDiagnosticRecords
+          ? this.steadyDriftDiagnostics.map((record) => ({
+              ...record,
+            }))
+          : [],
       },
       htmlDecisionDiagnostics: {
         capacity: HTML_DECISION_DIAGNOSTIC_CAPACITY,
@@ -829,11 +832,17 @@ export class MultiClipPlaybackRuntime<
           HTML_DECISION_FREEZE_DRIFT_EPISODES,
         frozen: this.htmlDecisionDiagnosticsFrozen,
         recordedDecisions: this.htmlDecisionSequence,
-        records: this.htmlDecisionDiagnostics.map((record) => ({
-          ...record,
-        })),
+        records: includeDiagnosticRecords
+          ? this.htmlDecisionDiagnostics.map((record) => ({
+              ...record,
+            }))
+          : [],
       },
     };
+  }
+
+  snapshotForDomTelemetry() {
+    return this.snapshot({ includeDiagnosticRecords: false });
   }
 
   dispose() {

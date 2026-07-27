@@ -191,6 +191,8 @@ export function BrowserProgramRenderer(
     let longTaskObserver: PerformanceObserver | null = null;
     let lastQaCommand = "";
     let lastPresentedAt: number | null = null;
+    let lastDomTelemetryAt = 0;
+    const DOM_TELEMETRY_INTERVAL_MS = 500;
     let coordinator: ReturnType<
       typeof createQaInstrumentedPlaybackCoordinator<VideoFrame>
     > | null = null;
@@ -667,6 +669,7 @@ export function BrowserProgramRenderer(
 
       const render = () => {
         const current = propsRef.current;
+        const now = performance.now();
         const qaCommand =
           document.documentElement.dataset.beatSurferMultiClipCommand ??
           "";
@@ -677,7 +680,6 @@ export function BrowserProgramRenderer(
         const transport = audioEngine.getTransportSample();
         const live = audioEngine.getLiveScheduleFrame();
         if (current.promoted) {
-          const now = performance.now();
           const fallbackPath = runtime.snapshot().renderer.fallback.path;
           if (fallbackPath !== activePathRef.current) {
             activePathRef.current = fallbackPath;
@@ -785,9 +787,13 @@ export function BrowserProgramRenderer(
         } else {
           lastPresentedAt = null;
         }
-        if (import.meta.env.DEV) {
+        if (
+          import.meta.env.DEV &&
+          now - lastDomTelemetryAt >= DOM_TELEMETRY_INTERVAL_MS
+        ) {
+          lastDomTelemetryAt = now;
           document.documentElement.dataset.beatSurferMultiClip =
-            JSON.stringify(runtime.snapshot());
+            JSON.stringify(runtime.snapshotForDomTelemetry());
         }
         animationFrame = requestAnimationFrame(render);
       };
@@ -871,9 +877,12 @@ export function BrowserProgramRenderer(
             position: "absolute",
             width: 1,
             height: 1,
-            opacity: 0.01,
-            zIndex: 20,
+            opacity: 0,
+            zIndex: -1,
+            pointerEvents: "none",
           }}
+          tabIndex={-1}
+          aria-hidden="true"
         />
       )}
       <canvas
@@ -884,6 +893,7 @@ export function BrowserProgramRenderer(
           inset: 0,
           width: "100%",
           height: "100%",
+          pointerEvents: "none",
           display:
             props.promoted && activePath === "html-video-webgl2"
               ? "block"
@@ -898,6 +908,7 @@ export function BrowserProgramRenderer(
           inset: 0,
           width: "100%",
           height: "100%",
+          pointerEvents: "none",
           display:
             props.promoted && activePath === "webcodecs-webgpu"
               ? "block"
@@ -912,6 +923,7 @@ export function BrowserProgramRenderer(
           inset: 0,
           width: "100%",
           height: "100%",
+          pointerEvents: "none",
           display:
             props.promoted && activePath === "webcodecs-webgl2"
               ? "block"

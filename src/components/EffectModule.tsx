@@ -320,16 +320,14 @@ function LightweightSourcePreview({ videoUrl, color, label, animated = false }: 
         return;
       }
 
-      await video.play().catch(() => {});
-
-      if (video.readyState >= 2) {
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
         settleStillFrame();
       } else {
         loadedHandler = () => {
           loadedHandler = null;
           settleStillFrame();
         };
-        video.addEventListener('loadeddata', loadedHandler, { once: true });
+        video.addEventListener('loadedmetadata', loadedHandler, { once: true });
       }
     };
 
@@ -536,6 +534,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     renderer.setPixelRatio(1.0);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.domElement.style.display = 'block';
+    renderer.domElement.style.pointerEvents = 'none';
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 

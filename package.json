@@ -15,6 +15,7 @@
     "test:integration": "bun test tests/integration",
     "test:browser": "bun run scripts/browser-smoke.ts",
     "test:browser-playback": "bun run scripts/browser-playback-acceptance.ts",
+    "test:ui-interaction": "bun run scripts/ui-interaction-acceptance.ts",
     "qa:secret-scan": "bun run scripts/secret-scan.ts"
   },
   "dependencies": {
