@@ -516,7 +516,23 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
-    const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, preserveDrawingBuffer: false });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: false,
+        preserveDrawingBuffer: false,
+      });
+    } catch {
+      container.replaceChildren();
+      const fallback = document.createElement("div");
+      fallback.setAttribute("data-webgl-unavailable", "1");
+      fallback.style.cssText =
+        "width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:#000;color:#566070;font:10px Share Tech Mono,monospace;letter-spacing:0.08em;";
+      fallback.textContent = "WEBGL UNAVAILABLE";
+      container.appendChild(fallback);
+      return;
+    }
     renderer.setPixelRatio(1.0);
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.domElement.style.display = 'block';

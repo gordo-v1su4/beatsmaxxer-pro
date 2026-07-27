@@ -323,8 +323,9 @@ export function BrowserProgramRenderer(
     );
 
     void (async () => {
-      coordinator =
+      const playbackCoordinator =
         createQaInstrumentedPlaybackCoordinator<VideoFrame>();
+      coordinator = playbackCoordinator;
       const qaHtmlFallback = isHtmlVideoQaFallbackEnabled();
       const probeRequest: RenderFrameRequest = {
         width: 2,
@@ -371,6 +372,10 @@ export function BrowserProgramRenderer(
           // Probes failed; decoded path unavailable until demuxer wired.
         }
       }
+      if (cancelled) {
+        playbackCoordinator.dispose();
+        return;
+      }
       let direct: DirectPlaybackProbe = {
         supported: false,
         reason: "webcodecs-unavailable",
@@ -395,6 +400,10 @@ export function BrowserProgramRenderer(
           };
         }
       }
+      if (cancelled) {
+        playbackCoordinator.dispose();
+        return;
+      }
       // Keep HTML video available when the decoded path is not viable so PGM
       // still shows pixels. Only suppress HTML when WebCodecs probe passed.
       if (!qaHtmlFallback && direct.supported) {
@@ -406,16 +415,16 @@ export function BrowserProgramRenderer(
       const renderer = await createBrowserMediaRendererRuntime({
         direct,
         capabilities,
-        coordinator,
+        coordinator: playbackCoordinator,
         canvases,
       });
       if (cancelled) {
         renderer.dispose();
-        coordinator.dispose();
+        playbackCoordinator.dispose();
         return;
       }
       decodeScheduler = mediaEngine.attachDecodeScheduler(
-        coordinator,
+        playbackCoordinator,
         (state, queueSize) => {
           if (import.meta.env.DEV) {
             document.documentElement.dataset.beatSurferDecoderState =
@@ -425,7 +434,7 @@ export function BrowserProgramRenderer(
       );
       const runtime = new MultiClipPlaybackRuntime({
         registry: props.registry,
-        coordinator,
+        coordinator: playbackCoordinator,
         renderer,
         performance: performanceTracker,
         videos: {
@@ -704,7 +713,7 @@ export function BrowserProgramRenderer(
               }
               const clip = propsRef.current.registry.get(clipId);
               if (!clip) continue;
-              const lane = coordinator?.getLane(role);
+              const lane = playbackCoordinator.getLane(role);
               decodeScheduler?.syncLane(
                 role,
                 clip,

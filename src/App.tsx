@@ -345,7 +345,17 @@ export function App() {
           },
         );
         if (params.get("qaAutoplay") !== "0") {
-          await audioEngine.start();
+          const tryAutoplay = async () => {
+            try {
+              await audioEngine.start();
+            } catch (error) {
+              console.warn("QA autoplay blocked; click PLAY or tap the page", error);
+            }
+          };
+          void tryAutoplay();
+          window.addEventListener("pointerdown", () => {
+            void tryAutoplay();
+          }, { once: true });
         }
       } catch (error) {
         console.error("Failed to preload QA sample media", error);
