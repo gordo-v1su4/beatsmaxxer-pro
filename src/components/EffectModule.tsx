@@ -1974,7 +1974,7 @@ function getFragmentShader(type: ModuleType): string {
     vec3 testPattern(vec2 uv){
       float t = uSrcTime;
       float aspect = uResolution.x / uResolution.y;
-      vec3 col;
+      vec3 col = vec3(0.0);
       if(uv.y > 0.74){
         col = smpteBar(floor(uv.x * 7.0)) * 0.9;
         col *= 0.82 + 0.18 * smoothstep(0.0, 0.03, abs(fract(uv.x * 7.0) - 0.5));
@@ -1991,8 +1991,13 @@ function getFragmentShader(type: ModuleType): string {
 
     vec3 sampleSource(vec2 uv){
       uv = clamp(uv, 0.0, 1.0);
-      if(uHasVideo > 0.5) return sanitize(sampleVideo(uv));
-      return sanitize(testPattern(uv));
+      vec3 src = vec3(0.0);
+      if(uHasVideo > 0.5){
+        src = sampleVideo(uv);
+      } else {
+        src = testPattern(uv);
+      }
+      return sanitize(src);
     }
 
     vec3 finishPx(vec3 col, vec2 uv){
@@ -2098,14 +2103,15 @@ function getFragmentShader(type: ModuleType): string {
       else if(typeI < 14.5){                                                         // white flash dip
         return mix(sampleSource(uv), vec3(1.0), sin(e * PI) * 0.9);
       }
-      // defocus dip: blur out and back in
-      float b = sin(e * PI) * 0.05;
-      vec3 acc = vec3(0.0);
-      for(int i = 0; i < 6; i++){
-        float a = float(i) / 6.0 * TAU;
-        acc += sampleSource(uv + vec2(cos(a), sin(a)) * b);
+      else {                                                                         // defocus dip: blur out and back in
+        float b = sin(e * PI) * 0.05;
+        vec3 acc = vec3(0.0);
+        for(int i = 0; i < 6; i++){
+          float a = float(i) / 6.0 * TAU;
+          acc += sampleSource(uv + vec2(cos(a), sin(a)) * b);
+        }
+        return acc / 6.0;
       }
-      return acc / 6.0;
     }
     void main(){
       vec2 uv = vUv;
