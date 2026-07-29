@@ -26,6 +26,26 @@ import {
   rendererLaneForEffect,
 } from '../render/promotion';
 
+interface WhiteProbeEntry {
+  t: number;
+  luma: number;
+  r: number;
+  g: number;
+  b: number;
+  videoGap: boolean;
+  vct: number;
+  vdur: number;
+  vseeking: boolean;
+  vready: number;
+  hasVideo: boolean;
+}
+
+declare global {
+  interface Window {
+    __whiteProbe?: WhiteProbeEntry[];
+  }
+}
+
 interface EffectModuleProps {
   config: ModuleConfig;
   params: Record<string, number>;
@@ -264,6 +284,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
   // Bumped by requestVideoFrameCallback; 0 means "no cadence signal yet".
   const videoFrameSeqRef = useRef(0);
+  // True when the browser supports requestVideoFrameCallback.
+  const supportsCadenceRef = useRef(false);
   // Track the last seen video.currentTime to detect native loop-seam wraps.
   const lastVideoTimeRef = useRef(0);
   // When non-null, we are holding a feedback freeze after a loop-seam wrap
@@ -944,7 +966,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           lastVideoTimeRef.current = ct;
         }
       }
-      if (videoTextureRef.current && !videoGap) {
+      if (videoTextureRef.current && !videoGap && videoFrameSeqRef.current > 0) {
         videoTextureRef.current.needsUpdate = true;
       }
 
@@ -963,6 +985,31 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         mat.uniforms.uPrevTex.value = rtRead.texture;
         renderer.setRenderTarget(rtWrite);
         renderer.render(scene, camera);
+        // Telemetry: read back the just-rendered feedback buffer (not the
+        // screen canvas, which may be cleared by the time an external sampler
+        // runs) to detect white inside the same GPU tick that produced it.
+        if (import.meta.env.DEV) {
+          const probe = window.__whiteProbe as WhiteProbeEntry[] | undefined;
+          if (probe) {
+            const px = new Uint8Array(4);
+            renderer.readRenderTargetPixels(rtWrite, 0, 0, 1, 1, px);
+            const r = px[0], g = px[1], b = px[2];
+            const luma = (r + g + b) / 3;
+            if (luma > 230) {
+              probe.push({
+                t: performance.now(),
+                luma: Math.round(luma),
+                r, g, b,
+                videoGap: false,
+                vct: video ? Math.round(video.currentTime * 100) / 100 : -1,
+                vdur: video && Number.isFinite(video.duration) ? Math.round(video.duration * 100) / 100 : 0,
+                vseeking: video ? video.seeking : false,
+                vready: video ? video.readyState : 0,
+                hasVideo,
+              });
+            }
+          }
+        }
         copyMat.uniforms.uTex.value = rtWrite.texture;
         renderer.setRenderTarget(null);
         renderer.render(copyScene, camera);
@@ -971,12 +1018,14 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
       }
 
       // Announce the first frame that shows the real source. A program cut waits
-      // on this so the outgoing picture holds instead of blanking.
+      // on this so the outgoing picture holds instead of blanking. Require
+      // rVFC to have confirmed at least one real frame so a stale garbage
+      // frame from a shared video element doesn't promote a white standby.
       if (!firstFrameSent) {
-        const showingSource = videoUrlRef.current
-          ? !!mat && mat.uniforms.uHasVideo.value > 0.5
+        const hasRealFrame = videoUrlRef.current
+          ? (!!mat && mat.uniforms.uHasVideo.value > 0.5 && videoFrameSeqRef.current > 0)
           : true;
-        if (showingSource) {
+        if (hasRealFrame) {
           firstFrameSent = true;
           onFirstFrameRef.current?.();
         }
@@ -1061,6 +1110,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     lastVideoTimeRef.current = 0;
     lastVideoCadenceOnWrapRef.current = null;
     gapHoldStartedAtRef.current = 0;
+    videoFrameSeqRef.current = 0;
+    supportsCadenceRef.current = false;
 
     if (!videoUrl) {
       m.uniforms.uHasVideo.value = 0.0;
