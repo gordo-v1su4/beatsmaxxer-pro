@@ -265,7 +265,7 @@ export function PgmRail({ modules, pgmSource, onSelectSource, onQueueChange }: {
 }
 
 /** Program monitor strip: the selected module's mixed output, full width. */
-export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, clipRegistryVersion, queuedPgmSource, overlapPgmSource, onClipRuntimeChange }: {
+export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midiLayers, bypassed, clipRegistry, clipRegistryVersion, queuedPgmSource, onClipRuntimeChange }: {
   modules: ModuleConfig[];
   pgmSource: ModuleType;
   moduleParams: Record<ModuleType, Record<string, number>>;
@@ -275,7 +275,6 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
   clipRegistry: ClipRegistry;
   clipRegistryVersion: number;
   queuedPgmSource: ModuleType | null;
-  overlapPgmSource: ModuleType | null;
   onClipRuntimeChange?: (
     runtime: { removeClip(id: string): Promise<boolean> } | null,
   ) => void;
@@ -301,19 +300,34 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
       promoted WebCodecs renderer, which manages its own clip continuity. */
   const usesNativeCanvas = (id: ModuleType) =>
     !(videoLayers[id] && !bypassed[id]) || pgmRendererPath === 'native-static';
-  const incomingHolds = !!incoming && usesNativeCanvas(incoming.id);
-
+  // One standby canvas serves both the queue-blink prewarm and the post-cut
+  // hold. It is keyed by the target module id, so when the cut lands and it
+  // becomes the live source React reuses the same instance (no remount, no
+  // blank) and just reveals it.
+  const standbyTarget = incoming
+    ?? (queuedPgmSource && queuedPgmSource !== liveSource
+        ? modules.find(m => m.id === queuedPgmSource) ?? null
+        : null);
+  const standbyHolds = !!standbyTarget && usesNativeCanvas(standbyTarget.id);
+  const [standbyWarm, setStandbyWarm] = useState(false);
+  useEffect(() => { setStandbyWarm(false); }, [standbyTarget?.id]);
+  // Once the cut has fired and the standby is warm, promote it instantly. No
+  // crossfade, no overlap hold — a hard frame-tight cut.
+  useEffect(() => {
+    if (incoming && standbyHolds && standbyWarm) {
+      setLiveSource(incoming.id);
+    }
+  }, [incoming, standbyHolds, standbyWarm]);
   useEffect(() => {
     if (!incoming) return;
-    if (!incomingHolds) {
+    if (!standbyHolds) {
       setLiveSource(pgmSource);
       return;
     }
     // Never strand the program on a stale source if the incoming clip stalls.
     const timeout = window.setTimeout(() => setLiveSource(pgmSource), 1200);
     return () => window.clearTimeout(timeout);
-  }, [incoming, incomingHolds, pgmSource]);
-
+  }, [incoming, standbyHolds, pgmSource]);
   return (
     <div style={{
       // grows fastest so the program monitor is always the biggest panel
@@ -345,18 +359,18 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
             bypassed={bypassed[active.id]}
           />
         )}
-        {incoming && incomingHolds && (
+        {standbyTarget && standbyHolds && (
           <ThreeVisualizer
-            key={incoming.id}
-            type={incoming.id}
-            color={incoming.accentColor}
-            params={moduleParams[incoming.id]}
+            key={standbyTarget.id}
+            type={standbyTarget.id}
+            color={standbyTarget.accentColor}
+            params={moduleParams[standbyTarget.id]}
             mode="output"
-            videoUrl={videoLayers[incoming.id]?.url}
-            midiLayer={midiLayers[incoming.id]}
-            bypassed={bypassed[incoming.id]}
+            videoUrl={videoLayers[standbyTarget.id]?.url}
+            midiLayer={midiLayers[standbyTarget.id]}
+            bypassed={bypassed[standbyTarget.id]}
             hidden
-            onFirstFrame={() => setLiveSource(incoming.id)}
+            onFirstFrame={() => setStandbyWarm(true)}
           />
         )}
         <BrowserProgramRenderer
@@ -366,11 +380,6 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
           prewarm={
             queuedPgmSource && videoLayers[queuedPgmSource]
               ? queuedPgmSource
-              : null
-          }
-          overlap={
-            overlapPgmSource && videoLayers[overlapPgmSource]
-              ? overlapPgmSource
               : null
           }
           promoted={promotedProgram}

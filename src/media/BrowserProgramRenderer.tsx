@@ -26,7 +26,6 @@ export interface BrowserProgramRendererProps {
   registryVersion: number;
   pgm: ModuleType | null;
   prewarm: ModuleType | null;
-  overlap: ModuleType | null;
   promoted: boolean;
   params: Record<string, number>;
   onRuntimeChange?: (
@@ -166,19 +165,6 @@ export function BrowserProgramRenderer(
       null,
     );
   const propsRef = useRef(props);
-  propsRef.current = props;
-  const overlapStartedAtRef = useRef<number | null>(null);
-  const previousOverlapRef = useRef<ModuleType | null>(null);
-
-  useEffect(() => {
-    if (props.overlap && props.overlap !== previousOverlapRef.current) {
-      overlapStartedAtRef.current = performance.now();
-    }
-    if (!props.overlap) {
-      overlapStartedAtRef.current = null;
-    }
-    previousOverlapRef.current = props.overlap;
-  }, [props.overlap]);
 
   useEffect(() => {
     const canvases: BrowserMediaRendererCanvases = {
@@ -626,7 +612,6 @@ export function BrowserProgramRenderer(
       runtime.select({
         pgm: propsRef.current.pgm,
         prewarm: propsRef.current.prewarm,
-        overlap: propsRef.current.overlap,
       });
       if (import.meta.env.DEV) {
         (
@@ -752,17 +737,6 @@ export function BrowserProgramRenderer(
             fallbackPath === "html-video-webgl2"
               ? (1_000 / 30) * 1.5
               : (1_000 / 60) * 1.5;
-          const overlapStartedAt = overlapStartedAtRef.current;
-          const crossfadeAlpha =
-            current.overlap && overlapStartedAt !== null
-              ? Math.min(
-                  1,
-                  Math.max(
-                    0,
-                    (now - overlapStartedAt) / 250,
-                  ),
-                )
-              : undefined;
           const presented = runtime.present(
             {
               presentationTimeSeconds:
@@ -781,7 +755,6 @@ export function BrowserProgramRenderer(
                 live?.timeSampler.jumpGeneration,
               playbackRate:
                 live?.timeSampler.targetPlaybackRate,
-              crossfadeAlpha,
             },
           );
           if (presented) lastPresentedAt = now;
@@ -847,12 +820,10 @@ export function BrowserProgramRenderer(
     runtimeRef.current?.select({
       pgm: props.pgm,
       prewarm: props.prewarm,
-      overlap: props.overlap,
     });
   }, [
     props.pgm,
     props.prewarm,
-    props.overlap,
     props.registryVersion,
   ]);
 

@@ -264,6 +264,12 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   const videoTextureRef = useRef<THREE.VideoTexture | null>(null);
   // Bumped by requestVideoFrameCallback; 0 means "no cadence signal yet".
   const videoFrameSeqRef = useRef(0);
+  // Track the last seen video.currentTime to detect native loop-seam wraps.
+  const lastVideoTimeRef = useRef(0);
+  // When non-null, we are holding a feedback freeze after a loop-seam wrap
+  // until rVFC confirms the first post-loop frame. Holds the cadence seq at
+  // the moment of the wrap.
+  const lastVideoCadenceOnWrapRef = useRef<number | null>(null);
   const videoUrlRef = useRef(videoUrl);
   videoUrlRef.current = videoUrl;
   const onFirstFrameRef = useRef(onFirstFrame);
@@ -888,19 +894,65 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         }
       }
 
-      if (videoTextureRef.current) videoTextureRef.current.needsUpdate = true;
+      // Gate the video texture upload on the element actually presenting a
+      // fresh decoded frame. During a loop seam (native <video loop> restart
+      // or a timesampler seek) the element briefly presents white garbage,
+      // and the feedback loop then holds it for seconds. Native loop does
+      // NOT set seeking=true or drop readyState, so we detect the seam by a
+      // backwards currentTime jump and hold the freeze until rVFC confirms
+      // a fresh decoded frame has arrived.
+      const video = videoRef.current;
+      const hasVideo = m && m.uniforms.uHasVideo.value > 0.5;
+      let videoGap = false;
+      if (video && hasVideo) {
+        if (video.seeking || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+          videoGap = true;
+        } else {
+          const ct = video.currentTime;
+          const lvt = lastVideoTimeRef.current;
+          // Native loop seam: currentTime wraps from near-duration back to ~0.
+          const wrapped = lvt > 0.5 && ct < lvt * 0.5;
+          if (wrapped) {
+            // Enter a gap-hold: freeze the feedback loop until rVFC fires.
+            lastVideoCadenceOnWrapRef.current = videoFrameSeqRef.current;
+            videoGap = true;
+          } else if (lastVideoCadenceOnWrapRef.current !== null) {
+            // We're in a gap-hold after a wrap. Stay frozen until rVFC emits
+            // a new frame (cadence ref advances past the wrap point).
+            if (videoFrameSeqRef.current > lastVideoCadenceOnWrapRef.current) {
+              lastVideoCadenceOnWrapRef.current = null; // fresh frame arrived
+            } else {
+              videoGap = true; // still waiting for the first post-loop frame
+            }
+          }
+          lastVideoTimeRef.current = ct;
+        }
+      }
+      if (videoTextureRef.current && !videoGap) {
+        videoTextureRef.current.needsUpdate = true;
+      }
 
       // render into the write buffer while feeding back the previous frame, then blit to screen
       const rtWrite = flip ? rtA : rtB;
       const rtRead = flip ? rtB : rtA;
-      mat.uniforms.uPrevTex.value = rtRead.texture;
-      renderer.setRenderTarget(rtWrite);
-      renderer.render(scene, camera);
-      copyMat.uniforms.uTex.value = rtWrite.texture;
-      renderer.setRenderTarget(null);
-      renderer.render(copyScene, camera);
-      recordRenderedFrame(performance.now());
-      flip = !flip;
+      if (videoGap) {
+        // Freeze: copy the last valid output to screen without running the
+        // shader. The feedback buffers keep the last good frame so when the
+        // video recovers the loop resumes cleanly — no white injected.
+        copyMat.uniforms.uTex.value = rtRead.texture;
+        renderer.setRenderTarget(null);
+        renderer.render(copyScene, camera);
+        // Don't flip: keep rtRead as the canonical last-valid frame.
+      } else {
+        mat.uniforms.uPrevTex.value = rtRead.texture;
+        renderer.setRenderTarget(rtWrite);
+        renderer.render(scene, camera);
+        copyMat.uniforms.uTex.value = rtWrite.texture;
+        renderer.setRenderTarget(null);
+        renderer.render(copyScene, camera);
+        recordRenderedFrame(performance.now());
+        flip = !flip;
+      }
 
       // Announce the first frame that shows the real source. A program cut waits
       // on this so the outgoing picture holds instead of blanking.
@@ -990,6 +1042,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
 
     videoTextureRef.current = null;
     videoRef.current = null;
+    lastVideoTimeRef.current = 0;
+    lastVideoCadenceOnWrapRef.current = null;
 
     if (!videoUrl) {
       m.uniforms.uHasVideo.value = 0.0;

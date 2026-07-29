@@ -150,7 +150,6 @@ export function App() {
   const [midiLayers, setMidiLayers] = useState<Record<ModuleType, MidiLayer | null>>(() => moduleRecord<MidiLayer | null>(null));
   const [pgmSource, setPgmSource] = useState<ModuleType>('transition');
   const [queuedPgmSource, setQueuedPgmSource] = useState<ModuleType | null>(null);
-  const [overlapPgmSource, setOverlapPgmSource] = useState<ModuleType | null>(null);
   const [clipRegistryVersion, setClipRegistryVersion] = useState(0);
   const [orderTop, setOrderTop] = useState<ModuleType[]>(MODULES.map(m => m.id));
   const [orderBottom, setOrderBottom] = useState<ModuleType[]>(MODULES_B.map(m => m.id));
@@ -171,7 +170,6 @@ export function App() {
     void mediaEngine.demux;
   }, []);
   const registryLifecycleRef = useRef(0);
-  const overlapTimerRef = useRef<number | null>(null);
   const qaSeedRef = useRef(false);
 
   const updateParam = useCallback((moduleId: ModuleType, param: string, value: number) => {
@@ -412,9 +410,6 @@ export function App() {
     return () => {
       queueMicrotask(() => {
         if (registryLifecycleRef.current !== lifecycle) return;
-        if (overlapTimerRef.current !== null) {
-          window.clearTimeout(overlapTimerRef.current);
-        }
         clipRegistryRef.current.dispose();
       });
     };
@@ -423,14 +418,8 @@ export function App() {
   const selectPgmSource = useCallback((next: ModuleType) => {
     setPgmSource((current) => {
       if (current === next) return current;
-      setOverlapPgmSource(current);
-      if (overlapTimerRef.current !== null) {
-        window.clearTimeout(overlapTimerRef.current);
-      }
-      overlapTimerRef.current = window.setTimeout(() => {
-        setOverlapPgmSource(null);
-        overlapTimerRef.current = null;
-      }, 250);
+      // Hard Ableton-style cut: no crossfade, no overlap hold. The incoming
+      // clip is prewarmed during the queue blink so the cut lands frame-tight.
       return next;
     });
   }, []);
@@ -510,7 +499,6 @@ export function App() {
               clipRegistry={clipRegistryRef.current}
               clipRegistryVersion={clipRegistryVersion}
               queuedPgmSource={queuedPgmSource}
-              overlapPgmSource={overlapPgmSource}
               onClipRuntimeChange={handleClipRuntimeChange}
             />
             <div style={{ height: 'clamp(420px, calc((100vw - 206px) * 9 / 64 + 244px), 544px)', flexShrink: 0.15, minHeight: 300, display: 'flex', overflow: 'hidden' }}>
