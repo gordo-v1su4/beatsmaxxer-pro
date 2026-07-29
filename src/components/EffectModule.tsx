@@ -270,6 +270,8 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
   // until rVFC confirms the first post-loop frame. Holds the cadence seq at
   // the moment of the wrap.
   const lastVideoCadenceOnWrapRef = useRef<number | null>(null);
+  // Timestamp (performance.now ms) when a gap-hold started, for safety timeout.
+  const gapHoldStartedAtRef = useRef(0);
   const videoUrlRef = useRef(videoUrl);
   videoUrlRef.current = videoUrl;
   const onFirstFrameRef = useRef(onFirstFrame);
@@ -910,19 +912,33 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         } else {
           const ct = video.currentTime;
           const lvt = lastVideoTimeRef.current;
+          const dur = Number.isFinite(video.duration) && video.duration > 0
+            ? video.duration : 0;
           // Native loop seam: currentTime wraps from near-duration back to ~0.
-          const wrapped = lvt > 0.5 && ct < lvt * 0.5;
-          if (wrapped) {
-            // Enter a gap-hold: freeze the feedback loop until rVFC fires.
+          // Use two checks: a relative backwards jump (handles any duration)
+          // and a duration-aware absolute check (catches stalls-then-drops).
+          const jumpedBack = lvt > 0.3 && ct < lvt * 0.8;
+          const wrappedToEnd = dur > 0
+            && lvt > dur * 0.7
+            && ct < dur * 0.3;
+          if (jumpedBack || wrappedToEnd) {
             lastVideoCadenceOnWrapRef.current = videoFrameSeqRef.current;
+            gapHoldStartedAtRef.current = now;
             videoGap = true;
           } else if (lastVideoCadenceOnWrapRef.current !== null) {
-            // We're in a gap-hold after a wrap. Stay frozen until rVFC emits
-            // a new frame (cadence ref advances past the wrap point).
-            if (videoFrameSeqRef.current > lastVideoCadenceOnWrapRef.current) {
-              lastVideoCadenceOnWrapRef.current = null; // fresh frame arrived
+            // Exit the gap-hold when rVFC confirms a fresh decoded frame, or
+            // after a safety timeout (500ms) in case rVFC never fires on loop
+            // seams in this browser.
+            const cadenceAdvanced =
+              videoFrameSeqRef.current > lastVideoCadenceOnWrapRef.current;
+            const timedOut = now - gapHoldStartedAtRef.current > 500;
+            if (cadenceAdvanced || timedOut) {
+              lastVideoCadenceOnWrapRef.current = null;
+              // Clear feedback buffers so any white that slipped in before
+              // the gap-hold activated can't persist through the resume.
+              clearFeedback();
             } else {
-              videoGap = true; // still waiting for the first post-loop frame
+              videoGap = true;
             }
           }
           lastVideoTimeRef.current = ct;
@@ -1044,6 +1060,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     videoRef.current = null;
     lastVideoTimeRef.current = 0;
     lastVideoCadenceOnWrapRef.current = null;
+    gapHoldStartedAtRef.current = 0;
 
     if (!videoUrl) {
       m.uniforms.uHasVideo.value = 0.0;
