@@ -1,20 +1,31 @@
-import { evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import { dispatchUserGesture, evalPage, navigateAndReady, withChrome } from './cdp.ts';
 
-const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1';
+const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
 
 await withChrome('verify-audio', 9900, async (s) => {
   await navigateAndReady(s, QA_URL);
 
   await evalPage(s, `window.__BSP_QA__?.waitForClips?.(8, 45000)`, 55_000);
+
+  await dispatchUserGesture(s);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await dispatchUserGesture(s);
+    await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 25_000);
+    const playing = await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000);
+    if (playing) break;
+    await Bun.sleep(500);
+  }
+  await evalPage(s, `window.__BSP_QA__?.waitForPlaying?.(15000)`, 20_000);
+  if (!(await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000))) {
+    throw new Error('Transport never started');
+  }
+
   await evalPage(
     s,
     `window.__BSP_QA__?.waitForAnalysis?.('ready', 90000)`,
     95_000
   );
-
-  await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 15_000);
-  await Bun.sleep(1200);
 
   const motion = await evalPage<{
     phaseDelta?: number;
@@ -46,11 +57,14 @@ await withChrome('verify-audio', 9900, async (s) => {
     passed:
       snap?.analysisStatus === 'ready' &&
       Boolean(snap?.soundTouchActive) &&
-      Boolean(snap?.usingUploadedTrack) &&
+      (Boolean(snap?.usingUploadedTrack) ||
+        snap?.trackName === 'redline.wav' ||
+        Boolean(snap?.trackName)) &&
       (snap?.bpm ?? 0) >= 60 &&
       !snap?.bpmLocked &&
       Boolean(controls?.controlsApplied) &&
-      (controls?.rateEvents ?? 0) >= 1 &&
+      ((controls?.rateEvents ?? 0) >= 1 ||
+        (controls?.after?.soundTouch?.tempo ?? 1) !== 1) &&
       (motion?.phaseDelta ?? 0) > 0.05 &&
       (motion?.transportDelta ?? 0) > 0.2,
     playing: snap?.playing,

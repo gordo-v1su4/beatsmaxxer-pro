@@ -17,7 +17,8 @@ bun run test:local   # full local suite (unit + build + browser gates) — see d
 bun run build        # production build → build/
 bun run check        # svelte-check
 bun run test         # vitest only
-bash scripts/setup-qa-media.sh   # QA clips (cloud-safe)
+bash scripts/setup-qa-media.sh   # QA clips (cloud-safe tiny fixtures)
+bash scripts/link-qa-media.sh    # local dev: symlink 8 MP4s + Redline from ~/Downloads/archive (2)
 bun run verify:browser           # browser gates only
 ```
 
@@ -29,7 +30,7 @@ From repo root: `bun run dev:svelte`
 http://localhost:5174/?qa=1&qaAutoplay=1
 ```
 
-Uses bundled fixtures in `tests/fixtures/media/` (see `bash scripts/setup-qa-media.sh`).
+Uses fixtures in `tests/fixtures/media/` — run `bash scripts/link-qa-media.sh` locally for real clips, or `setup-qa-media.sh` for bundled stubs. On every refresh, `?qa=1` auto-loads song + 8 rack clips via [`loadQaMedia.ts`](src/lib/qa/loadQaMedia.ts).
 
 ## Architecture
 
@@ -51,10 +52,14 @@ Only check when **browser-verified** with artifacts or manual recording.
 
 - [x] Video pool loads clips; free-run playback independent of transport
 - [x] Per-module clip status (LOAD / RDY / ERR) in patch bay
-- [x] `window.__BSP_QA__` debug hook for acceptance scripts
+- [x] `window.__BSP_QA__` debug hook for acceptance scripts (`sampleTimeModules`, `exerciseLiveControls`, `exerciseAllShaderModes`, `auditShaderCatalog`)
+- [x] QA `?qa=1` auto-loads Redline + 8 rack clips on refresh (IDE browser verified; WebGPU `crossOrigin` + qa-media CORS)
 - [x] Automated `verify:playback` — 8/8 `hasReadyFrame`, video time advances (headless)
 - [x] Automated `verify:interaction` — controls fire without JS errors (headless)
 - [x] Automated `verify:stutter` — p95 delta gate on free-run modules (headless)
+- [x] Automated `verify:audio` — Essentia ready + SoundTouch KEY/PITCH/TEMPO + beat motion (headless)
+- [x] Automated `verify:beat` — beat phase advances with transport (headless)
+- [x] IDE browser: 8/8 rack viewports show real video; live param exercise; 18/18 WGSL effect modes registered; speedramp rate varies with beat cycle
 - [ ] **Manual:** upload via CLIP, drag-drop, top-bar bulk — visible motion in every preview
 - [ ] **Manual:** upload mp3 — audible playback + `RHY·OK` (or documented fallback)
 - [ ] **Manual:** 60s play while tweaking knobs, dragging modules, swapping clips — no freeze / black >200ms
@@ -71,9 +76,9 @@ Only check when **browser-verified** with artifacts or manual recording.
 
 - [x] SoundTouch.js integrated (`@soundtouchjs/audio-worklet`) — KEY / PIT / TMP / VOL
 - [ ] SoundTouch verified by ear on uploaded track (tempo without chipmunk, pitch shift)
-- [x] Essentia dev proxy (`/__api/analyze/*` → hosted analysis with `X-API-Key`)
+- [x] Essentia dev proxy (`/__api/analyze/*` → hosted analysis with `X-API-Key`) — acceptance via `verify:audio`
 - [ ] Essentia on production (`VITE_ESSENTIA_API_BASE_URL` on Vercel — not deployed yet)
-- [ ] Beat-synced modules align to detected BPM — not acceptance-tested
+- [x] Beat-synced time modules (speedramp / tapdelay / timesampler / transition) driven by transport clock — IDE `sampleTimeModules` + unit tests; full accent/stutter ear-check still manual
 
 ### P3 — UI
 

@@ -32,6 +32,7 @@
   import { videoPool } from '$lib/media/VideoPool';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
+  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
 
   const ALL_MODULES = listCatalog();
   const CLIP_SLOT_COUNT = catalogIds().length;
@@ -59,7 +60,11 @@
 
     const params = new URLSearchParams(window.location.search);
     if (params.has('qa')) {
-      await loadQaMedia();
+      try {
+        await fetchAndLoadQaMedia();
+      } catch (err) {
+        console.error('[QA] loadQaMedia failed:', err);
+      }
     }
     if (params.get('qaAutoplay') === '1') {
       await audioEngine.start();
@@ -74,31 +79,6 @@
     videoPool.dispose();
     webGpuEngine.dispose();
   });
-
-  async function loadQaMedia() {
-    try {
-      const res = await fetch('/qa-media/manifest.json');
-      const manifest = await res.json();
-      const clips: string[] = manifest.clips ?? [];
-      const slotIds = [...$rackTop, ...$rackBottom];
-      for (let i = 0; i < slotIds.length; i++) {
-        const clip = clips[i % clips.length];
-        if (!clip) continue;
-        const moduleId = slotIds[i];
-        const url = `/qa-media/${clip}`;
-        videoLayers.update((layers) => ({
-          ...layers,
-          [moduleId]: { name: clip, url }
-        }));
-        await mediaRuntime.registerModuleClip(moduleId, clip, url);
-      }
-      if (manifest.audio) {
-        await audioEngine.loadAudioUrl(`/qa-media/${manifest.audio}`, manifest.audio);
-      }
-    } catch {
-      /* optional */
-    }
-  }
 
   async function setModuleVideo(id: string, file: File) {
     const url = URL.createObjectURL(file);

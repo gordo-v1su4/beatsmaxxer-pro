@@ -4,23 +4,64 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURES="$ROOT/tests/fixtures/media"
-ARCHIVE="${ARCHIVE:-$HOME/Downloads/archive (2)}"
+DOWNLOADS="${HOME}/Downloads"
+ARCHIVE="${ARCHIVE:-$DOWNLOADS/archive (2)}"
 REDLINE="${REDLINE:-$HOME/Music/Music/Media.localized/Music/Unknown Artist/Unknown Album/Redline.wav}"
+CLIP_COUNT="${CLIP_COUNT:-8}"
+MIN_CLIP_BYTES="${MIN_CLIP_BYTES:-100000}"
 
-if [[ ! -d "$ARCHIVE" ]]; then
-  echo "Archive not found: $ARCHIVE" >&2
-  echo "Set ARCHIVE= to your video folder." >&2
+resolve_archive() {
+  if [[ -d "$ARCHIVE" ]]; then
+    echo "$ARCHIVE"
+    return
+  fi
+  for candidate in \
+    "$DOWNLOADS/archive (2)" \
+    "$DOWNLOADS/archive"; do
+    if [[ -d "$candidate" ]]; then
+      echo "Archive not found at: $ARCHIVE" >&2
+      echo "Using fallback: $candidate" >&2
+      echo "$candidate"
+      return
+    fi
+  done
+  echo "No video archive found. Tried:" >&2
+  echo "  $ARCHIVE" >&2
+  echo "  $DOWNLOADS/archive (2)" >&2
+  exit 1
+}
+
+ARCHIVE="$(resolve_archive)"
+
+mkdir -p "$FIXTURES"
+
+# Largest real mp4s first — skip tiny placeholder files.
+CLIPS=()
+while IFS= read -r line; do
+  CLIPS+=("$line")
+done < <(
+  find "$ARCHIVE" -maxdepth 1 -type f \( -iname '*.mp4' -o -iname '*.mov' -o -iname '*.webm' \) -size +"${MIN_CLIP_BYTES}c" -print0 \
+    | xargs -0 stat -f '%z %N' 2>/dev/null \
+    | sort -rn \
+    | cut -d' ' -f2-
+)
+
+if [[ ${#CLIPS[@]} -eq 0 ]]; then
+  echo "No video files over ${MIN_CLIP_BYTES} bytes in: $ARCHIVE" >&2
   exit 1
 fi
 
-mkdir -p "$FIXTURES"
-i=1
-shopt -s nullglob
-for f in "$ARCHIVE"/*.mp4; do
-  [[ $i -gt 8 ]] && break
-  ln -sf "$f" "$FIXTURES/clip$i.mp4"
-  echo "clip$i.mp4 -> $(basename "$f")"
-  i=$((i + 1))
+linked=0
+clip_names=()
+for f in "${CLIPS[@]}"; do
+  [[ $linked -ge $CLIP_COUNT ]] && break
+  i=$((linked + 1))
+  name="clip${i}.mp4"
+  ln -sf "$f" "$FIXTURES/$name"
+  clip_names+=("\"$name\"")
+  size=$(stat -f '%z' "$f" 2>/dev/null || echo 0)
+  echo "$name -> $(basename "$f") (${size} bytes)"
+  linked=$((linked + 1))
 done
 
 if [[ -f "$REDLINE" ]]; then
@@ -31,13 +72,15 @@ else
   echo "Set REDLINE= to your test audio file." >&2
 fi
 
-cat > "$FIXTURES/manifest.json" << 'EOF'
+clips_json=$(IFS=,; echo "${clip_names[*]}")
+cat > "$FIXTURES/manifest.json" << EOF
 {
-  "clips": ["clip1.mp4","clip2.mp4","clip3.mp4","clip4.mp4","clip5.mp4","clip6.mp4","clip7.mp4","clip8.mp4"],
+  "clips": [${clips_json}],
   "audio": "redline.wav",
   "audios": ["redline.wav"]
 }
 EOF
 
 echo ""
-echo "QA URL: http://127.0.0.1:5174/?qa=1 (Redline.wav + 8 clips; BPM from Essentia)"
+echo "Linked $linked clips from: $ARCHIVE"
+echo "QA URL: http://127.0.0.1:5174/?qa=1 (Redline.wav + ${linked} clips; BPM from Essentia)"

@@ -24,7 +24,12 @@ export const GET: RequestHandler = async ({ params }) => {
             : ext === '.mp3'
               ? 'audio/mpeg'
               : 'application/octet-stream';
-    return new Response(data, { headers: { 'Content-Type': type } });
+    return new Response(data, {
+      headers: {
+        'Content-Type': type,
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
   } catch {
     return new Response('Not found', { status: 404 });
   }

@@ -3,9 +3,11 @@ import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { audioEngine } from '$lib/audio';
 import { clipStatus } from '$lib/stores/clipStatus';
-import { rackTop, rackBottom, videoLayers } from '$lib/stores/rack';
-import { pgmSource } from '$lib/stores/pgm';
+import { rackTop, rackBottom, videoLayers, moduleParams, updateParam } from '$lib/stores/rack';
+import { pgmSource, cutImmediate } from '$lib/stores/pgm';
 import { capabilities } from '$lib/stores/capabilities';
+import { listCatalog } from '$lib/modules/catalog';
+import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 
 export interface BspQaSnapshot {
   webgpu: boolean;
@@ -26,6 +28,7 @@ export interface BspQaSnapshot {
       videoWidth: number;
       videoHeight: number;
       currentTime: number;
+      playbackRate: number;
     }
   >;
   analysisStatus: string;
@@ -60,7 +63,8 @@ function buildSnapshot(): BspQaSnapshot {
       clipName: layers[id]?.name ?? null,
       videoWidth: v?.videoWidth ?? 0,
       videoHeight: v?.videoHeight ?? 0,
-      currentTime: v?.currentTime ?? 0
+      currentTime: v?.currentTime ?? 0,
+      playbackRate: v?.playbackRate ?? 1
     };
   }
 
@@ -176,6 +180,117 @@ export function installBspQaHook() {
       const transportDelta =
         samples.length > 1 ? samples.at(-1)!.transportSeconds - samples[0]!.transportSeconds : 0;
       return { samples, phaseDelta, transportDelta, playing: buildSnapshot().playing };
+    },
+    /** Sample time-manipulation modules while transport runs — beat should advance. */
+    async sampleTimeModules(durationMs = 3000) {
+      const ids = ['speedramp', 'tapdelay', 'timesampler', 'transition'] as const;
+      const samples: Array<Record<string, unknown>> = [];
+      const start = performance.now();
+      while (performance.now() - start < durationMs) {
+        const snap = buildSnapshot();
+        const row: Record<string, unknown> = {
+          t: performance.now() - start,
+          beat: snap.beat,
+          beatPhase: snap.beatPhase,
+          playing: snap.playing
+        };
+        for (const id of ids) {
+          const m = snap.modules[id];
+          if (m) {
+            row[`${id}_time`] = m.currentTime;
+            row[`${id}_rate`] = m.playbackRate;
+            row[`${id}_ready`] = m.hasReadyFrame;
+          }
+        }
+        samples.push(row);
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const first = samples[0] ?? {};
+      const last = samples.at(-1) ?? {};
+      const beatMoved = Number(last.beat) > Number(first.beat);
+      const speedrampRateVaried =
+        samples.some((s) => Number(s.speedramp_rate) !== Number(first.speedramp_rate));
+      const timesamplerTimeMoved = Math.abs(Number(last.timesampler_time) - Number(first.timesampler_time)) > 0.05;
+      return {
+        samples,
+        beatMoved,
+        speedrampRateVaried,
+        timesamplerTimeMoved,
+        allReady: ids.every((id) => samples.every((s) => s[`${id}_ready`] === true))
+      };
+    },
+    /** Randomize params on all rack modules while clips play — no throw = pass. */
+    async exerciseLiveControls(iterations = 20) {
+      const ids = [...new Set([...get(rackTop), ...get(rackBottom)])];
+      const params = get(moduleParams);
+      const errors: string[] = [];
+      for (let i = 0; i < iterations; i++) {
+        for (const id of ids) {
+          const modParams = params[id];
+          if (!modParams) continue;
+          const keys = Object.keys(modParams);
+          const key = keys[i % keys.length];
+          if (!key) continue;
+          try {
+            const next = Math.round(Math.random() * 100);
+            updateParam(id, key, next);
+          } catch (err) {
+            errors.push(`${id}.${key}: ${String(err)}`);
+          }
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const snap = buildSnapshot();
+      return {
+        ok: errors.length === 0 && snap.clipsLoaded >= 8,
+        errors,
+        clipsLoaded: snap.clipsLoaded,
+        playing: snap.playing
+      };
+    },
+    /** List catalog modules and whether each has a WGSL effect mode registered. */
+    auditShaderCatalog() {
+      return listCatalog().map((mod) => ({
+        id: mod.id,
+        shaderKey: mod.shaderKey ?? mod.id,
+        effectMode: SHADER_EFFECT_MODE[mod.shaderKey ?? mod.id] ?? null,
+        hasShader: (mod.shaderKey ?? mod.id) in SHADER_EFFECT_MODE
+      }));
+    },
+    /** Cycle PGM through every catalog module; confirm ready frame + shader mode. */
+    async exerciseAllShaderModes(delayMs = 400) {
+      const results: Array<{
+        id: string;
+        effectMode: number | null;
+        hasReadyFrame: boolean;
+        videoWidth: number;
+      }> = [];
+      for (const mod of listCatalog()) {
+        cutImmediate(mod.id);
+        await new Promise((r) => setTimeout(r, delayMs));
+        const snap = buildSnapshot();
+        const m = snap.modules[mod.id];
+        const catalog = SHADER_EFFECT_MODE[mod.shaderKey ?? mod.id] ?? null;
+        results.push({
+          id: mod.id,
+          effectMode: catalog,
+          hasReadyFrame: m?.hasReadyFrame ?? false,
+          videoWidth: m?.videoWidth ?? 0
+        });
+      }
+      const onRack = [...new Set([...get(rackTop), ...get(rackBottom)])];
+      const rackResults = results.filter((r) => onRack.includes(r.id as never));
+      const offRack = results.filter((r) => !onRack.includes(r.id as never));
+      return {
+        ok:
+          rackResults.every((r) => r.hasReadyFrame && r.videoWidth > 0) &&
+          results.every((r) => r.effectMode !== null),
+        results,
+        rackReady: rackResults.filter((r) => r.hasReadyFrame).length,
+        rackTotal: rackResults.length,
+        shaderModesRegistered: results.filter((r) => r.effectMode !== null).length,
+        catalogTotal: results.length
+      };
     },
     sampleCanvasPixel(canvasId: string) {
       const canvas = document.querySelector(

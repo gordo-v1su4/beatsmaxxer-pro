@@ -13,7 +13,11 @@ BSP_DEV_PID=""
 BSP_DEV_STARTED=0
 
 ensure_qa_media() {
-  bash "$ROOT/scripts/setup-qa-media.sh"
+  if [[ -d "${HOME}/Downloads/archive (2)" ]]; then
+    bash "$ROOT/scripts/link-qa-media.sh"
+  else
+    bash "$ROOT/scripts/setup-qa-media.sh"
+  fi
 }
 
 wait_for_dev_server() {

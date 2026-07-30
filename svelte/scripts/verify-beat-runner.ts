@@ -1,6 +1,6 @@
 import { dispatchUserGesture, evalPage, navigateAndReady, withChrome } from './cdp.ts';
 
-const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1';
+const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
 
 await withChrome('verify-beat', 9950, async (s) => {
@@ -8,12 +8,13 @@ await withChrome('verify-beat', 9950, async (s) => {
   await evalPage(s, `window.__BSP_QA__?.waitForClips?.(8, 45000)`, 55_000);
   await dispatchUserGesture(s);
   for (let attempt = 0; attempt < 3; attempt++) {
-    await evalPage(s, 'window.__BSP_QA__?.startTransport?.()', 25_000);
+    await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 25_000);
     const playing = await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000);
     if (playing) break;
     await dispatchUserGesture(s);
     await Bun.sleep(500);
   }
+  await evalPage(s, `window.__BSP_QA__?.waitForPlaying?.(15000)`, 20_000);
 
   const metrics = await evalPage<{
     beatPhase0: number;

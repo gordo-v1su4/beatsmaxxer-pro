@@ -15,6 +15,21 @@ That single command:
 3. Runs **60 unit tests** + **production build**
 4. Runs **6 Chrome gates in a visible window** (headed by default) and writes JSON (+ optional PNG) to `.artifacts/`
 
+## Local QA media (your machine)
+
+For real clips + Redline.wav from `~/Downloads/archive (2)`:
+
+```bash
+cd svelte
+bash scripts/link-qa-media.sh   # symlinks 8 mp4s + redline.wav into tests/fixtures/media/
+bun run dev --host 127.0.0.1
+# open http://127.0.0.1:5174/?qa=1&qaAutoplay=1
+```
+
+On refresh, `?qa=1` auto-loads song + 8 clips into the rack (same as manual upload, but persistent for dev).
+
+`test:local` uses `link-qa-media.sh` automatically when `~/Downloads/archive (2)` exists; otherwise it falls back to bundled tiny fixtures.
+
 ## Prerequisites
 
 | Requirement | Notes |

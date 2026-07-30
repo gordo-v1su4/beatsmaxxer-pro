@@ -57,8 +57,7 @@ class VideoPool {
     video.playsInline = true;
     video.loop = true;
     video.preload = 'auto';
-    // blob: URLs break with crossOrigin — blocks WebGPU external texture upload
-    if (url.startsWith('http://') || url.startsWith('https://')) {
+    if (!url.startsWith('blob:')) {
       video.crossOrigin = 'anonymous';
     }
     video.style.cssText =

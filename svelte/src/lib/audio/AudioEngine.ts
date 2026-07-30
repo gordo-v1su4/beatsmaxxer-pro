@@ -63,6 +63,8 @@ export class AudioEngine implements IAudioEngine {
   private _playing = false;
   private _starting = false;
   private _trackName = DEFAULT_TRACK_NAME;
+  /** Set when a user upload is loaded; kept for QA/display even if playback falls back to synthetic. */
+  private _loadedUploadName: string | null = null;
   private _usingUploadedTrack = false;
   private _bpmLocked = false;
   private _analysisStatus: AudioEngineState["analysisStatus"] = "idle";
@@ -95,49 +97,85 @@ export class AudioEngine implements IAudioEngine {
   private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
 
   async start() {
-    if (this._starting || this._playing) return;
+    if (this._starting) return;
+    if (this._playing) {
+      if (this.getTransportTime() >= 0.05) return;
+      this.stop();
+    }
     this._starting = true;
     try {
       await this.ensureContext();
       if (!this.ctx) return;
 
-    if (this.ctx.state === "suspended") {
-      try {
-        await this.ctx.resume();
-      } catch {
-        // Autoplay policy may block resume until a user gesture.
+      if (this.ctx.state === "suspended") {
+        try {
+          await this.ctx.resume();
+        } catch {
+          // Autoplay policy may block resume until a user gesture.
+        }
       }
-    }
 
-    if (this._usingUploadedTrack && this.mediaElement) {
-      this.mediaElement.currentTime = 0;
-      try {
-        await Promise.race([
-          this.mediaElement.play(),
-          new Promise<void>((_, reject) =>
-            setTimeout(() => reject(new Error('media play timeout')), 4_000)
-          )
-        ]);
-      } catch {
-        // Headless / autoplay policy — fall back to synthetic transport for QA + dev.
-        this._usingUploadedTrack = false;
+      let useUploadedPlayback = this._usingUploadedTrack && Boolean(this.mediaElement);
+
+      if (useUploadedPlayback && this.mediaElement) {
+        this.mediaElement.currentTime = 0;
+        try {
+          await Promise.race([
+            this.mediaElement.play(),
+            new Promise<void>((_, reject) =>
+              setTimeout(() => reject(new Error("media play timeout")), 4_000)
+            ),
+          ]);
+          const t0 = this.mediaElement.currentTime;
+          await new Promise((r) => setTimeout(r, 800));
+          if (
+            this.mediaElement.paused ||
+            this.mediaElement.currentTime - t0 < 0.01
+          ) {
+            throw new Error("media playback stalled");
+          }
+        } catch {
+          useUploadedPlayback = false;
+          this.mediaElement.pause();
+        }
+      }
+
+      if (useUploadedPlayback && this.mediaElement) {
+        this._playing = true;
+        this.transportClock.setPlaying(true, 0);
+        this.onsetHistory = [];
+        this.prevEnergy = 0;
+        this.bassEma = 0.08;
+        this.onsetCooldown = 0;
+        this.startTicking();
+
+        await new Promise((r) => setTimeout(r, 600));
+        if (this.getTransportTime() >= 0.05) return;
+
+        this._playing = false;
+        this.transportClock.setPlaying(false, 0);
         this.mediaElement.pause();
+        useUploadedPlayback = false;
       }
-    }
 
-    if (this._usingUploadedTrack && this.mediaElement) {
-      this._playing = true;
-      this.transportClock.setPlaying(true, 0);
-      this.onsetHistory = [];
-      this.prevEnergy = 0;
-      this.bassEma = 0.08;
-      this.onsetCooldown = 0;
-      this.startTicking();
-      return;
-    }
+      if (this.ctx.state === "suspended") {
+        try {
+          await this.ctx.resume();
+        } catch {
+          /* gesture may still be required */
+        }
+      }
 
-    if (!this.sourceNode) {
-      const buf = await this.synthesizeDrumLoop(this.ctx, DEFAULT_BPM, 4);
+      if (this.sourceNode) {
+        try {
+          this.sourceNode.stop();
+        } catch {
+          /* already stopped */
+        }
+        this.sourceNode = null;
+      }
+
+      const buf = await this.synthesizeDrumLoop(this.ctx, this._bpm || DEFAULT_BPM, 4);
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
@@ -146,17 +184,20 @@ export class AudioEngine implements IAudioEngine {
       src.start();
       this.sourceNode = src;
       this.syntheticStartTime = this.ctx.currentTime;
-    }
 
-    this._trackName = DEFAULT_TRACK_NAME;
-    this._usingUploadedTrack = false;
-    this._playing = true;
-    this.transportClock.setPlaying(true, 0);
-    this.onsetHistory = [];
-    this.prevEnergy = 0;
-    this.bassEma = 0.08;
-    this.onsetCooldown = 0;
-    this.startTicking();
+      if (this._loadedUploadName) {
+        this._trackName = this._loadedUploadName;
+      } else {
+        this._trackName = DEFAULT_TRACK_NAME;
+      }
+      this._usingUploadedTrack = false;
+      this._playing = true;
+      this.transportClock.setPlaying(true, 0);
+      this.onsetHistory = [];
+      this.prevEnergy = 0;
+      this.bassEma = 0.08;
+      this.onsetCooldown = 0;
+      this.startTicking();
     } finally {
       this._starting = false;
     }
@@ -259,6 +300,7 @@ export class AudioEngine implements IAudioEngine {
     this.analysisRequestId += 1;
     this._usingUploadedTrack = false;
     this._trackName = DEFAULT_TRACK_NAME;
+    this._loadedUploadName = null;
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
     this._tempo = 1;
@@ -330,6 +372,7 @@ export class AudioEngine implements IAudioEngine {
   private prepareUploadedTrack(trackName: string) {
     this._usingUploadedTrack = true;
     this._trackName = trackName;
+    this._loadedUploadName = trackName;
     this._bpmLocked = false;
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
