@@ -1,3 +1,15 @@
+# Audio services
+
+## SoundTouch.js (`@soundtouchjs/audio-worklet`)
+
+Uploaded audio routes through SoundTouch for independent pitch and tempo:
+
+- **KEY / PIT** → `pitchSemitones` (chromatic shift; `preservesPitch = false` on the media element)
+- **TMP** → `playbackRate` on the source, mirrored to the worklet node (tempo without chipmunk)
+- **VOL** → master gain after processing
+
+On `bun install`, the worklet processor is copied to `static/soundtouch-processor.js` (required for `audioWorklet.addModule`).
+
 # Essentia rhythm analysis
 
 ## Development

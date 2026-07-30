@@ -300,7 +300,7 @@
         audioEngine.cycleKey();
         soundTouch = audioEngine.getSoundTouchState();
       }}
-      title="Musical key — click to cycle"
+      title="Musical key — click to cycle (SoundTouch pitch shift)"
       style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px;color:#c4b5fd;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.08em"
     >
       KEY·{soundTouch.key}
@@ -312,7 +312,7 @@
       <button type="button" onclick={() => { audioEngine.setPitch(soundTouch.pitchSemitones + 1); soundTouch = audioEngine.getSoundTouchState(); }} style="background:none;border:none;color:#64748b;cursor:pointer;font-size:10px;padding:0 3px">+</button>
     </div>
 
-    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px" title="Tempo rate">
+    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid {soundTouch.active ? '#a78bfa33' : '#1a1c1e'};border-radius:2px" title="Tempo — SoundTouch time stretch via playbackRate">
       <span style="font-family:var(--font-ui);font-size:7px;color:#64748b;font-weight:700">TMP</span>
       <input type="range" min="0.5" max="2" step="0.01" value={soundTouch.tempo} oninput={(e) => { audioEngine.setTempo(Number(e.currentTarget.value)); soundTouch = audioEngine.getSoundTouchState(); }} style="width:48px;height:4px;accent-color:#38bdf8" />
       <span style="font-family:var(--font-mono);font-size:8px;color:#94a3b8;min-width:24px">{soundTouch.tempo.toFixed(2)}×</span>

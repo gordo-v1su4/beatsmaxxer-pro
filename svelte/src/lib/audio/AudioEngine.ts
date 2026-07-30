@@ -22,6 +22,11 @@ import {
   type LiveTimeSamplerInput,
   type PgmScheduleInput,
 } from "$lib/timesampler/integration";
+import {
+  applySoundTouchParams,
+  createSoundTouchNode,
+  type SoundTouchHandle,
+} from "$lib/audio/soundtouch";
 
 const DEFAULT_BPM = 128;
 const DEFAULT_TRACK_NAME = "Internal Drum Loop";
@@ -38,6 +43,8 @@ export class AudioEngine implements IAudioEngine {
   private analyserBass: AnalyserNode | null = null;
   private analyserHigh: AnalyserNode | null = null;
   private gainNode: GainNode | null = null;
+  private soundTouchNode: SoundTouchHandle | null = null;
+  private soundTouchReady = false;
 
   private sourceNode: AudioBufferSourceNode | null = null;
   private mediaElement: HTMLAudioElement | null = null;
@@ -59,7 +66,7 @@ export class AudioEngine implements IAudioEngine {
   private _analysisConfidence: number | null = null;
   private _analysisError: string | null = null;
   private tapTimes: number[] = [];
-  private _volume = 1;
+  private _volume = 0.72;
   private _tempo = 1;
   private _pitchSemitones = 0;
   private _keyIndex = 0;
@@ -116,7 +123,8 @@ export class AudioEngine implements IAudioEngine {
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
-      src.connect(this.gainNode!);
+      src.playbackRate.value = this._tempo;
+      this.connectSourceToOutput(src);
       src.start();
       this.sourceNode = src;
       this.syntheticStartTime = this.ctx.currentTime;
@@ -262,15 +270,37 @@ export class AudioEngine implements IAudioEngine {
     audio.loop = true;
     audio.preload = "auto";
     audio.crossOrigin = "anonymous";
+    audio.preservesPitch = false;
     audio.setAttribute("playsinline", "true");
     audio.load();
 
     const source = this.ctx.createMediaElementSource(audio);
-    source.connect(this.gainNode);
+    this.connectSourceToOutput(source);
 
     this.mediaElement = audio;
     this.mediaSource = source;
     this._trackName = trackName;
+    this.syncSoundTouch();
+  }
+
+  private connectSourceToOutput(source: AudioNode) {
+    if (!this.gainNode) return;
+    if (this.soundTouchNode) {
+      source.connect(this.soundTouchNode);
+    } else {
+      source.connect(this.gainNode);
+    }
+  }
+
+  private syncSoundTouch() {
+    applySoundTouchParams(this.soundTouchNode, {
+      tempo: this._tempo,
+      pitchSemitones: this._pitchSemitones,
+      mediaElement: this.mediaElement,
+    });
+    if (this.sourceNode && 'playbackRate' in this.sourceNode) {
+      (this.sourceNode as AudioBufferSourceNode).playbackRate.value = this._tempo;
+    }
   }
 
   private prepareUploadedTrack(trackName: string) {
@@ -316,18 +346,26 @@ export class AudioEngine implements IAudioEngine {
 
   setTempo(rate: number) {
     this._tempo = Math.max(0.5, Math.min(2, rate));
-    if (this.mediaElement) {
-      this.mediaElement.playbackRate = this._tempo;
-    }
+    this.syncSoundTouch();
   }
 
   setPitch(semitones: number) {
     this._pitchSemitones = Math.max(-12, Math.min(12, semitones));
+    this._keyIndex =
+      ((Math.round(this._pitchSemitones) % AudioEngine.MUSICAL_KEYS.length) +
+        AudioEngine.MUSICAL_KEYS.length) %
+      AudioEngine.MUSICAL_KEYS.length;
+    this.syncSoundTouch();
   }
 
   cycleKey() {
     this._keyIndex = (this._keyIndex + 1) % AudioEngine.MUSICAL_KEYS.length;
     this._pitchSemitones = this._keyIndex;
+    this.syncSoundTouch();
+  }
+
+  isSoundTouchActive() {
+    return this.soundTouchReady;
   }
 
   getSoundTouchState() {
@@ -336,7 +374,8 @@ export class AudioEngine implements IAudioEngine {
       tempo: this._tempo,
       pitchSemitones: this._pitchSemitones,
       key: AudioEngine.MUSICAL_KEYS[this._keyIndex] ?? 'C',
-      keyIndex: this._keyIndex
+      keyIndex: this._keyIndex,
+      active: this.soundTouchReady,
     };
   }
 
@@ -512,7 +551,14 @@ export class AudioEngine implements IAudioEngine {
     highFilter.frequency.value = 4200;
 
     this.gainNode = this.ctx.createGain();
-    this.gainNode.gain.value = 0.72;
+    this.gainNode.gain.value = this._volume;
+
+    this.soundTouchNode = await createSoundTouchNode(this.ctx);
+    this.soundTouchReady = this.soundTouchNode !== null;
+    if (this.soundTouchNode) {
+      this.soundTouchNode.connect(this.gainNode);
+      this.syncSoundTouch();
+    }
 
     this.gainNode.connect(this.analyserFull);
     this.analyserFull.connect(this.ctx.destination);

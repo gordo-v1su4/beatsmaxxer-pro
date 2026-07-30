@@ -7,7 +7,7 @@
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"prepare": "svelte-kit sync || echo ''",
+		"prepare": "svelte-kit sync || echo '' && cp node_modules/@soundtouchjs/audio-worklet/.dist/soundtouch-processor.js static/soundtouch-processor.js 2>/dev/null || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
@@ -35,6 +35,7 @@
 		"vitest": "^3.2.4"
 	},
 	"dependencies": {
-		"@lucide/svelte": "^1.27.0"
+		"@lucide/svelte": "^1.27.0",
+		"@soundtouchjs/audio-worklet": "^2.1.0"
 	}
 }

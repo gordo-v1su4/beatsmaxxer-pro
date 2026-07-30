@@ -28,6 +28,7 @@ export interface BspQaSnapshot {
   >;
   analysisStatus: string;
   transportSeconds: number;
+  soundTouchActive: boolean;
 }
 
 function buildSnapshot(): BspQaSnapshot {
@@ -60,7 +61,8 @@ function buildSnapshot(): BspQaSnapshot {
     clipsLoaded: moduleIds.filter((id) => videoPool.hasReadyFrame(id)).length,
     modules,
     analysisStatus: audio.analysisStatus,
-    transportSeconds: audio.time
+    transportSeconds: audio.time,
+    soundTouchActive: audioEngine.isSoundTouchActive()
   };
 }
 

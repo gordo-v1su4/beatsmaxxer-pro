@@ -6,6 +6,7 @@
       "name": "beat-surfer-pro-svelte",
       "dependencies": {
         "@lucide/svelte": "^1.27.0",
+        "@soundtouchjs/audio-worklet": "^2.1.0",
       },
       "devDependencies": {
         "@sveltejs/adapter-static": "^3.0.10",
@@ -183,6 +184,14 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.62.3", "", { "os": "win32", "cpu": "x64" }, "sha512-vp7N084ew/odXn2gi/mzm9mUkQu9l6AiN6dt4IeUM2Uvm9o+cVmP+YkqbMOteLbiGgqBBlJZjIMYVCfOOIVbVQ=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.62.3", "", { "os": "win32", "cpu": "x64" }, "sha512-MOG/3gTOn4Fwf574RVOaY61I5o6P90legkFADiTyn1hyjNydT+cerU2rLUwPdZkKKyJ+iT+K9p7WXK4LM1Ka6g=="],
+
+    "@soundtouchjs/audio-worklet": ["@soundtouchjs/audio-worklet@2.1.0", "", { "dependencies": { "@soundtouchjs/core": "2.1.0", "@soundtouchjs/interpolation-strategy-lanczos": "2.1.0", "@soundtouchjs/worklet-base": "2.1.0" } }, "sha512-+LKvyvUx4ErwdD6jiUTHYqm5K7LMr+wGPz9PJufOORdDHL283RL2EsPHmdrtsCaDyapZIX2Xf7NljQVnx9lDwQ=="],
+
+    "@soundtouchjs/core": ["@soundtouchjs/core@2.1.0", "", { "dependencies": { "@soundtouchjs/interpolation-strategy-lanczos": "2.1.0" } }, "sha512-LXZ1HPXnyu0iPw+qlxcb48zuIQfP+DZAyRGG2w2/nfdKsJVft3122J6wHO/uVhZwUOjrgjYPrwu6DBkd66KMtA=="],
+
+    "@soundtouchjs/interpolation-strategy-lanczos": ["@soundtouchjs/interpolation-strategy-lanczos@2.1.0", "", {}, "sha512-Nf/JO03CEVoMcLCo2tQdXg7zC5PkEtcudgonYRjmkFWASj7bc/EX48Qy70L9kt1bfol54x1Fg/xU2os32b6Z2g=="],
+
+    "@soundtouchjs/worklet-base": ["@soundtouchjs/worklet-base@2.1.0", "", { "dependencies": { "@soundtouchjs/core": "2.1.0" } }, "sha512-450GQpS1ehZ6iJep/udiUbXFvOtDDoX92Nk4xPp2YzMrkH3uz4tc2TSaZj4qmNy+mgjaIP17vB4pzzVzR3BZoQ=="],
 
     "@standard-schema/spec": ["@standard-schema/spec@1.1.0", "", {}, "sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w=="],
 
