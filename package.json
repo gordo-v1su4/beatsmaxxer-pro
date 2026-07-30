@@ -17,7 +17,9 @@
     "test:browser-playback": "bun run scripts/browser-playback-acceptance.ts",
     "test:ui-interaction": "bun run scripts/ui-interaction-acceptance.ts",
     "qa:secret-scan": "bun run scripts/secret-scan.ts",
-    "dev:svelte": "cd svelte && bun run dev"
+    "dev:svelte": "cd svelte && bun run dev",
+    "test:svelte": "cd svelte && bun run test:local",
+    "test:svelte:browser": "cd svelte && bun run verify:browser"
   },
   "dependencies": {
     "@types/three": "^0.182.0",

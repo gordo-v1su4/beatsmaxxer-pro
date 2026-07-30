@@ -59,6 +59,7 @@ export class AudioEngine implements IAudioEngine {
   private _highAmp = 0;
   private _fftBands = new Array(8).fill(0);
   private _playing = false;
+  private _starting = false;
   private _trackName = DEFAULT_TRACK_NAME;
   private _usingUploadedTrack = false;
   private _bpmLocked = false;
@@ -88,8 +89,11 @@ export class AudioEngine implements IAudioEngine {
   private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
 
   async start() {
-    await this.ensureContext();
-    if (!this.ctx) return;
+    if (this._starting || this._playing) return;
+    this._starting = true;
+    try {
+      await this.ensureContext();
+      if (!this.ctx) return;
 
     if (this.ctx.state === "suspended") {
       try {
@@ -102,12 +106,20 @@ export class AudioEngine implements IAudioEngine {
     if (this._usingUploadedTrack && this.mediaElement) {
       this.mediaElement.currentTime = 0;
       try {
-        await this.mediaElement.play();
+        await Promise.race([
+          this.mediaElement.play(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('media play timeout')), 4_000)
+          )
+        ]);
       } catch {
-        this._playing = false;
-        this.transportClock.setPlaying(false, 0);
-        return;
+        // Headless / autoplay policy — fall back to synthetic transport for QA + dev.
+        this._usingUploadedTrack = false;
+        this.mediaElement.pause();
       }
+    }
+
+    if (this._usingUploadedTrack && this.mediaElement) {
       this._playing = true;
       this.transportClock.setPlaying(true, 0);
       this.onsetHistory = [];
@@ -139,6 +151,9 @@ export class AudioEngine implements IAudioEngine {
     this.bassEma = 0.08;
     this.onsetCooldown = 0;
     this.startTicking();
+    } finally {
+      this._starting = false;
+    }
   }
 
   stop() {

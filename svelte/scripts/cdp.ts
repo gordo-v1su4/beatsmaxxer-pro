@@ -1,28 +1,38 @@
 /** Minimal Chrome DevTools Protocol client for acceptance scripts. */
+import { accessSync, constants } from 'node:fs';
+
+const DEFAULT_CDP_TIMEOUT_MS = Number(process.env.CDP_TIMEOUT_MS ?? 20_000);
+
+function isExecutable(path: string) {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function chromePath() {
   const candidates = [
     process.env.CHROME_PATH,
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/local/bin/google-chrome',
     '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser'
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
-    try {
-      if (Bun.file(candidate).size >= 0) return candidate;
-    } catch {
-      /* try next */
-    }
+    if (isExecutable(candidate)) return candidate;
   }
-  throw new Error('No Chrome/Chromium binary found');
+  throw new Error('No Chrome/Chromium binary found. Install Chrome or set CHROME_PATH.');
 }
 
 export class CdpSession {
   private nextId = 1;
   private pending = new Map<
     number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+    { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
   >();
 
   constructor(private ws: WebSocket) {
@@ -35,6 +45,7 @@ export class CdpSession {
       if (!message.id) return;
       const entry = this.pending.get(message.id);
       if (!entry) return;
+      clearTimeout(entry.timer);
       this.pending.delete(message.id);
       if (message.error) {
         entry.reject(new Error(message.error.message ?? 'CDP error'));
@@ -42,12 +53,23 @@ export class CdpSession {
         entry.resolve(message.result);
       }
     });
+    ws.addEventListener('close', () => {
+      for (const [, entry] of this.pending) {
+        clearTimeout(entry.timer);
+        entry.reject(new Error('CDP websocket closed'));
+      }
+      this.pending.clear();
+    });
   }
 
-  send(method: string, params: Record<string, unknown> = {}) {
+  send(method: string, params: Record<string, unknown> = {}, timeoutMs = DEFAULT_CDP_TIMEOUT_MS) {
     const id = this.nextId++;
     return new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP timeout: ${method} (${timeoutMs}ms)`));
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -55,55 +77,51 @@ export class CdpSession {
   close() {
     this.ws.close();
   }
-
-  waitForEvent(method: string, timeoutMs = 8_000) {
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.ws.removeEventListener('message', handler);
-        reject(new Error(`Timed out waiting for CDP event ${method}`));
-      }, timeoutMs);
-      const handler = (event: MessageEvent) => {
-        const message = JSON.parse(String(event.data)) as { method?: string };
-        if (message.method === method) {
-          clearTimeout(timer);
-          this.ws.removeEventListener('message', handler);
-          resolve();
-        }
-      };
-      this.ws.addEventListener('message', handler);
-    });
-  }
 }
 
-export async function connectCdp(debugPort: number, timeoutMs = 10_000) {
+export async function connectCdp(debugPort: number, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const targets = (await fetch(`http://127.0.0.1:${debugPort}/json/list`).then((r) =>
-        r.json()
-      )) as Array<{ webSocketDebuggerUrl?: string }>;
-      const target = targets.find((t) => t.webSocketDebuggerUrl) ?? targets[0];
+      const res = await fetch(`http://127.0.0.1:${debugPort}/json/list`, {
+        signal: AbortSignal.timeout(2_000)
+      });
+      const targets = (await res.json()) as Array<{
+        type?: string;
+        webSocketDebuggerUrl?: string;
+      }>;
+      const target =
+        targets.find((t) => t.type === 'page' && t.webSocketDebuggerUrl) ??
+        targets.find((t) => t.webSocketDebuggerUrl) ??
+        targets[0];
       if (target?.webSocketDebuggerUrl) {
         const ws = new WebSocket(target.webSocketDebuggerUrl);
         await new Promise<void>((resolve, reject) => {
-          ws.addEventListener('open', () => resolve());
-          ws.addEventListener('error', () => reject(new Error('CDP websocket failed')));
+          const timer = setTimeout(() => reject(new Error('CDP websocket open timeout')), 5_000);
+          ws.addEventListener('open', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+          ws.addEventListener('error', () => {
+            clearTimeout(timer);
+            reject(new Error('CDP websocket failed'));
+          });
         });
         return new CdpSession(ws);
       }
     } catch {
       /* Chrome may still be booting */
     }
-    await Bun.sleep(100);
+    await Bun.sleep(150);
   }
-  throw new Error('Timed out connecting to Chrome CDP');
+  throw new Error(`Timed out connecting to Chrome CDP on port ${debugPort}`);
 }
 
 export async function waitForDevServer(url: string, timeoutMs = 20_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: AbortSignal.timeout(2_000) });
       if (res.ok) return;
     } catch {
       /* still starting */
@@ -113,12 +131,20 @@ export async function waitForDevServer(url: string, timeoutMs = 20_000) {
   throw new Error(`Timed out waiting for dev server at ${url}`);
 }
 
-export async function evalPage<T>(session: CdpSession, expression: string): Promise<T | null> {
-  const result = (await session.send('Runtime.evaluate', {
-    expression,
-    returnByValue: true,
-    awaitPromise: true
-  })) as { result?: { value?: T } };
+export async function evalPage<T>(
+  session: CdpSession,
+  expression: string,
+  timeoutMs = DEFAULT_CDP_TIMEOUT_MS
+): Promise<T | null> {
+  const result = (await session.send(
+    'Runtime.evaluate',
+    {
+      expression,
+      returnByValue: true,
+      awaitPromise: true
+    },
+    timeoutMs
+  )) as { result?: { value?: T; description?: string } };
   return result.result?.value ?? null;
 }
 
@@ -130,22 +156,95 @@ export async function screenshotPng(session: CdpSession, path: string) {
   await Bun.write(path, Buffer.from(result.data, 'base64'));
 }
 
-export function spawnChrome(debugPort: number, userDataDir: string) {
+export function pickDebugPort(base = 9600, span = 400) {
+  return base + Math.floor(Math.random() * span);
+}
+
+export function spawnChrome(
+  debugPort: number,
+  userDataDir: string,
+  headed = process.env.HEADLESS !== '1'
+) {
   const chrome = chromePath();
-  return Bun.spawn(
-    [
-      chrome,
-      '--headless=new',
-      '--no-sandbox',
-      '--disable-dev-shm-usage',
-      '--enable-unsafe-swiftshader',
-      '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
-      '--use-gl=angle',
-      `--remote-debugging-port=${debugPort}`,
-      `--user-data-dir=${userDataDir}`,
-      'about:blank'
-    ],
-    { stdout: 'ignore', stderr: 'pipe' }
-  );
+  const args = [
+    chrome,
+    ...(headed ? [] : ['--headless=new']),
+    '--no-sandbox',
+    '--disable-dev-shm-usage',
+    '--enable-unsafe-swiftshader',
+    '--enable-unsafe-webgpu',
+    '--use-angle=swiftshader',
+    '--use-gl=angle',
+    `--remote-debugging-port=${debugPort}`,
+    `--user-data-dir=${userDataDir}`,
+    'about:blank'
+  ];
+  return Bun.spawn(args, { stdout: 'ignore', stderr: 'pipe' });
+}
+
+export async function dispatchUserGesture(session: CdpSession) {
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed',
+    x: 120,
+    y: 120,
+    button: 'left',
+    clickCount: 1
+  });
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased',
+    x: 120,
+    y: 120,
+    button: 'left',
+    clickCount: 1
+  });
+}
+
+export async function navigateAndReady(
+  session: CdpSession,
+  url: string,
+  readyExpr = 'document.documentElement.dataset.bspQa === "1"',
+  timeoutMs = 30_000
+) {
+  await session.send('Page.enable');
+  await session.send('Runtime.enable');
+  await session.send('Page.navigate', { url }, 30_000);
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const ready = await evalPage<boolean>(session, readyExpr, 8_000);
+    if (ready) return;
+    await Bun.sleep(250);
+  }
+  throw new Error(`Timed out waiting for page ready: ${url}`);
+}
+
+export async function withChrome<T>(
+  label: string,
+  portBase: number,
+  fn: (session: CdpSession) => Promise<T>
+): Promise<T> {
+  const port = pickDebugPort(portBase);
+  const userDataDir = `/tmp/bsp-${label}-${Date.now()}-${port}`;
+  console.log(`[${label}] Chrome debug port ${port}`);
+  const proc = spawnChrome(port, userDataDir);
+  try {
+    await Bun.sleep(500);
+    const session = await connectCdp(port);
+    return await fn(session);
+  } finally {
+    proc.kill(9);
+    try {
+      await proc.exited;
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function cleanupStaleTestChrome() {
+  try {
+    Bun.spawnSync(['pkill', '-9', '-f', 'user-data-dir=/tmp/bsp-'], { stdout: 'ignore', stderr: 'ignore' });
+  } catch {
+    /* no stale processes */
+  }
 }

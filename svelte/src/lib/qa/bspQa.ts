@@ -102,7 +102,10 @@ export function installBspQaHook() {
       return { r: d[0], g: d[1], b: d[2], w, h };
     },
     async startTransport() {
-      await audioEngine.start();
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      if (!audioEngine.getState().playing) {
+        await audioEngine.start();
+      }
       return buildSnapshot();
     },
     getEngine() {

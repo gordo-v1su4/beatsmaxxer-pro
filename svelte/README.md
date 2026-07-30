@@ -13,14 +13,12 @@ Browser-only rewrite: **SvelteKit 5** shell + **WebGPU-only** render engine. No 
 ```bash
 bun install
 bun run dev          # http://localhost:5174
+bun run test:local   # full local suite (unit + build + browser gates) — see docs/LOCAL_TESTING.md
 bun run build        # production build → build/
 bun run check        # svelte-check
-bun run test         # vitest (60 unit tests)
-bash scripts/setup-qa-media.sh   # cloud-safe QA clips
-bun run verify:playback          # headless: 8 clips + video delta (needs dev server)
-bun run verify:interaction
-bun run verify:stutter
-bun run verify:all               # test + build + all browser gates
+bun run test         # vitest only
+bash scripts/setup-qa-media.sh   # QA clips (cloud-safe)
+bun run verify:browser           # browser gates only
 ```
 
 From repo root: `bun run dev:svelte`
