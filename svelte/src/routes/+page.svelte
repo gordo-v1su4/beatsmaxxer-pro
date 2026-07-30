@@ -12,7 +12,7 @@
     randomize,
     clearParams
   } from '$lib/stores/rack';
-  import { listCatalog, catalogIds } from '$lib/modules/catalog';
+  import { listCatalog } from '$lib/modules/catalog';
   import TopBar from '$lib/components/TopBar.svelte';
   import PgmRail from '$lib/components/PgmRail.svelte';
   import MainViewer from '$lib/components/MainViewer.svelte';
@@ -33,14 +33,15 @@
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
 
   const ALL_MODULES = listCatalog();
-  const CLIP_SLOT_COUNT = catalogIds().length;
+  const RACK_SLOT_COUNT = 8;
 
   let unsubHold: (() => void) | undefined;
 
   const loadedClipCount = $derived(
-    ALL_MODULES.reduce((total, mod) => total + ($videoLayers[mod.id] ? 1 : 0), 0)
+    [...$rackTop, ...$rackBottom].filter((id) => $videoLayers[id]).length
   );
 
   onMount(async () => {
@@ -81,16 +82,7 @@
   });
 
   async function setModuleVideo(id: string, file: File) {
-    const url = URL.createObjectURL(file);
-    videoLayers.update((layers) => ({
-      ...layers,
-      [id]: { name: file.name, url, file }
-    }));
-    try {
-      await mediaRuntime.registerModuleClip(id, file.name, url, file);
-    } catch (err) {
-      console.error(`[clip] failed to load video for ${id}:`, err);
-    }
+    await loadRackClipsFromFiles([file], id);
   }
 
   function clearModuleVideo(id: string) {
@@ -115,46 +107,12 @@
     midiLayers.update((layers) => ({ ...layers, [id]: null }));
   }
 
-  function loadClips(files: File[]) {
-    const clips = files.filter((f) => f.type.startsWith('video/'));
-    if (clips.length === 0) return;
-
-    const slotIds = [...$rackTop, ...$rackBottom];
-    const current = $videoLayers;
-    const targets: string[] = [];
-
-    for (const id of slotIds) {
-      if (targets.length >= clips.length) break;
-      if (current[id]) continue;
-      targets.push(id);
-    }
-    if (targets.length === 0) return;
-
-    targets.forEach((moduleId, index) => {
-      const file = clips[index];
-      if (file) setModuleVideo(moduleId, file);
-    });
+  async function loadClips(files: File[]) {
+    await loadRackClipsFromFiles(files);
   }
 
-  function loadClipsFromModule(startId: string, files: File[]) {
-    const clips = files.filter((f) => f.type.startsWith('video/'));
-    if (clips.length === 0) return;
-
-    const slotIds = [...$rackTop, ...$rackBottom];
-    const current = $videoLayers;
-    const targets: string[] = [startId];
-
-    for (const id of slotIds) {
-      if (targets.length >= clips.length) break;
-      if (id === startId) continue;
-      if (current[id]) continue;
-      targets.push(id);
-    }
-
-    targets.forEach((moduleId, index) => {
-      const file = clips[index];
-      if (file) void setModuleVideo(moduleId, file);
-    });
+  async function loadClipsFromModule(startId: string, files: File[]) {
+    await loadRackClipsFromFiles(files, startId);
   }
 </script>
 
@@ -168,7 +126,7 @@
     onClear={clearParams}
     onLoadClips={loadClips}
     {loadedClipCount}
-    clipSlotCount={CLIP_SLOT_COUNT}
+    clipSlotCount={RACK_SLOT_COUNT}
   />
 
   <div class="rack-workspace">

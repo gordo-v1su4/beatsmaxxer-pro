@@ -9,7 +9,7 @@
   interface Props {
     onRandomize: () => void;
     onClear: () => void;
-    onLoadClips?: (files: File[]) => void;
+    onLoadClips?: (files: File[]) => void | Promise<void>;
     loadedClipCount?: number;
     clipSlotCount?: number;
   }
@@ -152,9 +152,9 @@
     (e.target as HTMLInputElement).value = '';
   }
 
-  function handleClipsUpload(e: Event) {
+  async function handleClipsUpload(e: Event) {
     const files = [...((e.target as HTMLInputElement).files ?? [])];
-    if (files.length > 0) onLoadClips?.(files);
+    if (files.length > 0) await onLoadClips?.(files);
     (e.target as HTMLInputElement).value = '';
   }
 </script>
@@ -193,7 +193,7 @@
       <button
         type="button"
         onclick={() => clipsInput?.click()}
-        title="Load clips into empty slots ({loadedClipCount}/{clipSlotCount} filled)"
+        title="Load video clips into rack slots ({loadedClipCount}/{clipSlotCount} filled)"
         class="transport-btn"
         data-clips={loadedClipCount > 0}
       >
@@ -368,10 +368,12 @@
     <div class="divider"></div>
 
     <div class="topbar-track">
-      <div class="track-chip">
-        {#if td.usingUploadedTrack}<Music4 size={11} color="#38bdf8" />{:else}<Disc3 size={11} color="#556070" />{/if}
-        <span class="track-name" style="color:{td.usingUploadedTrack ? '#8ec5ff' : '#556070'}">{td.trackName}</span>
-      </div>
+      {#if td.usingUploadedTrack && td.trackName}
+        <div class="track-chip">
+          <Music4 size={11} color="#38bdf8" />
+          <span class="track-name" style="color:#8ec5ff">{td.trackName}</span>
+        </div>
+      {/if}
 
       <div class="vu-meter">
         {#each Array.from({ length: 16 }) as _, i (i)}

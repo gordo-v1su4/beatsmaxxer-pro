@@ -30,7 +30,7 @@ export const transportDisplay = writable<TransportDisplay>({
   amplitude: 0,
   bassAmp: 0,
   fftBands: [],
-  trackName: 'Internal Drum Loop',
+  trackName: '',
   usingUploadedTrack: false,
   analysisStatus: 'idle',
   analysisConfidence: null,

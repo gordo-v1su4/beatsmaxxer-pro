@@ -24,6 +24,7 @@
   } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
+  import { isVideoFile } from '$lib/media/videoFile';
 
   interface Props {
     mod: ModuleDefinition;
@@ -66,7 +67,7 @@
   const clipEntry = $derived($clipStatusStore[mod.id]);
 
   function applyVideoFiles(files: File[]) {
-    const clips = files.filter((f) => f.type.startsWith('video/'));
+    const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
     else if (clips[0] && onVideoUpload) onVideoUpload(clips[0]);

@@ -3,7 +3,7 @@
  *
  * Supports:
  * - Uploaded audio files via HTMLMediaElement + MediaElementSourceNode
- * - Internal fallback drum loop if no song is loaded
+ * - Silent beat transport when no song is loaded (no demo audio)
  * - Realtime RMS / bass / high energy + 8-band FFT extraction
  * - Lightweight onset-based BPM estimation from bass energy
  */
@@ -29,7 +29,6 @@ import {
 } from "$lib/audio/soundtouch";
 
 const DEFAULT_BPM = 128;
-const DEFAULT_TRACK_NAME = "Internal Drum Loop";
 
 const ACCENT_MODE_INDEX = {
   LUM: 0,
@@ -62,8 +61,8 @@ export class AudioEngine implements IAudioEngine {
   private _fftBands = new Array(8).fill(0);
   private _playing = false;
   private _starting = false;
-  private _trackName = DEFAULT_TRACK_NAME;
-  /** Set when a user upload is loaded; kept for QA/display even if playback falls back to synthetic. */
+  private _trackName = "";
+  /** Set when a user upload is loaded. */
   private _loadedUploadName: string | null = null;
   private _usingUploadedTrack = false;
   private _bpmLocked = false;
@@ -92,7 +91,7 @@ export class AudioEngine implements IAudioEngine {
   private pgmSelectionListeners = new Set<(source: string) => void>();
 
   private rafId = 0;
-  private syntheticStartTime = 0;
+  private silentTransportStart = 0;
   private analysisRequestId = 0;
   private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
 
@@ -172,25 +171,13 @@ export class AudioEngine implements IAudioEngine {
         } catch {
           /* already stopped */
         }
+        this.sourceNode.disconnect();
         this.sourceNode = null;
       }
 
-      const buf = await this.synthesizeDrumLoop(this.ctx, this._bpm || DEFAULT_BPM, 4);
-      const src = this.ctx.createBufferSource();
-      src.buffer = buf;
-      src.loop = true;
-      src.playbackRate.value = this._tempo;
-      this.connectSourceToOutput(src);
-      src.start();
-      this.sourceNode = src;
-      this.syntheticStartTime = this.ctx.currentTime;
-
-      if (this._loadedUploadName) {
-        this._trackName = this._loadedUploadName;
-      } else {
-        this._trackName = DEFAULT_TRACK_NAME;
-      }
+      this.silentTransportStart = this.ctx.currentTime;
       this._usingUploadedTrack = false;
+      this._trackName = this._loadedUploadName ?? "";
       this._playing = true;
       this.transportClock.setPlaying(true, 0);
       this.onsetHistory = [];
@@ -299,7 +286,7 @@ export class AudioEngine implements IAudioEngine {
 
     this.analysisRequestId += 1;
     this._usingUploadedTrack = false;
-    this._trackName = DEFAULT_TRACK_NAME;
+    this._trackName = "";
     this._loadedUploadName = null;
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
@@ -669,8 +656,8 @@ export class AudioEngine implements IAudioEngine {
     if (this._usingUploadedTrack && this.mediaElement) {
       return this.mediaElement.currentTime || 0;
     }
-    if (this.ctx && this.sourceNode) {
-      return Math.max(0, this.ctx.currentTime - this.syntheticStartTime);
+    if (this.ctx && this._playing) {
+      return Math.max(0, (this.ctx.currentTime - this.silentTransportStart) * this._tempo);
     }
     return 0;
   }
@@ -831,125 +818,6 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisError =
       error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
-  }
-
-  private async synthesizeDrumLoop(
-    ctx: AudioContext,
-    bpm: number,
-    bars: number,
-  ): Promise<AudioBuffer> {
-    const beatsPerBar = 4;
-    const totalBeats = bars * beatsPerBar;
-    const beatDur = 60 / bpm;
-    const totalDur = totalBeats * beatDur;
-    const sr = ctx.sampleRate;
-    const len = Math.floor(totalDur * sr);
-    const buf = ctx.createBuffer(2, len, sr);
-    const L = buf.getChannelData(0);
-    const R = buf.getChannelData(1);
-
-    const write = (ch: Float32Array, start: number, data: Float32Array) => {
-      for (let i = 0; i < data.length && start + i < ch.length; i++)
-        ch[start + i] += data[i];
-    };
-
-    const kick = this.synthKick(sr, 0.45);
-    const snare = this.synthSnare(sr, 0.22);
-    const hat = this.synthHihat(sr, 0.06);
-    const openHat = this.synthHihat(sr, 0.14, true);
-
-    for (let beat = 0; beat < totalBeats; beat++) {
-      const beatStart = Math.floor(beat * beatDur * sr);
-      const bar = beat % 4;
-
-      if (bar === 0 || bar === 2) {
-        write(L, beatStart, kick);
-        write(R, beatStart, kick);
-      }
-      if (bar === 2) {
-        const off = Math.floor(beatDur * sr * 0.75);
-        write(
-          L,
-          beatStart + off,
-          kick.map((v) => v * 0.6) as Float32Array,
-        );
-        write(
-          R,
-          beatStart + off,
-          kick.map((v) => v * 0.6) as Float32Array,
-        );
-      }
-      if (bar === 1 || bar === 3) {
-        write(L, beatStart, snare);
-        write(R, beatStart, snare);
-      }
-
-      const hatStep = Math.floor(beatDur * sr * 0.5);
-      for (let h = 0; h < 2; h++) {
-        const hStart = beatStart + h * hatStep;
-        const vol = h === 0 ? 0.7 : 0.5;
-        write(L, hStart, hat.map((v) => v * vol) as Float32Array);
-        write(R, hStart, hat.map((v) => v * vol) as Float32Array);
-      }
-
-      if (bar === 1) {
-        const off = Math.floor(beatDur * sr * 0.5);
-        write(L, beatStart + off, openHat);
-        write(R, beatStart + off, openHat);
-      }
-    }
-
-    for (let i = 0; i < len; i++) {
-      L[i] = Math.tanh(L[i] * 1.4) * 0.85;
-      R[i] = Math.tanh(R[i] * 1.4) * 0.85;
-    }
-
-    return buf;
-  }
-
-  private synthKick(sr: number, dur: number): Float32Array {
-    const len = Math.floor(dur * sr);
-    const out = new Float32Array(len);
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      const env = Math.exp(-t * 18);
-      const freq = 55 + 140 * Math.exp(-t * 35);
-      out[i] = Math.sin(2 * Math.PI * freq * t) * env * 1.2;
-      out[i] += Math.sin(2 * Math.PI * 35 * t) * Math.exp(-t * 12) * 0.5;
-      out[i] += (Math.random() * 2 - 1) * Math.exp(-t * 800) * 0.3;
-    }
-    return out;
-  }
-
-  private synthSnare(sr: number, dur: number): Float32Array {
-    const len = Math.floor(dur * sr);
-    const out = new Float32Array(len);
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      const env = Math.exp(-t * 22);
-      const tone = Math.sin(2 * Math.PI * 185 * t) * env * 0.5;
-      const noise = (Math.random() * 2 - 1) * Math.exp(-t * 28) * 0.85;
-      const snap = (Math.random() * 2 - 1) * Math.exp(-t * 350) * 0.4;
-      out[i] = tone + noise + snap;
-    }
-    return out;
-  }
-
-  private synthHihat(sr: number, dur: number, open = false): Float32Array {
-    const len = Math.floor(dur * sr);
-    const out = new Float32Array(len);
-    const decay = open ? 18 : 80;
-    for (let i = 0; i < len; i++) {
-      const t = i / sr;
-      const env = Math.exp(-t * decay);
-      out[i] =
-        (Math.sin(2 * Math.PI * 8000 * t) * 0.3 +
-          Math.sin(2 * Math.PI * 10200 * t) * 0.2 +
-          (Math.random() * 2 - 1) * 0.5) *
-        env *
-        0.6;
-    }
-    return out;
   }
 }
 

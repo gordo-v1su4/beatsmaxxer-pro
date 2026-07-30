@@ -4,6 +4,7 @@ import { BLIT_WGSL, createFeedbackPair, createFeedbackPlaceholder, feedbackReadV
 import { getModuleDef } from '$lib/modules/catalog';
 import { parseAccentColor } from '$lib/modules/registry';
 import { videoPool } from '$lib/media/VideoPool';
+import { VideoTextureCache } from './VideoTextureCache';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -61,32 +62,12 @@ export class WebGpuEngine {
     amplitude: 0,
     bassAmp: 0
   };
-  private placeholderVideo: HTMLVideoElement | null = null;
   private sampler: GPUSampler | null = null;
   private blitPipeline: GPURenderPipeline | null = null;
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
-
-  private ensurePlaceholderVideo(): HTMLVideoElement {
-    if (this.placeholderVideo) return this.placeholderVideo;
-    const canvas = document.createElement('canvas');
-    canvas.width = 2;
-    canvas.height = 2;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0, 0, 2, 2);
-    const video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.loop = true;
-    video.srcObject = canvas.captureStream(1);
-    void video.play();
-    video.style.cssText = 'position:fixed;left:-9999px;width:1px;height:1px;opacity:0';
-    document.body.appendChild(video);
-    this.placeholderVideo = video;
-    return video;
-  }
+  private videoTextures = new VideoTextureCache();
 
   async init(): Promise<boolean> {
     this.device = await getSharedWebGpuDevice();
@@ -174,7 +155,7 @@ export class WebGpuEngine {
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
@@ -251,6 +232,7 @@ export class WebGpuEngine {
 
   renderAll(time: number) {
     if (!this.device || this.bindings.size === 0) return;
+    this.videoTextures.beginFrame();
     const encoder = this.device.createCommandEncoder();
 
     for (const [id, binding] of this.bindings) {
@@ -282,7 +264,8 @@ export class WebGpuEngine {
     const hasVideo = video && videoPool.hasReadyFrame(moduleId) ? 1 : 0;
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
-    const data = new Float32Array(18);
+    const pitch = this.frameCtx.pitchSemitones ?? 0;
+    const data = new Float32Array(19);
     data[0] = this.frameCtx.beat;
     data[1] = this.frameCtx.beatPhase;
     data[2] = this.frameCtx.bpm;
@@ -296,16 +279,27 @@ export class WebGpuEngine {
     data[10] = (rp.p2 ?? 50) / 100;
     data[11] = (rp.p3 ?? 50) / 100;
     data[12] = rp.accent ?? 0;
-    data[13] = hasVideo;
-    data[14] = accent[0];
-    data[15] = accent[1];
-    data[16] = accent[2];
-    data[17] = (this.frameCtx.pitchSemitones ?? 0) / 12;
+    data[13] = pitch;
+    data[14] = hasVideo;
+    data[15] = accent[0];
+    data[16] = accent[1];
+    data[17] = accent[2];
+    data[18] = pitch / 12;
 
+    let shaderHasVideo = hasVideo;
+    let videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
+    if (hasVideo && video) {
+      try {
+        videoTextureView = this.videoTextures.upload(this.device, moduleId, video);
+      } catch {
+        shaderHasVideo = 0;
+        videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
+      }
+    } else {
+      shaderHasVideo = 0;
+    }
+    data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
-
-    const sourceVideo = hasVideo && video ? video : this.ensurePlaceholderVideo();
-    const externalTexture = this.device.importExternalTexture({ source: sourceVideo });
 
     const fb = binding.feedback;
     const readView = fb ? feedbackReadView(fb) : binding.placeholderFeedbackView;
@@ -315,7 +309,7 @@ export class WebGpuEngine {
       layout: binding.bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: binding.uniformBuffer } },
-        { binding: 1, resource: externalTexture },
+        { binding: 1, resource: videoTextureView },
         { binding: 2, resource: this.sampler },
         { binding: 3, resource: readView },
         { binding: 4, resource: this.sampler }
@@ -392,6 +386,7 @@ export class WebGpuEngine {
     for (const id of [...this.bindings.keys()]) {
       this.detachCanvas(id);
     }
+    this.videoTextures.dispose();
     this.device = null;
   }
 }

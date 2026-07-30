@@ -8,6 +8,7 @@ import { pgmSource, cutImmediate } from '$lib/stores/pgm';
 import { capabilities } from '$lib/stores/capabilities';
 import { listCatalog } from '$lib/modules/catalog';
 import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
+import { fetchManifestClipFiles, loadRackClipsFromFiles } from '$lib/media/loadRackClips';
 
 export interface BspQaSnapshot {
   webgpu: boolean;
@@ -137,6 +138,19 @@ export function installBspQaHook() {
         await audioEngine.start();
       }
       return buildSnapshot();
+    },
+    /** Simulates TopBar CLIPS — fetch fixture files and run the same loader. */
+    async loadTopBarClips(count = 8) {
+      const files = await fetchManifestClipFiles(count);
+      const result = await loadRackClipsFromFiles(files);
+      const want = Math.min(count, result.loaded);
+      const deadline = Date.now() + 60_000;
+      while (Date.now() < deadline) {
+        const snap = buildSnapshot();
+        if (snap.clipsLoaded >= want) return { ...result, snap };
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      throw new Error(`Timed out waiting for ${want} ready clips after TopBar load`);
     },
     async exerciseAudioControls() {
       const before = buildSnapshot();

@@ -61,7 +61,7 @@ class VideoPool {
       video.crossOrigin = 'anonymous';
     }
     video.style.cssText =
-      'position:fixed;left:-9999px;top:0;width:640px;height:360px;opacity:0;pointer-events:none';
+      'position:fixed;right:0;bottom:0;width:4px;height:4px;opacity:0.001;pointer-events:none;z-index:0';
 
     await new Promise<void>((resolve, reject) => {
       const onReady = () => {
@@ -127,6 +127,22 @@ class VideoPool {
     } catch {
       /* ignore */
     }
+    await this.waitForDecodedFrame(v);
+  }
+
+  private waitForDecodedFrame(video: HTMLVideoElement): Promise<void> {
+    return new Promise((resolve) => {
+      const done = () => resolve();
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(() => done());
+        return;
+      }
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+        done();
+        return;
+      }
+      video.addEventListener('loadeddata', done, { once: true });
+    });
   }
 
   tick(playing: boolean) {
