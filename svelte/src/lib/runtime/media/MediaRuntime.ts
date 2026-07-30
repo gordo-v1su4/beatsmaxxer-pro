@@ -1,6 +1,12 @@
 import { ClipRegistry } from '$lib/media/ClipRegistry';
 import { videoPool } from '$lib/media/VideoPool';
 import { hotDeckManager } from '$lib/runtime/decks/hotDeck';
+import {
+  setClipLoading,
+  setClipReady,
+  setClipError,
+  clearClipStatus
+} from '$lib/stores/clipStatus';
 import type { DeckFrameHandleRef } from '$lib/engine/contracts';
 
 /** Bridges clip registration → video pool + hot-deck readiness. */
@@ -8,6 +14,7 @@ class MediaRuntime {
   readonly clipRegistry = new ClipRegistry();
 
   async registerModuleClip(moduleId: string, name: string, url: string, file?: File) {
+    setClipLoading(moduleId, name);
     const clip = file
       ? this.clipRegistry.registerFile(moduleId, file)
       : this.clipRegistry.registerUrl(moduleId, name, url);
@@ -42,8 +49,10 @@ class MediaRuntime {
       if (lifecycle?.canTransition('frameReady')) {
         lifecycle.dispatch({ type: 'frameReady', frame });
       }
+      setClipReady(moduleId, name);
     } catch (err) {
       console.warn(`[MediaRuntime] clip attach failed for ${moduleId}:`, err);
+      setClipError(moduleId, String(err), name);
       if (lifecycle?.canTransition('prepareFailed')) {
         lifecycle.dispatch({ type: 'prepareFailed', error: String(err) });
       }
@@ -60,6 +69,7 @@ class MediaRuntime {
     this.clipRegistry.remove(moduleId);
     videoPool.detach(moduleId);
     hotDeckManager.dispose(moduleId);
+    clearClipStatus(moduleId);
   }
 }
 

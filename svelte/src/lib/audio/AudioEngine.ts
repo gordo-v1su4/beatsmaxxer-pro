@@ -59,6 +59,14 @@ export class AudioEngine implements IAudioEngine {
   private _analysisConfidence: number | null = null;
   private _analysisError: string | null = null;
   private tapTimes: number[] = [];
+  private _volume = 1;
+  private _tempo = 1;
+  private _pitchSemitones = 0;
+  private _keyIndex = 0;
+
+  static readonly MUSICAL_KEYS = [
+    'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
+  ] as const;
 
   private beatGrid: number[] = [];
   private onsetHistory: number[] = [];
@@ -302,7 +310,34 @@ export class AudioEngine implements IAudioEngine {
   }
 
   setVolume(v: number) {
-    if (this.gainNode) this.gainNode.gain.value = v;
+    this._volume = Math.max(0, Math.min(1, v));
+    if (this.gainNode) this.gainNode.gain.value = this._volume;
+  }
+
+  setTempo(rate: number) {
+    this._tempo = Math.max(0.5, Math.min(2, rate));
+    if (this.mediaElement) {
+      this.mediaElement.playbackRate = this._tempo;
+    }
+  }
+
+  setPitch(semitones: number) {
+    this._pitchSemitones = Math.max(-12, Math.min(12, semitones));
+  }
+
+  cycleKey() {
+    this._keyIndex = (this._keyIndex + 1) % AudioEngine.MUSICAL_KEYS.length;
+    this._pitchSemitones = this._keyIndex;
+  }
+
+  getSoundTouchState() {
+    return {
+      volume: this._volume,
+      tempo: this._tempo,
+      pitchSemitones: this._pitchSemitones,
+      key: AudioEngine.MUSICAL_KEYS[this._keyIndex] ?? 'C',
+      keyIndex: this._keyIndex
+    };
   }
 
   setBPM(bpm: number) {

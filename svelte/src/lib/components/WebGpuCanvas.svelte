@@ -31,6 +31,7 @@
 
 <canvas
   bind:this={canvas}
+  data-canvas-id={id}
   class="block w-full h-full {className}"
   width={320}
   height={180}

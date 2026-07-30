@@ -1,19 +1,6 @@
 {
-  "clips": [
-    "clip1.mp4",
-    "clip2.mp4",
-    "clip3.mp4",
-    "clip4.mp4",
-    "clip5.mp4",
-    "clip6.mp4",
-    "clip7.mp4",
-    "clip8.mp4"
-  ],
-  "audio": "redline.mp3",
-  "audios": ["redline.mp3", "redline.wav"],
-  "bpm": 133,
-  "source": {
-    "clipsDir": "~/Downloads/archive (2)",
-    "audio": "~/Music/.../Redline (Remastered).mp3"
-  }
+  "clips": ["clip1.mp4","clip2.mp4","clip3.mp4","clip4.mp4","clip5.mp4","clip6.mp4","clip7.mp4","clip8.mp4"],
+  "audio": "redline.wav",
+  "audios": ["redline.wav"],
+  "bpm": 133
 }

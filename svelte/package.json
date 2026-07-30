@@ -11,8 +11,12 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test": "vitest run",
 		"test:watch": "vitest",
-		"link-qa": "bash scripts/link-qa-media.sh",
-		"verify:ui": "bash scripts/verify-ui.sh"
+		"link-qa": "bash scripts/setup-qa-media.sh",
+		"verify:ui": "bash scripts/verify-ui.sh",
+		"verify:playback": "bash scripts/verify-playback.sh",
+		"verify:interaction": "bash scripts/verify-interaction.sh",
+		"verify:stutter": "bash scripts/verify-stutter.sh",
+		"verify:all": "bun run test && bun run build && START_SERVER=0 STUTTER_MS=6000 bash scripts/verify-playback.sh && START_SERVER=0 bash scripts/verify-interaction.sh && START_SERVER=0 STUTTER_MS=6000 bash scripts/verify-stutter.sh"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",

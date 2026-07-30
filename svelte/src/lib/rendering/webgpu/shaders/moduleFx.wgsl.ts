@@ -32,16 +32,19 @@ struct Uniforms {
   p2: f32,
   p3: f32,
   accent: f32,
+  pitchSemitones: f32,
   hasVideo: f32,
   colorR: f32,
   colorG: f32,
   colorB: f32,
-  pad: f32,
+  pitchNorm: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var videoTex: texture_external;
 @group(0) @binding(2) var videoSampler: sampler;
+@group(0) @binding(3) var feedbackTex: texture_2d<f32>;
+@group(0) @binding(4) var feedbackSampler: sampler;
 
 fn beatPulse(sharpness: f32) -> f32 {
   return u.playing * exp(-u.beatPhase * sharpness);
@@ -118,11 +121,26 @@ fn moduleIdle(uv: vec2f, mode: f32) -> vec3f {
 }
 
 fn sampleSource(uv: vec2f) -> vec3f {
+  var col: vec3f;
   if (u.hasVideo > 0.5) {
-    let c = textureSampleBaseClampToEdge(videoTex, videoSampler, uv);
-    return pow(max(c.rgb, vec3f(0.0)), vec3f(0.95));
+    let pitchOff = u.pitchNorm * 0.012;
+    let c = textureSampleBaseClampToEdge(videoTex, videoSampler, clamp(uv + vec2f(pitchOff, 0.0), vec2f(0.0), vec2f(1.0)));
+    col = pow(max(c.rgb, vec3f(0.0)), vec3f(0.95));
+    if (abs(u.pitchNorm) > 0.01) {
+      let split = u.pitchNorm * 0.008;
+      col.r = textureSampleBaseClampToEdge(videoTex, videoSampler, clamp(uv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
+      col.b = textureSampleBaseClampToEdge(videoTex, videoSampler, clamp(uv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
+    }
+  } else {
+    col = moduleIdle(uv, floor(u.effectMode + 0.5));
   }
-  return moduleIdle(uv, floor(u.effectMode + 0.5));
+  return col;
+}
+
+fn sampleFeedback(uv: vec2f) -> vec3f {
+  let dims = textureDimensions(feedbackTex);
+  if (dims.x < 2u || dims.y < 2u) { return vec3f(0.0); }
+  return textureSample(feedbackTex, feedbackSampler, uv).rgb;
 }
 
 fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
@@ -147,7 +165,9 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   let kick = beatPulse(10.0);
   let ghostOffset = vec2f(delayAmt * 0.04 * kick, 0.0);
   let ghost = sampleSource(clamp(uv + ghostOffset, vec2f(0.0), vec2f(1.0)));
-  return mix(col, ghost, fb * (0.35 + u.bassAmp * 0.65) * kick);
+  let prev = sampleFeedback(clamp(uv - ghostOffset * 0.5, vec2f(0.0), vec2f(1.0)));
+  let trail = mix(col, prev, fb * 0.85);
+  return mix(trail, ghost, fb * (0.35 + u.bassAmp * 0.65) * kick);
 }
 
 fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {

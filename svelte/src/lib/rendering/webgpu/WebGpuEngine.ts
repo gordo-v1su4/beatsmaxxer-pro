@@ -1,5 +1,6 @@
 import { getPreferredCanvasFormat, getSharedWebGpuDevice } from './SharedGpuDevice';
 import { MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
+import { BLIT_WGSL, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
 import { parseAccentColor } from '$lib/modules/registry';
 import { videoPool } from '$lib/media/VideoPool';
@@ -20,17 +21,24 @@ export interface FrameContext {
   playing: boolean;
   amplitude: number;
   bassAmp: number;
+  pitchSemitones?: number;
+  feedbackMix?: number;
 }
 
 export interface CanvasBinding {
   canvas: HTMLCanvasElement;
   context: GPUCanvasContext;
   pipeline: GPURenderPipeline;
+  blitPipeline: GPURenderPipeline;
   uniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   bindGroupLayout: GPUBindGroupLayout;
+  blitBindGroupLayout: GPUBindGroupLayout;
   color: [number, number, number];
   moduleId: string;
+  feedback: FeedbackPair | null;
+  placeholderFeedback: GPUTexture;
+  placeholderFeedbackView: GPUTextureView;
 }
 
 export class WebGpuEngine {
@@ -55,6 +63,10 @@ export class WebGpuEngine {
   };
   private placeholderVideo: HTMLVideoElement | null = null;
   private sampler: GPUSampler | null = null;
+  private blitPipeline: GPURenderPipeline | null = null;
+  private blitBindGroupLayout: GPUBindGroupLayout | null = null;
+  private placeholderFeedback: GPUTexture | null = null;
+  private placeholderFeedbackView: GPUTextureView | null = null;
 
   private ensurePlaceholderVideo(): HTMLVideoElement {
     if (this.placeholderVideo) return this.placeholderVideo;
@@ -81,6 +93,26 @@ export class WebGpuEngine {
     if (!this.device) return false;
     this.format = getPreferredCanvasFormat();
     this.sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+    this.placeholderFeedback = createFeedbackPlaceholder(this.device);
+    this.placeholderFeedbackView = this.placeholderFeedback.createView();
+
+    const blitModule = this.device.createShaderModule({ code: BLIT_WGSL });
+    this.blitBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    this.blitPipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.blitBindGroupLayout] }),
+      vertex: { module: blitModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: blitModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: this.format }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
     return true;
   }
 
@@ -129,14 +161,23 @@ export class WebGpuEngine {
     const existing = this.bindings.get(id);
     if (existing) {
       existing.uniformBuffer.destroy();
+      existing.feedback?.textures[0].destroy();
+      existing.feedback?.textures[1].destroy();
     }
+
+    const w = canvas.width || 320;
+    const h = canvas.height || 180;
+    const feedback = createFeedbackPair(this.device, w, h);
+    const placeholderFb = this.placeholderFeedbackView!;
 
     const shaderModule = this.device.createShaderModule({ code: MODULE_FX_WGSL });
     const bindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
       ]
     });
 
@@ -146,7 +187,7 @@ export class WebGpuEngine {
       fragment: {
         module: shaderModule,
         entryPoint: 'fragmentMain',
-        targets: [{ format: this.format }]
+        targets: [{ format: 'rgba8unorm' }]
       },
       primitive: { topology: 'triangle-list' }
     });
@@ -156,31 +197,21 @@ export class WebGpuEngine {
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
-    const sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
-    const bindGroup = this.device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: uniformBuffer } },
-        {
-          binding: 1,
-          resource: this.device.importExternalTexture({
-            source: this.ensurePlaceholderVideo()
-          })
-        },
-        { binding: 2, resource: sampler }
-      ]
-    });
-
     this.moduleColors.set(id, color);
     this.bindings.set(id, {
       canvas,
       context,
       pipeline,
+      blitPipeline: this.blitPipeline!,
       uniformBuffer,
-      bindGroup,
+      bindGroup: null as unknown as GPUBindGroup,
       bindGroupLayout,
+      blitBindGroupLayout: this.blitBindGroupLayout!,
       color,
-      moduleId: moduleId ?? id
+      moduleId: moduleId ?? id,
+      feedback,
+      placeholderFeedback: this.placeholderFeedback!,
+      placeholderFeedbackView: placeholderFb
     });
 
     return true;
@@ -190,6 +221,8 @@ export class WebGpuEngine {
     const binding = this.bindings.get(id);
     if (binding) {
       binding.uniformBuffer.destroy();
+      binding.feedback?.textures[0].destroy();
+      binding.feedback?.textures[1].destroy();
       this.bindings.delete(id);
       this.moduleColors.delete(id);
     }
@@ -267,37 +300,87 @@ export class WebGpuEngine {
     data[14] = accent[0];
     data[15] = accent[1];
     data[16] = accent[2];
-    data[17] = 0;
+    data[17] = (this.frameCtx.pitchSemitones ?? 0) / 12;
 
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
 
     const sourceVideo = hasVideo && video ? video : this.ensurePlaceholderVideo();
     const externalTexture = this.device.importExternalTexture({ source: sourceVideo });
 
+    const fb = binding.feedback;
+    const readView = fb ? feedbackReadView(fb) : binding.placeholderFeedbackView;
+    const writeView = fb ? feedbackWriteView(fb) : null;
+
     const bindGroup = this.device.createBindGroup({
       layout: binding.bindGroupLayout,
       entries: [
         { binding: 0, resource: { buffer: binding.uniformBuffer } },
         { binding: 1, resource: externalTexture },
-        { binding: 2, resource: this.sampler }
+        { binding: 2, resource: this.sampler },
+        { binding: 3, resource: readView },
+        { binding: 4, resource: this.sampler }
       ]
     });
 
-    const textureView = binding.context.getCurrentTexture().createView();
-    const pass = encoder.beginRenderPass({
+    let blitSource = readView;
+
+    if (writeView && fb) {
+      const fxPass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: writeView,
+            clearValue: { r: 0.04, g: 0.05, b: 0.07, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }
+        ]
+      });
+      fxPass.setPipeline(binding.pipeline);
+      fxPass.setBindGroup(0, bindGroup);
+      fxPass.draw(3);
+      fxPass.end();
+      blitSource = writeView;
+      swapFeedback(fb);
+    } else {
+      const fxPass = encoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: binding.context.getCurrentTexture().createView(),
+            clearValue: { r: 0.04, g: 0.05, b: 0.07, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }
+        ]
+      });
+      fxPass.setPipeline(binding.pipeline);
+      fxPass.setBindGroup(0, bindGroup);
+      fxPass.draw(3);
+      fxPass.end();
+      return;
+    }
+
+    const blitBindGroup = this.device.createBindGroup({
+      layout: binding.blitBindGroupLayout,
+      entries: [
+        { binding: 0, resource: blitSource },
+        { binding: 1, resource: this.sampler }
+      ]
+    });
+
+    const canvasPass = encoder.beginRenderPass({
       colorAttachments: [
         {
-          view: textureView,
+          view: binding.context.getCurrentTexture().createView(),
           clearValue: { r: 0.04, g: 0.05, b: 0.07, a: 1 },
           loadOp: 'clear',
           storeOp: 'store'
         }
       ]
     });
-    pass.setPipeline(binding.pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.draw(3);
-    pass.end();
+    canvasPass.setPipeline(binding.blitPipeline);
+    canvasPass.setBindGroup(0, blitBindGroup);
+    canvasPass.draw(3);
+    canvasPass.end();
   }
 
   getDevice() {

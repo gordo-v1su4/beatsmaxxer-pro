@@ -23,6 +23,7 @@
     toggleMute
   } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
+  import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
 
   interface Props {
     mod: ModuleDefinition;
@@ -62,6 +63,7 @@
   const modulePresets = $derived(presetsForModule(mod.id));
   const td = $derived($transportDisplay);
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
+  const clipEntry = $derived($clipStatusStore[mod.id]);
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter((f) => f.type.startsWith('video/'));
@@ -147,7 +149,10 @@
     {#if !collapsed}
       <MediaPatchBay
         color={mod.accentColor}
+        moduleId={mod.id}
         {videoLayer}
+        clipStatus={clipEntry?.status ?? 'idle'}
+        clipError={clipEntry?.error}
         onSetVideo={(file) => {
           if (file && onVideoUpload) onVideoUpload(file);
           else onClearVideo?.();

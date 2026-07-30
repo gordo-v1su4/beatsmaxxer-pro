@@ -6,6 +6,16 @@ class VideoPool {
   private moduleRates = new Map<string, number>();
   private freeRun = new Set<string>();
 
+  private globalRate = 1;
+
+  setGlobalRate(rate: number) {
+    this.globalRate = Math.max(0.25, Math.min(4, rate));
+  }
+
+  getGlobalRate() {
+    return this.globalRate;
+  }
+
   markFreeRun(moduleId: string) {
     this.freeRun.add(moduleId);
   }
@@ -123,14 +133,10 @@ class VideoPool {
   tick(playing: boolean) {
     for (const [moduleId, video] of this.videos) {
       if (this.freeRun.has(moduleId)) {
-        if (playing) {
-          if (video.paused) void video.play().catch(() => {});
-          const rate = this.moduleRates.get(moduleId) ?? 1;
-          if (Math.abs(video.playbackRate - rate) > 0.01) {
-            video.playbackRate = Math.max(0.25, Math.min(4, rate));
-          }
-        } else if (!video.paused) {
-          video.pause();
+        if (video.paused) void video.play().catch(() => {});
+        const rate = (this.moduleRates.get(moduleId) ?? 1) * this.globalRate;
+        if (Math.abs(video.playbackRate - rate) > 0.01) {
+          video.playbackRate = Math.max(0.25, Math.min(4, rate));
         }
         continue;
       }

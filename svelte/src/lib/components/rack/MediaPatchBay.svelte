@@ -2,16 +2,44 @@
   import { Film, Upload, X } from '@lucide/svelte';
   import type { VideoLayer } from '$lib/engine/contracts';
   import type { MidiLayer } from '$lib/stores/rack';
+  import type { ClipLoadStatus } from '$lib/stores/clipStatus';
 
   interface Props {
     color: string;
+    moduleId: string;
     videoLayer: VideoLayer | null;
+    clipStatus?: ClipLoadStatus;
+    clipError?: string;
     onSetVideo: (file: File | null) => void;
     onSetVideos?: (files: File[]) => void;
     midiLayer?: MidiLayer | null;
     onSetMidi?: (file: File | null) => void;
   }
-  let { color, videoLayer, onSetVideo, onSetVideos, midiLayer = null, onSetMidi }: Props = $props();
+  let {
+    color,
+    moduleId,
+    videoLayer,
+    clipStatus = 'idle',
+    clipError,
+    onSetVideo,
+    onSetVideos,
+    midiLayer = null,
+    onSetMidi
+  }: Props = $props();
+
+  const statusLabel = $derived.by(() => {
+    if (clipStatus === 'loading') return 'LOAD…';
+    if (clipStatus === 'ready') return 'RDY';
+    if (clipStatus === 'error') return 'ERR';
+    return videoLayer ? '…' : '';
+  });
+
+  const statusColor = $derived.by(() => {
+    if (clipStatus === 'loading') return '#f59e0b';
+    if (clipStatus === 'ready') return '#22c55e';
+    if (clipStatus === 'error') return '#ef4444';
+    return '#4a5260';
+  });
 
   let videoInput: HTMLInputElement;
   let midiInput: HTMLInputElement;
@@ -48,12 +76,21 @@
   >
     <Film size={8} color={videoLayer ? color : '#3a4050'} />
     <span
+      title={clipError ?? videoLayer?.name ?? moduleId}
       style="font-family:var(--font-mono);font-size:7px;letter-spacing:0.03em;color:{videoLayer
         ? '#c0d7ff'
         : '#4a5260'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {videoLayer?.name ?? 'Test pattern'}
     </span>
+    {#if statusLabel}
+      <span
+        title={clipError ?? statusLabel}
+        style="font-family:var(--font-ui);font-size:6px;font-weight:700;letter-spacing:0.08em;color:{statusColor};flex-shrink:0"
+      >
+        {statusLabel}
+      </span>
+    {/if}
   </div>
   {#if videoLayer}
     <button

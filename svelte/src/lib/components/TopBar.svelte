@@ -4,6 +4,14 @@
   import { fxHold } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
+  import MacroDot from '$lib/components/rack/MacroDot.svelte';
+  import {
+    macros,
+    updateModuleMacro,
+    RACK_MACRO_MODULES,
+    RACK_MACRO_DEFS,
+    type RackMacroId
+  } from '$lib/stores/presets';
 
   interface Props {
     onRandomize: () => void;
@@ -24,9 +32,16 @@
   let tapFlash = $state(false);
   let bpmEdit = $state<string | null>(null);
   let tapTimes: number[] = [];
+  let soundTouch = $state(audioEngine.getSoundTouchState());
 
   let audioInput: HTMLInputElement;
   let clipsInput: HTMLInputElement;
+
+  $effect(() => {
+    const td = $transportDisplay;
+    void td.beat;
+    soundTouch = audioEngine.getSoundTouchState();
+  });
 
   const td = $derived($transportDisplay);
   const beatOn = $derived(td.beatPhase < 0.15);
@@ -276,6 +291,52 @@
     >
       TAP
     </button>
+
+    <div style="width:1px;height:20px;background:#1e2226"></div>
+
+    <button
+      type="button"
+      onclick={() => {
+        audioEngine.cycleKey();
+        soundTouch = audioEngine.getSoundTouchState();
+      }}
+      title="Musical key — click to cycle"
+      style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px;color:#c4b5fd;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.08em"
+    >
+      KEY·{soundTouch.key}
+    </button>
+
+    <div style="display:flex;align-items:center;gap:2px;height:26px;padding-inline:4px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px">
+      <button type="button" onclick={() => { audioEngine.setPitch(soundTouch.pitchSemitones - 1); soundTouch = audioEngine.getSoundTouchState(); }} style="background:none;border:none;color:#64748b;cursor:pointer;font-size:10px;padding:0 3px">−</button>
+      <span style="font-family:var(--font-mono);font-size:8px;color:#94a3b8;min-width:28px;text-align:center">PIT·{soundTouch.pitchSemitones >= 0 ? '+' : ''}{soundTouch.pitchSemitones}</span>
+      <button type="button" onclick={() => { audioEngine.setPitch(soundTouch.pitchSemitones + 1); soundTouch = audioEngine.getSoundTouchState(); }} style="background:none;border:none;color:#64748b;cursor:pointer;font-size:10px;padding:0 3px">+</button>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px" title="Tempo rate">
+      <span style="font-family:var(--font-ui);font-size:7px;color:#64748b;font-weight:700">TMP</span>
+      <input type="range" min="0.5" max="2" step="0.01" value={soundTouch.tempo} oninput={(e) => { audioEngine.setTempo(Number(e.currentTarget.value)); soundTouch = audioEngine.getSoundTouchState(); }} style="width:48px;height:4px;accent-color:#38bdf8" />
+      <span style="font-family:var(--font-mono);font-size:8px;color:#94a3b8;min-width:24px">{soundTouch.tempo.toFixed(2)}×</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px" title="Master volume">
+      <span style="font-family:var(--font-ui);font-size:7px;color:#64748b;font-weight:700">VOL</span>
+      <input type="range" min="0" max="1" step="0.01" value={soundTouch.volume} oninput={(e) => { audioEngine.setVolume(Number(e.currentTarget.value)); soundTouch = audioEngine.getSoundTouchState(); }} style="width:48px;height:4px;accent-color:#22c55e" />
+    </div>
+
+    <div style="width:1px;height:20px;background:#1e2226"></div>
+
+    <div style="display:flex;align-items:center;gap:2px;flex-shrink:0">
+      {#each RACK_MACRO_MODULES as moduleId (moduleId)}
+        {@const def = RACK_MACRO_DEFS[moduleId as RackMacroId]}
+        <MacroDot
+          label={def.short}
+          title="{moduleId} · {def.param}"
+          color={def.color}
+          value={$macros[moduleId as RackMacroId]}
+          onChange={(v) => updateModuleMacro(moduleId as RackMacroId, v)}
+        />
+      {/each}
+    </div>
 
     <div style="width:1px;height:20px;background:#1e2226"></div>
 

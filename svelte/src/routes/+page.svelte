@@ -20,13 +20,13 @@
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
   import ModulePalette from '$lib/components/ModulePalette.svelte';
-  import PresetBrowser from '$lib/components/PresetBrowser.svelte';
   import BeatSequencer from '$lib/components/BeatSequencer.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
   import { pgmDirector } from '$lib/runtime/pgm/PgmDirector';
   import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
+  import { installBspQaHook } from '$lib/qa/bspQa';
   import { fxHold } from '$lib/stores/rack';
   import { topRowCompact, bottomRowCompact } from '$lib/stores/rackUi';
   import { videoPool } from '$lib/media/VideoPool';
@@ -53,6 +53,7 @@
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
+    installBspQaHook();
 
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
@@ -197,7 +198,6 @@
   <div class="rack-workspace">
     <div class="side-panels" style="display:flex;flex-shrink:0">
       <ModulePalette />
-      <PresetBrowser />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={ALL_MODULES} />
     </div>

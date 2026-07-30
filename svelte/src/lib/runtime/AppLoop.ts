@@ -91,13 +91,16 @@ export function startAppLoop() {
 
   webGpuEngine.setFrameCallback(() => {
     const state = audioEngine.getState();
+    const sound = audioEngine.getSoundTouchState();
+    videoPool.setGlobalRate(sound.tempo);
     webGpuEngine.setFrameContext({
       beat: state.beat,
       beatPhase: state.beatPhase,
       bpm: state.bpm,
       playing: state.playing,
       amplitude: state.amplitude,
-      bassAmp: state.bassAmp
+      bassAmp: state.bassAmp,
+      pitchSemitones: sound.pitchSemitones
     });
 
     const moduleIds = [...new Set([...get(rackTop), ...get(rackBottom)])];
