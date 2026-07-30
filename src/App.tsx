@@ -359,28 +359,23 @@ export function App() {
         }
       }
 
-      // Buffer the song before the clips so the audio download is not queued
-      // behind eight concurrent video streams.
+      // Skip QA audio entirely — the IndexedDB restore in AudioContext
+      // already loaded the user's song. Loading a QA tone would overwrite it.
       let startTransport: (() => void) | null = null;
-      try {
-        await audioEngine.loadAudioUrl(joinQaUrl(baseUrl, audioName), audioName);
-        if (params.get("qaAutoplay") !== "0") {
-          const tryAutoplay = async () => {
-            try {
-              await audioEngine.start();
-            } catch (error) {
-              console.warn("QA autoplay blocked; click PLAY or tap the page", error);
-            }
-          };
-          startTransport = () => {
+      if (params.get("qaAutoplay") !== "0") {
+        const tryAutoplay = async () => {
+          try {
+            await audioEngine.start();
+          } catch (error) {
+            console.warn("QA autoplay blocked; click PLAY or tap the page", error);
+          }
+        };
+        startTransport = () => {
+          void tryAutoplay();
+          window.addEventListener("pointerdown", () => {
             void tryAutoplay();
-            window.addEventListener("pointerdown", () => {
-              void tryAutoplay();
-            }, { once: true });
-          };
-        }
-      } catch (error) {
-        console.error("Failed to preload QA sample media", error);
+          }, { once: true });
+        };
       }
 
       const qaLayers = {} as Partial<Record<ModuleType, VideoLayer>>;

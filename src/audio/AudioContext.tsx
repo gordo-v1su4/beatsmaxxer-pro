@@ -28,7 +28,6 @@ const defaultState: AudioState = {
   usingUploadedTrack: false,
   analysisStatus: 'idle',
   analysisConfidence: null,
-  analysisError: null,
 };
 
 const Ctx = createContext<AudioContextValue>({
@@ -43,52 +42,90 @@ const Ctx = createContext<AudioContextValue>({
 });
 
 const UI_SNAPSHOT_INTERVAL_MS = 100;
+const SONG_DB_NAME = 'beat-surfer-song';
+const SONG_STORE = 'song';
+const SONG_KEY = 'last';
+
+function idbOp<T>(
+  mode: IDBTransactionMode,
+  fn: (store: IDBObjectStore) => IDBRequest<T>,
+): Promise<T> {
+  const { promise, resolve, reject } = Promise.withResolvers<T>();
+  const openReq = indexedDB.open(SONG_DB_NAME, 1);
+  openReq.onupgradeneeded = () => {
+    openReq.result.createObjectStore(SONG_STORE);
+  };
+  openReq.onsuccess = () => {
+    const db = openReq.result;
+    const tx = db.transaction(SONG_STORE, mode);
+    const req = fn(tx.objectStore(SONG_STORE));
+    req.onsuccess = () => { db.close(); resolve(req.result); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  };
+  openReq.onerror = () => reject(openReq.error);
+  return promise;
+}
 
 export function AudioProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AudioState>(audioEngine.getState());
+  const [state, setState] = useState<AudioState>(defaultState);
   const [playing, setPlaying] = useState(false);
-  const rafRef = useRef<number>(0);
-  const lastSnapshotRef = useRef(0);
   const tapTimesRef = useRef<number[]>([]);
+  const restoredRef = useRef(false);
 
   useEffect(() => {
-    const poll = (now: number) => {
-      if (now - lastSnapshotRef.current >= UI_SNAPSHOT_INTERVAL_MS) {
-        const next = audioEngine.getState();
-        setState(next);
-        setPlaying(next.playing);
-        lastSnapshotRef.current = now;
-      }
-      rafRef.current = requestAnimationFrame(poll);
-    };
-    rafRef.current = requestAnimationFrame(poll);
-    return () => cancelAnimationFrame(rafRef.current);
+    const id = setInterval(() => {
+      setState(audioEngine.getState());
+      setPlaying(audioEngine.getState().playing);
+    }, UI_SNAPSHOT_INTERVAL_MS);
+    return () => clearInterval(id);
   }, []);
 
-  const togglePlay = async () => {
-    if (!playing) {
-      await audioEngine.start();
-      setPlaying(audioEngine.getState().playing);
+  // Restore the previously uploaded song from IndexedDB on mount so the
+  // user doesn't have to re-select it every reload.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    void idbOp('readonly', (store) => store.get(SONG_KEY))
+      .then((saved) => {
+        if (!(saved instanceof File)) return;
+        return audioEngine.loadAudioFile(saved).then(() => {
+          setState(audioEngine.getState());
+        });
+      })
+      .catch(() => {
+        // non-fatal: no saved song or IndexedDB unavailable
+      });
+  }, []);
+
+  const togglePlay = () => {
+    const next = !playing;
+    if (next) {
+      void audioEngine.start();
     } else {
       audioEngine.stop();
-      setPlaying(false);
     }
+    setPlaying(next);
   };
 
   const setBPM = (bpm: number) => {
     audioEngine.setBPM(bpm);
+    setState(audioEngine.getState());
   };
 
   const unlockBPM = () => {
     audioEngine.unlockBPM();
+    setState(audioEngine.getState());
   };
 
   const tapTempo = () => {
     const now = performance.now();
+    tapTimesRef.current = tapTimesRef.current.filter((t) => now - t < 3000);
     tapTimesRef.current.push(now);
-    if (tapTimesRef.current.length > 6) tapTimesRef.current.shift();
     if (tapTimesRef.current.length >= 2) {
-      const diffs = tapTimesRef.current.slice(1).map((t, i) => t - tapTimesRef.current[i]);
+      const diffs: number[] = [];
+      for (let i = 1; i < tapTimesRef.current.length; i++) {
+        diffs.push(tapTimesRef.current[i]! - tapTimesRef.current[i - 1]!);
+      }
       const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
       const bpm = Math.round(60000 / avg);
       audioEngine.setBPM(bpm);
@@ -99,12 +136,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     await audioEngine.loadAudioFile(file);
     setState(audioEngine.getState());
     setPlaying(false);
+    // Persist so the next reload auto-restores this song.
+    void idbOp('readwrite', (store) => store.put(file, SONG_KEY)).catch(() => {
+      // non-fatal: persistence is a convenience, not a requirement
+    });
   };
 
   const clearUploadedTrack = () => {
     audioEngine.clearUploadedTrack();
     setState(audioEngine.getState());
     setPlaying(false);
+    void idbOp('readwrite', (store) => store.delete(SONG_KEY)).catch(() => {
+      // ignore
+    });
   };
 
   return (

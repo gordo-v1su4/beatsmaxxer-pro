@@ -177,8 +177,10 @@ export function BrowserProgramRenderer(
     let longTaskObserver: PerformanceObserver | null = null;
     let lastQaCommand = "";
     let lastPresentedAt: number | null = null;
+    let consecutivePresentFailures = 0;
     let lastDomTelemetryAt = 0;
     const DOM_TELEMETRY_INTERVAL_MS = 500;
+    const FORCE_FALLBACK_AFTER_FAILURES = 60; // ~1 second at 60fps
     let coordinator: ReturnType<
       typeof createQaInstrumentedPlaybackCoordinator<VideoFrame>
     > | null = null;
@@ -757,7 +759,24 @@ export function BrowserProgramRenderer(
                 live?.timeSampler.targetPlaybackRate,
             },
           );
-          if (presented) lastPresentedAt = now;
+          if (presented) {
+            lastPresentedAt = now;
+            consecutivePresentFailures = 0;
+          } else {
+            consecutivePresentFailures += 1;
+            // If the WebCodecs pipeline consistently fails to present frames,
+            // force the fallback so usesNativeCanvas flips to true and the
+            // ThreeVisualizer takes over the PGM monitor instead of a black
+            // empty WebGPU canvas.
+            if (
+              consecutivePresentFailures >= FORCE_FALLBACK_AFTER_FAILURES &&
+              fallbackPath !== "native-static" &&
+              fallbackPath !== "html-video-webgl2"
+            ) {
+              runtimeRef.current?.forceCompatibilityFallback("no-frames-presented");
+              consecutivePresentFailures = 0;
+            }
+          }
         } else {
           lastPresentedAt = null;
         }

@@ -980,6 +980,28 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         copyMat.uniforms.uTex.value = rtRead.texture;
         renderer.setRenderTarget(null);
         renderer.render(copyScene, camera);
+        // Telemetry: also check the freeze path for white.
+        if (import.meta.env.DEV) {
+          const probe = window.__whiteProbe as WhiteProbeEntry[] | undefined;
+          if (probe) {
+            const px = new Uint8Array(4);
+            renderer.readRenderTargetPixels(rtRead, 0, 0, 1, 1, px);
+            const luma = (px[0] + px[1] + px[2]) / 3;
+            if (luma > 230) {
+              probe.push({
+                t: performance.now(),
+                luma: Math.round(luma),
+                r: px[0], g: px[1], b: px[2],
+                videoGap: true,
+                vct: video ? Math.round(video.currentTime * 100) / 100 : -1,
+                vdur: video && Number.isFinite(video.duration) ? Math.round(video.duration * 100) / 100 : 0,
+                vseeking: video ? video.seeking : false,
+                vready: video ? video.readyState : 0,
+                hasVideo,
+              });
+            }
+          }
+        }
         // Don't flip: keep rtRead as the canonical last-valid frame.
       } else {
         mat.uniforms.uPrevTex.value = rtRead.texture;

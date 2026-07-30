@@ -298,8 +298,7 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
 
   /** True when this source is painted by a Three.js canvas rather than the
       promoted WebCodecs renderer, which manages its own clip continuity. */
-  const usesNativeCanvas = (id: ModuleType) =>
-    !(videoLayers[id] && !bypassed[id]) || pgmRendererPath === 'native-static';
+  const usesNativeCanvas = (_id: ModuleType) => true;
   // One standby canvas serves both the queue-blink prewarm and the post-cut
   // hold. It is keyed by the target module id, so when the cut lands and it
   // becomes the live source React reuses the same instance (no remount, no

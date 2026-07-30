@@ -774,6 +774,11 @@ export class MultiClipPlaybackRuntime<
     return this.awaitCleanup([...this.releases], cleanup);
   }
 
+  forceCompatibilityFallback(reason: string): boolean {
+    this.assertOpen();
+    return this.options.renderer.forceCompatibilityFallback(reason);
+  }
+
   degradeForPressure(): PressureAction {
     this.assertOpen();
     const action = this.options.coordinator.degradeForPressure();
