@@ -966,7 +966,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
           lastVideoTimeRef.current = ct;
         }
       }
-      if (videoTextureRef.current && !videoGap && videoFrameSeqRef.current > 0) {
+      if (videoTextureRef.current && !videoGap) {
         videoTextureRef.current.needsUpdate = true;
       }
 
