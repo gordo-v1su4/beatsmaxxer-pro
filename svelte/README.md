@@ -6,16 +6,21 @@
 
 Browser-only rewrite: **SvelteKit 5** shell + **WebGPU-only** render engine. No Three.js, no WebGL fallback — progressive WGSL shader port behind a single `WebGpuEngine` loop.
 
+**Status: not production-ready.** Do not treat unchecked items below as done until browser acceptance + manual recording pass.
+
 ## Commands
 
 ```bash
 bun install
 bun run dev          # http://localhost:5174
-bun run build        # single-file production build → build/
+bun run build        # production build → build/
 bun run check        # svelte-check
-bun run test         # vitest (57+ unit tests)
-bun run verify:ui    # headless browser smoke + screenshot
-bun run link-qa      # symlink QA clips + Redline mp3
+bun run test         # vitest (60 unit tests)
+bash scripts/setup-qa-media.sh   # cloud-safe QA clips
+bun run verify:playback          # headless: 8 clips + video delta (needs dev server)
+bun run verify:interaction
+bun run verify:stutter
+bun run verify:all               # test + build + all browser gates
 ```
 
 From repo root: `bun run dev:svelte`
@@ -26,7 +31,7 @@ From repo root: `bun run dev:svelte`
 http://localhost:5174/?qa=1&qaAutoplay=1
 ```
 
-Requires QA fixtures via `bun run link-qa` (clips from `~/Downloads/archive (2)`, Redline @ 133 BPM).
+Uses bundled fixtures in `tests/fixtures/media/` (see `bash scripts/setup-qa-media.sh`).
 
 ## Architecture
 
@@ -34,40 +39,60 @@ Requires QA fixtures via `bun run link-qa` (clips from `~/Downloads/archive (2)`
 |-------|----------|
 | UI + stores | `src/lib/components/`, `src/lib/stores/` |
 | WebGPU engine | `src/lib/rendering/webgpu/WebGpuEngine.ts` |
-| WGSL registry | `src/lib/rendering/webgpu/shaders/` |
-| WebCodecs + hot deck | `src/lib/media/`, `src/lib/runtime/decks/` |
-| Audio + Essentia | `src/lib/audio/` |
+| WGSL shaders | `src/lib/rendering/webgpu/shaders/` |
+| Video pool | `src/lib/media/VideoPool.ts` |
+| Audio + Essentia + SoundTouch | `src/lib/audio/` |
 | PGM beat cuts | `src/lib/runtime/pgm/PgmDirector.ts` |
-| Module catalog | `src/lib/modules/catalog.ts` |
+| QA hook | `window.__BSP_QA__` (`src/lib/qa/bspQa.ts`) |
 
-## FX LIB + rack
+## Ship gate checklist (honest)
 
-See [`docs/MODULES.md`](docs/MODULES.md).
+Only check when **browser-verified** with artifacts or manual recording.
 
-- **FX LIB** (left): BEAT FX · CAMERA · FILM/TEXTURE — drag onto rack slots
-- **PGM SOURCE** (retractable): Ableton-style queued cuts, RAND hop, 1BT–8BR quantize
-- **Module chevron**: collapse to preview strip; full row collapse frees vertical space
-- **Layout floor**: `--app-min-width` ~1425px; horizontal scroll below; mobile wrap @ 960px
+### P0 — must work before anything else
 
-## Stack highlights (for contributors)
+- [x] Video pool loads clips; free-run playback independent of transport
+- [x] Per-module clip status (LOAD / RDY / ERR) in patch bay
+- [x] `window.__BSP_QA__` debug hook for acceptance scripts
+- [x] Automated `verify:playback` — 8/8 `hasReadyFrame`, video time advances (headless)
+- [x] Automated `verify:interaction` — controls fire without JS errors (headless)
+- [x] Automated `verify:stutter` — p95 delta gate on free-run modules (headless)
+- [ ] **Manual:** upload via CLIP, drag-drop, top-bar bulk — visible motion in every preview
+- [ ] **Manual:** upload mp3 — audible playback + `RHY·OK` (or documented fallback)
+- [ ] **Manual:** 60s play while tweaking knobs, dragging modules, swapping clips — no freeze / black >200ms
+- [ ] **Manual:** screen recording + screenshots attached to PR
 
-- **Svelte 5** runes + stores — no legacy `$:` soup
-- **WebGPU / WGSL only** — capability gate, no silent downgrade
-- **Vite 8** Rolldown + Oxc, Tailwind CSS 4
-- **Vitest** for transport, timesampler, PGM stress paths
-- **Single-file build** via `vite-plugin-singlefile`
+### P1 — shader / FX parity
 
-## Cutover checklist
+- [x] Ping-pong feedback textures (offscreen FX → blit to canvas)
+- [x] Unified WGSL with beat-synced FX stubs per module + idle graphics
+- [ ] Full React GLSL parity (16 transition types, tapdelay trails, loop-seam hold, etc.)
+- [ ] Side-by-side screenshot diff vs React QA session per module
 
-- [x] All rack modules render WebGPU previews (unified FX WGSL + external video texture)
-- [x] Video pool — HTMLVideo per module, importExternalTexture per frame
-- [x] PGM prewarm on queued cut
-- [x] PresetBrowser + 4 macro faders
-- [x] 16-step beat sequencer → PGM cuts
-- [x] MIDI timeline strip + clear
+### P2 — audio / transport
+
+- [x] SoundTouch.js integrated (`@soundtouchjs/audio-worklet`) — KEY / PIT / TMP / VOL
+- [ ] SoundTouch verified by ear on uploaded track (tempo without chipmunk, pitch shift)
 - [x] Essentia dev proxy (`/__api` → hosted analysis)
-- [x] Single-file build (`bun run build` → `build/`)
-- [x] 57 unit tests + UI verify smoke
-- [ ] Full WebCodecs decode lane (PlaybackCoordinator wired to canvas)
-- [ ] Per-module WGSL parity with React GLSL (ping-pong feedback, idle graphics)
-- [ ] 38s RAND 1BT stress — 0 white flashes acceptance run
+- [ ] Essentia on production (`VITE_ESSENTIA_API_BASE_URL` on Vercel — not deployed yet)
+- [ ] Beat-synced modules align to bar at QA BPM (133) — not acceptance-tested
+
+### P3 — UI
+
+- [x] PresetBrowser removed from side rail; 8 macro dots in top bar
+- [x] SoundTouch controls in top bar (KEY, pitch, tempo, volume)
+
+### P4 — deploy
+
+- [x] `vercel.json` points at `svelte/build`
+- [x] `bun run build` succeeds
+- [ ] Vercel preview/production checked on Chrome + Safari with WebGPU
+- [ ] Merge to `main` only after all unchecked items above are checked
+
+## Stack
+
+- Svelte 5, Vite 8, Tailwind CSS 4, WebGPU/WGSL
+- Vitest (transport, timesampler, PGM stress)
+- SoundTouchJS audio-worklet for pitch/tempo
+
+See also: [`docs/ESSENTIA.md`](docs/ESSENTIA.md), [`docs/MODULES.md`](docs/MODULES.md)
