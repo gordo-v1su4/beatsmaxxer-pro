@@ -1,8 +1,9 @@
 <script lang="ts">
   interface Props {
     side?: 'left' | 'right';
+    class?: string;
   }
-  let { side = 'left' }: Props = $props();
+  let { side = 'left', class: className = '' }: Props = $props();
   const bg = $derived(
     side === 'left'
       ? 'linear-gradient(90deg, #0d0e0f 0%, #161819 60%, #0f1012 100%)'
@@ -12,6 +13,7 @@
 </script>
 
 <div
+  class={className}
   style="width:8px;flex-shrink:0;background:{bg};{borderSide};display:flex;flex-direction:column;justify-content:space-between;padding-top:12px;padding-bottom:12px"
 >
   {#each Array.from({ length: 18 }) as _, i (i)}

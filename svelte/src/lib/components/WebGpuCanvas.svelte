@@ -4,23 +4,28 @@
 
   interface Props {
     id: string;
+    moduleId?: string;
     color?: [number, number, number];
     class?: string;
   }
 
-  let { id, color = [0.2, 0.5, 0.9], class: className = '' }: Props = $props();
+  let { id, moduleId = id, color = [0.2, 0.5, 0.9], class: className = '' }: Props = $props();
 
   let canvas: HTMLCanvasElement;
   let ready = $state(false);
 
   onMount(async () => {
     if (!canvas) return;
-    const ok = await webGpuEngine.attachCanvas(id, canvas, color);
+    const ok = await webGpuEngine.attachCanvas(id, canvas, color, moduleId);
     ready = ok;
   });
 
   onDestroy(() => {
     webGpuEngine.detachCanvas(id);
+  });
+
+  $effect(() => {
+    if (ready) webGpuEngine.setCanvasModule(id, moduleId);
   });
 </script>
 

@@ -8,6 +8,21 @@
 	--font-ui: 'Rajdhani', sans-serif;
 	--font-mono: 'Share Tech Mono', monospace;
 	--font-brand: 'Orbitron', sans-serif;
+
+	/* Rack layout — four equal modules; knobs stay aligned at this width */
+	--rack-module-min: 272px;
+	--mix-strip-height: 46px;
+	--fx-lib-width: 128px;
+	--fx-lib-collapsed: 22px;
+	--preset-browser-width: 148px;
+	--pgm-rail-width: 190px;
+	--pgm-rail-collapsed: 22px;
+	--side-rail-width: 8px;
+	--app-min-width: calc(
+		var(--rack-module-min) * 4 + var(--fx-lib-width) + var(--preset-browser-width) +
+			var(--pgm-rail-width) + var(--side-rail-width) * 2 + 3px
+	);
+	--app-min-height: 720px;
 }
 
 html,
@@ -17,7 +32,7 @@ body {
 	background: var(--rack-bg);
 	color: #e5e7eb;
 	font-family: var(--font-ui);
-	min-height: 100vh;
+	height: 100%;
 	overflow: hidden;
 }
 
@@ -31,7 +46,172 @@ button {
 }
 
 input[type='range'] {
+	-webkit-appearance: none;
+	appearance: none;
+	height: 14px;
+	background: transparent;
 	accent-color: #38bdf8;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+	height: 3px;
+	background: #141618;
+	border: 1px solid #1e2022;
+	border-radius: 0;
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+input[type='range']::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 5px;
+	height: 11px;
+	margin-top: -5px;
+	background: linear-gradient(180deg, #2a2e34, #181a1e);
+	border: 1px solid #333840;
+	border-radius: 1px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+input[type='range']::-moz-range-track {
+	height: 3px;
+	background: #141618;
+	border: 1px solid #1e2022;
+	border-radius: 0;
+	box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.65);
+}
+
+input[type='range']::-moz-range-thumb {
+	width: 5px;
+	height: 11px;
+	background: linear-gradient(180deg, #2a2e34, #181a1e);
+	border: 1px solid #333840;
+	border-radius: 1px;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* Scroll when viewport is narrower than designed rack width — never clip knobs */
+.app-viewport {
+	width: 100vw;
+	height: 100vh;
+	overflow: auto;
+	background: var(--rack-bg);
+	-webkit-overflow-scrolling: touch;
+}
+
+.app-shell {
+	display: flex;
+	flex-direction: column;
+	min-width: var(--app-min-width);
+	min-height: var(--app-min-height);
+	width: max(100%, var(--app-min-width));
+	height: max(100vh, var(--app-min-height));
+}
+
+.rack-workspace {
+	flex: 1;
+	display: flex;
+	min-height: 0;
+	overflow: hidden;
+	background: var(--rack-bg);
+}
+
+.rack-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: calc(var(--rack-module-min) * 4);
+	min-height: 0;
+	overflow: hidden;
+	background: var(--rack-bg);
+}
+
+.rack-row {
+	display: flex;
+	align-items: stretch;
+	overflow: hidden;
+}
+
+.rack-slot {
+	position: relative;
+	min-width: var(--rack-module-min);
+	flex: 1 1 var(--rack-module-min);
+	display: flex;
+	transition:
+		opacity 0.15s ease-out,
+		transform 0.15s ease-out;
+}
+
+.rack-module {
+	flex: 1;
+	min-width: 0;
+	height: 100%;
+	display: flex;
+	flex-direction: column;
+}
+
+.mix-strip {
+	flex-shrink: 0;
+	height: var(--mix-strip-height);
+	min-height: var(--mix-strip-height);
+	background: linear-gradient(180deg, #111214, #0f1012);
+	border-top: 2px solid var(--border);
+	padding: 0 10px 0 6px;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	position: relative;
+	isolation: isolate;
+	overflow: hidden;
+	z-index: 2;
+}
+
+.mix-strip-presets {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	align-items: flex-start;
+	flex-shrink: 0;
+	margin-left: 2px;
+	min-width: 58px;
+}
+
+.mix-strip-presets-label {
+	font-size: 6.5px;
+	font-weight: 700;
+	color: #3a4050;
+	font-family: var(--font-ui);
+	letter-spacing: 0.12em;
+	line-height: 1;
+}
+
+.mix-strip-presets-row {
+	display: flex;
+	gap: 3px;
+	align-items: center;
+}
+
+.mix-strip-knobs {
+	display: flex;
+	align-items: flex-end;
+	justify-content: flex-end;
+	gap: 12px;
+	margin-left: auto;
+	flex-shrink: 0;
+	padding-bottom: 1px;
+}
+
+.module-preview {
+	position: relative;
+	width: 100%;
+	max-width: min(100%, 300px);
+	aspect-ratio: 16 / 9;
+	align-self: center;
+	flex-shrink: 0;
+	background: #000;
+}
+
+.rack-module.is-collapsed .module-preview {
+	max-width: 100%;
 }
 
 @keyframes pgmQueueBlink {
@@ -41,5 +221,68 @@ input[type='range'] {
 	}
 	50% {
 		filter: brightness(1.9);
+	}
+}
+
+/* ── Mobile / narrow: stack panels, 2×2 module grid, keep mix strips aligned ── */
+@media (max-width: 960px) {
+	:root {
+		--rack-module-min: 240px;
+	}
+
+	.app-shell {
+		min-width: 100%;
+		width: 100%;
+		min-height: 100vh;
+		height: auto;
+	}
+
+	.app-viewport {
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.rack-workspace {
+		flex-direction: column;
+		overflow: visible;
+	}
+
+	.side-panels {
+		flex-direction: row;
+		flex-shrink: 0;
+		width: 100%;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.rack-main {
+		min-width: 0;
+		overflow: visible;
+	}
+
+	.rack-row {
+		flex-wrap: wrap;
+		height: auto !important;
+		min-height: unset !important;
+	}
+
+	.rack-slot {
+		flex: 1 1 calc(50% - 1px);
+		min-width: min(100%, var(--rack-module-min));
+		min-height: 280px;
+	}
+
+	.hide-on-mobile {
+		display: none !important;
+	}
+
+	.topbar-center {
+		flex-wrap: wrap;
+		justify-content: flex-start !important;
+	}
+}
+
+@media (max-width: 520px) {
+	.rack-slot {
+		flex: 1 1 100%;
 	}
 }

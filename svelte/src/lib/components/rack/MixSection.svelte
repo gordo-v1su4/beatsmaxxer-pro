@@ -13,22 +13,18 @@
     params: Record<string, number>;
     onUpdate: (p: string, v: number) => void;
     color: string;
+    moduleId: string;
     presets?: Preset[];
   }
-  let { params, onUpdate, color, presets }: Props = $props();
+  let { params, onUpdate, color, moduleId, presets }: Props = $props();
 </script>
 
-<div
-  style="background:linear-gradient(180deg,#111214,#0f1012);border-top:2px solid #0d0e0f;padding:3px 8px;display:flex;align-items:center;gap:6px;flex-shrink:0"
->
+<div class="mix-strip">
   <VertLabel text="MIX" {color} />
-  {#if presets}
-    <div style="display:flex;flex-direction:column;gap:2px;align-items:center;flex-shrink:0">
-      <span
-        style="font-size:6.5px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.12em"
-        >PRESET</span
-      >
-      <div style="display:flex;gap:2px">
+  {#if presets && presets.length > 0}
+    <div class="mix-strip-presets">
+      <span class="mix-strip-presets-label">PRESET</span>
+      <div class="mix-strip-presets-row">
         {#each presets as p (p.n)}
           {@const active = Object.entries(p.set).every(
             ([k, v]) => Math.abs((params[k] ?? -999) - v) <= 1
@@ -46,9 +42,22 @@
       </div>
     </div>
   {/if}
-  <div style="flex:1;display:flex;justify-content:space-around;align-items:center">
-    <Knob label="IN" value={params.in_ ?? 80} onChange={(v) => onUpdate('in_', v)} size="xs" {color} />
-    <Knob label="MIX" value={params.mix ?? 50} onChange={(v) => onUpdate('mix', v)} size="xs" {color} />
-    <Knob label="OUT" value={params.out ?? 60} onChange={(v) => onUpdate('out', v)} size="xs" {color} />
+  <div class="mix-strip-knobs">
+    <Knob
+      knobId="{moduleId}-in"
+      label="IN"
+      value={params.in_ ?? 80}
+      onChange={(v) => onUpdate('in_', v)}
+      size="xxs"
+      {color}
+    />
+    <Knob
+      knobId="{moduleId}-mix"
+      label="MIX"
+      value={params.mix ?? 100}
+      onChange={(v) => onUpdate('mix', v)}
+      size="xxs"
+      {color}
+    />
   </div>
 </div>

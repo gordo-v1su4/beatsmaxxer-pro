@@ -375,13 +375,13 @@ export function MainViewer({ modules, pgmSource, moduleParams, videoLayers, midi
         <BrowserProgramRenderer
           registry={clipRegistry}
           registryVersion={clipRegistryVersion}
-          pgm={promotedProgram ? active.id : null}
+          pgm={promotedProgram && !usesNativeCanvas(active.id) ? active.id : null}
           prewarm={
             queuedPgmSource && videoLayers[queuedPgmSource]
               ? queuedPgmSource
               : null
           }
-          promoted={promotedProgram}
+          promoted={promotedProgram && !usesNativeCanvas(active.id)}
           params={moduleParams[active.id]}
           onRuntimeChange={onClipRuntimeChange}
           onFallbackPathChange={setPgmRendererPath}

@@ -30,7 +30,7 @@
     <div
       style="position:relative;aspect-ratio:16/9;width:min(100%, calc(100cqh * 16 / 9));background:#000;border:1px solid #1a1c1e;border-radius:2px;overflow:hidden"
     >
-      <WebGpuCanvas id="pgm" color={liveColor} class="absolute inset-0 w-full h-full" />
+      <WebGpuCanvas id="pgm" moduleId={live.id} color={liveColor} class="absolute inset-0 w-full h-full" />
       <ScreenOverlay />
       <ScreenBadge
         text={isBypassed

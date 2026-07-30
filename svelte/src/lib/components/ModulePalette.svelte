@@ -1,20 +1,24 @@
 <script lang="ts">
   import { dragState, endDrag, moveDrag, setHoverTarget, startDrag } from '$lib/stores/drag';
-  import { getModuleDef, listCatalog } from '$lib/modules/catalog';
+  import { listByCategory, type ModuleCategory } from '$lib/modules/catalog';
   import { rackTop, rackBottom, assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
+  import { fxLibOpen } from '$lib/stores/rackUi';
   import type { RackRow } from '$lib/stores/drag';
   import { get } from 'svelte/store';
+  import { ChevronLeft, ChevronRight, GripVertical } from '@lucide/svelte';
 
-  let expanded = $state(true);
+  const CATEGORIES: { key: ModuleCategory; label: string }[] = [
+    { key: 'beat', label: 'BEAT FX' },
+    { key: 'camera', label: 'CAMERA' },
+    { key: 'film', label: 'FILM / TEXTURE' }
+  ];
 
   const inRack = $derived(new Set([...$rackTop, ...$rackBottom]));
 
   function beginDrag(moduleId: string, e: PointerEvent) {
     if (inRack.has(moduleId)) {
       const row: RackRow = $rackTop.includes(moduleId) ? 'top' : 'bottom';
-      const slotIndex = row === 'top'
-        ? $rackTop.indexOf(moduleId)
-        : $rackBottom.indexOf(moduleId);
+      const slotIndex = row === 'top' ? $rackTop.indexOf(moduleId) : $rackBottom.indexOf(moduleId);
       startDrag({ moduleId, source: 'rack', row, slotIndex }, e.clientX, e.clientY);
     } else {
       startDrag({ moduleId, source: 'palette' }, e.clientX, e.clientY);
@@ -62,52 +66,71 @@
 </script>
 
 <aside
-  class="flex shrink-0 flex-col border-r border-[#1e2229] bg-[#08090b] transition-[width] duration-200
-    {expanded ? 'w-[132px]' : 'w-10'}"
+  class="side-panel-fx"
+  style="flex-shrink:0;display:flex;flex-direction:column;background:linear-gradient(180deg,#0c0d0f,#08090b);border-right:1px solid #0d0e0f;overflow:hidden;transition:width 0.2s ease;width:{$fxLibOpen
+    ? 'var(--fx-lib-width)'
+    : 'var(--fx-lib-collapsed)'}"
 >
   <button
-    class="border-b border-[#1e2229] px-2 py-2 text-[9px] font-bold tracking-widest text-zinc-500 hover:text-zinc-300"
-    onclick={() => (expanded = !expanded)}
-    title="Module library — drag onto rack"
+    type="button"
+    onclick={() => fxLibOpen.update((v) => !v)}
+    title="FX library — drag modules onto rack slots"
+    style="display:flex;align-items:center;justify-content:{$fxLibOpen ? 'space-between' : 'center'};gap:4px;border:none;border-bottom:1px solid #0d0e0f;background:linear-gradient(180deg,#141618,#0f1012);padding:{$fxLibOpen
+      ? '6px 8px'
+      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:700;letter-spacing:0.14em"
   >
-    {expanded ? 'FX LIB' : '▸'}
+    {#if $fxLibOpen}
+      <span style="display:flex;align-items:center;gap:4px;color:#556070">
+        <GripVertical size={10} /> FX LIB
+      </span>
+      <ChevronLeft size={12} />
+    {:else}
+      <ChevronRight size={12} />
+    {/if}
   </button>
 
-  {#if expanded}
-    <div class="flex flex-1 flex-col gap-1 overflow-y-auto p-1.5">
-      <p class="px-1 text-[8px] uppercase tracking-wider text-zinc-600">Beat FX</p>
-      {#each listCatalog().filter((m) => m.row === 'top' || m.row === 'both') as mod (mod.id)}
-        <button
-          class="group flex flex-col rounded px-2 py-1.5 text-left transition-all duration-150
-            hover:bg-zinc-900/90 active:scale-95
-            {$dragState.active && $dragState.payload?.moduleId === mod.id ? 'opacity-35' : ''}
-            {inRack.has(mod.id) ? 'bg-zinc-900/40' : 'opacity-75'}"
-          style="border-left: 2px solid {mod.accentColor}"
-          onpointerdown={(e) => beginDrag(mod.id, e)}
-        >
-          <span class="text-[10px] font-bold" style="color:{mod.accentColor}">{mod.shortName}</span>
-          {#if mod.description}
-            <span class="text-[8px] leading-tight text-zinc-600">{mod.description}</span>
-          {/if}
-        </button>
+  {#if $fxLibOpen}
+    <div style="flex:1;overflow-y:auto;padding:6px 4px;display:flex;flex-direction:column;gap:4px">
+      {#each CATEGORIES as cat (cat.key)}
+        <span style="font-size:7px;font-weight:700;letter-spacing:0.12em;color:#33383f;padding:0 4px;margin-top:{cat.key === 'beat' ? '0' : '6px'}">{cat.label}</span>
+        {#each listByCategory(cat.key) as mod (mod.id)}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            role="button"
+            tabindex="0"
+            class="palette-card"
+            style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
+            onpointerdown={(e) => beginDrag(mod.id, e)}
+          >
+            <span style="font-size:10px;font-weight:700;color:{mod.accentColor}">{mod.shortName}</span>
+            {#if mod.description}
+              <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
+            {/if}
+          </div>
+        {/each}
       {/each}
-
-      <p class="mt-2 px-1 text-[8px] uppercase tracking-wider text-zinc-600">Camera</p>
-      {#each listCatalog().filter((m) => m.row === 'bottom' || m.row === 'both') as mod (mod.id)}
-        <button
-          class="group flex flex-col rounded px-2 py-1.5 text-left transition-all duration-150
-            hover:bg-zinc-900/90 active:scale-95
-            {$dragState.active && $dragState.payload?.moduleId === mod.id ? 'opacity-35' : ''}
-            {inRack.has(mod.id) ? 'bg-zinc-900/40' : 'opacity-75'}"
-          style="border-left: 2px solid {mod.accentColor}"
-          onpointerdown={(e) => beginDrag(mod.id, e)}
-        >
-          <span class="text-[10px] font-bold" style="color:{mod.accentColor}">{mod.shortName}</span>
-          {#if mod.description}
-            <span class="text-[8px] leading-tight text-zinc-600">{mod.description}</span>
-          {/if}
-        </button>
-      {/each}
+      <p style="margin-top:8px;padding:4px;font-size:7px;line-height:1.35;color:#33383f">
+        Drag onto a rack slot to swap. Collapse modules ↑ or retract PGM for more room.
+      </p>
     </div>
   {/if}
 </aside>
+
+<style>
+  .palette-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 5px 6px;
+    border-radius: 2px;
+    cursor: grab;
+    user-select: none;
+    transition: background 0.12s, transform 0.12s;
+  }
+  .palette-card:hover {
+    background: #1a1c1f !important;
+  }
+  .palette-card:active {
+    transform: scale(0.97);
+  }
+</style>

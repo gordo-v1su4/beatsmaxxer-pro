@@ -404,4 +404,19 @@
       </div>
     </Section>
   </div>
+{:else}
+  <div style="display:flex;flex-direction:column;flex:1;padding:6px 7px;gap:6px">
+    <Section label="FX" {color} noBorder>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        {#each Object.keys(params).filter((k) => k !== 'mix' && k !== 'in_' && k !== 'out') as key (key)}
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 4)}</span>
+            <div style="flex:1">
+              <HSlider value={params[key] ?? 50} onChange={(v) => onUpdate(key, v)} {color} />
+            </div>
+          </div>
+        {/each}
+      </div>
+    </Section>
+  </div>
 {/if}

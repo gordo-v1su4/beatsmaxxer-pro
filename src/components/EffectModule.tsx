@@ -190,13 +190,13 @@ function HSlider({ value, onChange, color, label }: {
     <div>
       {label && <div style={{ fontSize:7, fontWeight:700, color:'#3a4050', fontFamily:'Rajdhani,sans-serif', letterSpacing:'0.1em', marginBottom:2 }}>{label}</div>}
       <div ref={trackRef} onMouseDown={onMouseDown} style={{
-        height:12, background:'#0a0b0c', border:'1px solid #1e2022',
-        borderRadius:1, cursor:'ew-resize', position:'relative',
-        boxShadow:'inset 0 1px 3px rgba(0,0,0,0.7)', overflow:'hidden',
+        height:14, cursor:'ew-resize', position:'relative', display:'flex', alignItems:'center',
       }}>
-        <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${value}%`, background:`linear-gradient(90deg,${color}22,${color}44)`, borderRight:`2px solid ${color}` }}/>
-        {[25,50,75].map(p => <div key={p} style={{ position:'absolute', left:`${p}%`, top:2, bottom:2, width:1, background:'#1e2022' }}/>)}
-        <div style={{ position:'absolute', top:1, bottom:1, left:`calc(${value}% - 4px)`, width:8, background:`linear-gradient(180deg,#2e3238,#1c1e22)`, border:`1px solid ${drag?color:'#333840'}`, borderRadius:1, boxShadow:'0 1px 3px rgba(0,0,0,0.5)' }}/>
+        <div style={{ width:'100%', height:3, background:'#141618', border:'1px solid #1e2022', boxShadow:'inset 0 1px 2px rgba(0,0,0,0.65)', position:'relative', overflow:'visible' }}>
+          <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${value}%`, background:`linear-gradient(90deg,${color}2e,${color}61)`, borderRight:`1px solid ${color}` }}/>
+          {[25,50,75].map(p => <div key={p} style={{ position:'absolute', left:`${p}%`, top:0, bottom:0, width:1, background:'#25282c' }}/>)}
+        </div>
+        <div style={{ position:'absolute', top:'50%', left:`calc(${value}% - 2.5px)`, width:5, height:11, marginTop:-5.5, background:'linear-gradient(180deg,#2a2e34,#181a1e)', border:`1px solid ${drag?color:'#333840'}`, borderRadius:1, boxShadow: drag?`0 0 4px ${color}66`:'0 1px 2px rgba(0,0,0,0.45)', pointerEvents:'none' }}/>
       </div>
     </div>
   );
@@ -524,8 +524,31 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
     let lastDraw = 0;
     let lastDrawnVideoFrame = -1;
     let firstFrameSent = false;
+    let lastDebugLog = 0;
     const animate = () => {
       const now = performance.now();
+      // Debug: log video state every 2s to diagnose preview white.
+      if (import.meta.env.DEV && now - lastDebugLog > 2000) {
+        lastDebugLog = now;
+        const v = videoRef.current;
+        const dbg = window.__previewDebug as Array<Record<string, unknown>> | undefined;
+        if (dbg && v) {
+          dbg.push({
+            t: Math.round(now),
+            type,
+            mode,
+            paused: v.paused,
+            ended: v.ended,
+            ct: Math.round(v.currentTime * 100) / 100,
+            dur: Number.isFinite(v.duration) ? Math.round(v.duration * 100) / 100 : 0,
+            ready: v.readyState,
+            seeking: v.seeking,
+            hasVideo: m ? m.uniforms.uHasVideo.value : -1,
+            awaiting: m ? m.uniforms.uAwaitingVideo.value : -1,
+            videoFrameSeq: videoFrameSeqRef.current,
+          });
+        }
+      }
       if (shaderCtl.paused) {
         // FX freeze: hold the last frame; keep last fresh so resume doesn't jump
         last = now;
@@ -970,6 +993,27 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
         videoTextureRef.current.needsUpdate = true;
       }
 
+      // Debug: sample the video element's current frame brightness to detect
+      // white in the source before it enters the feedback loop.
+      if (import.meta.env.DEV && video && hasVideo) {
+        const dbg = window.__videoFrameDebug as Array<{t:number;avg:number;vct:number;vready:number;vseeking:boolean}> | undefined;
+        if (dbg) {
+          const sc = document.createElement('canvas');
+          sc.width = 16; sc.height = 16;
+          const sx = sc.getContext('2d');
+          try {
+            sx.drawImage(video, 0, 0, 16, 16);
+            const d = sx.getImageData(0, 0, 16, 16).data;
+            let sum = 0;
+            for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i+1] + d[i+2];
+            const avg = Math.round(sum / (d.length / 4 * 3));
+            if (avg > 180) {
+              dbg.push({t: performance.now(), avg, vct: Math.round(video.currentTime*100)/100, vready: video.readyState, vseeking: video.seeking});
+            }
+          } catch { /* video not ready */ }
+        }
+      }
+
       // render into the write buffer while feeding back the previous frame, then blit to screen
       const rtWrite = flip ? rtA : rtB;
       const rtRead = flip ? rtB : rtA;
@@ -987,7 +1031,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             const px = new Uint8Array(4);
             renderer.readRenderTargetPixels(rtRead, 0, 0, 1, 1, px);
             const luma = (px[0] + px[1] + px[2]) / 3;
-            if (luma > 230) {
+            if (luma > 180) {
               probe.push({
                 t: performance.now(),
                 luma: Math.round(luma),
@@ -1017,7 +1061,7 @@ export function ThreeVisualizer({ type, color, params, mode, videoUrl, midiLayer
             renderer.readRenderTargetPixels(rtWrite, 0, 0, 1, 1, px);
             const r = px[0], g = px[1], b = px[2];
             const luma = (r + g + b) / 3;
-            if (luma > 230) {
+            if (luma > 180) {
               probe.push({
                 t: performance.now(),
                 luma: Math.round(luma),

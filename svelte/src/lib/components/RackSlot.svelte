@@ -19,25 +19,30 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     row: RackRow;
     slotIndex: number;
     moduleId: string;
+    canvasId?: string;
     params: Record<string, number>;
     onVideoUpload?: (file: File) => void;
     onVideosUpload?: (files: File[]) => void;
     onClearVideo?: () => void;
     onMidiUpload?: (file: File) => void;
+    onClearMidi?: () => void;
   }
 
   let {
     row,
     slotIndex,
     moduleId,
+    canvasId,
     params,
     onVideoUpload,
     onVideosUpload,
     onClearVideo,
-    onMidiUpload
+    onMidiUpload,
+    onClearMidi
   }: Props = $props();
 
   const mod = $derived(getModuleDef(moduleId));
+  const slotCanvasId = $derived(canvasId ?? `${row}-${slotIndex}`);
   const compact = $derived(mod?.compact ?? row === 'bottom');
   const isOnAir = $derived($pgmSource === moduleId);
   const isHover = $derived(
@@ -101,9 +106,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   data-rack-slot
   data-row={row}
   data-index={slotIndex}
-  class="relative min-w-0 flex-1 transition-all duration-150 ease-out
-    {isHover ? 'z-20' : 'z-0'}
-    {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
+  class="rack-slot {isHover ? 'z-20' : 'z-0'} {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
 >
   {#if isHover && $dragState.active}
     <div
@@ -117,6 +120,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
       <CompactModule
         {mod}
         {params}
+        canvasId={slotCanvasId}
         videoLayer={$videoLayers[moduleId]}
         {isOnAir}
         {onHeaderPointerDown}
@@ -128,6 +132,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
       <EffectModule
         {mod}
         {params}
+        canvasId={slotCanvasId}
         videoLayer={$videoLayers[moduleId]}
         midiLayer={$midiLayers[moduleId]}
         {isOnAir}
@@ -136,6 +141,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
         {onVideosUpload}
         {onClearVideo}
         {onMidiUpload}
+        onClearMidi={onClearMidi}
       />
     {/if}
   {/if}

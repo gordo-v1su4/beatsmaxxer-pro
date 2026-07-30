@@ -3,11 +3,12 @@
     label?: string;
     value: number;
     onChange: (value: number) => void;
-    size?: 'xs' | 'sm' | 'md' | 'lg';
+    size?: 'xxs' | 'xs' | 'sm' | 'md' | 'lg';
     min?: number;
     max?: number;
     color?: string;
     showValue?: boolean;
+    knobId?: string;
   }
 
   let {
@@ -18,14 +19,18 @@
     min = 0,
     max = 100,
     color = '#9aa0aa',
-    showValue = false
+    showValue = false,
+    knobId = 'k'
   }: Props = $props();
 
-  const dim = { xs: 28, sm: 36, md: 44, lg: 56 }[size];
-  const strokeWidth = size === 'xs' ? 2 : size === 'sm' ? 2.5 : 3;
-  const r = dim / 2 - strokeWidth - 2;
-  const cx = dim / 2;
-  const cy = dim / 2;
+  const dim = $derived({ xxs: 24, xs: 28, sm: 36, md: 44, lg: 56 }[size]);
+  const hitPad = $derived(size === 'xxs' ? 4 : size === 'xs' ? 5 : 4);
+  const strokeWidth = $derived(size === 'xxs' ? 1.5 : size === 'xs' ? 2 : size === 'sm' ? 2.5 : 3);
+  const r = $derived(dim / 2 - strokeWidth - 2);
+  const cx = $derived(dim / 2);
+  const cy = $derived(dim / 2);
+  const gradId = $derived(`knobGrad-${knobId}-${size}`);
+  const innerId = $derived(`knobInner-${knobId}-${size}`);
 
   let hovering = $state(false);
   let dragging = $state(false);
@@ -66,7 +71,7 @@
     document.body.style.userSelect = 'none';
     const onMove = (ev: MouseEvent) => {
       const delta = startY - ev.clientY;
-      const sensitivity = (max - min) / 200;
+      const sensitivity = (max - min) / 160;
       onChange(Math.max(min, Math.min(max, startValue + delta * sensitivity)));
     };
     const onUp = () => {
@@ -83,12 +88,13 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="flex flex-col items-center gap-0.5 select-none"
+  class="knob-wrap"
   onmouseenter={() => (hovering = true)}
   onmouseleave={() => (hovering = false)}
 >
   <div
-    style="width:{dim}px;height:{dim}px;cursor:ns-resize;position:relative;flex-shrink:0"
+    class="knob-hit"
+    style="width:{dim + hitPad * 2}px;height:{dim + hitPad * 2}px;padding:{hitPad}px"
     onmousedown={onDown}
     ondblclick={() => onChange((max - min) / 2 + min)}
     role="slider"
@@ -99,8 +105,8 @@
   >
     <svg width={dim} height={dim} style="display:block;overflow:visible">
       <circle cx={cx} cy={cy} r={dim / 2 - 1} fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="1" />
-      <circle cx={cx} cy={cy} r={dim / 2 - 2} fill="url(#knobGrad-{size})" stroke="#111" stroke-width="1" />
-      <circle cx={cx} cy={cy} r={dim / 2 - 4} fill="url(#knobInner-{size})" stroke="#0d0e0f" stroke-width="0.5" />
+      <circle cx={cx} cy={cy} r={dim / 2 - 2} fill="url(#{gradId})" stroke="#111" stroke-width="1" />
+      <circle cx={cx} cy={cy} r={dim / 2 - 4} fill="url(#{innerId})" stroke="#0d0e0f" stroke-width="0.5" />
       <path d={bgPath} fill="none" stroke="#1a1c1e" stroke-width={strokeWidth} stroke-linecap="round" />
       {#if activePath}
         <path
@@ -136,30 +142,67 @@
         fill="rgba(255,255,255,0.05)"
       />
       <defs>
-        <radialGradient id="knobGrad-{size}" cx="35%" cy="30%">
+        <radialGradient id={gradId} cx="35%" cy="30%">
           <stop offset="0%" stop-color="#2a2d32" />
           <stop offset="60%" stop-color="#1c1e21" />
           <stop offset="100%" stop-color="#131517" />
         </radialGradient>
-        <radialGradient id="knobInner-{size}" cx="35%" cy="30%">
+        <radialGradient id={innerId} cx="35%" cy="30%">
           <stop offset="0%" stop-color="#252830" />
           <stop offset="100%" stop-color="#161819" />
         </radialGradient>
       </defs>
     </svg>
     {#if showTooltip}
-      <div
-        style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);background:#000;border:1px solid #333;color:#ccc;font-size:9px;padding:1px 4px;border-radius:2px;font-family:var(--font-mono);white-space:nowrap;pointer-events:none;z-index:100"
-      >
-        {Math.round(value)}
-      </div>
+      <div class="knob-tooltip">{Math.round(value)}</div>
     {/if}
   </div>
   {#if label}
-    <span
-      style="font-size:8px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#4a5058;font-family:var(--font-ui);line-height:1"
-    >
-      {label}
-    </span>
+    <span class="knob-label">{label}</span>
   {/if}
 </div>
+
+<style>
+  .knob-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .knob-hit {
+    cursor: ns-resize;
+    position: relative;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+
+  .knob-tooltip {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #000;
+    border: 1px solid #333;
+    color: #ccc;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 2px;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  .knob-label {
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #4a5058;
+    font-family: var(--font-ui);
+    line-height: 1;
+  }
+</style>

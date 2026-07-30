@@ -4,7 +4,7 @@
   import type { VideoLayer } from '$lib/engine/contracts';
   import type { MidiLayer } from '$lib/stores/rack';
   import { parseAccentColor } from '$lib/modules/registry';
-  import { MODULE_PRESETS } from '$lib/modules/presets';
+  import { presetsForModule } from '$lib/modules/presets';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
   import ModuleControls from '$lib/components/ModuleControls.svelte';
   import Screw from '$lib/components/rack/Screw.svelte';
@@ -13,6 +13,7 @@
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
+  import MidiTimeline from '$lib/components/MidiTimeline.svelte';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
     bypassed,
@@ -21,10 +22,12 @@
     toggleBypass,
     toggleMute
   } from '$lib/stores/rack';
+  import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
 
   interface Props {
     mod: ModuleDefinition;
     params: Record<string, number>;
+    canvasId?: string;
     videoLayer?: VideoLayer | null;
     midiLayer?: MidiLayer | null;
     isOnAir?: boolean;
@@ -32,12 +35,14 @@
     onVideosUpload?: (files: File[]) => void;
     onMidiUpload?: (file: File) => void;
     onClearVideo?: () => void;
+    onClearMidi?: () => void;
     onHeaderPointerDown?: (e: PointerEvent) => void;
   }
 
   let {
     mod,
     params,
+    canvasId,
     videoLayer = null,
     midiLayer = null,
     isOnAir = false,
@@ -45,15 +50,18 @@
     onVideosUpload,
     onMidiUpload,
     onClearVideo,
+    onClearMidi,
     onHeaderPointerDown
   }: Props = $props();
 
-  let collapsed = $state(false);
   let dragOver = $state(false);
   let dragDepth = $state(0);
 
   const color = $derived(parseAccentColor(mod.accentColor));
+  const slotCanvasId = $derived(canvasId ?? mod.id);
+  const modulePresets = $derived(presetsForModule(mod.id));
   const td = $derived($transportDisplay);
+  const collapsed = $derived($moduleCollapsed[mod.id] === true);
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter((f) => f.type.startsWith('video/'));
@@ -67,7 +75,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  style="flex:1;min-width:0;background:#131416;border-right:1px solid #0d0e0f;display:flex;flex-direction:column;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
+  class="rack-module"
+  class:is-collapsed={collapsed}
+  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
     e.preventDefault();
     if (e.dataTransfer?.types.includes('Files')) {
@@ -118,8 +128,8 @@
     {/if}
     <button
       type="button"
-      onclick={() => (collapsed = !collapsed)}
-      title={collapsed ? 'Expand controls' : 'Collapse controls'}
+      onclick={() => toggleModuleCollapsed(mod.id)}
+      title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
       style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
@@ -131,34 +141,32 @@
     <Screw />
   </div>
 
-  <div style="position:relative;display:flex;flex-direction:column;flex-shrink:0;background:#000;border-bottom:2px solid #0d0e0f">
-    <MediaPatchBay
-      color={mod.accentColor}
-      {videoLayer}
-      onSetVideo={(file) => {
-        if (file && onVideoUpload) onVideoUpload(file);
-        else onClearVideo?.();
-      }}
-      onSetVideos={onVideosUpload}
-      {midiLayer}
-      onSetMidi={(file) => file && onMidiUpload?.(file)}
-    />
-    <div
-      style="position:relative;width:min(100%, calc(300px * 16 / 9));align-self:center;aspect-ratio:16/9;background:#000;flex-shrink:0"
-    >
-      <WebGpuCanvas id={mod.id} {color} class="absolute inset-0 w-full h-full" />
+  <div
+    style="position:relative;display:flex;flex-direction:column;flex-shrink:0;background:#000;border-bottom:{collapsed ? 'none' : '2px solid #0d0e0f'}"
+  >
+    {#if !collapsed}
+      <MediaPatchBay
+        color={mod.accentColor}
+        {videoLayer}
+        onSetVideo={(file) => {
+          if (file && onVideoUpload) onVideoUpload(file);
+          else onClearVideo?.();
+        }}
+        onSetVideos={onVideosUpload}
+        {midiLayer}
+        onSetMidi={(file) => (file ? onMidiUpload?.(file) : onClearMidi?.())}
+      />
+      {#if midiLayer}
+        <MidiTimeline color={mod.accentColor} {midiLayer} />
+      {/if}
+    {/if}
+    <div class="module-preview">
+      <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
       <ScreenOverlay />
       <ScreenBadge
         text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'}
         color={mod.accentColor}
       />
-      <div
-        style="position:absolute;bottom:4px;left:5px;z-index:10;background:rgba(0,0,0,0.7);border-radius:2px;padding:0 4px"
-      >
-        <span style="font-family:var(--font-mono);font-size:6.5px;color:#566070;letter-spacing:0.08em">
-          {videoLayer ? 'SRC · CLIP' : 'SRC · TEST PATTERN'}
-        </span>
-      </div>
       {#if isOnAir && td.beatPhase < 0.08 && td.playing}
         <div
           style="position:absolute;inset:0;z-index:4;pointer-events:none;border:1px solid {mod.accentColor}44;box-shadow:inset 0 0 12px {mod.accentColor}22"
@@ -168,7 +176,7 @@
   </div>
 
   {#if !collapsed}
-    <div style="flex:0 1 auto;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden">
+    <div style="flex:1 1 auto;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0">
       <ModuleControls
         moduleId={mod.id}
         {params}
@@ -176,16 +184,11 @@
         onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
       />
     </div>
-  {:else}
-    <div style="flex:1"></div>
-  {/if}
-
-  {#if !collapsed}
-    <div style="flex:1;min-height:10px"></div>
     <MixSection
       {params}
       color={mod.accentColor}
-      presets={MODULE_PRESETS[mod.id as keyof typeof MODULE_PRESETS]}
+      moduleId={mod.id}
+      presets={modulePresets}
       onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
     />
   {/if}

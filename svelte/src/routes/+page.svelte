@@ -19,11 +19,17 @@
   import RackSlot from '$lib/components/RackSlot.svelte';
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
+  import ModulePalette from '$lib/components/ModulePalette.svelte';
+  import PresetBrowser from '$lib/components/PresetBrowser.svelte';
+  import BeatSequencer from '$lib/components/BeatSequencer.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
   import { pgmDirector } from '$lib/runtime/pgm/PgmDirector';
+  import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
   import { fxHold } from '$lib/stores/rack';
+  import { topRowCompact, bottomRowCompact } from '$lib/stores/rackUi';
+  import { videoPool } from '$lib/media/VideoPool';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
 
@@ -46,6 +52,7 @@
 
     startTransportPoll();
     pgmDirector.start();
+    startAppLoop();
 
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
@@ -60,8 +67,10 @@
 
   onDestroy(() => {
     unsubHold?.();
+    stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();
+    videoPool.dispose();
     webGpuEngine.dispose();
   });
 
@@ -80,7 +89,7 @@
           ...layers,
           [moduleId]: { name: clip, url }
         }));
-        mediaRuntime.registerModuleClip(moduleId, clip, url);
+        await mediaRuntime.registerModuleClip(moduleId, clip, url);
       }
       if (manifest.audio) {
         await audioEngine.loadAudioUrl(`/qa-media/${manifest.audio}`, manifest.audio);
@@ -94,17 +103,22 @@
     }
   }
 
-  function setModuleVideo(id: string, file: File) {
+  async function setModuleVideo(id: string, file: File) {
     const url = URL.createObjectURL(file);
     videoLayers.update((layers) => ({
       ...layers,
       [id]: { name: file.name, url, file }
     }));
-    mediaRuntime.registerModuleClip(id, file.name, url, file);
+    try {
+      await mediaRuntime.registerModuleClip(id, file.name, url, file);
+    } catch (err) {
+      console.error(`[clip] failed to load video for ${id}:`, err);
+    }
   }
 
   function clearModuleVideo(id: string) {
     videoLayers.update((layers) => ({ ...layers, [id]: null }));
+    mediaRuntime.removeModuleClip(id);
   }
 
   async function setModuleMidi(id: string, file: File) {
@@ -118,6 +132,10 @@
     } catch (err) {
       console.error('Failed to parse MIDI file:', err);
     }
+  }
+
+  function clearModuleMidi(id: string) {
+    midiLayers.update((layers) => ({ ...layers, [id]: null }));
   }
 
   function loadClips(files: File[]) {
@@ -158,15 +176,16 @@
 
     targets.forEach((moduleId, index) => {
       const file = clips[index];
-      if (file) setModuleVideo(moduleId, file);
+      if (file) void setModuleVideo(moduleId, file);
     });
   }
 </script>
 
+<div class="app-viewport">
 <DragGhost />
 <CapabilityGate state={$capabilities} />
 
-<div style="width:100vw;height:100vh;background:#0a0b0c;display:flex;flex-direction:column;overflow:hidden;font-family:var(--font-ui)">
+<div class="app-shell">
   <TopBar
     onRandomize={randomize}
     onClear={clearParams}
@@ -175,40 +194,52 @@
     clipSlotCount={CLIP_SLOT_COUNT}
   />
 
-  <div style="flex:1;display:flex;overflow:hidden;background:#0a0b0c">
-    <ScrewRail side="left" />
+  <div class="rack-workspace">
+    <div class="side-panels" style="display:flex;flex-shrink:0">
+      <ModulePalette />
+      <PresetBrowser />
+      <ScrewRail side="left" class="hide-on-mobile" />
+      <PgmRail modules={ALL_MODULES} />
+    </div>
 
-    <PgmRail modules={ALL_MODULES} />
+    <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
 
-    <div style="width:3px;background:#0d0e0f;flex-shrink:0"></div>
-
-    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;background:#0a0b0c;gap:0">
+    <div class="rack-main">
       <MainViewer modules={ALL_MODULES} />
 
       <div
-        style="height:clamp(420px, calc((100vw - 206px) * 9 / 64 + 244px), 544px);flex-shrink:0.15;min-height:300px;display:flex;overflow:hidden"
+        class="rack-row"
+        style="height:{$topRowCompact
+          ? 'auto'
+          : 'clamp(420px, calc((100vw - 334px) * 9 / 64 + 244px), 544px)'};flex-shrink:{$topRowCompact ? '0' : '0.15'};min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
       >
-        {#each $rackTop as moduleId, i (moduleId + '-' + i)}
+        {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
             row="top"
             slotIndex={i}
+            canvasId="top-{i}"
             {moduleId}
             params={$moduleParams[moduleId] ?? {}}
             onVideoUpload={(f) => setModuleVideo(moduleId, f)}
             onVideosUpload={(files) => loadClipsFromModule(moduleId, files)}
             onClearVideo={() => clearModuleVideo(moduleId)}
             onMidiUpload={(f) => setModuleMidi(moduleId, f)}
+            onClearMidi={() => clearModuleMidi(moduleId)}
           />
         {/each}
       </div>
 
       <div
-        style="height:clamp(240px, calc((100vw - 206px) * 9 / 64 + 96px), 404px);flex-shrink:0.15;min-height:176px;display:flex;overflow:hidden;border-top:2px solid #0d0e0f"
+        class="rack-row"
+        style="height:{$bottomRowCompact
+          ? 'auto'
+          : 'clamp(240px, calc((100vw - 334px) * 9 / 64 + 96px), 404px)'};flex-shrink:{$bottomRowCompact ? '0' : '0.15'};min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
       >
-        {#each $rackBottom as moduleId, i (moduleId + '-' + i)}
+        {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot
             row="bottom"
             slotIndex={i}
+            canvasId="bottom-{i}"
             {moduleId}
             params={$moduleParams[moduleId] ?? {}}
             onVideoUpload={(f) => setModuleVideo(moduleId, f)}
@@ -217,8 +248,11 @@
           />
         {/each}
       </div>
+
+      <BeatSequencer />
     </div>
 
-    <ScrewRail side="right" />
+    <ScrewRail side="right" class="hide-on-mobile" />
   </div>
+</div>
 </div>

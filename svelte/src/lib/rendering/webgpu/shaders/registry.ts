@@ -1,17 +1,26 @@
-import { TEST_PATTERN_WGSL } from '../shaders';
+import { MODULE_FX_WGSL } from './moduleFx.wgsl';
 
-/** Per-module WGSL fragment variants — test pattern tinted by module accent + param-driven motion. */
 export const MODULE_SHADER_WGSL: Record<string, string> = {
-  transition: TEST_PATTERN_WGSL,
-  speedramp: TEST_PATTERN_WGSL,
-  tapdelay: TEST_PATTERN_WGSL,
-  timesampler: TEST_PATTERN_WGSL,
-  punch: TEST_PATTERN_WGSL,
-  shake: TEST_PATTERN_WGSL,
-  orbit: TEST_PATTERN_WGSL,
-  focus: TEST_PATTERN_WGSL
+  transition: MODULE_FX_WGSL,
+  speedramp: MODULE_FX_WGSL,
+  tapdelay: MODULE_FX_WGSL,
+  timesampler: MODULE_FX_WGSL,
+  punch: MODULE_FX_WGSL,
+  shake: MODULE_FX_WGSL,
+  orbit: MODULE_FX_WGSL,
+  focus: MODULE_FX_WGSL,
+  anamorphic: MODULE_FX_WGSL,
+  grain: MODULE_FX_WGSL,
+  leak: MODULE_FX_WGSL,
+  dutch: MODULE_FX_WGSL,
+  halation: MODULE_FX_WGSL,
+  bulge: MODULE_FX_WGSL,
+  vhs: MODULE_FX_WGSL,
+  camcorder: MODULE_FX_WGSL,
+  prism: MODULE_FX_WGSL,
+  streak: MODULE_FX_WGSL
 };
 
 export function getModuleShader(moduleId: string): string {
-  return MODULE_SHADER_WGSL[moduleId] ?? TEST_PATTERN_WGSL;
+  return MODULE_SHADER_WGSL[moduleId] ?? MODULE_FX_WGSL;
 }

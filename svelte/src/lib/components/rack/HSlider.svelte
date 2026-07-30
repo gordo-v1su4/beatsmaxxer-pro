@@ -4,8 +4,9 @@
     onChange: (v: number) => void;
     color: string;
     label?: string;
+    compact?: boolean;
   }
-  let { value, onChange, color, label }: Props = $props();
+  let { value, onChange, color, label, compact = false }: Props = $props();
   let track: HTMLDivElement;
   let drag = $state(false);
 
@@ -30,28 +31,93 @@
   }
 </script>
 
-<div>
+<div class="hslider" class:compact>
   {#if label}
-    <div
-      style="font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.1em;margin-bottom:2px"
-    >
-      {label}
-    </div>
+    <div class="hslider-label">{label}</div>
   {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    bind:this={track}
-    onmousedown={onDown}
-    style="height:12px;background:#0a0b0c;border:1px solid #1e2022;border-radius:1px;cursor:ew-resize;position:relative;box-shadow:inset 0 1px 3px rgba(0,0,0,0.7);overflow:hidden"
-  >
+  <div class="hslider-hit" bind:this={track} onmousedown={onDown} style="--accent:{color}">
+    <div class="hslider-track">
+      <div class="hslider-fill" style="width:{value}%"></div>
+      {#each [25, 50, 75] as p (p)}
+        <div class="hslider-tick" style="left:{p}%"></div>
+      {/each}
+    </div>
     <div
-      style="position:absolute;left:0;top:0;bottom:0;width:{value}%;background:linear-gradient(90deg,{color}22,{color}44);border-right:2px solid {color}"
-    ></div>
-    {#each [25, 50, 75] as p (p)}
-      <div style="position:absolute;left:{p}%;top:2px;bottom:2px;width:1px;background:#1e2022"></div>
-    {/each}
-    <div
-      style="position:absolute;top:1px;bottom:1px;left:calc({value}% - 4px);width:8px;background:linear-gradient(180deg,#2e3238,#1c1e22);border:1px solid {drag ? color : '#333840'};border-radius:1px;box-shadow:0 1px 3px rgba(0,0,0,0.5)"
+      class="hslider-thumb"
+      class:dragging={drag}
+      style="left:calc({value}% - 2.5px)"
     ></div>
   </div>
 </div>
+
+<style>
+  .hslider-label {
+    font-size: 7px;
+    font-weight: 700;
+    color: #3a4050;
+    font-family: var(--font-ui);
+    letter-spacing: 0.1em;
+    margin-bottom: 2px;
+  }
+
+  .hslider-hit {
+    position: relative;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    cursor: ew-resize;
+  }
+
+  .hslider.compact .hslider-hit {
+    height: 12px;
+  }
+
+  .hslider-track {
+    position: relative;
+    width: 100%;
+    height: 3px;
+    background: #141618;
+    border: 1px solid #1e2022;
+    border-radius: 0;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.65);
+    overflow: visible;
+  }
+
+  .hslider-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent) 38%, transparent));
+    border-right: 1px solid var(--accent);
+    pointer-events: none;
+  }
+
+  .hslider-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #25282c;
+    pointer-events: none;
+  }
+
+  .hslider-thumb {
+    position: absolute;
+    top: 50%;
+    width: 5px;
+    height: 11px;
+    margin-top: -5.5px;
+    background: linear-gradient(180deg, #2a2e34, #181a1e);
+    border: 1px solid #333840;
+    border-radius: 1px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+  }
+
+  .hslider-thumb.dragging {
+    border-color: var(--accent);
+    box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+</style>

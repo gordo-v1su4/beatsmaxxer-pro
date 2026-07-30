@@ -32,6 +32,36 @@
   const beatOn = $derived(td.beatPhase < 0.15);
   const beatInBar = $derived(Math.floor(td.beat) % 4);
 
+  const rhyLabel = $derived.by(() => {
+    switch (td.analysisStatus) {
+      case 'analyzing':
+        return 'RHY·…';
+      case 'ready':
+        return td.analysisConfidence != null && td.analysisConfidence >= 0.7 ? 'RHY·OK' : 'RHY·OK';
+      case 'fallback':
+        return 'RHY·RT';
+      case 'error':
+        return 'RHY·ERR';
+      default:
+        return td.usingUploadedTrack ? 'RHY·…' : 'RHY·OFF';
+    }
+  });
+
+  const rhyColor = $derived.by(() => {
+    switch (td.analysisStatus) {
+      case 'analyzing':
+        return '#f59e0b';
+      case 'ready':
+        return '#4ade80';
+      case 'fallback':
+        return '#38bdf8';
+      case 'error':
+        return '#ef4444';
+      default:
+        return td.usingUploadedTrack ? '#f59e0b' : '#4a5060';
+    }
+  });
+
   function commitBpm() {
     if (bpmEdit !== null) {
       const v = parseFloat(bpmEdit);
@@ -96,7 +126,7 @@
     <span style="font-family:var(--font-brand);font-size:10px;font-weight:700;letter-spacing:0.14em;color:#556070">CHE</span>
   </div>
 
-  <div style="display:flex;align-items:center;gap:4px;flex:1;justify-content:center">
+  <div style="display:flex;align-items:center;gap:4px;flex:1;justify-content:center;min-width:0;flex-wrap:nowrap;overflow:hidden" class="topbar-center">
     <button
       type="button"
       onclick={togglePlay}
@@ -228,11 +258,11 @@
     <div style="width:1px;height:20px;background:#1e2226"></div>
 
     <div
-      title="Realtime beat fallback"
-      style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid {td.usingUploadedTrack ? '#204236' : '#1a1c1e'};border-radius:2px;display:flex;align-items:center;gap:4px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7);color:{td.usingUploadedTrack ? '#4ade80' : '#4a5060'};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em"
+      title={td.analysisError ?? (td.analysisStatus === 'ready' && td.analysisConfidence != null ? `Beat grid · ${Math.round(td.analysisConfidence * 100)}% conf` : 'Rhythm analysis')}
+      style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid {rhyColor}33;border-radius:2px;display:flex;align-items:center;gap:4px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7);color:{rhyColor};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;flex-shrink:0;white-space:nowrap"
     >
       <Disc3 size={10} />
-      {td.usingUploadedTrack ? 'RHY·RT' : 'RHY·OFF'}
+      {rhyLabel}
     </div>
 
     <button
@@ -267,17 +297,17 @@
     <button
       type="button"
       onclick={() => fxHold.update((h) => !h)}
-      title={$fxHold ? 'Resume the FX preview shaders' : 'Freeze all FX preview shaders (if the motion gets distracting)'}
-      style="height:26px;padding-inline:7px;background:{$fxHold
+      title={$fxHold ? 'Resume FX preview shaders' : 'Freeze all FX preview shaders'}
+      aria-label={$fxHold ? 'Resume FX shaders' : 'Hold FX shaders'}
+      style="height:26px;width:26px;flex-shrink:0;padding:0;background:{$fxHold
         ? 'linear-gradient(180deg,#2a1a1a,#1c1212)'
         : 'linear-gradient(180deg,#191b1d,#131517)'};border-style:solid;border-width:1px;border-color:{$fxHold
         ? '#ef444444 #ef444466 #ef444466 #ef444466'
-        : '#222428 #1a1c1e #1a1c1e #1a1c1e'};border-radius:3px;cursor:pointer;color:{$fxHold ? '#ef4444' : '#3a4050'};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;display:flex;align-items:center;gap:4px;box-shadow:{$fxHold
+        : '#222428 #1a1c1e #1a1c1e #1a1c1e'};border-radius:3px;cursor:pointer;color:{$fxHold ? '#ef4444' : '#3a4050'};display:flex;align-items:center;justify-content:center;box-shadow:{$fxHold
         ? '0 0 8px rgba(239,68,68,0.25)'
         : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.1s"
     >
-      {#if $fxHold}<Play size={10} />{:else}<Pause size={10} />{/if}
-      {$fxHold ? 'FX RUN' : 'FX HOLD'}
+      {#if $fxHold}<Play size={11} />{:else}<Pause size={11} />{/if}
     </button>
   </div>
 

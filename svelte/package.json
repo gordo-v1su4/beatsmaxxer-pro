@@ -12,7 +12,6 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"link-qa": "bash scripts/link-qa-media.sh",
-		"verify:ui": "bash scripts/verify-ui.sh",
 		"verify:ui": "bash scripts/verify-ui.sh"
 	},
 	"devDependencies": {

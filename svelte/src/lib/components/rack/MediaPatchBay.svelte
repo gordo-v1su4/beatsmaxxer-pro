@@ -71,6 +71,21 @@
   <button type="button" style={uploadStyle(!!midiLayer)} onclick={() => midiInput?.click()}>
     MIDI
   </button>
+  {#if midiLayer}
+    <span
+      style="font-family:var(--font-mono);font-size:7px;color:{color};max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+      title={midiLayer.name}
+    >
+      {midiLayer.name}
+    </span>
+    <button
+      type="button"
+      onclick={() => onSetMidi?.(null)}
+      style="width:18px;height:18px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center"
+    >
+      <X size={8} />
+    </button>
+  {/if}
 </div>
 
 <style>

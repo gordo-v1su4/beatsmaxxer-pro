@@ -1,48 +1,73 @@
 # Beat Surfer Pro — Svelte + WebGPU
 
-Browser-only rewrite of Beat Surfer Pro using SvelteKit 5 and WebGPU as the sole render engine.
+<p align="center">
+  <img src="../docs/beat-surfer-pro.webp" alt="Beat Surfer Pro UI with live clips and beat-synced PGM" width="100%" />
+</p>
+
+Browser-only rewrite: **SvelteKit 5** shell + **WebGPU-only** render engine. No Three.js, no WebGL fallback — progressive WGSL shader port behind a single `WebGpuEngine` loop.
 
 ## Commands
 
 ```bash
 bun install
-bun run dev      # http://localhost:5174
-bun run build    # single-file production build → build/
-bun run check    # svelte-check
-bun run test     # vitest
+bun run dev          # http://localhost:5174
+bun run build        # single-file production build → build/
+bun run check        # svelte-check
+bun run test         # vitest (57+ unit tests)
+bun run verify:ui    # headless browser smoke + screenshot
+bun run link-qa      # symlink QA clips + Redline mp3
 ```
 
-From repo root:
-
-```bash
-bun run dev:svelte
-```
+From repo root: `bun run dev:svelte`
 
 ## QA mode
 
 ```
-http://localhost:5174/?qa=test-media&qaAutoplay=1
+http://localhost:5174/?qa=1&qaAutoplay=1
 ```
 
-Requires QA fixtures symlinked at `tests/fixtures/media/` (shared with parent repo).
+Requires QA fixtures via `bun run link-qa` (clips from `~/Downloads/archive (2)`, Redline @ 133 BPM).
 
-## Module drag & drop
+## Architecture
 
-See [`docs/MODULES.md`](docs/MODULES.md) for how to register new effects and use the FX LIB palette.
+| Piece | Location |
+|-------|----------|
+| UI + stores | `src/lib/components/`, `src/lib/stores/` |
+| WebGPU engine | `src/lib/rendering/webgpu/WebGpuEngine.ts` |
+| WGSL registry | `src/lib/rendering/webgpu/shaders/` |
+| WebCodecs + hot deck | `src/lib/media/`, `src/lib/runtime/decks/` |
+| Audio + Essentia | `src/lib/audio/` |
+| PGM beat cuts | `src/lib/runtime/pgm/PgmDirector.ts` |
+| Module catalog | `src/lib/modules/catalog.ts` |
 
-- **FX LIB** (left column): module catalog — drag onto rack slots
-- **Rack headers** (⠿): drag to reorder/swap within or across rows
-- **Future**: add modules to `catalog.ts` only; they appear in palette before assignment
+## FX LIB + rack
 
-- **UI:** Svelte 5 stores + components in `src/lib/components/`
-- **Render:** Single `WebGpuEngine` rAF loop — no Three.js, no dual paths
-- **Media:** WebCodecs decode + hot-deck lifecycle in `src/lib/media/` and `src/lib/runtime/decks/`
-- **Audio:** Ported `AudioEngine` in `src/lib/audio/`
-- **Contracts:** `src/lib/engine/contracts.ts` — interface boundary for all modules
+See [`docs/MODULES.md`](docs/MODULES.md).
+
+- **FX LIB** (left): BEAT FX · CAMERA · FILM/TEXTURE — drag onto rack slots
+- **PGM SOURCE** (retractable): Ableton-style queued cuts, RAND hop, 1BT–8BR quantize
+- **Module chevron**: collapse to preview strip; full row collapse frees vertical space
+- **Layout floor**: `--app-min-width` ~1425px; horizontal scroll below; mobile wrap @ 960px
+
+## Stack highlights (for contributors)
+
+- **Svelte 5** runes + stores — no legacy `$:` soup
+- **WebGPU / WGSL only** — capability gate, no silent downgrade
+- **Vite 8** Rolldown + Oxc, Tailwind CSS 4
+- **Vitest** for transport, timesampler, PGM stress paths
+- **Single-file build** via `vite-plugin-singlefile`
 
 ## Cutover checklist
 
-- [ ] All 8 modules render WebGPU previews
-- [ ] PGM cuts ≤16ms with prepared hot-deck handles
-- [ ] 0 white flashes in 38s RAND 1BT QA run
-- [ ] Single-file build deploys standalone
+- [x] All rack modules render WebGPU previews (unified FX WGSL + external video texture)
+- [x] Video pool — HTMLVideo per module, importExternalTexture per frame
+- [x] PGM prewarm on queued cut
+- [x] PresetBrowser + 4 macro faders
+- [x] 16-step beat sequencer → PGM cuts
+- [x] MIDI timeline strip + clear
+- [x] Essentia dev proxy (`/__api` → hosted analysis)
+- [x] Single-file build (`bun run build` → `build/`)
+- [x] 57 unit tests + UI verify smoke
+- [ ] Full WebCodecs decode lane (PlaybackCoordinator wired to canvas)
+- [ ] Per-module WGSL parity with React GLSL (ping-pong feedback, idle graphics)
+- [ ] 38s RAND 1BT stress — 0 white flashes acceptance run

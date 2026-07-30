@@ -3,18 +3,21 @@
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import type { VideoLayer } from '$lib/engine/contracts';
   import { parseAccentColor } from '$lib/modules/registry';
+  import { presetsForModule } from '$lib/modules/presets';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
   import HeaderBtn from '$lib/components/rack/HeaderBtn.svelte';
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
+  import MixSection from '$lib/components/rack/MixSection.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
-  import Knob from '$lib/components/Knob.svelte';
   import { bypassed, updateParam, toggleBypass } from '$lib/stores/rack';
+  import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
 
   interface Props {
     mod: ModuleDefinition;
     params: Record<string, number>;
+    canvasId?: string;
     videoLayer?: VideoLayer | null;
     isOnAir?: boolean;
     onVideoUpload?: (file: File) => void;
@@ -26,6 +29,7 @@
   let {
     mod,
     params,
+    canvasId,
     videoLayer = null,
     isOnAir = false,
     onVideoUpload,
@@ -34,20 +38,21 @@
     onHeaderPointerDown
   }: Props = $props();
 
-  let collapsed = $state(false);
   let dragOver = $state(false);
   let dragDepth = $state(0);
   let fileInput: HTMLInputElement;
 
   const color = $derived(parseAccentColor(mod.accentColor));
+  const slotCanvasId = $derived(canvasId ?? mod.id);
+  const modulePresets = $derived(presetsForModule(mod.id));
+  const collapsed = $derived($moduleCollapsed[mod.id] === true);
 
   const COMPACT_CONTROLS: Record<
     string,
     {
       buttons: { label: string; set: Record<string, number> }[];
       primary: string;
-      slider: { param: string; label: string };
-      knobs: { param: string; label: string }[];
+      sliders: { param: string; label: string }[];
       toggle?: { param: string; label: string };
     }
   > = {
@@ -58,10 +63,9 @@
         { label: 'OUT', set: { dir: 90 } }
       ],
       primary: 'dir',
-      slider: { param: 'amt', label: 'AMOUNT' },
-      knobs: [
-        { param: 'snap', label: 'SNAP' },
-        { param: 'mix', label: 'MIX' }
+      sliders: [
+        { param: 'amt', label: 'AMOUNT' },
+        { param: 'snap', label: 'SNAP' }
       ]
     },
     shake: {
@@ -72,10 +76,9 @@
         { label: 'RIOT', set: { impact: 100, hand: 100, sway: 85 } }
       ],
       primary: 'impact',
-      slider: { param: 'hand', label: 'HANDHELD' },
-      knobs: [
-        { param: 'sway', label: 'SWAY' },
-        { param: 'mix', label: 'MIX' }
+      sliders: [
+        { param: 'hand', label: 'HANDHELD' },
+        { param: 'sway', label: 'SWAY' }
       ]
     },
     orbit: {
@@ -86,10 +89,9 @@
         { label: 'WARP', set: { spd: 100, drift: 100, nudge: 90 } }
       ],
       primary: 'spd',
-      slider: { param: 'drift', label: 'DRIFT' },
-      knobs: [
-        { param: 'nudge', label: 'NUDGE' },
-        { param: 'mix', label: 'MIX' }
+      sliders: [
+        { param: 'drift', label: 'DRIFT' },
+        { param: 'nudge', label: 'NUDGE' }
       ]
     },
     focus: {
@@ -100,10 +102,9 @@
         { label: 'BLIND', set: { pulse: 100, amt: 88, soft: 95 } }
       ],
       primary: 'pulse',
-      slider: { param: 'amt', label: 'AMOUNT' },
-      knobs: [
-        { param: 'soft', label: 'BLOOM' },
-        { param: 'mix', label: 'MIX' }
+      sliders: [
+        { param: 'amt', label: 'AMOUNT' },
+        { param: 'soft', label: 'BLOOM' }
       ],
       toggle: { param: 'xeye', label: 'XEYE' }
     }
@@ -121,7 +122,9 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  style="flex:1;min-width:0;background:#131416;border-right:1px solid #0d0e0f;display:flex;flex-direction:column;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
+  class="rack-module"
+  class:is-collapsed={collapsed}
+  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
     e.preventDefault();
     if (e.dataTransfer?.types.includes('Files')) {
@@ -192,8 +195,8 @@
     {/if}
     <button
       type="button"
-      onclick={() => (collapsed = !collapsed)}
-      title={collapsed ? 'Expand controls' : 'Collapse controls'}
+      onclick={() => toggleModuleCollapsed(mod.id)}
+      title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
       style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0;flex-shrink:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
@@ -203,10 +206,8 @@
     <HeaderBtn label="B" active={$bypassed[mod.id]} activeColor="#ef4444" onclick={() => toggleBypass(mod.id)} />
   </div>
 
-  <div
-    style="position:relative;width:min(100%, calc(300px * 16 / 9));align-self:center;aspect-ratio:16/9;background:#000;flex-shrink:0"
-  >
-    <WebGpuCanvas id={mod.id} {color} class="absolute inset-0 w-full h-full" />
+  <div class="module-preview">
+    <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
     <ScreenOverlay />
     <ScreenBadge
       text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'}
@@ -215,62 +216,78 @@
   </div>
 
   {#if !collapsed && spec}
-    <div
-      style="display:flex;align-items:center;gap:8px;padding:6px 7px;flex-shrink:0;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f"
-    >
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-        <div style="display:flex;gap:2px">
-          {#each spec.buttons as btn (btn.label)}
-            <RackBtn
-              label={btn.label}
-              active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= 9}
-              color={mod.accentColor}
-              width={36}
-              height={16}
-              onclick={() => Object.entries(btn.set).forEach(([k, v]) => updateParam(mod.id, k, v))}
-            />
-          {/each}
-          {#if spec.toggle}
-            <RackBtn
-              label={spec.toggle.label}
-              active={(params[spec.toggle.param] ?? 0) > 50}
-              color={mod.accentColor}
-              width={36}
-              height={16}
-              onclick={() => {
-                const tp = spec.toggle!.param;
-                updateParam(mod.id, tp, (params[tp] ?? 0) > 50 ? 0 : 100);
-              }}
-            />
-          {/if}
-        </div>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span
-            style="width:44px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em"
-          >
-            {spec.slider.label}
-          </span>
-          <div style="flex:1">
-            <HSlider
-              value={params[spec.slider.param] ?? 50}
-              onChange={(v) => updateParam(mod.id, spec.slider.param, Math.round(v))}
-              color={mod.accentColor}
-            />
-          </div>
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-shrink:0">
-        {#each spec.knobs as k (k.param)}
-          <Knob
-            label={k.label}
-            value={params[k.param] ?? 50}
-            onChange={(v) => updateParam(mod.id, k.param, Math.round(v))}
-            size="xs"
+    <div style="flex:1 1 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+      <div style="display:flex;gap:2px;flex-wrap:wrap">
+        {#each spec.buttons as btn (btn.label)}
+          <RackBtn
+            label={btn.label}
+            active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= 9}
             color={mod.accentColor}
+            width={36}
+            height={16}
+            onclick={() => Object.entries(btn.set).forEach(([k, v]) => updateParam(mod.id, k, v))}
           />
+        {/each}
+        {#if spec.toggle}
+          <RackBtn
+            label={spec.toggle.label}
+            active={(params[spec.toggle.param] ?? 0) > 50}
+            color={mod.accentColor}
+            width={36}
+            height={16}
+            onclick={() => {
+              const tp = spec.toggle!.param;
+              updateParam(mod.id, tp, (params[tp] ?? 0) > 50 ? 0 : 100);
+            }}
+          />
+        {/if}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        {#each spec.sliders as sl (sl.param)}
+          <div style="display:flex;align-items:center;gap:4px">
+            <span
+              style="width:44px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em"
+            >
+              {sl.label}
+            </span>
+            <div style="flex:1">
+              <HSlider
+                value={params[sl.param] ?? 50}
+                onChange={(v) => updateParam(mod.id, sl.param, Math.round(v))}
+                color={mod.accentColor}
+              />
+            </div>
+          </div>
         {/each}
       </div>
     </div>
+    <MixSection
+      {params}
+      color={mod.accentColor}
+      moduleId={mod.id}
+      presets={modulePresets}
+      onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
+    />
+  {:else if !collapsed}
+    <div style="flex:1 1 auto;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        {#each Object.keys(params).filter((k) => k !== 'mix') as key (key)}
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 5)}</span>
+            <div style="flex:1">
+              <HSlider value={params[key] ?? 50} onChange={(v) => updateParam(mod.id, key, Math.round(v))} color={mod.accentColor} />
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
+    <MixSection
+      {params}
+      color={mod.accentColor}
+      moduleId={mod.id}
+      presets={modulePresets}
+      onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
+    />
   {/if}
 
   {#if dragOver}

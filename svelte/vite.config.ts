@@ -28,6 +28,11 @@ export default defineConfig({
 			'/__qa': {
 				target: 'http://localhost:5174',
 				rewrite: () => '/qa-proxy'
+			},
+			'/__api': {
+				target: 'https://essentia.v1su4.dev',
+				changeOrigin: true,
+				rewrite: (path) => path.replace(/^\/__api/, '')
 			}
 		}
 	},

@@ -8,6 +8,7 @@ export interface TransportDisplay {
   bpmLocked: boolean;
   beat: number;
   beatPhase: number;
+  time: number;
   playing: boolean;
   amplitude: number;
   bassAmp: number;
@@ -24,6 +25,7 @@ export const transportDisplay = writable<TransportDisplay>({
   bpmLocked: false,
   beat: 0,
   beatPhase: 0,
+  time: 0,
   playing: false,
   amplitude: 0,
   bassAmp: 0,
@@ -47,6 +49,7 @@ export function startTransportPoll() {
       bpmLocked: s.bpmLocked,
       beat: s.beat,
       beatPhase: s.beatPhase,
+      time: s.time,
       playing: s.playing,
       amplitude: s.amplitude,
       bassAmp: s.bassAmp,
