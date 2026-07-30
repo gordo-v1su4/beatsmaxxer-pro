@@ -1,0 +1,45 @@
+@import 'tailwindcss';
+
+:root {
+	--rack-bg: #0a0b0c;
+	--panel-bg: #131416;
+	--border: #0d0e0f;
+	--text-dim: #7a8090;
+	--font-ui: 'Rajdhani', sans-serif;
+	--font-mono: 'Share Tech Mono', monospace;
+	--font-brand: 'Orbitron', sans-serif;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	background: var(--rack-bg);
+	color: #e5e7eb;
+	font-family: var(--font-ui);
+	min-height: 100vh;
+	overflow: hidden;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+button {
+	cursor: pointer;
+	font-family: inherit;
+}
+
+input[type='range'] {
+	accent-color: #38bdf8;
+}
+
+@keyframes pgmQueueBlink {
+	0%,
+	100% {
+		filter: brightness(1);
+	}
+	50% {
+		filter: brightness(1.9);
+	}
+}
