@@ -1,35 +1,68 @@
 import { evalPage, navigateAndReady, withChrome } from './cdp.ts';
 
-const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
+const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
 
 await withChrome('verify-audio', 9900, async (s) => {
   await navigateAndReady(s, QA_URL);
+
   await evalPage(s, `window.__BSP_QA__?.waitForClips?.(8, 45000)`, 55_000);
-  // Essentia analysis + SoundTouch init run during QA boot — no transport required.
-  await Bun.sleep(6000);
+  await evalPage(
+    s,
+    `window.__BSP_QA__?.waitForAnalysis?.('ready', 90000)`,
+    95_000
+  );
+
+  await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 15_000);
+  await Bun.sleep(1200);
+
+  const motion = await evalPage<{
+    phaseDelta?: number;
+    transportDelta?: number;
+    playing?: boolean;
+  }>(s, `window.__BSP_QA__?.sampleBeatMotion?.(1500)`, 20_000);
+
+  const controls = await evalPage<{
+    controlsApplied?: boolean;
+    rateEvents?: number;
+    after?: { soundTouch?: { tempo?: number; volume?: number } };
+  }>(s, `window.__BSP_QA__?.exerciseAudioControls?.()`, 15_000);
+
+  await evalPage(s, `window.__BSP_QA__?.stopTransport?.()`, 10_000);
 
   const snap = await evalPage<{
     playing?: boolean;
     analysisStatus?: string;
+    analysisError?: string | null;
     soundTouchActive?: boolean;
     bpm?: number;
+    bpmLocked?: boolean;
+    usingUploadedTrack?: boolean;
     clipsLoaded?: number;
+    amplitude?: number;
   }>(s, 'window.__BSP_QA__?.snapshot?.()', 15_000);
 
-  const analysisOk =
-    snap?.analysisStatus === 'ready' ||
-    snap?.analysisStatus === 'fallback' ||
-    snap?.analysisStatus === 'analyzing';
-
   const report = {
-    passed: Boolean(snap?.soundTouchActive) && analysisOk && (snap?.clipsLoaded ?? 0) >= 8,
+    passed:
+      snap?.analysisStatus === 'ready' &&
+      Boolean(snap?.soundTouchActive) &&
+      Boolean(snap?.usingUploadedTrack) &&
+      (snap?.bpm ?? 0) >= 60 &&
+      !snap?.bpmLocked &&
+      Boolean(controls?.controlsApplied) &&
+      (controls?.rateEvents ?? 0) >= 1 &&
+      (motion?.phaseDelta ?? 0) > 0.05 &&
+      (motion?.transportDelta ?? 0) > 0.2,
     playing: snap?.playing,
     analysisStatus: snap?.analysisStatus,
+    analysisError: snap?.analysisError,
     soundTouchActive: snap?.soundTouchActive,
     bpm: snap?.bpm,
+    bpmLocked: snap?.bpmLocked,
     clipsLoaded: snap?.clipsLoaded,
-    note: 'Does not prove audible output — run manual listen test with your mp3'
+    motion,
+    controls,
+    note: 'Headless gate — confirm audibly in IDE browser before marking README manual items'
   };
 
   await Bun.write(`${ARTIFACT_DIR}/audio-report.json`, JSON.stringify(report, null, 2));
@@ -40,6 +73,7 @@ await withChrome('verify-audio', 9900, async (s) => {
     'verify-audio PASSED',
     `soundTouch=${report.soundTouchActive}`,
     `rhy=${report.analysisStatus}`,
-    `bpm=${report.bpm}`
+    `bpm=${report.bpm}`,
+    `motion=${motion?.phaseDelta?.toFixed(2)}`
   );
 });

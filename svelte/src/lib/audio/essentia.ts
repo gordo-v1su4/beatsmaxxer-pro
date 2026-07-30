@@ -10,6 +10,8 @@ export interface EssentiaRhythmAnalysis {
   beats: number[];
   confidence: number;
   duration: number;
+  /** Chromatic index 0–11 (C…B) when detected; otherwise 0. */
+  keyIndex: number;
   energy: {
     curve: number[];
   };
@@ -48,7 +50,7 @@ export async function fetchRhythmAnalysisFromUrl(analysisUrl: string): Promise<E
 
 function resolveEssentiaApiBaseUrl() {
   const configured =
-    __APP_ESSENTIA_API_BASE_URL__ ||
+    readCompileTimeDefine(__APP_ESSENTIA_API_BASE_URL__) ||
     import.meta.env.VITE_ESSENTIA_API_BASE_URL ||
     import.meta.env.VITE_ESSENTIA_API_URL ||
     DEFAULT_ESSENTIA_API_BASE_URL;
@@ -56,10 +58,14 @@ function resolveEssentiaApiBaseUrl() {
   return configured.trim().replace(/\/+$/, "");
 }
 
+function readCompileTimeDefine(value: string | undefined, fallback = "") {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
 function resolveEssentiaAnalysisEngine() {
   return (
     import.meta.env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
-    __APP_ESSENTIA_ANALYSIS_ENGINE__ ||
+    readCompileTimeDefine(__APP_ESSENTIA_ANALYSIS_ENGINE__) ||
     "aubio"
   ).trim();
 }
@@ -82,6 +88,7 @@ function toRhythmAnalysis(result: AnalysisResultV1): EssentiaRhythmAnalysis {
     beats: rhythm.beats.map((event) => event.time_s),
     confidence: rhythm.confidence,
     duration: result.canonical_pcm.duration_s,
+    keyIndex: extractKeyIndex(result),
     energy: { curve: [] },
     onsets: onsets.map((event) => event.time_s),
     structure: structuralSegments && structuralSegments.length > 0
@@ -103,4 +110,54 @@ function toRhythmAnalysis(result: AnalysisResultV1): EssentiaRhythmAnalysis {
     provider: result.effective.provider,
     verified: result.effective.verified,
   };
+}
+
+const KEY_NAME_TO_INDEX: Record<string, number> = {
+  c: 0,
+  'c#': 1,
+  db: 1,
+  d: 2,
+  'd#': 3,
+  eb: 3,
+  e: 4,
+  f: 5,
+  'f#': 6,
+  gb: 6,
+  g: 7,
+  'g#': 8,
+  ab: 8,
+  a: 9,
+  'a#': 10,
+  bb: 10,
+  b: 11,
+};
+
+function parseKeyLabel(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, '');
+  if (normalized in KEY_NAME_TO_INDEX) return KEY_NAME_TO_INDEX[normalized];
+  const match = normalized.match(/^([a-g](?:#|b)?)(?:maj|min|major|minor)?$/);
+  if (match?.[1] && match[1] in KEY_NAME_TO_INDEX) return KEY_NAME_TO_INDEX[match[1]];
+  return null;
+}
+
+function extractKeyIndex(result: AnalysisResultV1): number {
+  const candidates: unknown[] = [
+    (result as { key?: unknown }).key,
+    (result as { tonic?: unknown }).tonic,
+    result.attempts.essentia?.config?.key,
+    result.attempts.essentia?.config?.tonic,
+    result.provenance.configuration?.key,
+    result.provenance.configuration?.tonic,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
+      return ((Math.round(candidate) % 12) + 12) % 12;
+    }
+    const parsed = parseKeyLabel(candidate);
+    if (parsed != null) return parsed;
+  }
+
+  return 0;
 }

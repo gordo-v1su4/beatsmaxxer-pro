@@ -20,7 +20,6 @@
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
   import ModulePalette from '$lib/components/ModulePalette.svelte';
-  import PresetBrowser from '$lib/components/PresetBrowser.svelte';
   import BeatSequencer from '$lib/components/BeatSequencer.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
@@ -95,10 +94,6 @@
       }
       if (manifest.audio) {
         await audioEngine.loadAudioUrl(`/qa-media/${manifest.audio}`, manifest.audio);
-      }
-      const bpm = Number(manifest.bpm);
-      if (Number.isFinite(bpm) && bpm > 0) {
-        audioEngine.setBPM(bpm);
       }
     } catch {
       /* optional */
@@ -199,7 +194,6 @@
   <div class="rack-workspace">
     <div class="side-panels" style="display:flex;flex-shrink:0">
       <ModulePalette />
-      <PresetBrowser />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={ALL_MODULES} />
     </div>
@@ -213,7 +207,7 @@
         class="rack-row"
         style="height:{$topRowCompact
           ? 'auto'
-          : 'clamp(420px, calc((100vw - 334px) * 9 / 64 + 244px), 544px)'};flex-shrink:{$topRowCompact ? '0' : '0.15'};min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
+          : 'clamp(420px, calc((100vw - 186px) * 9 / 64 + 244px), 544px)'};flex-shrink:{$topRowCompact ? '0' : '0.15'};min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -235,7 +229,7 @@
         class="rack-row"
         style="height:{$bottomRowCompact
           ? 'auto'
-          : 'clamp(240px, calc((100vw - 334px) * 9 / 64 + 96px), 404px)'};flex-shrink:{$bottomRowCompact ? '0' : '0.15'};min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
+          : 'clamp(240px, calc((100vw - 186px) * 9 / 64 + 96px), 404px)'};flex-shrink:{$bottomRowCompact ? '0' : '0.15'};min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot

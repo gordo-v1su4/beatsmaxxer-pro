@@ -4,8 +4,9 @@
 
 Uploaded audio routes through SoundTouch for independent pitch and tempo:
 
-- **KEY / PIT** → `pitchSemitones` (chromatic shift; `preservesPitch = false` on the media element)
-- **TMP** → `playbackRate` on the source, mirrored to the worklet node (tempo without chipmunk)
+- **KEY** → `pitchSemitones` on the worklet (chromatic transposition from detected root)
+- **PITCH** → `pitch` ratio via `2^(semitones/12)` (independent offset; does not move KEY)
+- **TMP** → `playbackRate` (tempo multiplier; does not move KEY or PITCH)
 - **VOL** → master gain after processing
 
 On `bun install`, the worklet processor is copied to `static/soundtouch-processor.js` (required for `audioWorklet.addModule`).

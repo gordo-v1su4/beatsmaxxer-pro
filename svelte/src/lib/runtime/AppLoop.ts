@@ -100,7 +100,7 @@ export function startAppLoop() {
       playing: state.playing,
       amplitude: state.amplitude,
       bassAmp: state.bassAmp,
-      pitchSemitones: sound.pitchSemitones
+      pitchSemitones: sound.keySemitones + sound.pitchSemitones
     });
 
     const moduleIds = [...new Set([...get(rackTop), ...get(rackBottom)])];

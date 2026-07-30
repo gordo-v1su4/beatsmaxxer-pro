@@ -4,14 +4,7 @@
   import { fxHold } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
-  import MacroDot from '$lib/components/rack/MacroDot.svelte';
-  import {
-    macros,
-    updateModuleMacro,
-    RACK_MACRO_MODULES,
-    RACK_MACRO_DEFS,
-    type RackMacroId
-  } from '$lib/stores/presets';
+  import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
 
   interface Props {
     onRandomize: () => void;
@@ -29,6 +22,10 @@
     clipSlotCount = 0
   }: Props = $props();
 
+  const TEMPO_STEP = 0.1;
+  const TEMPO_MIN = 0.5;
+  const TEMPO_MAX = 2;
+
   let tapFlash = $state(false);
   let bpmEdit = $state<string | null>(null);
   let tapTimes: number[] = [];
@@ -40,6 +37,8 @@
   $effect(() => {
     const td = $transportDisplay;
     void td.beat;
+    void td.playing;
+    void td.amplitude;
     soundTouch = audioEngine.getSoundTouchState();
   });
 
@@ -52,7 +51,7 @@
       case 'analyzing':
         return 'RHY·…';
       case 'ready':
-        return td.analysisConfidence != null && td.analysisConfidence >= 0.7 ? 'RHY·OK' : 'RHY·OK';
+        return 'RHY·OK';
       case 'fallback':
         return 'RHY·RT';
       case 'error':
@@ -76,6 +75,43 @@
         return td.usingUploadedTrack ? '#f59e0b' : '#4a5060';
     }
   });
+
+  const rhyTitle = $derived.by(() => {
+    if (td.analysisStatus === 'ready') {
+      const conf =
+        td.analysisConfidence != null ? ` · ${Math.round(td.analysisConfidence * 100)}% conf` : '';
+      return `Rhythm analysis succeeded — beat grid from Essentia (analyze once, shift in real time)${conf}`;
+    }
+    return td.analysisError ?? 'Rhythm analysis status';
+  });
+
+  function snapTempo(value: number) {
+    const clamped = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, value));
+    return Math.round(clamped / TEMPO_STEP) * TEMPO_STEP;
+  }
+
+  function refreshSoundTouch() {
+    soundTouch = audioEngine.getSoundTouchState();
+  }
+
+  function setTempo(value: number) {
+    audioEngine.setTempo(snapTempo(value));
+    refreshSoundTouch();
+  }
+
+  function nudgeTempo(delta: number) {
+    setTempo(soundTouch.tempo + delta);
+  }
+
+  function nudgePitch(delta: number) {
+    audioEngine.setPitch(soundTouch.pitchSemitones + delta);
+    refreshSoundTouch();
+  }
+
+  function nudgeKey(delta: number) {
+    audioEngine.nudgeKey(delta);
+    refreshSoundTouch();
+  }
 
   function commitBpm() {
     if (bpmEdit !== null) {
@@ -123,51 +159,33 @@
   }
 </script>
 
-<div
-  style="height:46px;background:linear-gradient(180deg,#202224 0%,#18191b 60%,#141516 100%);border-bottom:2px solid #0a0b0c;border-top:1px solid #2a2c2e;display:flex;align-items:center;justify-content:space-between;padding:0 8px;flex-shrink:0;box-shadow:0 2px 10px rgba(0,0,0,0.7);position:relative;z-index:10;gap:6px;font-family:var(--font-ui)"
->
+<div class="topbar-shell">
   <input bind:this={audioInput} type="file" accept="audio/*" class="hidden" onchange={handleAudioUpload} />
   <input bind:this={clipsInput} type="file" accept="video/*" multiple class="hidden" onchange={handleClipsUpload} />
 
-  <div style="display:flex;align-items:center;gap:6px;min-width:220px">
-    <button type="button" style="background:none;border:none;cursor:pointer;padding:3px;color:#454a52;display:flex;align-items:center">
-      <AlignJustify size={13} />
-    </button>
-    <div
-      style="width:7px;height:7px;border-radius:50%;background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'};transition:all 0.2s"
-    ></div>
-    <span style="font-family:var(--font-brand);font-size:10px;font-weight:700;letter-spacing:0.14em;color:#7a8090">BEATSURFING</span>
-    <span style="color:#2a3040;font-size:11px">×</span>
-    <span style="font-family:var(--font-brand);font-size:10px;font-weight:700;letter-spacing:0.14em;color:#556070">CHE</span>
-  </div>
+  <div class="topbar-row">
+    <div class="topbar-main">
+    <div class="topbar-brand">
+      <button type="button" class="icon-btn" aria-label="Menu">
+        <AlignJustify size={13} />
+      </button>
+      <div
+        class="status-dot"
+        style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
+      ></div>
+      <span class="brand-text">BEATSURFING</span>
+      <span class="brand-x">×</span>
+      <span class="brand-sub">CHE</span>
+    </div>
 
-  <div style="display:flex;align-items:center;gap:4px;flex:1;justify-content:center;min-width:0;flex-wrap:nowrap;overflow:hidden" class="topbar-center">
-    <button
-      type="button"
-      onclick={togglePlay}
-      style="height:26px;padding-inline:10px;background:{td.playing
-        ? 'linear-gradient(180deg,#1a2a1a,#121c12)'
-        : 'linear-gradient(180deg,#1c2020,#141818)'};border-style:solid;border-width:1px;border-color:{td.playing
-        ? '#22c55e33 #22c55e44 #22c55e44 #22c55e44'
-        : '#252729 #1e2226 #1e2226 #1e2226'};border-radius:3px;cursor:pointer;color:{td.playing
-        ? '#22c55e'
-        : '#4a5565'};display:flex;align-items:center;gap:4px;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;box-shadow:{td.playing
-        ? '0 0 8px rgba(34,197,94,0.2)'
-        : 'inset 0 1px 3px rgba(0,0,0,0.5)'};transition:all 0.1s"
-    >
+    <div class="divider"></div>
+
+    <button type="button" onclick={togglePlay} class="transport-btn" data-playing={td.playing}>
       {#if td.playing}<Square size={9} />{:else}<Play size={9} />{/if}
       {td.playing ? 'STOP' : 'PLAY'}
     </button>
 
-    <button
-      type="button"
-      onclick={() => audioInput?.click()}
-      style="height:26px;padding-inline:8px;background:linear-gradient(180deg,#191d24,#12161c);border-style:solid;border-width:1px;border-color:#29313c #20262e #20262e #20262e;border-radius:3px;cursor:pointer;color:{td.usingUploadedTrack
-        ? '#38bdf8'
-        : '#516072'};display:flex;align-items:center;gap:4px;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;box-shadow:{td.usingUploadedTrack
-        ? '0 0 8px rgba(56,189,248,0.18)'
-        : 'inset 0 1px 3px rgba(0,0,0,0.5)'}"
-    >
+    <button type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
       <Upload size={10} /> SONG
     </button>
 
@@ -176,60 +194,56 @@
         type="button"
         onclick={() => clipsInput?.click()}
         title="Load clips into empty slots ({loadedClipCount}/{clipSlotCount} filled)"
-        style="height:26px;padding-inline:8px;background:linear-gradient(180deg,#191d24,#12161c);border-style:solid;border-width:1px;border-color:#29313c #20262e #20262e #20262e;border-radius:3px;cursor:pointer;color:{loadedClipCount > 0
-          ? '#a78bfa'
-          : '#516072'};display:flex;align-items:center;gap:4px;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;box-shadow:{loadedClipCount > 0
-          ? '0 0 8px rgba(167,139,250,0.18)'
-          : 'inset 0 1px 3px rgba(0,0,0,0.5)'}"
+        class="transport-btn"
+        data-clips={loadedClipCount > 0}
       >
         <Film size={10} /> CLIPS
-        <span style="font-family:var(--font-mono);font-size:8px;color:#4a5060">{loadedClipCount}/{clipSlotCount}</span>
+        <span class="clip-count">{loadedClipCount}/{clipSlotCount}</span>
       </button>
     {/if}
 
     {#if td.usingUploadedTrack}
-      <button
-        type="button"
-        onclick={() => audioEngine.clearUploadedTrack()}
-        style="height:26px;padding-inline:8px;background:linear-gradient(180deg,#241919,#1b1212);border-style:solid;border-width:1px;border-color:#462828 #382020 #382020 #382020;border-radius:3px;cursor:pointer;color:#d56b6b;display:flex;align-items:center;gap:4px;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em"
-      >
+      <button type="button" onclick={() => audioEngine.clearUploadedTrack()} class="transport-btn transport-btn-danger">
         <X size={10} /> REMOVE
       </button>
     {/if}
 
-    <div style="width:1px;height:20px;background:#1e2226"></div>
+    <div class="divider"></div>
 
-    <div style="display:flex;align-items:center;gap:3px">
+    <div class="audio-group">
       <div
-        title={td.bpmLocked ? 'Manual BPM (click badge to re-enable auto-detect)' : 'Click number to type BPM'}
-        style="height:26px;padding-inline:8px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px;display:flex;align-items:center;gap:5px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7)"
+        class="bpm-block"
+        title={td.bpmLocked ? 'Manual BPM — drives playback tempo (click BPM·M to restore Essentia)' : 'Effective BPM — follows tempo slider; click to type'}
       >
         <div
-          style="width:6px;height:6px;border-radius:50%;background:{beatOn && td.playing ? '#f59e0b' : '#1e2226'};box-shadow:{beatOn && td.playing ? '0 0 5px #f59e0b' : 'none'};transition:background 0.04s, box-shadow 0.04s;flex-shrink:0"
+          class="beat-led"
+          style="background:{beatOn && td.playing ? '#f59e0b' : '#1e2226'};box-shadow:{beatOn && td.playing ? '0 0 5px #f59e0b' : 'none'}"
         ></div>
-        {#if bpmEdit !== null}
-          <input
-            autofocus
-            value={bpmEdit}
-            oninput={(e) => (bpmEdit = e.currentTarget.value.replace(/[^0-9.]/g, ''))}
-            onblur={commitBpm}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') commitBpm();
-              if (e.key === 'Escape') bpmEdit = null;
-            }}
-            style="width:34px;background:transparent;border:none;outline:none;font-family:var(--font-mono);font-size:13px;color:#ffd77a;letter-spacing:0.05em"
-          />
-        {:else}
-          <span
-            role="button"
-            tabindex="0"
-            onclick={() => (bpmEdit = String(Math.round(td.bpm)))}
-            onkeydown={(e) => e.key === 'Enter' && (bpmEdit = String(Math.round(td.bpm)))}
-            style="font-family:var(--font-mono);font-size:13px;color:#e2a030;letter-spacing:0.05em;line-height:1;cursor:text"
-          >
-            {Math.round(td.bpm).toString().padStart(3, '0')}
-          </span>
-        {/if}
+        <div class="bpm-digit-slot">
+          {#if bpmEdit !== null}
+            <input
+              autofocus
+              value={bpmEdit}
+              oninput={(e) => (bpmEdit = e.currentTarget.value.replace(/[^0-9.]/g, ''))}
+              onblur={commitBpm}
+              onkeydown={(e) => {
+                if (e.key === 'Enter') commitBpm();
+                if (e.key === 'Escape') bpmEdit = null;
+              }}
+              class="bpm-input"
+            />
+          {:else}
+            <span
+              role="button"
+              tabindex="0"
+              onclick={() => (bpmEdit = String(Math.round(td.bpm)))}
+              onkeydown={(e) => e.key === 'Enter' && (bpmEdit = String(Math.round(td.bpm)))}
+              class="bpm-value"
+            >
+              {Math.round(td.bpm).toString().padStart(3, '0')}
+            </span>
+          {/if}
+        </div>
         <span
           role="button"
           tabindex="0"
@@ -239,107 +253,94 @@
           onkeydown={(e) => {
             if (e.key === 'Enter' && td.bpmLocked) audioEngine.unlockBPM();
           }}
-          style="font-family:var(--font-ui);font-size:7px;font-weight:700;letter-spacing:0.1em;color:{td.bpmLocked
-            ? '#e2a030'
-            : '#4a5060'};cursor:{td.bpmLocked ? 'pointer' : 'default'}"
+          class="bpm-mode"
+          style="color:{td.bpmLocked ? '#e2a030' : '#4a5060'};cursor:{td.bpmLocked ? 'pointer' : 'default'}"
         >
           {td.bpmLocked ? 'BPM·M' : 'BPM·A'}
         </span>
       </div>
 
-      <div
-        style="height:26px;padding-inline:6px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px;display:flex;align-items:center;gap:3px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7)"
-      >
+      <div class="beat-dots">
         {#each [0, 1, 2, 3] as i (i)}
           {@const active = i === beatInBar && td.playing}
           <div
-            style="width:7px;height:7px;border-radius:1px;background:{active ? '#38bdf8' : '#1a1e24'};box-shadow:{active ? '0 0 5px #38bdf8' : 'none'};border:1px solid {active ? '#38bdf844' : '#141618'};transition:all 0.05s"
+            style="background:{active ? '#38bdf8' : '#1a1e24'};box-shadow:{active ? '0 0 5px #38bdf8' : 'none'};border-color:{active ? '#38bdf844' : '#141618'}"
           ></div>
         {/each}
       </div>
 
-      <div style="width:58px;height:26px;position:relative;background:#0a0b0c;border:1px solid #1a1c1e;border-radius:2px;overflow:hidden">
+      <div class="phase-bar">
         <div
-          style="position:absolute;left:0;top:0;bottom:0;width:{td.beatPhase * 100}%;background:linear-gradient(90deg,#22c55e22,#22c55e55);border-right:{td.playing ? '1px solid #22c55e' : 'none'};transition:{td.beatPhase < 0.05 ? 'none' : 'width 0.02s linear'}"
+          style="width:{td.beatPhase * 100}%;border-right:{td.playing ? '1px solid #22c55e' : 'none'};transition:{td.beatPhase < 0.05 ? 'none' : 'width 0.02s linear'}"
         ></div>
-        <span
-          style="position:absolute;right:3px;top:50%;transform:translateY(-50%);font-family:var(--font-mono);font-size:7px;color:#3a4050"
-        >
-          {td.beatPhase.toFixed(2)}
-        </span>
+        <span>{td.beatPhase.toFixed(2)}</span>
       </div>
     </div>
 
-    <div style="width:1px;height:20px;background:#1e2226"></div>
-
-    <div
-      title={td.analysisError ?? (td.analysisStatus === 'ready' && td.analysisConfidence != null ? `Beat grid · ${Math.round(td.analysisConfidence * 100)}% conf` : 'Rhythm analysis')}
-      style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid {rhyColor}33;border-radius:2px;display:flex;align-items:center;gap:4px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7);color:{rhyColor};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;flex-shrink:0;white-space:nowrap"
-    >
+    <div class="rhy-badge" title={rhyTitle} style="border-color:{rhyColor}33;color:{rhyColor}">
       <Disc3 size={10} />
       {rhyLabel}
     </div>
 
-    <button
-      type="button"
-      onclick={handleTap}
-      style="height:26px;padding-inline:8px;background:{tapFlash
-        ? 'linear-gradient(180deg,#1a2a3a,#111c28)'
-        : 'linear-gradient(180deg,#161a1e,#101418)'};border:1px solid {tapFlash ? '#38bdf866' : '#1e2226'};border-radius:3px;cursor:pointer;color:{tapFlash ? '#38bdf8' : '#3a4555'};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;box-shadow:{tapFlash
-        ? '0 0 8px rgba(56,189,248,0.3)'
-        : 'inset 0 1px 3px rgba(0,0,0,0.5)'};transition:all 0.05s"
+    <button type="button" onclick={handleTap} class="tap-btn" data-flash={tapFlash}>TAP</button>
+
+    <div class="divider"></div>
+
+    <div class="step-block key-block" title="Musical key — SoundTouch pitch shift">
+      <button type="button" onclick={() => nudgeKey(-1)} class="step-btn">−</button>
+      <span>KEY·{soundTouch.key}</span>
+      <button type="button" onclick={() => nudgeKey(1)} class="step-btn">+</button>
+    </div>
+
+    <div class="step-block pitch-block" title="Pitch shift — audio only, beat markers unchanged">
+      <button type="button" onclick={() => nudgePitch(-1)} class="step-btn">−</button>
+      <span>PITCH·{soundTouch.pitchSemitones >= 0 ? '+' : ''}{soundTouch.pitchSemitones}</span>
+      <button type="button" onclick={() => nudgePitch(1)} class="step-btn">+</button>
+    </div>
+
+    <div class="tempo-block" class:soundtouch-on={soundTouch.active} title="Tempo — changes playback speed and effective BPM (0.5×–2×)">
+      <button type="button" onclick={() => nudgeTempo(-TEMPO_STEP)} class="step-btn">−</button>
+      <span class="slider-label">TEMPO</span>
+      <input
+        type="range"
+        min={TEMPO_MIN}
+        max={TEMPO_MAX}
+        step={TEMPO_STEP}
+        value={soundTouch.tempo}
+        oninput={(e) => setTempo(Number(e.currentTarget.value))}
+      />
+      <span class="slider-val">{soundTouch.tempo.toFixed(1)}×</span>
+      <button type="button" onclick={() => nudgeTempo(TEMPO_STEP)} class="step-btn">+</button>
+    </div>
+
+    <div class="slider-block vol-block" title="Master volume">
+      <span class="slider-label">VOL</span>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={soundTouch.volume}
+        oninput={(e) => {
+          audioEngine.setVolume(Number(e.currentTarget.value));
+          refreshSoundTouch();
+        }}
+      />
+    </div>
+
+    <select
+      class="preset-select"
+      title="Factory preset"
+      value={$selectedPreset}
+      onchange={(e) => selectPreset(e.currentTarget.value as PresetName)}
     >
-      TAP
-    </button>
-
-    <div style="width:1px;height:20px;background:#1e2226"></div>
-
-    <button
-      type="button"
-      onclick={() => {
-        audioEngine.cycleKey();
-        soundTouch = audioEngine.getSoundTouchState();
-      }}
-      title="Musical key — click to cycle (SoundTouch pitch shift)"
-      style="height:26px;padding-inline:7px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px;color:#c4b5fd;font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.08em"
-    >
-      KEY·{soundTouch.key}
-    </button>
-
-    <div style="display:flex;align-items:center;gap:2px;height:26px;padding-inline:4px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px">
-      <button type="button" onclick={() => { audioEngine.setPitch(soundTouch.pitchSemitones - 1); soundTouch = audioEngine.getSoundTouchState(); }} style="background:none;border:none;color:#64748b;cursor:pointer;font-size:10px;padding:0 3px">−</button>
-      <span style="font-family:var(--font-mono);font-size:8px;color:#94a3b8;min-width:28px;text-align:center">PIT·{soundTouch.pitchSemitones >= 0 ? '+' : ''}{soundTouch.pitchSemitones}</span>
-      <button type="button" onclick={() => { audioEngine.setPitch(soundTouch.pitchSemitones + 1); soundTouch = audioEngine.getSoundTouchState(); }} style="background:none;border:none;color:#64748b;cursor:pointer;font-size:10px;padding:0 3px">+</button>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid {soundTouch.active ? '#a78bfa33' : '#1a1c1e'};border-radius:2px" title="Tempo — SoundTouch time stretch via playbackRate">
-      <span style="font-family:var(--font-ui);font-size:7px;color:#64748b;font-weight:700">TMP</span>
-      <input type="range" min="0.5" max="2" step="0.01" value={soundTouch.tempo} oninput={(e) => { audioEngine.setTempo(Number(e.currentTarget.value)); soundTouch = audioEngine.getSoundTouchState(); }} style="width:48px;height:4px;accent-color:#38bdf8" />
-      <span style="font-family:var(--font-mono);font-size:8px;color:#94a3b8;min-width:24px">{soundTouch.tempo.toFixed(2)}×</span>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:3px;height:26px;padding-inline:5px;background:linear-gradient(180deg,#0e1012,#0a0c0e);border:1px solid #1a1c1e;border-radius:2px" title="Master volume">
-      <span style="font-family:var(--font-ui);font-size:7px;color:#64748b;font-weight:700">VOL</span>
-      <input type="range" min="0" max="1" step="0.01" value={soundTouch.volume} oninput={(e) => { audioEngine.setVolume(Number(e.currentTarget.value)); soundTouch = audioEngine.getSoundTouchState(); }} style="width:48px;height:4px;accent-color:#22c55e" />
-    </div>
-
-    <div style="width:1px;height:20px;background:#1e2226"></div>
-
-    <div style="display:flex;align-items:center;gap:2px;flex-shrink:0">
-      {#each RACK_MACRO_MODULES as moduleId (moduleId)}
-        {@const def = RACK_MACRO_DEFS[moduleId as RackMacroId]}
-        <MacroDot
-          label={def.short}
-          title="{moduleId} · {def.param}"
-          color={def.color}
-          value={$macros[moduleId as RackMacroId]}
-          onChange={(v) => updateModuleMacro(moduleId as RackMacroId, v)}
-        />
+      {#each FACTORY_PRESETS as preset (preset)}
+        <option value={preset}>{preset}</option>
       {/each}
+    </select>
     </div>
 
-    <div style="width:1px;height:20px;background:#1e2226"></div>
-
+    <div class="topbar-actions">
     <TopBtn label="UNDO">
       {#snippet icon()}<Undo2 size={10} />{/snippet}
     </TopBtn>
@@ -353,54 +354,535 @@
       {#snippet icon()}<X size={10} />{/snippet}
     </TopBtn>
 
-    <div style="width:1px;height:20px;background:#1e2226"></div>
-
     <button
       type="button"
       onclick={() => fxHold.update((h) => !h)}
       title={$fxHold ? 'Resume FX preview shaders' : 'Freeze all FX preview shaders'}
       aria-label={$fxHold ? 'Resume FX shaders' : 'Hold FX shaders'}
-      style="height:26px;width:26px;flex-shrink:0;padding:0;background:{$fxHold
-        ? 'linear-gradient(180deg,#2a1a1a,#1c1212)'
-        : 'linear-gradient(180deg,#191b1d,#131517)'};border-style:solid;border-width:1px;border-color:{$fxHold
-        ? '#ef444444 #ef444466 #ef444466 #ef444466'
-        : '#222428 #1a1c1e #1a1c1e #1a1c1e'};border-radius:3px;cursor:pointer;color:{$fxHold ? '#ef4444' : '#3a4050'};display:flex;align-items:center;justify-content:center;box-shadow:{$fxHold
-        ? '0 0 8px rgba(239,68,68,0.25)'
-        : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.1s"
+      class="hold-btn"
+      data-active={$fxHold}
     >
       {#if $fxHold}<Play size={11} />{:else}<Pause size={11} />{/if}
     </button>
-  </div>
 
-  <div style="display:flex;align-items:center;gap:8px;min-width:280px;justify-content:flex-end">
-    <div
-      style="display:flex;align-items:center;gap:6px;height:28px;min-width:154px;max-width:200px;padding-inline:8px;background:linear-gradient(180deg,#101214,#0b0d0f);border:1px solid #171a1d;border-radius:3px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.7);overflow:hidden"
-    >
-      {#if td.usingUploadedTrack}<Music4 size={11} color="#38bdf8" />{:else}<Disc3 size={11} color="#556070" />{/if}
-      <span
-        style="font-family:var(--font-mono);font-size:9px;color:{td.usingUploadedTrack ? '#8ec5ff' : '#556070'};letter-spacing:0.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
-      >
-        {td.trackName}
-      </span>
+    <div class="divider"></div>
+
+    <div class="topbar-track">
+      <div class="track-chip">
+        {#if td.usingUploadedTrack}<Music4 size={11} color="#38bdf8" />{:else}<Disc3 size={11} color="#556070" />{/if}
+        <span class="track-name" style="color:{td.usingUploadedTrack ? '#8ec5ff' : '#556070'}">{td.trackName}</span>
+      </div>
+
+      <div class="vu-meter">
+        {#each Array.from({ length: 16 }) as _, i (i)}
+          {@const threshold = i / 16}
+          {@const lit = td.playing && td.amplitude * 3.4 > threshold}
+          {@const c = i > 13 ? '#ef4444' : i > 10 ? '#eab308' : '#22c55e'}
+          <div
+            style="height:{4 + (i < 8 ? i : 15 - i)}px;background:{lit ? c : '#1a1e24'};box-shadow:{lit ? `0 0 3px ${c}66` : 'none'}"
+          ></div>
+        {/each}
+      </div>
     </div>
-
-    <div style="display:flex;gap:1px;align-items:flex-end;height:22px">
-      {#each Array.from({ length: 16 }) as _, i (i)}
-        {@const threshold = i / 16}
-        {@const lit = td.playing && td.amplitude * 3.4 > threshold}
-        {@const c = i > 13 ? '#ef4444' : i > 10 ? '#eab308' : '#22c55e'}
-        <div
-          style="width:3px;height:{4 + (i < 8 ? i : 15 - i)}px;background:{lit ? c : '#1a1e24'};box-shadow:{lit ? `0 0 3px ${c}66` : 'none'};border-radius:0.5px;transition:background 0.04s"
-        ></div>
-      {/each}
     </div>
-
-    <span style="font-family:var(--font-mono);font-size:9px;color:#2e3440;letter-spacing:0.06em">CHEat code:e590</span>
   </div>
 </div>
 
 <style>
   .hidden {
     display: none;
+  }
+
+  .topbar-shell {
+    flex-shrink: 0;
+    width: 100%;
+    overflow: hidden;
+    font-family: var(--font-ui);
+    background: linear-gradient(180deg, #202224 0%, #18191b 60%, #141516 100%);
+    border-bottom: 2px solid #0a0b0c;
+    border-top: 1px solid #2a2c2e;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+    position: relative;
+    z-index: 10;
+  }
+
+  .topbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 8px;
+    height: 46px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .topbar-main {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px;
+    color: #454a52;
+    display: flex;
+    align-items: center;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    transition: all 0.2s;
+  }
+
+  .brand-text {
+    font-family: var(--font-brand);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #7a8090;
+  }
+
+  .brand-x {
+    color: #2a3040;
+    font-size: 11px;
+  }
+
+  .brand-sub {
+    font-family: var(--font-brand);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #556070;
+  }
+
+  .transport-btn {
+    height: 26px;
+    padding-inline: 10px;
+    background: linear-gradient(180deg, #1c2020, #141818);
+    border: 1px solid #252729;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #4a5565;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    transition: all 0.1s;
+    flex-shrink: 0;
+  }
+
+  .transport-btn[data-playing='true'] {
+    background: linear-gradient(180deg, #1a2a1a, #121c12);
+    border-color: #22c55e44;
+    color: #22c55e;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
+  }
+
+  .transport-btn[data-active='true'] {
+    color: #38bdf8;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.18);
+  }
+
+  .transport-btn[data-clips='true'] {
+    color: #a78bfa;
+    box-shadow: 0 0 8px rgba(167, 139, 250, 0.18);
+  }
+
+  .transport-btn-danger {
+    background: linear-gradient(180deg, #241919, #1b1212);
+    border-color: #462828;
+    color: #d56b6b;
+  }
+
+  .clip-count {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: #4a5060;
+  }
+
+  .topbar-track {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .track-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    min-width: 0;
+    max-width: 180px;
+    padding-inline: 8px;
+    background: linear-gradient(180deg, #101214, #0b0d0f);
+    border: 1px solid #171a1d;
+    border-radius: 3px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+    overflow: hidden;
+  }
+
+  .track-name {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vu-meter {
+    display: flex;
+    gap: 1px;
+    align-items: flex-end;
+    height: 20px;
+    flex-shrink: 0;
+  }
+
+  .vu-meter div {
+    width: 3px;
+    border-radius: 0.5px;
+    transition: background 0.04s;
+  }
+
+  .audio-group {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+
+  .bpm-block,
+  .beat-dots,
+  .phase-bar,
+  .rhy-badge,
+  .step-block,
+  .tempo-block,
+  .slider-block {
+    height: 26px;
+    background: linear-gradient(180deg, #0e1012, #0a0c0e);
+    border: 1px solid #1a1c1e;
+    border-radius: 2px;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
+    flex-shrink: 0;
+  }
+
+  .bpm-block {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding-inline: 8px;
+    width: 118px;
+    min-width: 118px;
+    max-width: 118px;
+    box-sizing: border-box;
+  }
+
+  .bpm-digit-slot {
+    width: 36px;
+    min-width: 36px;
+    max-width: 36px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  .beat-led {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.04s, box-shadow 0.04s;
+  }
+
+  .bpm-input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: #ffd77a;
+    letter-spacing: 0;
+    text-align: center;
+    line-height: 1;
+  }
+
+  .bpm-value {
+    display: block;
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: #e2a030;
+    letter-spacing: 0;
+    line-height: 1;
+    text-align: center;
+    cursor: text;
+  }
+
+  .bpm-mode {
+    width: 34px;
+    min-width: 34px;
+    flex-shrink: 0;
+    text-align: left;
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+  }
+
+  .beat-dots {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding-inline: 6px;
+    width: 46px;
+    min-width: 46px;
+    box-sizing: border-box;
+  }
+
+  .beat-dots div {
+    width: 7px;
+    height: 7px;
+    border-radius: 1px;
+    border: 1px solid;
+    transition: all 0.05s;
+  }
+
+  .phase-bar {
+    width: 58px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .phase-bar div {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, #22c55e22, #22c55e55);
+  }
+
+  .phase-bar span {
+    position: absolute;
+    right: 3px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    color: #3a4050;
+  }
+
+  .divider {
+    width: 1px;
+    height: 20px;
+    background: #1e2226;
+    flex-shrink: 0;
+  }
+
+  .rhy-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-inline: 7px;
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    width: 62px;
+    min-width: 62px;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
+  .tap-btn {
+    height: 26px;
+    padding-inline: 8px;
+    background: linear-gradient(180deg, #161a1e, #101418);
+    border: 1px solid #1e2226;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #3a4555;
+    font-weight: 700;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+    transition: all 0.05s;
+    flex-shrink: 0;
+  }
+
+  .tap-btn[data-flash='true'] {
+    background: linear-gradient(180deg, #1a2a3a, #111c28);
+    border-color: #38bdf866;
+    color: #38bdf8;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+  }
+
+  .step-block {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding-inline: 4px;
+    box-sizing: border-box;
+  }
+
+  .step-block span {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: #94a3b8;
+    text-align: center;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .key-block {
+    width: 76px;
+    min-width: 76px;
+  }
+
+  .key-block span {
+    color: #c4b5fd;
+  }
+
+  .pitch-block {
+    width: 92px;
+    min-width: 92px;
+  }
+
+  .step-btn {
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 0 4px;
+    line-height: 1;
+  }
+
+  .tempo-block {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-inline: 4px;
+    width: 168px;
+    min-width: 168px;
+    box-sizing: border-box;
+  }
+
+  .tempo-block.soundtouch-on {
+    border-color: #a78bfa33;
+  }
+
+  .tempo-block input[type='range'] {
+    width: 72px;
+    height: 4px;
+    accent-color: #38bdf8;
+  }
+
+  .slider-block {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-inline: 5px;
+    box-sizing: border-box;
+  }
+
+  .vol-block {
+    width: 88px;
+    min-width: 88px;
+  }
+
+  .slider-label {
+    font-size: 7px;
+    color: #64748b;
+    font-weight: 700;
+  }
+
+  .vol-block input[type='range'] {
+    width: 52px;
+    height: 4px;
+    accent-color: #22c55e;
+  }
+
+  .slider-val {
+    font-family: var(--font-mono);
+    font-size: 8px;
+    color: #94a3b8;
+    min-width: 28px;
+  }
+
+  .preset-select {
+    height: 26px;
+    width: 128px;
+    min-width: 128px;
+    max-width: 128px;
+    padding: 0 6px;
+    background: linear-gradient(180deg, #141618, #0e1012);
+    border: 1px solid #252729;
+    border-radius: 3px;
+    color: #94a3b8;
+    font-family: var(--font-ui);
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .hold-btn {
+    height: 26px;
+    width: 26px;
+    flex-shrink: 0;
+    padding: 0;
+    background: linear-gradient(180deg, #191b1d, #131517);
+    border: 1px solid #222428;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #3a4050;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    transition: all 0.1s;
+  }
+
+  .hold-btn[data-active='true'] {
+    background: linear-gradient(180deg, #2a1a1a, #1c1212);
+    border-color: #ef444466;
+    color: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
   }
 </style>

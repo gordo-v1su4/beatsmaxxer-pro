@@ -71,9 +71,9 @@ Only check when **browser-verified** with artifacts or manual recording.
 
 - [x] SoundTouch.js integrated (`@soundtouchjs/audio-worklet`) — KEY / PIT / TMP / VOL
 - [ ] SoundTouch verified by ear on uploaded track (tempo without chipmunk, pitch shift)
-- [x] Essentia dev proxy (`/__api` → hosted analysis)
+- [x] Essentia dev proxy (`/__api/analyze/*` → hosted analysis with `X-API-Key`)
 - [ ] Essentia on production (`VITE_ESSENTIA_API_BASE_URL` on Vercel — not deployed yet)
-- [ ] Beat-synced modules align to bar at QA BPM (133) — not acceptance-tested
+- [ ] Beat-synced modules align to detected BPM — not acceptance-tested
 
 ### P3 — UI
 

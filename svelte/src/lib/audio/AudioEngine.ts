@@ -52,6 +52,8 @@ export class AudioEngine implements IAudioEngine {
   private objectUrl: string | null = null;
 
   private _bpm = DEFAULT_BPM;
+  /** Essentia-detected source tempo — beat grid stays anchored here. */
+  private _analysisBpm = DEFAULT_BPM;
   private _beat = 0;
   private _beatPhase = 0;
   private _amplitude = 0;
@@ -69,8 +71,12 @@ export class AudioEngine implements IAudioEngine {
   private tapTimes: number[] = [];
   private _volume = 0.72;
   private _tempo = 1;
+  /** Detected root key (0 = C). Parsed from analysis when available. */
+  private _analysisKeyIndex = 0;
+  /** User semitone shift from detected key (KEY ±). */
+  private _keyShift = 0;
+  /** Independent pitch offset in semitones (PITCH ±). */
   private _pitchSemitones = 0;
-  private _keyIndex = 0;
 
   static readonly MUSICAL_KEYS = [
     'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'
@@ -254,6 +260,8 @@ export class AudioEngine implements IAudioEngine {
     this._usingUploadedTrack = false;
     this._trackName = DEFAULT_TRACK_NAME;
     this._bpm = DEFAULT_BPM;
+    this._analysisBpm = DEFAULT_BPM;
+    this._tempo = 1;
     this.beatGrid = [];
     this.transportClock.setBeatGrid([], this._bpm, 0);
     this.transportClock.sourceChanged(0);
@@ -310,7 +318,8 @@ export class AudioEngine implements IAudioEngine {
   private syncSoundTouch() {
     applySoundTouchParams(this.soundTouchNode, {
       tempo: this._tempo,
-      pitchSemitones: this._pitchSemitones,
+      pitch: Math.pow(2, this._pitchSemitones / 12),
+      keySemitones: this._keyShift,
       mediaElement: this.mediaElement,
     });
     if (this.sourceNode && 'playbackRate' in this.sourceNode) {
@@ -323,6 +332,11 @@ export class AudioEngine implements IAudioEngine {
     this._trackName = trackName;
     this._bpmLocked = false;
     this._bpm = DEFAULT_BPM;
+    this._analysisBpm = DEFAULT_BPM;
+    this._tempo = 1;
+    this._analysisKeyIndex = 0;
+    this._keyShift = 0;
+    this._pitchSemitones = 0;
     this.beatGrid = [];
     this.transportClock.setBeatGrid([], this._bpm, 0);
     this.transportClock.sourceChanged(0);
@@ -360,23 +374,27 @@ export class AudioEngine implements IAudioEngine {
   }
 
   setTempo(rate: number) {
-    this._tempo = Math.max(0.5, Math.min(2, rate));
-    this.syncSoundTouch();
+    this._bpmLocked = false;
+    this.applyTempoRate(Math.max(0.5, Math.min(2, rate)));
   }
 
   setPitch(semitones: number) {
-    this._pitchSemitones = Math.max(-12, Math.min(12, semitones));
-    this._keyIndex =
-      ((Math.round(this._pitchSemitones) % AudioEngine.MUSICAL_KEYS.length) +
-        AudioEngine.MUSICAL_KEYS.length) %
-      AudioEngine.MUSICAL_KEYS.length;
+    this._pitchSemitones = Math.max(-12, Math.min(12, Math.round(semitones)));
     this.syncSoundTouch();
   }
 
   cycleKey() {
-    this._keyIndex = (this._keyIndex + 1) % AudioEngine.MUSICAL_KEYS.length;
-    this._pitchSemitones = this._keyIndex;
+    this.nudgeKey(1);
+  }
+
+  nudgeKey(delta: number) {
+    this._keyShift = Math.max(-12, Math.min(12, this._keyShift + delta));
     this.syncSoundTouch();
+  }
+
+  private displayKeyIndex() {
+    const len = AudioEngine.MUSICAL_KEYS.length;
+    return (((this._analysisKeyIndex + this._keyShift) % len) + len) % len;
   }
 
   isSoundTouchActive() {
@@ -384,24 +402,45 @@ export class AudioEngine implements IAudioEngine {
   }
 
   getSoundTouchState() {
+    const keyIndex = this.displayKeyIndex();
     return {
       volume: this._volume,
       tempo: this._tempo,
       pitchSemitones: this._pitchSemitones,
-      key: AudioEngine.MUSICAL_KEYS[this._keyIndex] ?? 'C',
-      keyIndex: this._keyIndex,
+      keySemitones: this._keyShift,
+      key: AudioEngine.MUSICAL_KEYS[keyIndex] ?? 'C',
+      keyIndex,
+      analysisKeyIndex: this._analysisKeyIndex,
       active: this.soundTouchReady,
     };
   }
 
   setBPM(bpm: number) {
-    this._bpm = Math.max(60, Math.min(200, bpm));
+    const target = Math.max(60, Math.min(200, bpm));
+    const ratio = target / this._analysisBpm;
     this._bpmLocked = true;
-    this.transportClock.setBpm(this._bpm, this.getTransportTime());
+    this.applyTempoRate(Math.max(0.5, Math.min(2, ratio)));
+    this._bpm = Math.round(this._analysisBpm * this._tempo);
   }
 
   unlockBPM() {
     this._bpmLocked = false;
+    this.applyTempoRate(1);
+    this._bpm = Math.round(this._analysisBpm);
+  }
+
+  /** Playback rate — shifts markers via source-time advance; does not re-analyze. */
+  private applyTempoRate(rate: number) {
+    this._tempo = rate;
+    this.syncSoundTouch();
+    this.transportClock.queueImmediateParameter(
+      "rate",
+      this._tempo,
+      this.getTransportTime(),
+    );
+    if (!this._bpmLocked) {
+      this._bpm = Math.round(this._analysisBpm * this._tempo);
+    }
   }
 
   getState(): AudioEngineState {
@@ -506,7 +545,7 @@ export class AudioEngine implements IAudioEngine {
       performanceTimeSeconds,
       presentationTimeSeconds,
       playing: this._playing,
-      bypassHostedGrid: this._bpmLocked,
+      bypassHostedGrid: false,
     });
   }
 
@@ -719,7 +758,12 @@ export class AudioEngine implements IAudioEngine {
     analysis: Awaited<ReturnType<typeof fetchEssentiaRhythmAnalysis>>,
   ) {
     const bpm = Math.max(60, Math.min(200, analysis.bpm));
+    this._analysisBpm = bpm;
+    this._tempo = 1;
     this._bpm = bpm;
+    this._analysisKeyIndex = analysis.keyIndex ?? 0;
+    this._keyShift = 0;
+    this._pitchSemitones = 0;
     this.beatGrid = analysis.beats
       .filter((beat) => beat >= 0)
       .sort((a, b) => a - b);
@@ -728,11 +772,13 @@ export class AudioEngine implements IAudioEngine {
       bpm,
       this.getTransportTime(),
     );
+    this._bpmLocked = false;
     this._analysisStatus = "ready";
     this._analysisConfidence = Number.isFinite(analysis.confidence)
       ? analysis.confidence
       : null;
     this._analysisError = null;
+    this.syncSoundTouch();
   }
 
   private applyRealtimeFallback(error: unknown) {

@@ -57,12 +57,20 @@ export async function createSoundTouchNode(ctx: AudioContext): Promise<SoundTouc
 
 export function applySoundTouchParams(
   node: SoundTouchHandle | null,
-  opts: { tempo: number; pitchSemitones: number; mediaElement?: HTMLAudioElement | null }
+  opts: {
+    tempo: number;
+    /** Continuous pitch ratio (1 = original). */
+    pitch: number;
+    /** Integer semitone transposition (KEY). */
+    keySemitones: number;
+    mediaElement?: HTMLAudioElement | null;
+  }
 ) {
   if (!node) return;
 
   const tempo = Math.max(0.5, Math.min(2, opts.tempo));
-  const semitones = Math.max(-12, Math.min(12, opts.pitchSemitones));
+  const pitch = Math.max(0.5, Math.min(2, opts.pitch));
+  const keySemitones = Math.max(-12, Math.min(12, Math.round(opts.keySemitones)));
 
   if (opts.mediaElement) {
     opts.mediaElement.preservesPitch = false;
@@ -70,6 +78,6 @@ export function applySoundTouchParams(
   }
 
   node.playbackRate.value = tempo;
-  node.pitch.value = 1;
-  node.pitchSemitones.value = semitones;
+  node.pitch.value = pitch;
+  node.pitchSemitones.value = keySemitones;
 }

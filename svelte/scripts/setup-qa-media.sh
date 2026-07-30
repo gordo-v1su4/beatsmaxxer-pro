@@ -33,8 +33,7 @@ cat > "$MEDIA/manifest.json" << 'EOF'
 {
   "clips": ["clip1.mp4","clip2.mp4","clip3.mp4","clip4.mp4","clip5.mp4","clip6.mp4","clip7.mp4","clip8.mp4"],
   "audio": "redline.wav",
-  "audios": ["redline.wav"],
-  "bpm": 133
+  "audios": ["redline.wav"]
 }
 EOF
 
