@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd svelte && bun install",
   "buildCommand": "cd svelte && bun run build",
-  "outputDirectory": "svelte/build"
+  "outputDirectory": "svelte/build",
+  "rewrites": [
+    {
+      "source": "/__api/analyze/:endpoint",
+      "destination": "/api/analyze/:endpoint"
+    }
+  ]
 }

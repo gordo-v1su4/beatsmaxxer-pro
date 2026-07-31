@@ -31,10 +31,7 @@ export interface EssentiaRhythmAnalysis {
   verified: boolean;
 }
 
-declare const __APP_ESSENTIA_API_BASE_URL__: string;
 declare const __APP_ESSENTIA_ANALYSIS_ENGINE__: string;
-
-const DEFAULT_ESSENTIA_API_BASE_URL = "https://essentia.v1su4.dev";
 
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
   const result = await fetchLegacySyncAnalysis(file, {
@@ -46,16 +43,6 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
 
 export async function fetchRhythmAnalysisFromUrl(analysisUrl: string): Promise<EssentiaRhythmAnalysis> {
   return toRhythmAnalysis(await normalizeLegacySyncResponse(await fetch(analysisUrl)));
-}
-
-function resolveEssentiaApiBaseUrl() {
-  const configured =
-    readCompileTimeDefine(__APP_ESSENTIA_API_BASE_URL__) ||
-    import.meta.env.VITE_ESSENTIA_API_BASE_URL ||
-    import.meta.env.VITE_ESSENTIA_API_URL ||
-    DEFAULT_ESSENTIA_API_BASE_URL;
-
-  return configured.trim().replace(/\/+$/, "");
 }
 
 function readCompileTimeDefine(value: string | undefined, fallback = "") {
@@ -71,9 +58,9 @@ function resolveEssentiaAnalysisEngine() {
 }
 
 function createHostedAnalysisEndpoint(endpointName: "fast" | "rhythm") {
-  return import.meta.env.DEV
-    ? new URL(`/__api/analyze/${endpointName}`, window.location.origin)
-    : new URL(`${resolveEssentiaApiBaseUrl()}/analyze/${endpointName}`);
+  // Same-origin proxy in dev (Vite) and production (Vercel /api rewrite).
+  // The upstream Essentia service requires X-API-Key, which must not ship to the browser.
+  return new URL(`/__api/analyze/${endpointName}`, window.location.origin);
 }
 
 export function normalizeRhythmAnalysis(payload: unknown): EssentiaRhythmAnalysis {
