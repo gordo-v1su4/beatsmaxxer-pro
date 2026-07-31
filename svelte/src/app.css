@@ -102,16 +102,18 @@ input[type='range']::-moz-range-thumb {
 	display: flex;
 	flex-direction: column;
 	min-width: var(--app-min-width);
-	min-height: var(--app-min-height);
 	width: max(100%, var(--app-min-width));
-	height: max(100vh, var(--app-min-height));
+	/* grow with content instead of locking to the viewport: clipping here made
+	   module controls unreachable on shorter windows */
+	height: auto;
+	min-height: max(100vh, var(--app-min-height));
 }
 
 .rack-workspace {
 	flex: 1;
 	display: flex;
 	min-height: 0;
-	overflow: hidden;
+	overflow: visible;
 	background: var(--rack-bg);
 }
 
@@ -121,7 +123,7 @@ input[type='range']::-moz-range-thumb {
 	flex-direction: column;
 	min-width: calc(var(--rack-module-min) * 4);
 	min-height: 0;
-	overflow: hidden;
+	overflow: visible;
 	background: var(--rack-bg);
 }
 
