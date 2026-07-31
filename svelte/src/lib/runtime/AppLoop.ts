@@ -15,6 +15,8 @@ const SYNC_MODULES = new Set(['timesampler', 'speedramp']);
 const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
 /** Latest speedramp rate/phase, forwarded to the shader as aux1/aux2. */
 let lastSpeedRampAux = { aux1: 1, aux2: 0 };
+/** Last timesampler jump we seeked for, so we seek per jump, not per frame. */
+let lastTimeSamplerJump = -1;
 
 function syncVideoModes(moduleIds: string[]) {
   for (const id of moduleIds) {
@@ -76,8 +78,17 @@ function syncControlledVideos(
 ) {
   const live = audioEngine.getLiveScheduleFrame();
   if (moduleIds.includes('timesampler') && live?.timeSampler) {
-    videoPool.seekModule('timesampler', live.timeSampler.sourceTimestampSeconds);
-    videoPool.setModuleRate('timesampler', live.timeSampler.targetPlaybackRate);
+    const ts = live.timeSampler;
+    // Seek ONLY on an actual slice jump. sourceTimestampSeconds advances
+    // continuously inside a slice, so seeking every frame re-decoded the video
+    // constantly: readyState never climbed back to HAVE_CURRENT_DATA, so
+    // hasReadyFrame stayed false and the module fell back to the test card.
+    // jumpGeneration ticks once per jump, which is the real edge to seek on.
+    if (ts.jumpGeneration !== lastTimeSamplerJump) {
+      lastTimeSamplerJump = ts.jumpGeneration;
+      videoPool.seekModule('timesampler', ts.sourceTimestampSeconds);
+    }
+    videoPool.setModuleRate('timesampler', ts.targetPlaybackRate);
   }
 
   if (moduleIds.includes('speedramp')) {

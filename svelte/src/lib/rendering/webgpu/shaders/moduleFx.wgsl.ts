@@ -57,70 +57,170 @@ fn accentRgb() -> vec3f {
   return vec3f(u.colorR, u.colorG, u.colorB);
 }
 
-fn testCard(uv: vec2f) -> vec3f {
-  let grid = step(0.5, fract(uv.x * 24.0)) * step(0.5, fract(uv.y * 14.0));
-  let pulse = 0.45 + 0.55 * beatPulse(8.0);
-  return vec3f(0.045, 0.05, 0.06) + vec3f(0.045) * grid * pulse;
+fn rot2(p: vec2f, a: f32) -> vec2f {
+  let c = cos(a);
+  let s = sin(a);
+  return vec2f(p.x * c - p.y * s, p.x * s + p.y * c);
 }
 
-fn moduleIdle(uv: vec2f, mode: f32) -> vec3f {
-  let lo = uv.y;
-  let inBand = smoothstep(0.52, 0.58, lo);
-  let t = u.beat + u.beatPhase;
-  let pulse = 0.35 + 0.65 * beatPulse(8.0);
-  var graphic = vec3f(0.0);
+fn hash21(p: vec2f) -> f32 {
+  return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
+}
+
+/** Shared idle-card treatment: graphics fade to black toward the top and bottom
+    of the lower band so every module's idle reads as one family. */
+fn idleFade(y: f32) -> f32 {
+  return 0.22 + 0.78 * smoothstep(0.50, 0.18, abs(y - 0.5));
+}
+
+fn smpteBar(i: f32) -> vec3f {
+  if (i < 0.5) { return vec3f(0.82); }
+  else if (i < 1.5) { return vec3f(0.82, 0.82, 0.0); }
+  else if (i < 2.5) { return vec3f(0.0, 0.82, 0.82); }
+  else if (i < 3.5) { return vec3f(0.0, 0.82, 0.0); }
+  else if (i < 4.5) { return vec3f(0.82, 0.0, 0.82); }
+  else if (i < 5.5) { return vec3f(0.82, 0.0, 0.0); }
+  return vec3f(0.0, 0.0, 0.82);
+}
+
+/** Per-module idle graphic, drawn in the lower band of the test card. Each one
+    shows what the module DOES before any clip is loaded, in a shared house style:
+    dark ground, accent-coloured marks, faded top and bottom.
+    p = position in the band (0-1 across, 0-1 down), t = beat clock. */
+fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
+  let asp = max(u.aspect, 0.0001);
+  let fade = idleFade(p.y);
+  let acc = accentRgb();
+  var col = vec3f(0.045, 0.05, 0.06);
 
   if (mode == 1.0) {
-    let along = (uv.x - 0.5) * 4.0 - t * 1.4;
-    let chev = smoothstep(0.78, 0.9, fract(along)) * smoothstep(0.42, 0.0, abs(uv.y - 0.72));
-    graphic = accentRgb() * chev * 0.65;
+    // TRANSITION — chevrons marching in the direction of the selected move
+    let gr = fract(p * vec2f(asp * 5.0, 5.0));
+    col += vec3f(0.045) * step(0.95, max(gr.x, gr.y));
+    let kind = floor(clamp(u.p2, 0.0, 1.0) * 100.0 + 0.5);
+    var dir = vec2f(1.0, 0.0);
+    if (kind < 0.5) { dir = vec2f(-1.0, 0.0); }
+    else if (kind < 1.5) { dir = vec2f(1.0, 0.0); }
+    else if (kind < 2.5) { dir = vec2f(0.0, 1.0); }
+    else if (kind < 3.5) { dir = vec2f(0.0, -1.0); }
+    let along = dot(p - vec2f(0.5), dir) * 4.0 - t * 1.4;
+    let lane = abs(dot(p - vec2f(0.5), vec2f(-dir.y, dir.x)));
+    let chev = smoothstep(0.78, 0.9, fract(along + lane * 1.5)) * smoothstep(0.42, 0.0, lane);
+    col += acc * chev * 0.6 * fade;
   } else if (mode == 2.0) {
-    let x = fract(uv.x * 7.0 - t * 1.4);
+    // SPEEDRAMP — film-strip ticks that visibly accelerate and crawl with the rate
+    let x = fract(p.x * 7.0 - t * 1.4 * max(u.aux1, 0.05));
     let tick = smoothstep(0.10, 0.03, abs(x - 0.5));
-    graphic = accentRgb() * tick * (0.25 + 0.55 * smoothstep(0.4, 0.0, abs(uv.y - 0.72)));
+    col += acc * tick * (0.2 + 0.55 * smoothstep(0.4, 0.0, abs(p.y - 0.5))) * fade;
+    col += vec3f(0.35) * smoothstep(0.004, 0.0, abs(p.x - 0.5)) * 0.5;
   } else if (mode == 3.0) {
-    let taps = 3.0 + floor(u.p0 * 5.0);
-    var acc = vec3f(0.0);
-    for (var i = 0; i < 6; i = i + 1) {
+    // TAPDELAY — the classic tap lines: echo taps sweep with LEN, fade with FEEDBACK
+    let taps = 3.0 + floor(u.p1 * 5.0);
+    for (var i = 0; i < 8; i = i + 1) {
       let fi = f32(i);
       if (fi >= taps) { continue; }
-      let tx = fract(t * (0.35 + u.p1 * 0.4) + fi / taps);
-      let tap = smoothstep(0.04, 0.0, abs(uv.x - tx)) * smoothstep(0.35, 0.0, abs(uv.y - 0.72));
-      acc += accentRgb() * tap * (1.0 - fi * 0.12);
+      let tx = fract(t * (0.35 + u.p0 * 0.5) - fi / max(taps, 1.0));
+      let line = smoothstep(0.012, 0.0, abs(p.x - tx));
+      let decay = pow(clamp(u.p1, 0.0, 1.0), fi * 0.7);
+      col += acc * line * decay * (0.35 + 0.65 * smoothstep(0.45, 0.0, abs(p.y - 0.5))) * fade;
     }
-    graphic = acc;
   } else if (mode == 4.0) {
-    let slices = max(4.0, floor(u.p1 * 32.0 + 4.0));
-    let sliceW = 1.0 / slices;
-    let idx = floor(fract(t * 0.25 * (u.p0 + 0.2)) * slices);
-    let sx = idx * sliceW;
-    let bar = step(sx, uv.x) * step(uv.x, sx + sliceW - 0.004);
-    let play = smoothstep(0.35, 0.0, abs(uv.y - 0.72));
-    graphic = accentRgb() * bar * play * 0.75;
+    // TIMESAMPLER — MIDI piano roll climbing an arpeggio staircase, so FWD/REV read
+    let gx = p.x * asp * 3.2 + t * 1.8;
+    let gy = p.y * 6.0;
+    let ci = floor(gx);
+    let fx = fract(gx);
+    let isBar = step(fract(ci * 0.25), 0.01);
+    col += vec3f(0.05, 0.055, 0.065) * step(0.95, fract(gy)) * (0.4 + 0.6 * fade);
+    col += acc * smoothstep(0.06, 0.0, fx) * isBar * 0.22 * fade;
+    let lane = fract(ci / 6.0) * 6.0;
+    let len = 0.55 + 0.30 * hash21(vec2f(ci, 9.1));
+    let inLane = step(floor(lane), gy) * step(gy, floor(lane) + 1.0);
+    let body = smoothstep(0.02, 0.12, fx) * smoothstep(len, len - 0.14, fx);
+    let laneBody = smoothstep(0.10, 0.24, fract(gy)) * smoothstep(0.92, 0.78, fract(gy));
+    let note = inLane * laneBody * body;
+    col += acc * note * (0.55 + 0.35 * hash21(vec2f(ci, 5.3))) * 0.6 * fade;
+    col += vec3f(0.9) * smoothstep(0.006, 0.0, abs(p.x - 0.5)) * 0.45;
   } else if (mode == 5.0) {
-    let ring = smoothstep(0.08, 0.0, abs(length(uv - vec2f(0.5, 0.72)) - 0.12 - beatPulse(6.0) * 0.06));
-    graphic = accentRgb() * ring * 0.8;
+    // PUNCH ZOOM — feathered bullseye target the crash zoom reads against
+    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    let r = length(c);
+    let rings = smoothstep(0.030, 0.010, abs(r - 0.12))
+              + smoothstep(0.030, 0.010, abs(r - 0.27))
+              + smoothstep(0.030, 0.010, abs(r - 0.42));
+    let halo = smoothstep(0.065, 0.0, abs(r - 0.12))
+             + smoothstep(0.065, 0.0, abs(r - 0.27))
+             + smoothstep(0.065, 0.0, abs(r - 0.42));
+    col += acc * (rings * 0.62 + halo * 0.26) * fade;
+    let cross = min(abs(c.x), abs(c.y));
+    col += acc * (smoothstep(0.016, 0.004, cross) * 0.42) * step(r, 0.5) * fade;
+    col += vec3f(0.95) * smoothstep(0.045, 0.0, r) * 0.7 * fade;
   } else if (mode == 6.0) {
-    let shake = vec2f(sin(t * 8.0 + uv.y * 30.0), cos(t * 7.0 + uv.x * 28.0)) * u.p0 * 0.015;
-    let dot = smoothstep(0.02, 0.0, length(fract(vec2f(uv.x + shake.x, uv.y + shake.y) * vec2f(18.0, 10.0)) - 0.5));
-    graphic = accentRgb() * dot * 0.55;
+    // HANDHELD — horizon and level grid, so the wobble reads against straight lines
+    let hLine = smoothstep(0.009, 0.0, abs(fract(p.y * 4.0 + 0.5) - 0.5) / 4.0);
+    let vLine = smoothstep(0.009, 0.0, abs(fract(p.x * asp * 4.0 + 0.5) - 0.5) / (asp * 4.0));
+    col += vec3f(0.16, 0.17, 0.20) * max(hLine, vLine) * (0.35 + 0.65 * fade);
+    col += acc * (smoothstep(0.022, 0.006, abs(p.y - 0.5)) * 0.7
+                + smoothstep(0.07, 0.0, abs(p.y - 0.5)) * 0.26) * fade;
+    let marks = step(abs(p.y - 0.5), 0.07) * smoothstep(0.82, 0.92, fract(p.x * asp * 8.0));
+    col += acc * marks * 0.55 * fade;
   } else if (mode == 7.0) {
-    let angle = t * 0.785 * u.p1;
-    let c = uv - vec2f(0.5, 0.72);
-    let rot = vec2f(c.x * cos(angle) - c.y * sin(angle), c.x * sin(angle) + c.y * cos(angle));
-    let cross = smoothstep(0.02, 0.0, abs(rot.x)) + smoothstep(0.02, 0.0, abs(rot.y));
-    graphic = accentRgb() * min(cross, 1.0) * 0.45;
+    // DRIFT CAM — map grid with X landmarks the dolly pans across
+    let g = p * vec2f(asp * 6.0, 6.0);
+    col += vec3f(0.09, 0.10, 0.12) * step(0.92, max(fract(g.x), fract(g.y))) * (0.35 + 0.65 * fade);
+    for (var i = 0; i < 5; i = i + 1) {
+      let fi = f32(i);
+      let lp = vec2f(hash21(vec2f(fi, 2.7)), hash21(vec2f(7.7, fi)));
+      let d = vec2f((p.x - lp.x) * asp, p.y - lp.y);
+      let xm = smoothstep(0.014, 0.004, abs(abs(d.x) - abs(d.y)))
+             * smoothstep(0.036, 0.028, max(abs(d.x), abs(d.y)));
+      col += acc * xm * 0.8 * fade;
+      col += acc * smoothstep(0.10, 0.0, length(d)) * 0.20 * (1.0 + 0.5 * sin(t * 2.0 + fi * 2.1)) * fade;
+    }
   } else if (mode == 8.0) {
-    let dist = length(uv - vec2f(0.5, 0.72));
-    let ring = smoothstep(0.18, 0.12, dist) * smoothstep(0.02, 0.08, dist);
-    graphic = accentRgb() * ring * (0.35 + beatPulse(5.0) * 0.55);
+    // RACK FOCUS — outlined shapes sitting at different depths: far = small and
+    // soft, near = big and crisp, so a focus pull is unmistakable
+    let g = p * vec2f(asp * 6.0, 6.0);
+    col += vec3f(0.05, 0.055, 0.065) * step(0.93, max(fract(g.x), fract(g.y))) * (0.35 + 0.65 * fade);
+    for (var i = 0; i < 5; i = i + 1) {
+      let fi = f32(i);
+      let z = fi / 4.0;
+      let sp = vec2f(0.14 + fi * 0.18 + sin(t * 0.25 + fi * 2.1) * 0.012,
+                     0.35 + 0.34 * hash21(vec2f(fi, 4.2)));
+      let d = vec2f((p.x - sp.x) * asp, p.y - sp.y);
+      let sz = 0.035 + z * 0.075;
+      let m3 = fract(fi / 3.0) * 3.0;
+      var m = length(d);
+      if (m3 >= 0.5 && m3 < 1.5) { m = abs(d.x) + abs(d.y); }
+      else if (m3 >= 1.5) { m = max(abs(d.x), abs(d.y)); }
+      let w = 0.014 - z * 0.006;
+      col += acc * smoothstep(w + 0.010, w * 0.5, abs(m - sz)) * (0.22 + z * 0.42) * fade;
+    }
   } else {
-    let scan = step(0.5, fract(uv.y * 120.0 + t * 2.0));
-    graphic = accentRgb() * scan * 0.08;
+    // film-look modules: fine scan lines
+    col += acc * step(0.5, fract(p.y * 120.0 + t * 2.0)) * 0.08 * fade;
   }
+  return col;
+}
 
-  let upper = testCard(uv);
-  return mix(upper, upper + graphic * inBand, inBand) * pulse;
+/** Test card shown when no clip is loaded: SMPTE bars and a grey ramp up top for
+    colour-effect readout, the module's own idle graphic filling the band below. */
+fn testCard(uv: vec2f) -> vec3f {
+  let t = u.beat;
+  let mode = floor(u.effectMode + 0.5);
+  var col: vec3f;
+  if (uv.y < 0.26) {
+    col = smpteBar(floor(uv.x * 7.0)) * 0.9;
+    col *= 0.82 + 0.18 * smoothstep(0.0, 0.03, abs(fract(uv.x * 7.0) - 0.5));
+  } else if (uv.y < 0.36) {
+    col = vec3f(floor(uv.x * 12.0) / 11.0);
+  } else {
+    col = idleGraphic(vec2f(uv.x, (uv.y - 0.36) / 0.64), mode, t);
+  }
+  // beat flash marker, top-left corner
+  let mk = step(max(abs(uv.x - 0.03) * max(u.aspect, 0.0001), abs(uv.y - 0.04)), 0.028);
+  col = mix(col, accentRgb(), mk * beatPulse(10.0) * 0.9);
+  return clamp(col, vec3f(0.0), vec3f(1.0));
 }
 
 fn sampleSource(uv: vec2f) -> vec3f {
@@ -135,7 +235,7 @@ fn sampleSource(uv: vec2f) -> vec3f {
       col.b = textureSample(videoTex, videoSampler, clamp(uv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
     }
   } else {
-    col = moduleIdle(uv, floor(u.effectMode + 0.5));
+    col = testCard(uv);
   }
   return col;
 }
@@ -144,16 +244,6 @@ fn sampleFeedback(uv: vec2f) -> vec3f {
   let dims = textureDimensions(feedbackTex);
   if (dims.x < 2u || dims.y < 2u) { return vec3f(0.0); }
   return textureSample(feedbackTex, feedbackSampler, uv).rgb;
-}
-
-fn rot2(p: vec2f, a: f32) -> vec2f {
-  let c = cos(a);
-  let s = sin(a);
-  return vec2f(p.x * c - p.y * s, p.x * s + p.y * c);
-}
-
-fn hash21(p: vec2f) -> f32 {
-  return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
 }
 
 /** Beats per transition cycle: the 7 zones the UI exposes (1BT .. 8BAR). */

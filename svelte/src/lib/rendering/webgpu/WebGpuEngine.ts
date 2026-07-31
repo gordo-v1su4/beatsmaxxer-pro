@@ -141,7 +141,12 @@ export class WebGpuEngine {
     context.configure({
       device: this.device,
       format: this.format,
-      alphaMode: 'opaque'
+      alphaMode: 'opaque',
+      // COPY_SRC is what makes the canvas readable back out: without it the
+      // swapchain texture is render-only, so toDataURL() and every headless
+      // screenshot come back blank/black even while the GPU renders correctly.
+      // Acceptance gates cannot produce a PNG of a real frame without this.
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
     });
 
     const existing = this.bindings.get(id);

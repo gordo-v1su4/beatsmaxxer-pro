@@ -172,8 +172,13 @@ class VideoPool {
     this.freeRun.delete(moduleId);
     const v = this.videos.get(moduleId);
     if (!v || !Number.isFinite(v.duration) || v.duration <= 0) return;
+    // a seek already in flight: issuing another restarts the decode and keeps
+    // readyState pinned below HAVE_CURRENT_DATA, which blanks the module
+    if (v.seeking) return;
     const target = ((seconds % v.duration) + v.duration) % v.duration;
-    if (Math.abs(v.currentTime - target) > 0.02) {
+    // tolerance must exceed one frame (~33ms at 30fps) or normal playback drift
+    // alone triggers a re-decode every frame
+    if (Math.abs(v.currentTime - target) > 0.05) {
       v.currentTime = target;
     }
   }
