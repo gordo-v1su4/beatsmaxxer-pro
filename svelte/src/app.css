@@ -287,3 +287,16 @@ input[type='range']::-moz-range-thumb {
 		flex: 1 1 100%;
 	}
 }
+
+/* No visible scrollbars anywhere in the rack UI: the chrome-coloured bars were
+   showing up inside module control stacks and beside the previews. Scrolling
+   still works (wheel/trackpad/keys), the bar is simply not painted. */
+* {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+	width: 0;
+	height: 0;
+	display: none;
+}

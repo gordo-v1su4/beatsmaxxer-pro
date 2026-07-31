@@ -319,17 +319,27 @@ export class WebGpuEngine {
     data[20] = rp.aux1 ?? 1;
     data[21] = rp.aux2 ?? 0;
 
-    let shaderHasVideo = hasVideo;
-    let videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
+    // A clip that is mid-seek briefly reports not-ready. Falling back to the
+    // test card for those frames flashed SMPTE bars and white between every
+    // timesampler cut and dropped black frames in speedramp. Once a clip is
+    // attached, hold the last uploaded frame instead of showing the card.
+    const cached = this.videoTextures.cachedView(moduleId);
+    let shaderHasVideo = video ? 1 : 0;
+    let videoTextureView =
+      cached ?? this.videoTextures.ensurePlaceholder(this.device);
     if (hasVideo && video) {
       try {
         videoTextureView = this.videoTextures.upload(this.device, moduleId, video);
       } catch {
-        shaderHasVideo = 0;
-        videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
+        // keep the previous frame; only fall back to the card if we never had one
+        if (!cached) {
+          shaderHasVideo = 0;
+          videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
+        }
       }
-    } else {
+    } else if (!video || !cached) {
       shaderHasVideo = 0;
+      videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
     }
     data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
