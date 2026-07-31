@@ -62,7 +62,7 @@ export default async function handler(req: RouteRequest, res: ServerResponse) {
         "Content-Type": contentType,
         ...(resolveEssentiaApiKey() ? { "X-API-Key": resolveEssentiaApiKey() } : {}),
       },
-      body,
+      body: new Uint8Array(body),
     });
 
     const text = await upstream.text();
