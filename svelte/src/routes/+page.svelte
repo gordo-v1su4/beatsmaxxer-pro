@@ -145,7 +145,7 @@
         class="rack-row"
         style="height:{$topRowCompact
           ? 'auto'
-          : 'clamp(360px, calc((100vw - 186px) * 9 / 64 + 232px), 420px)'};flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
+          : 'clamp(300px, calc((100vw - 186px) * 9 / 64 + 190px), 350px)'};flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -161,13 +161,22 @@
             onClearMidi={() => clearModuleMidi(moduleId)}
           />
         {/each}
+        <!-- Placeholder for a future column: keeps the row's rhythm and shows
+             where another module/clip will go. Drop a clip on a real slot for
+             now; this is intentionally inert. -->
+        <div class="rack-slot rack-slot-placeholder">
+          <div class="placeholder-card">
+            <span class="placeholder-plus">+</span>
+            <span class="placeholder-label">ADD CLIP</span>
+          </div>
+        </div>
       </div>
 
       <div
         class="rack-row"
         style="height:{$bottomRowCompact
           ? 'auto'
-          : 'clamp(230px, calc((100vw - 186px) * 9 / 64 + 96px), 290px)'};flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
+          : 'clamp(196px, calc((100vw - 186px) * 9 / 64 + 74px), 240px)'};flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot
@@ -181,6 +190,15 @@
             onClearVideo={() => clearModuleVideo(moduleId)}
           />
         {/each}
+        <!-- Placeholder for a future column: keeps the row's rhythm and shows
+             where another module/clip will go. Drop a clip on a real slot for
+             now; this is intentionally inert. -->
+        <div class="rack-slot rack-slot-placeholder">
+          <div class="placeholder-card">
+            <span class="placeholder-plus">+</span>
+            <span class="placeholder-label">ADD CLIP</span>
+          </div>
+        </div>
       </div>
 
       <BeatSequencer />
