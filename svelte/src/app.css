@@ -203,9 +203,10 @@ input[type='range']::-moz-range-thumb {
 .module-preview {
 	position: relative;
 	width: 100%;
-	max-width: min(100%, 300px);
+	/* fill the column: a fixed cap left black pillarbox bars on wider columns */
+	max-width: 100%;
 	aspect-ratio: 16 / 9;
-	align-self: center;
+	align-self: stretch;
 	flex-shrink: 0;
 	background: #000;
 }

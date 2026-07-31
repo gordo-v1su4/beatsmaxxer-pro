@@ -145,7 +145,7 @@
         class="rack-row"
         style="height:{$topRowCompact
           ? 'auto'
-          : 'clamp(420px, calc((100vw - 186px) * 9 / 64 + 244px), 544px)'};flex-shrink:{$topRowCompact ? '0' : '0.15'};min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
+          : 'clamp(420px, calc((100vw - 186px) * 9 / 64 + 244px), 544px)'};flex-shrink:{$topRowCompact ? '0' : '1'};min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -167,7 +167,7 @@
         class="rack-row"
         style="height:{$bottomRowCompact
           ? 'auto'
-          : 'clamp(240px, calc((100vw - 186px) * 9 / 64 + 96px), 404px)'};flex-shrink:{$bottomRowCompact ? '0' : '0.15'};min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
+          : 'clamp(240px, calc((100vw - 186px) * 9 / 64 + 96px), 404px)'};flex-shrink:{$bottomRowCompact ? '0' : '1'};min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot
