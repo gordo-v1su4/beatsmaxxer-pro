@@ -5,6 +5,10 @@
   "outputDirectory": "svelte/build",
   "rewrites": [
     {
+      "source": "/favicon.ico",
+      "destination": "/favicon.svg"
+    },
+    {
       "source": "/__api/analyze/:endpoint",
       "destination": "/api/analyze/:endpoint"
     }

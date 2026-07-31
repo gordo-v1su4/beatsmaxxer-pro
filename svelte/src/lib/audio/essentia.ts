@@ -4,6 +4,7 @@ import {
   normalizeLegacySyncAnalysis,
   normalizeLegacySyncResponse,
 } from "$lib/analysis/adapters/legacySync";
+import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
 
 export interface EssentiaRhythmAnalysis {
   bpm: number;
@@ -34,7 +35,8 @@ export interface EssentiaRhythmAnalysis {
 declare const __APP_ESSENTIA_ANALYSIS_ENGINE__: string;
 
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
-  const result = await fetchLegacySyncAnalysis(file, {
+  const analysisFile = await prepareAnalysisUpload(file);
+  const result = await fetchLegacySyncAnalysis(analysisFile, {
     endpointFor: createHostedAnalysisEndpoint,
     engineHint: resolveEssentiaAnalysisEngine(),
   });

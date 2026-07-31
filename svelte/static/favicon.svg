@@ -8,12 +8,10 @@
   </defs>
   <rect width="32" height="32" rx="7" fill="#0a0b0c"/>
   <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.25" fill="none" stroke="#1e2226" stroke-width="1.5"/>
-  <!-- beat bars -->
   <rect x="7" y="11" width="2.5" height="10" rx="0.75" fill="#22c55e" opacity="0.9"/>
   <rect x="11.5" y="8" width="2.5" height="13" rx="0.75" fill="#38bdf8"/>
   <rect x="16" y="10" width="2.5" height="11" rx="0.75" fill="#38bdf8" opacity="0.85"/>
   <rect x="20.5" y="12" width="2.5" height="9" rx="0.75" fill="#f59e0b"/>
-  <!-- surf crest -->
   <path
     d="M5 22 C9 17 12 19 16 16 C20 13 23 15 27 12"
     fill="none"
