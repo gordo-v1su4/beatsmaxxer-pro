@@ -39,6 +39,8 @@ struct Uniforms {
   colorB: f32,
   pitchNorm: f32,
   aspect: f32,
+  aux1: f32,
+  aux2: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -274,11 +276,30 @@ fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
   return wet * (1.0 + sin(p * 3.14159265) * amount * 0.25);
 }
 
+/** The time remap itself happens upstream (video.playbackRate from the bezier
+    solve in JS, handed here as aux1). This adds the LOOK of speed: horizontal
+    motion streaking and chroma pull that scale with how far the rate sits from
+    1x, slow-mo glow, and fast-motion contrast crunch. */
 fn effectSpeedRamp(col: vec3f, uv: vec2f) -> vec3f {
-  let spd = mix(0.5, 2.5, u.p0);
-  let phase = u.beatPhase * spd;
-  let offset = (phase - floor(phase)) * 0.035 * u.p0;
-  return sampleSource(clamp(uv + vec2f(offset, 0.0), vec2f(0.0), vec2f(1.0)));
+  let rate = max(u.aux1, 0.001);
+  // 0 at 1x, 1 at 4x or 0.25x — log-symmetric so slow and fast read equally
+  let dev = clamp(abs(log2(rate)) / 2.0, 0.0, 1.0);
+
+  var wet = vec3f(0.0);
+  let span = dev * 0.035;
+  for (var i = 0; i < 5; i = i + 1) {
+    let o = (f32(i) / 4.0 - 0.5) * span;
+    wet += sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
+  }
+  wet /= 5.0;
+
+  let split = dev * 0.012;
+  wet.r = sampleSource(clamp(uv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
+  wet.b = sampleSource(clamp(uv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
+
+  var gain = 1.0 - dev * 0.05;
+  if (rate < 1.0) { gain = 1.0 + dev * 0.15; }
+  return wet * (gain + beatPulse(6.0) * 0.05);
 }
 
 /** Stutter length in beats from the LEN zones the UI exposes (1/32 .. 1/4). */
@@ -335,55 +356,142 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   return mix(wet, max(wet, tap), fb * 0.35);
 }
 
-fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {
-  let slices = max(4.0, floor(u.p1 * 32.0 + 4.0));
-  let sliceIdx = floor(u.beat * u.p0 * 0.25) % slices;
-  let jump = sliceIdx / slices;
-  let shifted = sampleSource(vec2f(fract(uv.x + jump * 0.12), uv.y));
-  if (u.accent > 0.5) {
-    return shifted * (1.0 + beatPulse(6.0) * 0.35);
-  }
-  return shifted;
+/** Jump interval in beats from the JMP zones (1/16 .. 1 BAR). */
+fn samplerJumpBeats(p: f32) -> f32 {
+  if (p < 0.2) { return 0.25; }
+  else if (p < 0.4) { return 0.5; }
+  else if (p < 0.6) { return 1.0; }
+  else if (p < 0.8) { return 2.0; }
+  return 4.0;
 }
 
+/** Simpler-style slice sampler: the actual slice jump is a real video seek done
+    upstream (videoPool.seekModule from the live schedule frame), so the picture
+    genuinely teleports. This adds the per-jump HIT accent — a quick pop right
+    after each jump that decays to clean playback — plus tape wobble when the
+    rate is off 1x. p2 = JMP interval, accent = LUM(1) vs off. */
+fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {
+  let jumpBeats = samplerJumpBeats(u.p2);
+  // how far through the current slice we are: 0 right after a jump, 1 just before
+  let prog = clamp((u.beat - floor(u.beat / jumpBeats) * jumpBeats) / jumpBeats, 0.0, 1.0);
+
+  let rate = 0.25 + u.p0 * 1.75;
+  let wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
+  var st = uv;
+  st.x += sin(uv.y * 60.0 + u.beat * 9.0) * wob * 0.004;
+  var wet = sampleSource(clamp(st, vec2f(0.0), vec2f(1.0)));
+
+  // the pop lands on the jump and decays fast, so cuts read as deliberate hits
+  let hit = exp(-prog * 6.0) * u.playing;
+  if (u.accent > 0.5) {
+    // LUM: exposure pop (gain + gamma lift), like a flash frame
+    wet = pow(max(wet, vec3f(0.0)), vec3f(1.0 / (1.0 + hit * 0.9))) * (1.0 + hit * 0.55);
+  }
+  return wet * (1.0 + beatPulse(6.0) * 0.05);
+}
+
+/** Crash zoom: a beat-synced punch in or out with motion blur along the zoom,
+    like a fake camera zoom hit. p1 = DIR (low in, mid alternate, high out),
+    p0 = amount, p2 = snap (how sharply the pulse decays). */
 fn effectPunch(col: vec3f, uv: vec2f) -> vec3f {
   let amt = u.p0;
-  let pulse = beatPulse(9.0) * amt;
-  let c = vec2f(0.5) + (uv - vec2f(0.5)) * (1.0 - pulse * 0.4);
-  return sampleSource(clamp(c, vec2f(0.0), vec2f(1.0)));
+  let snap = u.p2;
+  let pulse = u.playing * exp(-u.beatPhase * (3.0 + snap * 9.0));
+  var dir = 1.0;
+  if (u.p1 >= 0.66) { dir = -1.0; }
+  else if (u.p1 >= 0.33) {
+    // alternate in/out bar by bar
+    if (fract(floor(u.beat) * 0.5) >= 0.25) { dir = -1.0; }
+  }
+  // gentle breathing keeps the frame alive between hits
+  let breath = (0.5 - 0.5 * cos(u.beat * 1.2)) * (0.02 + amt * 0.03);
+  let z = max(0.35, 1.0 + dir * pulse * (amt * amt * 1.4 + amt * 0.25 + u.bassAmp * 0.12) + dir * breath);
+
+  var wet = vec3f(0.0);
+  for (var i = 0; i < 5; i = i + 1) {
+    let zz = mix(1.0, z, 0.55 + 0.45 * f32(i) / 4.0);
+    wet += sampleSource(clamp((uv - vec2f(0.5)) / zz + vec2f(0.5), vec2f(0.0), vec2f(1.0)));
+  }
+  wet /= 5.0;
+  return wet * (1.0 + pulse * 0.08);
 }
 
+/** Handheld operator: slow breathing sway from incommensurate sines, fast fine
+    hand jitter, a footstep lurch on the beat, and a drifting roll. The frame is
+    cropped in so translation/rotation never exposes an edge.
+    p0 = handheld amount, p1 = footstep impact, p2 = sway/roll. */
 fn effectShake(col: vec3f, uv: vec2f) -> vec3f {
   let hand = u.p0;
-  let kick = beatPulse(7.0);
-  let shake = vec2f(
-    sin(u.beat * 6.28318 + uv.y * 20.0),
-    cos(u.beat * 5.5 + uv.x * 18.0)
-  ) * hand * 0.018 * (0.4 + kick + u.amplitude * 0.6);
-  return sampleSource(clamp(uv + shake, vec2f(0.0), vec2f(1.0)));
+  let impact = u.p1;
+  let sway = u.p2;
+  let t = u.beat * 0.5;
+  let amp = 0.006 + hand * hand * 0.05;
+
+  let drift = vec2f(
+    sin(t * 0.9) + 0.6 * sin(t * 1.73 + 1.3) + 0.3 * sin(t * 3.1 + 0.5),
+    cos(t * 1.1) + 0.6 * sin(t * 2.17 + 2.1) + 0.3 * cos(t * 2.7 + 1.7)
+  ) * amp;
+  let jit = vec2f(sin(t * 17.0) + 0.5 * sin(t * 29.0), cos(t * 19.0) + 0.5 * sin(t * 31.0))
+            * amp * 0.18 * (0.3 + hand);
+  // footstep: a lurch that settles downward, randomised per step
+  let boot = beatPulse(9.0) * impact;
+  let stepOff = vec2f(
+    hash21(vec2f(floor(u.beat), 3.7)) - 0.5,
+    -abs(hash21(vec2f(floor(u.beat), 9.1)) - 0.5) * 1.4
+  ) * boot * (0.03 + impact * 0.1);
+
+  let ang = (sin(t * 0.6) + 0.5 * sin(t * 1.27 + 1.0)) * sway * (0.02 + sway * 0.07) + boot * sway * 0.04;
+  let z = 1.07 + hand * 0.06 + boot * (0.03 + impact * 0.07);
+
+  var c = uv - vec2f(0.5);
+  c.x *= max(u.aspect, 0.0001);
+  c = rot2(c, ang);
+  c.x /= max(u.aspect, 0.0001);
+  return sampleSource(clamp(c / z + vec2f(0.5) + drift + jit + stepOff, vec2f(0.0), vec2f(1.0)));
 }
 
+/** Drift cam: a flying dolly move across a cropped frame. The sweep runs on the
+    beat clock as two incommensurate orbits so it never repeats obviously; the
+    beat only adds a nudge on top. p0 = speed, p1 = travel distance, p2 = nudge. */
 fn effectDrift(col: vec3f, uv: vec2f) -> vec3f {
+  let spd = u.p0;
   let drift = u.p1;
-  let angle = u.beat * 0.785398 * drift;
-  let c = uv - vec2f(0.5);
-  let rot = vec2f(
-    c.x * cos(angle) - c.y * sin(angle),
-    c.x * sin(angle) + c.y * cos(angle)
-  ) + vec2f(0.5);
-  return sampleSource(clamp(rot, vec2f(0.0), vec2f(1.0)));
+  let nudge = u.p2;
+  let t = u.beat * (0.12 + spd * 0.6 + spd * spd * 1.4) * 0.5;
+  let pulse = beatPulse(4.0);
+
+  let dist = 0.12 + drift * 0.26;
+  let zoomBase = 1.18 + drift * 0.5;
+  var offs = vec2f(
+    sin(t * 0.8) + 0.5 * sin(t * 1.9 + 1.1),
+    cos(t * 0.63) + 0.5 * cos(t * 1.7 + 0.4)
+  ) * dist * 0.6;
+  offs += vec2f(sin(u.beat * 1.7), cos(u.beat * 1.1)) * pulse * nudge * (0.03 + nudge * 0.06);
+  let z = zoomBase * (1.0 + pulse * nudge * 0.06);
+  return sampleSource(clamp((uv - vec2f(0.5)) / z + vec2f(0.5) + offs, vec2f(0.0), vec2f(1.0)));
 }
 
+/** Rack focus: a pull that ALWAYS lands back at sharp — the cosine envelope hits
+    0 at the top of every cycle, like a focus pull settling. p0 = amount,
+    p1 = pulse depth, p2 = bloom. */
 fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
   let amt = u.p0;
-  let pulse = beatPulse(5.0) * amt;
-  let dist = length(uv - vec2f(0.5));
-  let blurAmt = pulse * smoothstep(0.15, 0.65, dist) * 0.022;
-  var acc = vec3f(0.0);
-  acc += sampleSource(uv);
-  acc += sampleSource(uv + vec2f(blurAmt, 0.0));
-  acc += sampleSource(uv - vec2f(blurAmt, 0.0));
-  return acc / 3.0;
+  let pulseP = u.p1;
+  let soft = u.p2;
+
+  let rack = 0.5 - 0.5 * cos(fract(u.beat / 2.0) * 6.28318530718);
+  let k = rack * (0.2 + pulseP * 0.8);
+  let blur = k * (0.004 + amt * 0.045);
+
+  var wet = vec3f(0.0);
+  for (var i = 0; i < 8; i = i + 1) {
+    let a = f32(i) / 8.0 * 6.28318530718;
+    wet += sampleSource(clamp(uv + vec2f(cos(a), sin(a)) * blur, vec2f(0.0), vec2f(1.0)));
+  }
+  wet /= 8.0;
+  // out-of-focus highlights bloom, the way a fast lens does wide open
+  wet += max(wet - vec3f(0.62), vec3f(0.0)) * soft * min(1.0, blur * 45.0);
+  return wet;
 }
 
 fn effectFilm(col: vec3f, uv: vec2f, mode: f32) -> vec3f {

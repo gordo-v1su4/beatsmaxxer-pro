@@ -13,6 +13,11 @@ export interface ModuleRenderParams {
   p2?: number;
   p3?: number;
   accent?: number;
+  /** Live signal from the JS transport the shader can't derive on its own —
+      speedramp passes the current playback rate here (1 = normal). */
+  aux1?: number;
+  /** Second live signal: speedramp cycle phase (0-1). */
+  aux2?: number;
 }
 
 export interface FrameContext {
@@ -174,7 +179,7 @@ export class WebGpuEngine {
     });
 
     const uniformBuffer = this.device.createBuffer({
-      size: 80,
+      size: 96,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
@@ -265,7 +270,7 @@ export class WebGpuEngine {
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
-    const data = new Float32Array(20);
+    const data = new Float32Array(22);
     data[0] = this.frameCtx.beat;
     data[1] = this.frameCtx.beatPhase;
     data[2] = this.frameCtx.bpm;
@@ -290,6 +295,8 @@ export class WebGpuEngine {
     const cw = binding.canvas.width || 0;
     const ch = binding.canvas.height || 0;
     data[19] = ch > 0 && cw > 0 ? cw / ch : 16 / 9;
+    data[20] = rp.aux1 ?? 1;
+    data[21] = rp.aux2 ?? 0;
 
     let shaderHasVideo = hasVideo;
     let videoTextureView = this.videoTextures.ensurePlaceholder(this.device);

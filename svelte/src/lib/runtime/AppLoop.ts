@@ -12,6 +12,9 @@ import { getModuleDef } from '$lib/modules/catalog';
 let running = false;
 
 const SYNC_MODULES = new Set(['timesampler', 'speedramp']);
+const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
+/** Latest speedramp rate/phase, forwarded to the shader as aux1/aux2. */
+let lastSpeedRampAux = { aux1: 1, aux2: 0 };
 
 function syncVideoModes(moduleIds: string[]) {
   for (const id of moduleIds) {
@@ -26,7 +29,10 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'transition':
       return { mix: p.mix, p0: p.amount, p1: p.duration, p2: p.type, p3: p.interval };
     case 'speedramp':
-      return { mix: p.mix, p0: p.spdMax, p1: p.spdMin, p2: p.len };
+      return {
+        mix: p.mix, p0: p.spdMax, p1: p.spdMin, p2: p.len,
+        aux1: lastSpeedRampAux.aux1, aux2: lastSpeedRampAux.aux2
+      };
     case 'tapdelay':
       return { mix: p.mix, p0: p.time, p1: p.feedback, p2: p.feel };
     case 'timesampler':
@@ -78,6 +84,15 @@ function syncControlledVideos(
     const sr = params.speedramp ?? {};
     const rate = computeSpeedRampRate(beat, sr, get(bypassed).speedramp === true);
     videoPool.setModuleRate('speedramp', rate);
+    // hand the shader the rate it cannot derive (bezier solve lives in JS), plus
+    // the cycle phase, so streaking/chroma track the real speed
+    const cycleBeats = SPEEDRAMP_CYCLE_BEATS[
+      Math.min(6, Math.floor(((sr.len ?? 36) / 100) * 7))
+    ]!;
+    lastSpeedRampAux = {
+      aux1: rate,
+      aux2: (((beat % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats
+    };
     if (playing) {
       const v = videoPool.get('speedramp');
       if (v?.paused) void v.play().catch(() => {});
