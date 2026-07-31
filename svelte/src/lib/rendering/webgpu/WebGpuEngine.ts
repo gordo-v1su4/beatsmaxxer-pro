@@ -265,7 +265,7 @@ export class WebGpuEngine {
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
-    const data = new Float32Array(19);
+    const data = new Float32Array(20);
     data[0] = this.frameCtx.beat;
     data[1] = this.frameCtx.beatPhase;
     data[2] = this.frameCtx.bpm;
@@ -285,6 +285,11 @@ export class WebGpuEngine {
     data[16] = accent[1];
     data[17] = accent[2];
     data[18] = pitch / 12;
+    // every preview and the PGM monitor are 16:9; fall back to that if the
+    // canvas has not been laid out yet, so rotations/iris never skew
+    const cw = binding.canvas.width || 0;
+    const ch = binding.canvas.height || 0;
+    data[19] = ch > 0 && cw > 0 ? cw / ch : 16 / 9;
 
     let shaderHasVideo = hasVideo;
     let videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
