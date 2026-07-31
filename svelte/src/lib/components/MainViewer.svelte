@@ -24,7 +24,7 @@
 </script>
 
 <div
-  style="flex:0 0 auto;height:clamp(360px, 38vh, 660px);display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#101214,#0c0d0f);border-bottom:2px solid #0d0e0f;padding:6px;min-width:0;container-type:size"
+  style="flex:0 0 auto;height:clamp(320px, 34vh, 560px);display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#101214,#0c0d0f);border-bottom:2px solid #0d0e0f;padding:6px;min-width:0;container-type:size"
 >
   {#if live}
     <div

@@ -145,7 +145,7 @@
         class="rack-row"
         style="height:{$topRowCompact
           ? 'auto'
-          : 'clamp(470px, calc((100vw - 186px) * 9 / 64 + 310px), 660px)'};flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
+          : 'clamp(360px, calc((100vw - 186px) * 9 / 64 + 232px), 420px)'};flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -167,7 +167,7 @@
         class="rack-row"
         style="height:{$bottomRowCompact
           ? 'auto'
-          : 'clamp(260px, calc((100vw - 186px) * 9 / 64 + 128px), 470px)'};flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
+          : 'clamp(230px, calc((100vw - 186px) * 9 / 64 + 96px), 290px)'};flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot

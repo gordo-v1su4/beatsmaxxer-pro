@@ -205,10 +205,12 @@ input[type='range']::-moz-range-thumb {
 .module-preview {
 	position: relative;
 	width: 100%;
-	/* fill the column: a fixed cap left black pillarbox bars on wider columns */
-	max-width: 100%;
+	/* Deliberately capped: small previews keep the whole rack visible top to
+	   bottom without scrolling, and keep the program monitor clearly dominant.
+	   Full-width previews pushed the controls out of the rows. */
+	max-width: min(100%, 264px);
 	aspect-ratio: 16 / 9;
-	align-self: stretch;
+	align-self: center;
 	flex-shrink: 0;
 	background: #000;
 }
