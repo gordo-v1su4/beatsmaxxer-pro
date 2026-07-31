@@ -1,43 +1,65 @@
 #!/usr/bin/env bash
-# Cloud-friendly QA media setup — no Mac-specific paths required.
+# QA media setup that works on ANY machine — no Mac paths, no ffmpeg required.
+#
+# Codec note: Chromium builds used for automated testing (Playwright/Puppeteer)
+# ship WITHOUT proprietary codecs, so H.264 .mp4 clips report
+# MEDIA_ERR_SRC_NOT_SUPPORTED and never decode. A gate running those clips can
+# only ever prove "nothing threw", not "video played". The committed VP9/WebM
+# fixture decodes in every Chromium, so acceptance runs are meaningful anywhere.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MEDIA="$ROOT/tests/fixtures/media"
+SRCDIR="$ROOT/tests/fixtures/media-src"
 mkdir -p "$MEDIA"
 
-SRC="${SRC:-/workspace/tests/fixtures/media}"
-if [[ ! -f "$SRC/gem-test-720p30.mp4" && -f "$MEDIA/gem-test-720p30.mp4" ]]; then
-  SRC="$MEDIA"
+EXT="webm"
+SRC_CLIP="$SRCDIR/qa-clip.webm"
+
+# Prefer real footage when a human has it locally (richer than a test pattern),
+# but only if this Chromium can actually decode it — otherwise fall back.
+if [[ -n "${QA_REAL_MEDIA:-}" && -f "${QA_REAL_MEDIA}" ]]; then
+  SRC_CLIP="${QA_REAL_MEDIA}"
+  EXT="${QA_REAL_MEDIA##*.}"
+  echo "Using real media from QA_REAL_MEDIA: $SRC_CLIP" >&2
 fi
 
-if [[ ! -f "$SRC/gem-test-720p30.mp4" ]]; then
-  echo "Generating minimal test video with ffmpeg..." >&2
-  command -v ffmpeg >/dev/null || { sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg; }
-  ffmpeg -y -f lavfi -i "testsrc=size=640x360:rate=30:duration=3" -pix_fmt yuv420p "$MEDIA/gem-test-720p30.mp4" 2>/dev/null
-  ffmpeg -y -f lavfi -i "sine=frequency=440:duration=5" "$MEDIA/gem-test-tone.wav" 2>/dev/null
-  SRC="$MEDIA"
+if [[ ! -f "$SRC_CLIP" ]]; then
+  echo "ERROR: no QA clip source at $SRC_CLIP" >&2
+  echo "The VP9 fixture should be committed at tests/fixtures/media-src/qa-clip.webm" >&2
+  exit 1
 fi
 
+rm -f "$MEDIA"/clip*.mp4 "$MEDIA"/clip*.webm
 for i in 1 2 3 4 5 6 7 8; do
-  cp -f "$SRC/gem-test-720p30.mp4" "$MEDIA/clip$i.mp4"
+  cp -f "$SRC_CLIP" "$MEDIA/clip$i.$EXT"
 done
 
-if [[ -f "$SRC/gem-test-tone.wav" ]]; then
-  cp -f "$SRC/gem-test-tone.wav" "$MEDIA/redline.wav"
-elif [[ -f "$SRC/redline.wav" ]]; then
-  cp -f "$SRC/redline.wav" "$MEDIA/redline.wav"
+# Audio: reuse a committed wav if present, else synthesise a short tone so the
+# transport has something to run against.
+if [[ -f "$SRCDIR/qa-audio.wav" ]]; then
+  cp -f "$SRCDIR/qa-audio.wav" "$MEDIA/redline.wav"
+elif [[ -f "$MEDIA/gem-test-tone.wav" ]]; then
+  cp -f "$MEDIA/gem-test-tone.wav" "$MEDIA/redline.wav"
+elif command -v ffmpeg >/dev/null 2>&1; then
+  ffmpeg -y -f lavfi -i "sine=frequency=440:duration=5" "$MEDIA/redline.wav" 2>/dev/null
 fi
 
-cat > "$MEDIA/manifest.json" << 'EOF'
+CLIP_LIST=""
+for i in 1 2 3 4 5 6 7 8; do
+  [[ -n "$CLIP_LIST" ]] && CLIP_LIST="$CLIP_LIST,"
+  CLIP_LIST="$CLIP_LIST\"clip$i.$EXT\""
+done
+
+cat > "$MEDIA/manifest.json" <<EOF
 {
-  "clips": ["clip1.mp4","clip2.mp4","clip3.mp4","clip4.mp4","clip5.mp4","clip6.mp4","clip7.mp4","clip8.mp4"],
+  "clips": [$CLIP_LIST],
   "audio": "redline.wav",
   "audios": ["redline.wav"]
 }
 EOF
 
-echo "QA media ready in $MEDIA"
-ls -la "$MEDIA"/*.mp4 "$MEDIA"/*.wav "$MEDIA"/manifest.json 2>/dev/null | head -20
+echo "QA media ready in $MEDIA (.$EXT)"
+ls -la "$MEDIA"/clip*."$EXT" "$MEDIA"/manifest.json 2>/dev/null | head -12
 echo ""
 echo "Dev URL: http://localhost:5174/?qa=1&qaAutoplay=1"

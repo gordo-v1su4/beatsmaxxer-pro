@@ -1,5 +1,5 @@
 {
-  "clips": ["clip1.mp4","clip2.mp4","clip3.mp4","clip4.mp4","clip5.mp4","clip6.mp4","clip7.mp4","clip8.mp4"],
+  "clips": ["clip1.webm","clip2.webm","clip3.webm","clip4.webm","clip5.webm","clip6.webm","clip7.webm","clip8.webm"],
   "audio": "redline.wav",
   "audios": ["redline.wav"]
 }

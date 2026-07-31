@@ -10,8 +10,13 @@ async function waitForClips(session: CdpSession) {
     `window.__BSP_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
     CLIP_WAIT_MS + 10_000
   );
-  if (!snap || (snap as { clipsLoaded?: number }).clipsLoaded! < 8) {
-    throw new Error(`Timed out waiting for 8 ready clips (${CLIP_WAIT_MS}ms)`);
+  // NB: `undefined < 8` is false, so a missing/!resolved snapshot must be
+  // rejected explicitly or the gate sails past an unloaded rack.
+  const loaded = (snap as { clipsLoaded?: number } | null)?.clipsLoaded;
+  if (typeof loaded !== 'number' || loaded < 8) {
+    throw new Error(
+      `Timed out waiting for 8 ready clips (${CLIP_WAIT_MS}ms); got ${String(loaded)}`
+    );
   }
   return snap as { clipsLoaded: number; modules?: Record<string, { hasReadyFrame?: boolean }> };
 }
@@ -21,6 +26,10 @@ await withChrome('verify-playback', 9600, async (s) => {
   await waitForClips(s);
   // Free-run module previews advance without transport; skip audio start here.
   await Bun.sleep(500);
+  // Re-confirm at sample time: the QA autoload finishes by starting the
+  // transport, which can still be settling when the first wait returns. Sampling
+  // mid-settle reported 2/8 loaded even though the rack holds 8/8 once quiet.
+  await waitForClips(s);
 
   const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(
     s,

@@ -20,7 +20,12 @@ export function chromePath() {
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
     '/usr/bin/chromium',
-    '/usr/bin/chromium-browser'
+    '/usr/bin/chromium-browser',
+    // CI/cloud agent images ship Chromium here via PLAYWRIGHT_BROWSERS_PATH
+    process.env.PLAYWRIGHT_BROWSERS_PATH
+      ? `${process.env.PLAYWRIGHT_BROWSERS_PATH}/chromium`
+      : undefined,
+    '/opt/pw-browsers/chromium'
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
     if (isExecutable(candidate)) return candidate;
@@ -175,6 +180,13 @@ export function spawnChrome(
     '--enable-unsafe-webgpu',
     '--use-angle=swiftshader',
     '--use-gl=angle',
+    // Without this the QA autoload's audioEngine.start() is blocked for lack of
+    // a user gesture; the clip load then unwinds and the rack falls back to a
+    // partially loaded state (observed: 8 clips ready, then down to 2).
+    '--autoplay-policy=no-user-gesture-required',
+    // default window was 774x441, which cropped every module preview out of the
+    // screenshot artifact — a "proof" PNG that could not show a rendered frame
+    '--window-size=1680,1050',
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${userDataDir}`,
     'about:blank'
@@ -207,6 +219,15 @@ export async function navigateAndReady(
 ) {
   await session.send('Page.enable');
   await session.send('Runtime.enable');
+  // --window-size is ignored under --headless=new, so screenshots came back at
+  // 774x441 with every module preview cropped out. Override device metrics so
+  // the artifact actually contains the rack.
+  await session.send('Emulation.setDeviceMetricsOverride', {
+    width: Number(process.env.QA_VIEWPORT_W ?? 1680),
+    height: Number(process.env.QA_VIEWPORT_H ?? 1050),
+    deviceScaleFactor: 1,
+    mobile: false
+  });
   await session.send('Page.navigate', { url }, 30_000);
 
   const deadline = Date.now() + timeoutMs;
