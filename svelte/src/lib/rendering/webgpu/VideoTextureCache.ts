@@ -50,6 +50,11 @@ export class VideoTextureCache {
     return entry.view;
   }
 
+  /** Last successfully uploaded frame for this module, if any. */
+  cachedView(key: string): GPUTextureView | null {
+    return this.entries.get(key)?.view ?? null;
+  }
+
   ensurePlaceholder(device: GPUDevice): GPUTextureView {
     if (this.placeholder) return this.placeholder.view;
     const texture = device.createTexture({

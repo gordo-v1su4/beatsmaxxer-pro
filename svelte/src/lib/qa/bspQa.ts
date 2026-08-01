@@ -32,6 +32,8 @@ export interface BspQaSnapshot {
       playbackRate: number;
     }
   >;
+  /** Per-module renderer state — what the GPU actually did last frame. */
+  render: Record<string, unknown>;
   analysisStatus: string;
   analysisError: string | null;
   analysisConfidence: number | null;
@@ -80,6 +82,7 @@ function buildSnapshot(): BspQaSnapshot {
     pgmModule: get(pgmSource),
     clipsLoaded: moduleIds.filter((id) => videoPool.hasReadyFrame(id)).length,
     modules,
+    render: webGpuEngine.getRenderDiagnostics(),
     analysisStatus: audio.analysisStatus,
     analysisError: audio.analysisError,
     analysisConfidence: audio.analysisConfidence,

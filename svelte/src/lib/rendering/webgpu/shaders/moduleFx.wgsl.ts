@@ -223,17 +223,20 @@ fn testCard(uv: vec2f) -> vec3f {
   return clamp(col, vec3f(0.0), vec3f(1.0));
 }
 
+/* textureSampleLevel, not textureSample: these are called from branches that
+   depend on uv (e.g. the wipe transition's 'if (uv.x < e)'). Implicit-derivative
+   sampling is illegal in non-uniform control flow and Chrome's Tint rejects the
+   whole shader module for it, which invalidates every pipeline and renders
+   nothing at all. There are no mips here, so level 0 is exactly equivalent. */
 fn sampleSource(uv: vec2f) -> vec3f {
   var col: vec3f;
   if (u.hasVideo > 0.5) {
-    let pitchOff = u.pitchNorm * 0.012;
-    let c = textureSample(videoTex, videoSampler, clamp(uv + vec2f(pitchOff, 0.0), vec2f(0.0), vec2f(1.0)));
+    // Clean source read. A pitch-driven chroma split used to live here, which
+    // meant ANY key/pitch offset smeared RGB fringing across every module at
+    // once. Chroma split is now only where an effect actually asks for it
+    // (tapdelay accents, timesampler RGB hit mode, prism/film looks).
+    let c = textureSampleLevel(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
     col = pow(max(c.rgb, vec3f(0.0)), vec3f(0.95));
-    if (abs(u.pitchNorm) > 0.01) {
-      let split = u.pitchNorm * 0.008;
-      col.r = textureSample(videoTex, videoSampler, clamp(uv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
-      col.b = textureSample(videoTex, videoSampler, clamp(uv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
-    }
   } else {
     col = testCard(uv);
   }
@@ -243,7 +246,7 @@ fn sampleSource(uv: vec2f) -> vec3f {
 fn sampleFeedback(uv: vec2f) -> vec3f {
   let dims = textureDimensions(feedbackTex);
   if (dims.x < 2u || dims.y < 2u) { return vec3f(0.0); }
-  return textureSample(feedbackTex, feedbackSampler, uv).rgb;
+  return textureSampleLevel(feedbackTex, feedbackSampler, uv, 0.0).rgb;
 }
 
 /** Beats per transition cycle: the 7 zones the UI exposes (1BT .. 8BAR). */

@@ -45,3 +45,4 @@ pnpm-lock.yaml
 .tmp/
 test_media/
 docs/preview.png
+.vercel
