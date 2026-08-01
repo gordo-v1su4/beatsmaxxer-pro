@@ -1,8 +1,0 @@
-{
-  "bpm": 120,
-  "beats": [0, 0.5, 1],
-  "confidence": 0.9,
-  "duration": 1,
-  "energy": { "curve": [0.2, 0.8] },
-  "onsets": [0.25, 0.75]
-}

@@ -22,7 +22,7 @@ bash scripts/link-qa-media.sh    # local dev: symlink 8 MP4s + Redline from ~/Do
 bun run verify:browser           # browser gates only
 ```
 
-From repo root: `bun run dev:svelte`
+From repo root: `bun run dev` (same app — root scripts delegate to `svelte/`)
 
 ## QA mode
 
