@@ -1,35 +1,58 @@
 <script lang="ts">
+  import { sliderValueForKey } from '$lib/components/controlKeyboard';
+  import {
+    beginRackParamTransaction,
+    endRackParamTransaction,
+    runRackParamTransaction
+  } from '$lib/stores/rack';
+
   interface Props {
     value: number;
     onChange: (v: number) => void;
     color: string;
     label: string;
     title?: string;
+    controlId?: string;
   }
 
-  let { value, onChange, color, label, title = label }: Props = $props();
+  let { value, onChange, color, label, title = label, controlId = label }: Props = $props();
 
   let dragging = $state(false);
   let startY = 0;
   let startValue = 0;
 
-  function onDown(e: MouseEvent) {
+  function onDown(e: PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
+    (e.currentTarget as HTMLElement).focus();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragging = true;
     startY = e.clientY;
     startValue = value;
-    const move = (ev: MouseEvent) => {
+    beginRackParamTransaction();
+    const target = e.currentTarget as HTMLElement;
+    const move = (ev: PointerEvent) => {
       const delta = startY - ev.clientY;
       onChange(Math.max(0, Math.min(100, Math.round(startValue + delta * 0.5))));
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       dragging = false;
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
+      target.releasePointerCapture?.(ev.pointerId);
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+      endRackParamTransaction();
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    const next = sliderValueForKey(e.key, value, 0, 100);
+    if (next === null) return;
+    e.preventDefault();
+    runRackParamTransaction(() => onChange(next));
   }
 </script>
 
@@ -40,8 +63,15 @@
     class="macro-dot-btn"
     class:dragging
     style="--accent:{color}"
-    onmousedown={onDown}
-    aria-label="{label} macro {value}"
+    onpointerdown={onDown}
+    onkeydown={onKeyDown}
+    role="slider"
+    data-bsp-proof-id="control-macro-{controlId}"
+    aria-label="{title} macro"
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={value}
+    aria-valuetext={`${Math.round(value)} percent`}
   >
     <span class="macro-dot-fill" style="height:{value}%"></span>
   </button>

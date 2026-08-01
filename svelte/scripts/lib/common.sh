@@ -2,8 +2,6 @@
 # Shared helpers for local browser acceptance scripts.
 set -euo pipefail
 
-export PATH="${HOME}/.bun/bin:${PATH}"
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEV_URL="${DEV_URL:-http://127.0.0.1:5174/}"
 QA_URL="${QA_URL:-http://127.0.0.1:5174/?qa=1&qaAutoplay=1}"
@@ -13,11 +11,7 @@ BSP_DEV_PID=""
 BSP_DEV_STARTED=0
 
 ensure_qa_media() {
-  if [[ -d "${HOME}/Downloads/archive (2)" ]]; then
-    bash "$ROOT/scripts/link-qa-media.sh"
-  else
-    bash "$ROOT/scripts/setup-qa-media.sh"
-  fi
+  bash "$ROOT/scripts/setup-qa-media.sh"
 }
 
 wait_for_dev_server() {
@@ -69,6 +63,6 @@ ensure_artifacts_dir() {
 }
 
 cleanup_stale_test_chrome() {
-  # Orphaned headless sessions from interrupted gates can block CDP / exhaust GPU.
-  pkill -9 -f 'user-data-dir=/tmp/bsp-' 2>/dev/null || true
+  # Exact browser PIDs are owned and terminated by withChrome.
+  :
 }

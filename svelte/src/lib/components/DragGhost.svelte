@@ -7,7 +7,7 @@
   );
 </script>
 
-{#if $dragState.active && mod}
+{#if $dragState.active && $dragState.input === 'pointer' && mod}
   <div
     class="pointer-events-none fixed z-[9999] rounded-lg border border-zinc-600 bg-[#12141a]/95 px-3 py-2 shadow-2xl backdrop-blur-sm"
     style="
@@ -22,5 +22,11 @@
       {mod.shortName}
     </span>
     <span class="ml-2 text-[9px] text-zinc-500">{mod.name}</span>
+  </div>
+{/if}
+
+{#if $dragState.active && $dragState.input === 'keyboard' && mod}
+  <div class="sr-only" role="status" aria-live="polite">
+    {mod.name} grabbed. Tab to a rack slot, then press Enter or Space to drop. Press Escape to cancel.
   </div>
 {/if}

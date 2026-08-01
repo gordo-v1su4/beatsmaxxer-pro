@@ -1,81 +1,34 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { analysisProxyConfigFromEnv, proxyAnalysisRequest } from "./policy";
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
+export const config = { api: { bodyParser: false } };
 
-type RouteRequest = IncomingMessage & {
-  query: { endpoint?: string | string[] };
-};
-
-function readRequestBody(req: IncomingMessage): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (chunk: Buffer) => chunks.push(chunk));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
-  });
-}
-
-function resolveEssentiaApiBaseUrl() {
-  return (
-    process.env.ESSENTIA_API_BASE_URL ||
-    process.env.ESSENTIA_API_URL ||
-    process.env.VITE_ESSENTIA_API_BASE_URL ||
-    process.env.VITE_ESSENTIA_API_URL ||
-    "https://essentia.v1su4.dev"
-  )
-    .trim()
-    .replace(/\/+$/, "");
-}
-
-function resolveEssentiaApiKey() {
-  return (process.env.ESSENTIA_API_KEY || process.env.VITE_ESSENTIA_API_KEY || "").trim();
-}
+type RouteRequest = IncomingMessage & { query: { endpoint?: string | string[] } };
 
 export default async function handler(req: RouteRequest, res: ServerResponse) {
+  const clientAbort = new AbortController();
+  const onAborted = () => clientAbort.abort();
+  req.once("aborted", onAborted);
+
   try {
-    const endpointName = Array.isArray(req.query.endpoint)
-      ? req.query.endpoint[0]
-      : req.query.endpoint;
-
-    if (req.method !== "POST" || (endpointName !== "fast" && endpointName !== "rhythm")) {
-      res.statusCode = 404;
-      res.end();
-      return;
-    }
-
-    const contentType = req.headers["content-type"];
-    if (!contentType) {
-      res.statusCode = 400;
-      res.setHeader("Content-Type", "application/json");
-      res.end(JSON.stringify({ detail: "Missing content type" }));
-      return;
-    }
-
-    const body = await readRequestBody(req);
-    const upstream = await fetch(`${resolveEssentiaApiBaseUrl()}/analyze/${endpointName}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": contentType,
-        ...(resolveEssentiaApiKey() ? { "X-API-Key": resolveEssentiaApiKey() } : {}),
+    const endpoint = Array.isArray(req.query.endpoint) ? req.query.endpoint[0] : req.query.endpoint;
+    const result = await proxyAnalysisRequest(
+      {
+        method: req.method,
+        endpoint,
+        contentType: req.headers["content-type"],
+        contentLength: req.headers["content-length"],
+        body: req,
+        signal: clientAbort.signal,
       },
-      body: new Uint8Array(body),
-    });
-
-    const text = await upstream.text();
-    res.statusCode = upstream.status;
-    res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/json");
-    res.end(text);
-  } catch (error) {
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(
-      JSON.stringify({
-        detail: error instanceof Error ? error.message : "Analysis proxy failed",
-      }),
+      analysisProxyConfigFromEnv(process.env),
     );
+    if (!result || res.destroyed || res.writableEnded) return;
+    res.statusCode = result.status;
+    res.setHeader("Content-Type", result.contentType);
+    if (result.status === 405) res.setHeader("Allow", "POST");
+    res.end(result.body);
+  } finally {
+    req.off("aborted", onAborted);
   }
 }

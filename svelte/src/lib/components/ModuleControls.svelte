@@ -120,6 +120,7 @@
               onChange={(v) => onUpdate('duration', v)}
               {color}
               label="MOVE LENGTH"
+              controlId="{moduleId}-duration"
             />
           </div>
           <MiniDisplay value={`${durBeats.toFixed(2)}bt`} width={44} />
@@ -129,6 +130,7 @@
           onChange={(v) => onUpdate('amount', v)}
           {color}
           label="MOTION BLUR"
+          controlId="{moduleId}-amount"
         />
       </div>
     </Section>
@@ -185,11 +187,11 @@
     <Section label="RANGE" {color} noBorder>
       <div style="display:flex;align-items:center;justify-content:space-around;gap:6px">
         <div style="display:flex;align-items:center;gap:5px">
-          <Knob label="MIN" value={params.spdMin ?? 25} onChange={(v) => onUpdate('spdMin', v)} size="xs" {color} />
+          <Knob knobId="{moduleId}-spdMin" label="MIN" value={params.spdMin ?? 25} onChange={(v) => onUpdate('spdMin', v)} size="xs" {color} />
           <MiniDisplay value={`${rampSpeed(params.spdMin ?? 25)}x`} width={42} />
         </div>
         <div style="display:flex;align-items:center;gap:5px">
-          <Knob label="MAX" value={params.spdMax ?? 75} onChange={(v) => onUpdate('spdMax', v)} size="xs" {color} />
+          <Knob knobId="{moduleId}-spdMax" label="MAX" value={params.spdMax ?? 75} onChange={(v) => onUpdate('spdMax', v)} size="xs" {color} />
           <MiniDisplay value={`${rampSpeed(params.spdMax ?? 75)}x`} width={42} />
         </div>
       </div>
@@ -272,6 +274,8 @@
                 value={params.scratchDepth ?? 45}
                 onChange={(v) => onUpdate('scratchDepth', v)}
                 {color}
+                ariaLabel="SCRATCH DEPTH"
+                controlId="{moduleId}-scratchDepth"
               />
             </div>
           </div>
@@ -281,7 +285,7 @@
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
-            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} />
+            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
           </div>
           <MiniDisplay value={`${Math.round(params.end ?? 60)}%`} width={34} />
         </div>
@@ -292,13 +296,13 @@
           <div style="display:flex;align-items:center;gap:4px">
             <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">TIME</span>
             <div style="flex:1">
-              <HSlider value={params.time ?? 60} onChange={(v) => onUpdate('time', v)} {color} />
+              <HSlider value={params.time ?? 60} onChange={(v) => onUpdate('time', v)} {color} ariaLabel="TIME" controlId="{moduleId}-time" />
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:4px">
             <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">FDBK</span>
             <div style="flex:1">
-              <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} />
+              <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="FEEDBACK" controlId="{moduleId}-feedback" />
             </div>
           </div>
         </div>
@@ -307,7 +311,7 @@
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
-            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} />
+            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
           </div>
           <MiniDisplay value={`${Math.round(params.end ?? 60)}%`} width={34} />
         </div>
@@ -390,14 +394,14 @@
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RATE</span>
           <div style="flex:1">
-            <HSlider value={params.rate ?? 43} onChange={(v) => onUpdate('rate', v)} {color} />
+            <HSlider value={params.rate ?? 43} onChange={(v) => onUpdate('rate', v)} {color} ariaLabel="RATE" controlId="{moduleId}-rate" />
           </div>
           <MiniDisplay value={`${rate.toFixed(2)}×`} width={40} />
         </div>
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
-            <HSlider value={params.chance ?? 60} onChange={(v) => onUpdate('chance', v)} {color} />
+            <HSlider value={params.chance ?? 60} onChange={(v) => onUpdate('chance', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-chance" />
           </div>
           <MiniDisplay value={`${Math.round(params.chance ?? 60)}%`} width={34} />
         </div>
@@ -412,7 +416,7 @@
           <div style="display:flex;align-items:center;gap:4px">
             <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 4)}</span>
             <div style="flex:1">
-              <HSlider value={params[key] ?? 50} onChange={(v) => onUpdate(key, v)} {color} />
+              <HSlider value={params[key] ?? 50} onChange={(v) => onUpdate(key, v)} {color} ariaLabel={key} controlId="{moduleId}-{key}" />
             </div>
           </div>
         {/each}

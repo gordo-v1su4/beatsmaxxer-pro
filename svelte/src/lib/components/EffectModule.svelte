@@ -19,6 +19,7 @@
     bypassed,
     muted,
     updateParam,
+    updateParams,
     toggleBypass,
     toggleMute
   } from '$lib/stores/rack';
@@ -30,6 +31,7 @@
     mod: ModuleDefinition;
     params: Record<string, number>;
     canvasId?: string;
+    mediaSlotId?: string;
     videoLayer?: VideoLayer | null;
     midiLayer?: MidiLayer | null;
     isOnAir?: boolean;
@@ -45,6 +47,7 @@
     mod,
     params,
     canvasId,
+    mediaSlotId,
     videoLayer = null,
     midiLayer = null,
     isOnAir = false,
@@ -64,7 +67,7 @@
   const modulePresets = $derived(presetsForModule(mod.id));
   const td = $derived($transportDisplay);
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
-  const clipEntry = $derived($clipStatusStore[mod.id]);
+  const clipEntry = $derived($clipStatusStore[mediaSlotId ?? slotCanvasId]);
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter(isVideoFile);
@@ -79,6 +82,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="rack-module"
+  data-bsp-module-id={mod.id}
   class:is-collapsed={collapsed}
   style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
@@ -133,6 +137,7 @@
       type="button"
       onclick={() => toggleModuleCollapsed(mod.id)}
       title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
+      aria-label={collapsed ? `Expand ${mod.name} controls` : `Collapse ${mod.name} controls`}
       style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
@@ -196,6 +201,7 @@
       moduleId={mod.id}
       presets={modulePresets}
       onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
+      onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {/if}
 

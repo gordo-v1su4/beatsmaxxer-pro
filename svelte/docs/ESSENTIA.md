@@ -9,52 +9,38 @@ Uploaded audio routes through SoundTouch for independent pitch and tempo:
 - **TMP** → `playbackRate` (tempo multiplier; does not move KEY or PITCH)
 - **VOL** → master gain after processing
 
-On `bun install`, the worklet processor is copied to `static/soundtouch-processor.js` (required for `audioWorklet.addModule`).
+The processor asset is copied to `static/soundtouch-processor.js` during preparation.
 
-# Essentia rhythm analysis
+# Hosted rhythm analysis
 
-## Development
-
-The Svelte dev server proxies analysis requests through Vite:
-
-- Browser calls `/__api/analyze/rhythm` (and `/__api/analyze/fast`)
-- Vite rewrites to `https://essentia.v1su4.dev` (see `svelte/vite.config.ts`)
-
-No extra setup is required for local dev beyond `bun run dev`.
-
-## Production (Vercel)
-
-Set this environment variable on the Vercel project:
+Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit in development:
 
 ```bash
-VITE_ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev
+ESSENTIA_ANALYSIS_ENABLED=true
+ESSENTIA_API_BASE_URL=https://approved-analysis-service.example
+ESSENTIA_API_KEY=server-only-secret
 ```
 
-The static build calls Essentia directly over HTTPS (the dev `/__api` proxy is not available in production).
+The browser always calls the same-origin `/__api/analyze/fast` and `/__api/analyze/rhythm` routes. The Vite development proxy injects the credential on the server; no `VITE_ESSENTIA_API_URL`, `VITE_ESSENTIA_API_BASE_URL`, or `VITE_ESSENTIA_API_KEY` alias is supported. Production builds compile the browser upload path off, and the production function independently rejects relay requests before reading or forwarding their bodies.
 
-Optional:
+When hosted analysis is enabled, the selected audio (or a smaller prepared WAV) leaves the browser and is sent to the configured service. This repository cannot promise the upstream service's retention or deletion behavior. If hosted analysis is disabled or fails, local playback continues and realtime analysis is used as the fallback.
 
-```bash
-VITE_ESSENTIA_ANALYSIS_ENGINE=aubio
-```
+The proxy accepts only `POST` to `fast` or `rhythm`, and only an outer `multipart/form-data` envelope with a valid boundary. It forwards the bounded multipart bytes opaquely; it does **not** parse the inner part or claim file-type validation. Total requests are limited to 3,500,000 bytes, upstream responses to 1,000,000 bytes, upstream time to 15 seconds, and concurrent requests to two per server instance. Errors returned to the browser are stable and sanitized.
 
-## QA media
+## Production block
+
+The production function would otherwise be a public, unauthenticated relay for a credentialed upstream. Size, timeout, concurrency, and origin checks are not authentication or sufficient abuse prevention. Because this repository provides neither request authentication/authorization nor durable per-client rate limiting, the production relay is always disabled even if analysis environment variables are present. A future production path requires an approved design and implementation for those controls, plus service-owner, credential, retention/privacy, consent, and deployment authority.
+
+Deterministic tests must inject `fetch` and must never contact the configured service. Physical browser visual proof is a separate required release gate; it does not authorize a live analysis call.
+
+## QA media and acceptance gates
+
+QA uses committed fixtures and must not enable the live analysis service. Repository checks and physical-browser proof are separate gates; an unavailable browser is reported as blocked rather than passed.
 
 ```bash
 cd svelte
-bash scripts/setup-qa-media.sh   # copies bundled test clips (cloud-safe)
-bun run dev
-# open http://localhost:5174/?qa=1&qaAutoplay=1
+bun run test
+bun run check
+bun run build
+bun run verify:browser
 ```
-
-## Acceptance gates
-
-```bash
-cd svelte
-bun run verify:playback    # JSON + PNG in .artifacts/
-bun run verify:interaction
-bun run verify:stutter
-bun run verify:all         # unit tests + build + all browser gates
-```
-
-Browser scripts expose `window.__BSP_QA__.snapshot()` for CDP probes.

@@ -1,7 +1,6 @@
 /** SoundTouch.js integration — lazy-loaded so Node/vitest does not require AudioWorklet. */
 
-export interface SoundTouchHandle {
-  connect: (destination: AudioNode) => void;
+export interface SoundTouchHandle extends AudioNode {
   playbackRate: { value: number };
   pitch: { value: number };
   pitchSemitones: { value: number };
@@ -52,7 +51,25 @@ export async function createSoundTouchNode(ctx: AudioContext): Promise<SoundTouc
   if (!mod) return null;
   const ok = await ensureSoundTouchRegistered(ctx);
   if (!ok) return null;
-  return new mod.SoundTouchNode({ context: ctx }) as SoundTouchHandle;
+  const node: unknown = new mod.SoundTouchNode({ context: ctx });
+  if (!isSoundTouchHandle(node)) {
+    console.warn('[SoundTouch] registered node does not expose the required AudioNode controls');
+    return null;
+  }
+  return node;
+}
+
+function isSoundTouchHandle(value: unknown): value is SoundTouchHandle {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  const hasValue = (key: string) => {
+    const control = candidate[key];
+    return typeof control === 'object' && control !== null &&
+      typeof (control as { value?: unknown }).value === 'number';
+  };
+  return typeof candidate.connect === 'function' &&
+    typeof candidate.disconnect === 'function' &&
+    hasValue('playbackRate') && hasValue('pitch') && hasValue('pitchSemitones');
 }
 
 export function applySoundTouchParams(

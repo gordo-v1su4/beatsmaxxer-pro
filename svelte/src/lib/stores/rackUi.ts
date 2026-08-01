@@ -27,5 +27,3 @@ export const bottomRowCompact = derived([rackBottom, moduleCollapsed], ([bottom,
   if (bottom.length === 0) return false;
   return bottom.every((id) => collapsed[id] === true);
 });
-
-export const bonusRowVisible = derived([topRowCompact, bottomRowCompact], ([top, bottom]) => top && bottom);

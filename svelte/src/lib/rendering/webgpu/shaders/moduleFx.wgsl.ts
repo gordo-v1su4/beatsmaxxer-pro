@@ -41,10 +41,18 @@ struct Uniforms {
   aspect: f32,
   aux1: f32,
   aux2: f32,
+  positionSeconds: f32,
+  fixedStepSeconds: f32,
+  fixedStepIndex: u32,
+  fixedStepPhase: f32,
+  playbackRate: f32,
+  generation: u32,
+  deterministicSeed: u32,
+  audioFrameId: u32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-@group(0) @binding(1) var videoTex: texture_2d<f32>;
+@group(0) @binding(1) var videoTex: texture_external;
 @group(0) @binding(2) var videoSampler: sampler;
 @group(0) @binding(3) var feedbackTex: texture_2d<f32>;
 @group(0) @binding(4) var feedbackSampler: sampler;
@@ -223,11 +231,8 @@ fn testCard(uv: vec2f) -> vec3f {
   return clamp(col, vec3f(0.0), vec3f(1.0));
 }
 
-/* textureSampleLevel, not textureSample: these are called from branches that
-   depend on uv (e.g. the wipe transition's 'if (uv.x < e)'). Implicit-derivative
-   sampling is illegal in non-uniform control flow and Chrome's Tint rejects the
-   whole shader module for it, which invalidates every pipeline and renders
-   nothing at all. There are no mips here, so level 0 is exactly equivalent. */
+/* External-video sampling is explicitly clamped and does not use implicit
+   derivatives, so it remains valid from effect branches with non-uniform UVs. */
 fn sampleSource(uv: vec2f) -> vec3f {
   var col: vec3f;
   if (u.hasVideo > 0.5) {
@@ -235,7 +240,7 @@ fn sampleSource(uv: vec2f) -> vec3f {
     // meant ANY key/pitch offset smeared RGB fringing across every module at
     // once. Chroma split is now only where an effect actually asks for it
     // (tapdelay accents, timesampler RGB hit mode, prism/film looks).
-    let c = textureSampleLevel(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0);
+    let c = textureSampleBaseClampToEdge(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)));
     col = pow(max(c.rgb, vec3f(0.0)), vec3f(0.95));
   } else {
     col = testCard(uv);
@@ -449,36 +454,32 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   return mix(wet, max(wet, tap), fb * 0.35);
 }
 
-/** Jump interval in beats from the JMP zones (1/16 .. 1 BAR). */
-fn samplerJumpBeats(p: f32) -> f32 {
-  if (p < 0.2) { return 0.25; }
-  else if (p < 0.4) { return 0.5; }
-  else if (p < 0.6) { return 1.0; }
-  else if (p < 0.8) { return 2.0; }
-  return 4.0;
-}
-
 /** Simpler-style slice sampler: the actual slice jump is a real video seek done
     upstream (videoPool.seekModule from the live schedule frame), so the picture
     genuinely teleports. This adds the per-jump HIT accent — a quick pop right
-    after each jump that decays to clean playback — plus tape wobble when the
-    rate is off 1x. p2 = JMP interval, accent = LUM(1) vs off. */
+    after each authoritative schedule jump that decays to clean playback — plus
+    tape wobble when the rate is off 1x. aux1 = event pulse; aux2 = LUM/RGB/OFF. */
 fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {
-  let jumpBeats = samplerJumpBeats(u.p2);
-  // how far through the current slice we are: 0 right after a jump, 1 just before
-  let prog = clamp((u.beat - floor(u.beat / jumpBeats) * jumpBeats) / jumpBeats, 0.0, 1.0);
-
   let rate = 0.25 + u.p0 * 1.75;
   let wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
   var st = uv;
   st.x += sin(uv.y * 60.0 + u.beat * 9.0) * wob * 0.004;
   var wet = sampleSource(clamp(st, vec2f(0.0), vec2f(1.0)));
 
-  // the pop lands on the jump and decays fast, so cuts read as deliberate hits
-  let hit = exp(-prog * 6.0) * u.playing;
-  if (u.accent > 0.5) {
-    // LUM: exposure pop (gain + gamma lift), like a flash frame
-    wet = pow(max(wet, vec3f(0.0)), vec3f(1.0 / (1.0 + hit * 0.9))) * (1.0 + hit * 0.55);
+  // No beat reconstruction here: only the AudioContext-slaved schedule may
+  // create a hit. The bounded treatment cannot synthesize a white test frame.
+  let hit = clamp(u.aux1, 0.0, 1.0) * u.playing;
+  if (u.aux2 < 0.5) {
+    // LUM: restrained exposure lift, bounded below clipping.
+    wet = min(
+      pow(max(wet, vec3f(0.0)), vec3f(1.0 / (1.0 + hit * 0.18))) * (1.0 + hit * 0.22),
+      vec3f(1.0)
+    );
+  } else if (u.aux2 < 1.5) {
+    // RGB: short schedule-derived chroma hit without changing overall exposure.
+    let split = hit * 0.012;
+    wet.r = sampleSource(clamp(st + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
+    wet.b = sampleSource(clamp(st - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
   }
   return wet * (1.0 + beatPulse(6.0) * 0.05);
 }
@@ -587,20 +588,152 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
   return wet;
 }
 
-fn effectFilm(col: vec3f, uv: vec2f, mode: f32) -> vec3f {
-  var c = col;
-  if (mode > 0.5 && mode < 1.5) {
-    let n = fract(sin(dot(uv * 900.0 + u.beat, vec2f(12.9898, 78.233))) * 43758.5453);
-    c += (n - 0.5) * u.p0 * 0.003;
-  } else if (mode > 1.5 && mode < 2.5) {
-    let split = u.p1 * 0.003 * beatPulse(4.0);
-    c.r = sampleSource(uv + vec2f(split, 0.0)).r;
-    c.b = sampleSource(uv - vec2f(split, 0.0)).b;
-  } else if (mode > 2.5) {
-    let scan = step(0.5, fract(uv.y * 240.0 + u.beat * 2.0));
-    c *= mix(0.9, 1.0, scan);
+/** Scope presentation: variable letterbox, optical horizontal squeeze and a
+    timeline-locked blue flare. p0 = bars, p1 = squeeze, p2 = flare. */
+fn effectAnamorphic(col: vec3f, uv: vec2f) -> vec3f {
+  let squeeze = 1.0 + u.p1 * 0.45;
+  let suv = clamp(vec2f((uv.x - 0.5) / squeeze + 0.5, uv.y), vec2f(0.0), vec2f(1.0));
+  var wet = sampleSource(suv);
+  let barHeight = 0.055 + u.p0 * 0.155;
+  let aperture = 1.0 - step(uv.y, barHeight) - step(1.0 - barHeight, uv.y);
+  let flareLine = exp(-abs(uv.y - (0.48 + 0.08 * sin(u.beat * 0.37))) * 90.0);
+  let flareCore = exp(-abs(uv.x - (0.2 + 0.6 * fract(u.beat * 0.031))) * 14.0);
+  wet += vec3f(0.18, 0.38, 0.9) * flareLine * flareCore * u.p2 * 0.8;
+  return wet * clamp(aperture, 0.0, 1.0);
+}
+
+/** Deterministic film stock texture. Grain cells and gate weave are functions
+    of the shared beat timeline, never render count. p0 = size, p1 = amount,
+    p2 = gate drift. */
+fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
+  let cellScale = mix(1400.0, 180.0, u.p0);
+  let frame = floor(u.beat * 24.0);
+  let weave = vec2f(hash21(vec2f(frame, 2.1)), hash21(vec2f(4.7, frame))) - vec2f(0.5);
+  let guv = clamp(uv + weave * u.p2 * 0.008, vec2f(0.0), vec2f(1.0));
+  let n = hash21(floor(guv * cellScale) + vec2f(frame * 0.71, frame * 1.13));
+  let stock = sampleSource(guv);
+  return stock + vec3f(n - 0.5) * u.p1 * 0.34;
+}
+
+/** Warm edge exposure with a slowly travelling hotspot. p0 = edge reach,
+    p1 = warmth, p2 = drift speed. */
+fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
+  let phase = u.beat * (0.04 + u.p2 * 0.22);
+  let side = 0.5 + 0.5 * sin(phase);
+  let edgeDistance = mix(uv.x, 1.0 - uv.x, side);
+  let reach = 0.08 + u.p0 * 0.52;
+  let leak = (1.0 - smoothstep(0.0, reach, edgeDistance))
+             * (0.55 + 0.45 * sin(uv.y * 7.0 + phase * 2.3));
+  let warm = mix(vec3f(1.0, 0.28, 0.04), vec3f(1.0, 0.75, 0.24), u.p1);
+  return col + warm * leak * (0.25 + u.p1 * 0.7);
+}
+
+/** Rotating horizon with optional beat snap. p0 = tilt, p1 = drift,
+    p2 = beat snap. */
+fn effectDutch(col: vec3f, uv: vec2f) -> vec3f {
+  let drift = sin(u.beat * (0.12 + u.p1 * 0.38)) * u.p1;
+  let snap = beatPulse(8.0) * (fract(floor(u.beat) * 0.5) * 4.0 - 1.0);
+  let angle = (u.p0 * 0.28) * (0.45 + drift * 0.55) + snap * u.p2 * 0.16;
+  var c = uv - vec2f(0.5);
+  c.x *= max(u.aspect, 0.0001);
+  c = rot2(c, angle);
+  c.x /= max(u.aspect, 0.0001);
+  let zoom = 1.0 + abs(sin(angle)) * 0.35;
+  return sampleSource(clamp(c / zoom + vec2f(0.5), vec2f(0.0), vec2f(1.0)));
+}
+
+/** Highlight-selective red bloom. p0 = threshold, p1 = spread,
+    p2 = warm tint. */
+fn effectHalation(col: vec3f, uv: vec2f) -> vec3f {
+  let radius = 0.002 + u.p1 * 0.035;
+  var bloom = vec3f(0.0);
+  for (var i = 0; i < 8; i = i + 1) {
+    let a = f32(i) * 0.78539816339;
+    let s = sampleSource(clamp(uv + vec2f(cos(a), sin(a)) * radius, vec2f(0.0), vec2f(1.0)));
+    bloom += max(s - vec3f(0.25 + u.p0 * 0.65), vec3f(0.0));
   }
-  return c;
+  bloom /= 8.0;
+  let tint = mix(vec3f(1.0, 0.42, 0.28), vec3f(1.0, 0.16, 0.08), u.p2);
+  return col + bloom * tint * (0.7 + u.p1 * 1.5);
+}
+
+/** Radial barrel/fisheye warp. p0 = bulge amount, p1 = vertical
+    center, p2 = radial falloff. */
+fn effectBulge(col: vec3f, uv: vec2f) -> vec3f {
+  let center = vec2f(0.5, mix(0.28, 0.72, u.p1));
+  var d = uv - center;
+  d.x *= max(u.aspect, 0.0001);
+  let r2 = dot(d, d);
+  let reach = mix(1.8, 0.45, u.p2);
+  let influence = exp(-r2 / max(reach * reach, 0.001));
+  let warp = 1.0 - u.p0 * 0.65 * influence;
+  d *= max(warp, 0.2);
+  d.x /= max(u.aspect, 0.0001);
+  return sampleSource(clamp(center + d, vec2f(0.0), vec2f(1.0)));
+}
+
+/** Analogue tape tracking, chroma bleed and deterministic line noise.
+    p0 = tracking, p1 = bleed, p2 = noise. */
+fn effectVhs(col: vec3f, uv: vec2f) -> vec3f {
+  let frame = floor(u.beat * 30.0);
+  let line = floor(uv.y * 240.0);
+  let jitter = (hash21(vec2f(line, frame)) - 0.5) * u.p0 * 0.025;
+  let tearBand = exp(-abs(fract(uv.y + u.beat * 0.017) - 0.5) * 70.0) * u.p0 * 0.06;
+  let suv = clamp(uv + vec2f(jitter + tearBand, 0.0), vec2f(0.0), vec2f(1.0));
+  let split = 0.001 + u.p1 * 0.012;
+  var wet = sampleSource(suv);
+  wet.r = sampleSource(clamp(suv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
+  wet.b = sampleSource(clamp(suv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
+  let noise = hash21(vec2f(line * 0.37, frame * 1.7)) - 0.5;
+  return wet + vec3f(noise) * u.p2 * 0.18;
+}
+
+/** CCD-era interlace and highlight rolloff with an optional deterministic
+    viewfinder/date-stamp glyph block. p0 = interlace, p1 = CCD softness,
+    p2 = date stamp visibility. */
+fn effectCamcorder(col: vec3f, uv: vec2f) -> vec3f {
+  let radius = 0.001 + u.p1 * 0.012;
+  var wet = (sampleSource(clamp(uv - vec2f(radius, 0.0), vec2f(0.0), vec2f(1.0)))
+           + sampleSource(uv)
+           + sampleSource(clamp(uv + vec2f(radius, 0.0), vec2f(0.0), vec2f(1.0)))) / 3.0;
+  wet = pow(max(wet, vec3f(0.0)), vec3f(0.92 - u.p1 * 0.12));
+  let field = step(0.5, fract(uv.y * 240.0 + floor(u.beat * 30.0)));
+  wet *= 1.0 - field * u.p0 * 0.16;
+  let stampArea = step(0.68, uv.x) * step(0.84, uv.y);
+  let glyph = step(0.58, fract(uv.x * 72.0)) * step(0.35, fract(uv.y * 54.0));
+  return mix(wet, vec3f(1.0, 0.72, 0.16), stampArea * glyph * u.p2 * 0.75);
+}
+
+/** Radially weighted RGB refraction. p0 = split, p1 = angle,
+    p2 = edge weighting. */
+fn effectPrism(col: vec3f, uv: vec2f) -> vec3f {
+  let a = (u.p1 - 0.5) * 3.14159265;
+  let dir = vec2f(cos(a), sin(a));
+  let radial = length(vec2f((uv.x - 0.5) * max(u.aspect, 0.0001), uv.y - 0.5));
+  let edge = smoothstep(0.05 + (1.0 - u.p2) * 0.35, 0.72, radial);
+  let offset = dir * u.p0 * (0.004 + 0.035 * edge);
+  let r = sampleSource(clamp(uv + offset, vec2f(0.0), vec2f(1.0))).r;
+  let g = sampleSource(uv).g;
+  let b = sampleSource(clamp(uv - offset, vec2f(0.0), vec2f(1.0))).b;
+  return vec3f(r, g, b);
+}
+
+/** Directional long-exposure accumulation sampled from the current source.
+    p0 = length, p1 = angle, p2 = exponential decay. */
+fn effectStreak(col: vec3f, uv: vec2f) -> vec3f {
+  let a = (u.p1 - 0.5) * 3.14159265;
+  let dir = vec2f(cos(a), sin(a));
+  let pulse = 0.35 + 0.65 * beatPulse(4.0);
+  let span = u.p0 * 0.12 * pulse;
+  var wet = vec3f(0.0);
+  var weight = 0.0;
+  for (var i = 0; i < 8; i = i + 1) {
+    let fi = f32(i) / 7.0;
+    let w = exp(-fi * (1.0 + u.p2 * 5.0));
+    wet += sampleSource(clamp(uv - dir * span * fi, vec2f(0.0), vec2f(1.0))) * w;
+    weight += w;
+  }
+  return wet / max(weight, 0.0001);
 }
 
 @fragment fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
@@ -617,13 +750,31 @@ fn effectFilm(col: vec3f, uv: vec2f, mode: f32) -> vec3f {
   else if (mode == 6.0) { wet = effectShake(dry, uv); }
   else if (mode == 7.0) { wet = effectDrift(dry, uv); }
   else if (mode == 8.0) { wet = effectFocus(dry, uv); }
-  else if (mode >= 9.0) { wet = effectFilm(dry, uv, mode - 8.0); }
+  else if (mode == 9.0) { wet = effectAnamorphic(dry, uv); }
+  else if (mode == 10.0) { wet = effectGrain(dry, uv); }
+  else if (mode == 11.0) { wet = effectLeak(dry, uv); }
+  else if (mode == 12.0) { wet = effectDutch(dry, uv); }
+  else if (mode == 13.0) { wet = effectHalation(dry, uv); }
+  else if (mode == 14.0) { wet = effectBulge(dry, uv); }
+  else if (mode == 15.0) { wet = effectVhs(dry, uv); }
+  else if (mode == 16.0) { wet = effectCamcorder(dry, uv); }
+  else if (mode == 17.0) { wet = effectPrism(dry, uv); }
+  else if (mode == 18.0) { wet = effectStreak(dry, uv); }
 
   let m = clamp(u.mix, 0.0, 1.0);
-  let rgb = mix(dry, wet, m);
-  return vec4f(rgb * (1.0 + u.amplitude * 0.06), 1.0);
+  let rgb = mix(dry, wet, m) * (1.0 + clamp(u.amplitude, 0.0, 1.0) * 0.06);
+  return vec4f(clamp(rgb, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `;
+
+/** Test-card variant used only when no decoded video frame can be imported.
+ * The live-video pipeline above remains the canonical module shader contract. */
+export const MODULE_FX_IDLE_WGSL = MODULE_FX_WGSL
+  .replace('var videoTex: texture_external;', 'var videoTex: texture_2d<f32>;')
+  .replace(
+    'textureSampleBaseClampToEdge(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)))',
+    'textureSampleLevel(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0)'
+  );
 
 export const SHADER_EFFECT_MODE: Record<string, number> = {
   transition: 1,
@@ -634,14 +785,14 @@ export const SHADER_EFFECT_MODE: Record<string, number> = {
   shake: 6,
   orbit: 7,
   focus: 8,
-  grain: 9,
-  leak: 10,
-  vhs: 11,
-  camcorder: 11,
   anamorphic: 9,
-  dutch: 7,
-  halation: 10,
-  bulge: 5,
-  prism: 10,
-  streak: 3
+  grain: 10,
+  leak: 11,
+  dutch: 12,
+  halation: 13,
+  bulge: 14,
+  vhs: 15,
+  camcorder: 16,
+  prism: 17,
+  streak: 18
 };

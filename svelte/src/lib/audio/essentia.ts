@@ -2,7 +2,6 @@ import type { AnalysisResultV1 } from "$lib/analysis/contracts";
 import {
   fetchLegacySyncAnalysis,
   normalizeLegacySyncAnalysis,
-  normalizeLegacySyncResponse,
 } from "$lib/analysis/adapters/legacySync";
 import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
 
@@ -32,37 +31,29 @@ export interface EssentiaRhythmAnalysis {
   verified: boolean;
 }
 
-declare const __APP_ESSENTIA_ANALYSIS_ENGINE__: string;
-
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
+  if (!isHostedAnalysisEnabled()) {
+    throw new Error("Hosted analysis is disabled. Local playback and realtime analysis remain available.");
+  }
   const analysisFile = await prepareAnalysisUpload(file);
   const result = await fetchLegacySyncAnalysis(analysisFile, {
     endpointFor: createHostedAnalysisEndpoint,
-    engineHint: resolveEssentiaAnalysisEngine(),
+    engineHint: "essentia",
   });
   return toRhythmAnalysis(result);
 }
 
-export async function fetchRhythmAnalysisFromUrl(analysisUrl: string): Promise<EssentiaRhythmAnalysis> {
-  return toRhythmAnalysis(await normalizeLegacySyncResponse(await fetch(analysisUrl)));
+export function isHostedAnalysisEnabled() {
+  return typeof __APP_ESSENTIA_ANALYSIS_ENABLED__ === "boolean" && __APP_ESSENTIA_ANALYSIS_ENABLED__;
 }
 
-function readCompileTimeDefine(value: string | undefined, fallback = "") {
-  return typeof value === "string" ? value.trim() : fallback;
-}
-
-function resolveEssentiaAnalysisEngine() {
-  return (
-    import.meta.env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
-    readCompileTimeDefine(__APP_ESSENTIA_ANALYSIS_ENGINE__) ||
-    "aubio"
-  ).trim();
-}
-
-function createHostedAnalysisEndpoint(endpointName: "fast" | "rhythm") {
+export function createHostedAnalysisEndpoint(
+  endpointName: "fast" | "rhythm",
+  origin = window.location.origin,
+) {
   // Same-origin proxy in dev (Vite) and production (Vercel /api rewrite).
   // The upstream Essentia service requires X-API-Key, which must not ship to the browser.
-  return new URL(`/__api/analyze/${endpointName}`, window.location.origin);
+  return new URL(`/__api/analyze/${endpointName}`, origin);
 }
 
 export function normalizeRhythmAnalysis(payload: unknown): EssentiaRhythmAnalysis {

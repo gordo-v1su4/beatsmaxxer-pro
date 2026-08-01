@@ -18,6 +18,7 @@ export interface DragState {
   y: number;
   /** Slot currently hovered as drop target */
   hoverTarget: { row: RackRow; slotIndex: number } | null;
+  input: 'pointer' | 'keyboard';
 }
 
 const initial: DragState = {
@@ -25,13 +26,19 @@ const initial: DragState = {
   payload: null,
   x: 0,
   y: 0,
-  hoverTarget: null
+  hoverTarget: null,
+  input: 'pointer'
 };
 
 export const dragState = writable<DragState>(initial);
 
-export function startDrag(payload: DragPayload, x: number, y: number) {
-  dragState.set({ active: true, payload, x, y, hoverTarget: null });
+export function startDrag(
+  payload: DragPayload,
+  x: number,
+  y: number,
+  input: DragState['input'] = 'pointer'
+) {
+  dragState.set({ active: true, payload, x, y, hoverTarget: null, input });
 }
 
 export function moveDrag(x: number, y: number) {

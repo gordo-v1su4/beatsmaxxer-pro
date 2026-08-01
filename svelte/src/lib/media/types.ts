@@ -51,8 +51,3 @@ export interface ClipAsset {
 	readonly samples: readonly EncodedVideoSample[];
 	readonly keyframeSampleIndexes: readonly number[];
 }
-
-export interface MediaFallback {
-	path: 'webcodecs-webgpu' | 'webcodecs-webgl2' | 'html-video-webgl2' | 'native-static';
-	reason: string | null;
-}

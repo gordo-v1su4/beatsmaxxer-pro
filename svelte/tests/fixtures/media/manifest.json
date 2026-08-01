@@ -1,5 +1,6 @@
 {
   "clips": ["clip1.webm","clip2.webm","clip3.webm","clip4.webm","clip5.webm","clip6.webm","clip7.webm","clip8.webm"],
   "audio": "redline.wav",
+  "midi": "qa.mid",
   "audios": ["redline.wav"]
 }

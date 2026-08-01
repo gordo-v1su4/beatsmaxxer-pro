@@ -33,14 +33,20 @@ function buildToneWav(durationSeconds: number, sampleRate = 44_100): ArrayBuffer
 }
 
 describe("prepareAnalysisUpload", () => {
-  test("passes through small files unchanged", async () => {
+  test.runIf(typeof AudioContext !== "undefined")(
+    "always creates a bounded analysis excerpt instead of returning the source file",
+    async () => {
     const wav = buildToneWav(8);
     const source = new File([wav], "short-track.wav", { type: "audio/wav" });
 
     const prepared = await prepareAnalysisUpload(source);
 
-    expect(prepared).toBe(source);
-  });
+      expect(prepared).not.toBe(source);
+      expect(prepared.name).toBe("short-track-analysis.wav");
+      expect(prepared.type).toBe("audio/wav");
+      expect(prepared.size).toBeLessThanOrEqual(3_400_000);
+    },
+  );
 
   test.runIf(typeof AudioContext !== "undefined")(
     "shrinks large uploads below the Vercel proxy budget",

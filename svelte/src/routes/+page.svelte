@@ -9,6 +9,7 @@
     midiLayers,
     rackTop,
     rackBottom,
+    RACK_SLOT_IDS,
     randomize,
     clearParams
   } from '$lib/stores/rack';
@@ -29,19 +30,23 @@
   import { installBspQaHook } from '$lib/qa/bspQa';
   import { fxHold } from '$lib/stores/rack';
   import { topRowCompact, bottomRowCompact } from '$lib/stores/rackUi';
-  import { videoPool } from '$lib/media/VideoPool';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
 
   const ALL_MODULES = listCatalog();
+  const rackModules = $derived(
+    [...$rackTop, ...$rackBottom]
+      .map((id) => ALL_MODULES.find((module) => module.id === id))
+      .filter((module) => module !== undefined)
+  );
   const RACK_SLOT_COUNT = 8;
 
   let unsubHold: (() => void) | undefined;
 
   const loadedClipCount = $derived(
-    [...$rackTop, ...$rackBottom].filter((id) => $videoLayers[id]).length
+    RACK_SLOT_IDS.filter((id) => $videoLayers[id]).length
   );
 
   onMount(async () => {
@@ -77,17 +82,16 @@
     stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();
-    videoPool.dispose();
+    void mediaRuntime.dispose();
     webGpuEngine.dispose();
   });
 
-  async function setModuleVideo(id: string, file: File) {
-    await loadRackClipsFromFiles([file], id);
+  async function setSlotVideo(slotId: string, file: File) {
+    await loadRackClipsFromFiles([file], slotId);
   }
 
-  function clearModuleVideo(id: string) {
-    videoLayers.update((layers) => ({ ...layers, [id]: null }));
-    mediaRuntime.removeModuleClip(id);
+  async function clearSlotVideo(slotId: string) {
+    await mediaRuntime.removeModuleClip(slotId);
   }
 
   async function setModuleMidi(id: string, file: File) {
@@ -133,13 +137,13 @@
     <div class="side-panels" style="display:flex;flex-shrink:0">
       <ModulePalette />
       <ScrewRail side="left" class="hide-on-mobile" />
-      <PgmRail modules={ALL_MODULES} />
+      <PgmRail modules={rackModules} />
     </div>
 
     <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
 
     <div class="rack-main">
-      <MainViewer modules={ALL_MODULES} />
+      <MainViewer modules={rackModules} />
 
       <div
         class="rack-row"
@@ -154,9 +158,9 @@
             canvasId="top-{i}"
             {moduleId}
             params={$moduleParams[moduleId] ?? {}}
-            onVideoUpload={(f) => setModuleVideo(moduleId, f)}
-            onVideosUpload={(files) => loadClipsFromModule(moduleId, files)}
-            onClearVideo={() => clearModuleVideo(moduleId)}
+            onVideoUpload={(f) => setSlotVideo(`top-${i}`, f)}
+            onVideosUpload={(files) => loadClipsFromModule(`top-${i}`, files)}
+            onClearVideo={() => clearSlotVideo(`top-${i}`)}
             onMidiUpload={(f) => setModuleMidi(moduleId, f)}
             onClearMidi={() => clearModuleMidi(moduleId)}
           />
@@ -185,9 +189,9 @@
             canvasId="bottom-{i}"
             {moduleId}
             params={$moduleParams[moduleId] ?? {}}
-            onVideoUpload={(f) => setModuleVideo(moduleId, f)}
-            onVideosUpload={(files) => loadClipsFromModule(moduleId, files)}
-            onClearVideo={() => clearModuleVideo(moduleId)}
+            onVideoUpload={(f) => setSlotVideo(`bottom-${i}`, f)}
+            onVideosUpload={(files) => loadClipsFromModule(`bottom-${i}`, files)}
+            onClearVideo={() => clearSlotVideo(`bottom-${i}`)}
           />
         {/each}
         <!-- Placeholder for a future column: keeps the row's rhythm and shows

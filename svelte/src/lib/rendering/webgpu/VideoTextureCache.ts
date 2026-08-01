@@ -1,94 +1,50 @@
-/** Uploads HTMLVideoElement frames into GPUTexture — works where importExternalTexture fails. */
+/** Persistent GPU copies of the latest decoded video frames for seek gaps. */
 export class VideoTextureCache {
-  private entries = new Map<
-    string,
-    { texture: GPUTexture; view: GPUTextureView; width: number; height: number }
-  >();
-  private placeholder: { texture: GPUTexture; view: GPUTextureView } | null = null;
+  private entries = new Map<string, {
+    texture: GPUTexture;
+    view: GPUTextureView;
+    width: number;
+    height: number;
+    source: HTMLVideoElement;
+  }>();
   private frameViews = new Map<string, GPUTextureView>();
 
   beginFrame() {
     this.frameViews.clear();
   }
 
-  upload(device: GPUDevice, key: string, source: HTMLVideoElement | HTMLCanvasElement): GPUTextureView {
-    const cached = this.frameViews.get(key);
-    if (cached) return cached;
-
-    const width =
-      source instanceof HTMLVideoElement
-        ? source.videoWidth
-        : source.width;
-    const height =
-      source instanceof HTMLVideoElement
-        ? source.videoHeight
-        : source.height;
-    if (width < 1 || height < 1) {
-      return this.ensurePlaceholder(device);
-    }
+  upload(device: GPUDevice, key: string, source: HTMLVideoElement): GPUTextureView {
+    const inFrame = this.frameViews.get(key);
+    if (inFrame) return inFrame;
+    const width = source.videoWidth;
+    const height = source.videoHeight;
+    if (width < 1 || height < 1) throw new Error('video-texture-source-has-no-frame');
 
     let entry = this.entries.get(key);
-    if (!entry || entry.width !== width || entry.height !== height) {
+    if (!entry || entry.width !== width || entry.height !== height || entry.source !== source) {
       entry?.texture.destroy();
       const texture = device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.COPY_DST |
-          GPUTextureUsage.RENDER_ATTACHMENT
+        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
       });
-      entry = { texture, view: texture.createView(), width, height };
+      entry = { texture, view: texture.createView(), width, height, source };
       this.entries.set(key, entry);
     }
 
-    device.queue.copyExternalImageToTexture({ source }, { texture: entry.texture }, [
-      width,
-      height
-    ]);
+    device.queue.copyExternalImageToTexture({ source }, { texture: entry.texture }, [width, height]);
     this.frameViews.set(key, entry.view);
     return entry.view;
   }
 
-  /** Last successfully uploaded frame for this module, if any. */
-  cachedView(key: string): GPUTextureView | null {
-    return this.entries.get(key)?.view ?? null;
-  }
-
-  ensurePlaceholder(device: GPUDevice): GPUTextureView {
-    if (this.placeholder) return this.placeholder.view;
-    const texture = device.createTexture({
-      size: [2, 2],
-      format: 'rgba8unorm',
-      usage:
-        GPUTextureUsage.TEXTURE_BINDING |
-        GPUTextureUsage.COPY_DST |
-        GPUTextureUsage.RENDER_ATTACHMENT
-    });
-    device.queue.writeTexture(
-      { texture },
-      new Uint8Array([28, 28, 32, 255, 28, 28, 32, 255, 28, 28, 32, 255, 28, 28, 32, 255]),
-      { bytesPerRow: 8 },
-      [2, 2]
-    );
-    this.placeholder = { texture, view: texture.createView() };
-    return this.placeholder.view;
-  }
-
-  remove(key: string) {
+  cachedView(key: string, source: HTMLVideoElement): GPUTextureView | null {
     const entry = this.entries.get(key);
-    if (entry) {
-      entry.texture.destroy();
-      this.entries.delete(key);
-    }
-    this.frameViews.delete(key);
+    return entry?.source === source ? entry.view : null;
   }
 
   dispose() {
     for (const entry of this.entries.values()) entry.texture.destroy();
     this.entries.clear();
     this.frameViews.clear();
-    this.placeholder?.texture.destroy();
-    this.placeholder = null;
   }
 }

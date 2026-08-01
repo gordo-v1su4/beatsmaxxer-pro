@@ -13,19 +13,27 @@
 
   let canvas: HTMLCanvasElement;
   let ready = $state(false);
+  let visibilityObserver: IntersectionObserver | null = null;
 
   onMount(async () => {
     if (!canvas) return;
     const ok = await webGpuEngine.attachCanvas(id, canvas, color, moduleId);
     ready = ok;
+    if (ok && typeof IntersectionObserver !== 'undefined') {
+      visibilityObserver = new IntersectionObserver(([entry]) => {
+        webGpuEngine.setCanvasActive(id, entry?.isIntersecting === true);
+      });
+      visibilityObserver.observe(canvas);
+    }
   });
 
   onDestroy(() => {
+    visibilityObserver?.disconnect();
     webGpuEngine.detachCanvas(id);
   });
 
   $effect(() => {
-    if (ready) webGpuEngine.setCanvasModule(id, moduleId);
+    if (ready && id !== 'pgm') webGpuEngine.setCanvasModule(id, moduleId);
   });
 </script>
 

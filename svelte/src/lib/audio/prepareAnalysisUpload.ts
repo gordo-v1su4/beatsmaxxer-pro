@@ -4,10 +4,6 @@ const ANALYSIS_SAMPLE_RATE_HZ = 22_050;
 const ANALYSIS_MAX_DURATION_S = 90;
 
 export async function prepareAnalysisUpload(file: File): Promise<File> {
-  if (file.size <= ANALYSIS_UPLOAD_MAX_BYTES) {
-    return file;
-  }
-
   const ctx = new AudioContext();
   try {
     const decoded = await ctx.decodeAudioData(await file.arrayBuffer());

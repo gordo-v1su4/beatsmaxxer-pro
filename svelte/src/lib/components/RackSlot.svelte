@@ -100,6 +100,21 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     }
     endDrag();
   }
+
+  function finishKeyboardDrop() {
+    const state = get(dragState);
+    const payload = state.payload;
+    if (!state.active || state.input !== 'keyboard' || !payload) return;
+    if (payload.source === 'palette') {
+      assignModuleToSlot(row, slotIndex, payload.moduleId);
+    } else if (payload.row !== undefined && payload.slotIndex !== undefined) {
+      swapRackSlots(
+        { row: payload.row, index: payload.slotIndex },
+        { row, index: slotIndex }
+      );
+    }
+    endDrag();
+  }
 </script>
 
 <div
@@ -108,6 +123,25 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   data-index={slotIndex}
   class="rack-slot {isHover ? 'z-20' : 'z-0'} {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
 >
+  {#if $dragState.active && $dragState.input === 'keyboard' && $dragState.payload}
+    <button
+      type="button"
+      data-keyboard-drop-target
+      class="absolute inset-0 z-50 border-2 border-dashed border-sky-400 bg-black/70 text-xs font-bold tracking-widest text-sky-300"
+      aria-label="Drop {$dragState.payload.moduleId} in {row} rack slot {slotIndex + 1}"
+      onclick={finishKeyboardDrop}
+      onfocus={() => setHoverTarget({ row, slotIndex })}
+      onblur={() => setHoverTarget(null)}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          endDrag();
+        }
+      }}
+    >
+      DROP HERE
+    </button>
+  {/if}
   {#if isHover && $dragState.active}
     <div
       class="pointer-events-none absolute -inset-1 z-30 rounded-lg border-2 border-dashed border-sky-400/90"
@@ -121,7 +155,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
         {mod}
         {params}
         canvasId={slotCanvasId}
-        videoLayer={$videoLayers[moduleId]}
+        videoLayer={$videoLayers[slotCanvasId]}
         {isOnAir}
         {onHeaderPointerDown}
         {onVideoUpload}
@@ -133,7 +167,8 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
         {mod}
         {params}
         canvasId={slotCanvasId}
-        videoLayer={$videoLayers[moduleId]}
+        mediaSlotId={slotCanvasId}
+        videoLayer={$videoLayers[slotCanvasId]}
         midiLayer={$midiLayers[moduleId]}
         {isOnAir}
         {onHeaderPointerDown}

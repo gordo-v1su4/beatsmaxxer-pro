@@ -1,8 +1,7 @@
-import { get } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { rackTop, rackBottom, videoLayers } from '$lib/stores/rack';
+import { RACK_SLOT_IDS } from '$lib/stores/rack';
 
 export interface QaManifest {
   clips?: string[];
@@ -11,25 +10,24 @@ export interface QaManifest {
 
 export async function loadQaMediaFromManifest(manifest: QaManifest) {
   const clips = manifest.clips ?? [];
-  const slotIds = [...get(rackTop), ...get(rackBottom)];
+  const slotIds = [...RACK_SLOT_IDS];
   const errors: string[] = [];
 
   for (let i = 0; i < slotIds.length; i++) {
     const clip = clips[i % clips.length];
     if (!clip) continue;
-    const moduleId = slotIds[i];
+    const slotId = slotIds[i];
     const url = `/qa-media/${clip}`;
-    videoLayers.update((layers) => ({
-      ...layers,
-      [moduleId]: { name: clip, url }
-    }));
     try {
-      await mediaRuntime.registerModuleClip(moduleId, clip, url);
-      await videoPool.prewarm(moduleId);
+      const result = await mediaRuntime.registerModuleClip(slotId, clip, url);
+      if (result.status !== 'success') {
+        throw new Error(result.status === 'failed' ? result.error : result.status);
+      }
+      await videoPool.prewarm(slotId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`${moduleId}: ${msg}`);
-      console.error(`[QA] clip load failed for ${moduleId} (${clip}):`, err);
+      errors.push(`${slotId}: ${msg}`);
+      console.error(`[QA] clip load failed for ${slotId} (${clip}):`, err);
     }
   }
 

@@ -3,6 +3,8 @@
  * All subagents MUST implement against these interfaces.
  */
 
+import type { TimelineFrame } from '$lib/transport/AudioTimeline';
+
 // ─── Audio Engine ────────────────────────────────────────────────────────────
 
 export interface TransportSample {
@@ -45,6 +47,7 @@ export interface IAudioEngine {
   loadAudioUrl(url: string, trackName: string): Promise<void>;
   clearUploadedTrack(): void;
   getTransportSample(presentationTimeSeconds?: number): TransportSample;
+  getTimelineFrame(): TimelineFrame | null;
   getState(): AudioEngineState;
   configureTimeSampler(config: TimeSamplerConfig): void;
   getLiveScheduleFrame(): LiveScheduleFrame | null;
@@ -142,6 +145,45 @@ export interface IWebGpuPresenter {
   render(): boolean;
   detach(): void;
   isReady(): boolean;
+}
+
+export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card';
+
+export interface WebGpuRenderDiagnostics {
+  bindingId: string;
+  /** Effect/WGSL identity, independent from the stable decoded media source. */
+  effectModuleId?: string;
+  /** Stable rack media/decode identity (top-0..bottom-3). */
+  sourceId?: string;
+  canvas: string;
+  cssSize: string;
+  effectMode: number;
+  hasVideo: number;
+  externalTextureImported: boolean;
+  externalTextureBound: boolean;
+  cachedTextureUploaded?: boolean;
+  cachedTextureBound?: boolean;
+  samplePath: WebGpuVideoSamplePath;
+  source: string | null;
+  dimensions: string | null;
+  frameId: number | null;
+  videoSize: string | null;
+  feedback: string;
+  mix: number;
+  timelineFrameId: number | null;
+  timelineGeneration: number | null;
+  fixedStepIndex: number | null;
+  feedbackDegraded: boolean;
+  feedbackSkippedSteps: number;
+  uniformHash: string;
+  renderCount: number;
+  skippedRenderCount: number;
+  /** Zero means uncapped: the binding follows each AppLoop display publication. */
+  targetFps: number;
+  frameIntervalMs: number | null;
+  lastRenderContextTimeSeconds: number;
+  renderedThisFrame: boolean;
+  skipReason: 'none' | 'cadence' | 'unchanged' | 'inactive';
 }
 
 // ─── Effect Shader ───────────────────────────────────────────────────────────

@@ -16,14 +16,6 @@ mkdir -p "$MEDIA"
 EXT="webm"
 SRC_CLIP="$SRCDIR/qa-clip.webm"
 
-# Prefer real footage when a human has it locally (richer than a test pattern),
-# but only if this Chromium can actually decode it — otherwise fall back.
-if [[ -n "${QA_REAL_MEDIA:-}" && -f "${QA_REAL_MEDIA}" ]]; then
-  SRC_CLIP="${QA_REAL_MEDIA}"
-  EXT="${QA_REAL_MEDIA##*.}"
-  echo "Using real media from QA_REAL_MEDIA: $SRC_CLIP" >&2
-fi
-
 if [[ ! -f "$SRC_CLIP" ]]; then
   echo "ERROR: no QA clip source at $SRC_CLIP" >&2
   echo "The VP9 fixture should be committed at tests/fixtures/media-src/qa-clip.webm" >&2
@@ -45,6 +37,9 @@ elif command -v ffmpeg >/dev/null 2>&1; then
   ffmpeg -y -f lavfi -i "sine=frequency=440:duration=5" "$MEDIA/redline.wav" 2>/dev/null
 fi
 
+# Minimal deterministic SMF (format 0, one empty track) for advertised MIDI pickers.
+printf '\x4d\x54\x68\x64\x00\x00\x00\x06\x00\x00\x00\x01\x00\x60\x4d\x54\x72\x6b\x00\x00\x00\x04\x00\xff\x2f\x00' > "$MEDIA/qa.mid"
+
 CLIP_LIST=""
 for i in 1 2 3 4 5 6 7 8; do
   [[ -n "$CLIP_LIST" ]] && CLIP_LIST="$CLIP_LIST,"
@@ -55,6 +50,7 @@ cat > "$MEDIA/manifest.json" <<EOF
 {
   "clips": [$CLIP_LIST],
   "audio": "redline.wav",
+  "midi": "qa.mid",
   "audios": ["redline.wav"]
 }
 EOF

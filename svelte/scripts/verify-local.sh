@@ -62,14 +62,15 @@ run_gate "verify:interaction" bun scripts/verify-interaction-runner.ts
 run_gate "verify:stutter" env STUTTER_MS="${STUTTER_MS:-8000}" bun scripts/verify-stutter-runner.ts
 run_gate "verify:audio" bun scripts/verify-audio-runner.ts
 run_gate "verify:beat" bun scripts/verify-beat-runner.ts
+run_gate "verify:visual-proof (required release gate)" bun scripts/verify-visual-proof-runner.ts
 
 echo ""
 echo "══════════════════════════════════════════"
-echo " ✓ All automated local gates passed"
+echo " ✓ All local and physical-browser visual-proof gates passed"
 echo " Artifacts: $ARTIFACT_DIR/"
 echo "══════════════════════════════════════════"
 echo ""
-echo "Manual checklist (still required before ship):"
+echo "Additional manual checklist (still required before ship):"
 echo "  • Upload clips via CLIP / drag-drop / top-bar bulk — eyeball every preview"
 echo "  • Upload mp3 — listen for playback + RHY·OK"
 echo "  • SoundTouch: TMP without chipmunk, KEY/PIT pitch shift by ear"

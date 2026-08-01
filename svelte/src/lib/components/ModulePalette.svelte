@@ -5,6 +5,7 @@
   import { fxLibOpen } from '$lib/stores/rackUi';
   import type { RackRow } from '$lib/stores/drag';
   import { get } from 'svelte/store';
+  import { tick } from 'svelte';
   import { ChevronLeft, ChevronRight, GripVertical } from '@lucide/svelte';
 
   const CATEGORIES: { key: ModuleCategory; label: string }[] = [
@@ -25,6 +26,18 @@
     }
     window.addEventListener('pointermove', onWindowMove);
     window.addEventListener('pointerup', onWindowUp);
+  }
+
+  async function beginKeyboardDrag(moduleId: string) {
+    if (inRack.has(moduleId)) {
+      const row: RackRow = $rackTop.includes(moduleId) ? 'top' : 'bottom';
+      const slotIndex = row === 'top' ? $rackTop.indexOf(moduleId) : $rackBottom.indexOf(moduleId);
+      startDrag({ moduleId, source: 'rack', row, slotIndex }, 0, 0, 'keyboard');
+    } else {
+      startDrag({ moduleId, source: 'palette' }, 0, 0, 'keyboard');
+    }
+    await tick();
+    document.querySelector<HTMLElement>('[data-keyboard-drop-target]')?.focus();
   }
 
   function onWindowMove(e: PointerEvent) {
@@ -94,19 +107,24 @@
       {#each CATEGORIES as cat (cat.key)}
         <span style="font-size:7px;font-weight:700;letter-spacing:0.12em;color:#33383f;padding:0 4px;margin-top:{cat.key === 'beat' ? '0' : '6px'}">{cat.label}</span>
         {#each listByCategory(cat.key) as mod (mod.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            role="button"
-            tabindex="0"
+          <button
+            type="button"
             class="palette-card"
+            aria-label="Grab {mod.name} to move to a rack slot"
             style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
             onpointerdown={(e) => beginDrag(mod.id, e)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                void beginKeyboardDrag(mod.id);
+              }
+            }}
           >
             <span style="font-size:10px;font-weight:700;color:{mod.accentColor}">{mod.shortName}</span>
             {#if mod.description}
               <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
             {/if}
-          </div>
+          </button>
         {/each}
       {/each}
       <p style="margin-top:8px;padding:4px;font-size:7px;line-height:1.35;color:#33383f">
@@ -125,6 +143,12 @@
     border-radius: 2px;
     cursor: grab;
     user-select: none;
+    width: 100%;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    text-align: left;
+    font-family: inherit;
     transition: background 0.12s, transform 0.12s;
   }
   .palette-card:hover {

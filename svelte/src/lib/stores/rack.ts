@@ -3,11 +3,12 @@ import {
   catalogIds,
   DEFAULT_RACK_BOTTOM,
   DEFAULT_RACK_TOP,
+  canPlaceInRow,
   getModuleDef,
   listCatalog,
   type ModuleDefinition
 } from '$lib/modules/catalog';
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import type { VideoLayer } from '$lib/engine/contracts';
 import type { RackRow } from '$lib/stores/drag';
 
@@ -33,10 +34,171 @@ function defaultParams(): Record<string, Record<string, number>> {
 export const rackTop = writable<string[]>([...DEFAULT_RACK_TOP]);
 export const rackBottom = writable<string[]>([...DEFAULT_RACK_BOTTOM]);
 
+export type RackSlotId = `top-${0 | 1 | 2 | 3}` | `bottom-${0 | 1 | 2 | 3}`;
+export const RACK_SLOT_IDS: readonly RackSlotId[] = [
+  'top-0', 'top-1', 'top-2', 'top-3',
+  'bottom-0', 'bottom-1', 'bottom-2', 'bottom-3'
+];
+
+export function isRackSlotId(id: string): id is RackSlotId {
+  return (RACK_SLOT_IDS as readonly string[]).includes(id);
+}
+
+export function rackSlotId(row: RackRow, index: number): RackSlotId {
+  return `${row}-${index}` as RackSlotId;
+}
+
+/** Stable media/decode slot currently occupied by an effect module. */
+export function currentRackSlotForModule(
+  moduleId: string,
+  top = get(rackTop),
+  bottom = get(rackBottom)
+): RackSlotId | null {
+  const topIndex = top.indexOf(moduleId);
+  if (topIndex >= 0) return rackSlotId('top', topIndex);
+  const bottomIndex = bottom.indexOf(moduleId);
+  return bottomIndex >= 0 ? rackSlotId('bottom', bottomIndex) : null;
+}
+
+/** Effect module currently rendered by a stable media/decode slot. */
+export function currentRackModuleForSlot(
+  slotId: string,
+  top = get(rackTop),
+  bottom = get(rackBottom)
+): string | null {
+  const match = /^(top|bottom)-([0-3])$/.exec(slotId);
+  if (!match) return null;
+  const modules = match[1] === 'top' ? top : bottom;
+  return modules[Number(match[2])] ?? null;
+}
+
+export function currentRackAssignments(
+  top = get(rackTop),
+  bottom = get(rackBottom)
+): Array<{ slotId: RackSlotId; moduleId: string }> {
+  return [
+    ...top.map((moduleId, index) => ({ slotId: rackSlotId('top', index), moduleId })),
+    ...bottom.map((moduleId, index) => ({ slotId: rackSlotId('bottom', index), moduleId }))
+  ];
+}
+
 export const moduleParams = writable(defaultParams());
+type RackParams = Record<string, Record<string, number>>;
+
+const undoStack: RackParams[] = [];
+const redoStack: RackParams[] = [];
+const HISTORY_LIMIT = 100;
+const historyRevision = writable(0);
+let transactionDepth = 0;
+let transactionStart: RackParams | null = null;
+
+export const canUndo = derived(historyRevision, () => undoStack.length > 0);
+export const canRedo = derived(historyRevision, () => redoStack.length > 0);
+
+function cloneParams(params: RackParams): RackParams {
+  return Object.fromEntries(
+    Object.entries(params).map(([moduleId, values]) => [moduleId, { ...values }])
+  );
+}
+
+function paramsEqual(a: RackParams, b: RackParams): boolean {
+  const aIds = Object.keys(a);
+  const bIds = Object.keys(b);
+  if (aIds.length !== bIds.length) return false;
+  return aIds.every((id) => {
+    const aValues = a[id] ?? {};
+    const bValues = b[id] ?? {};
+    const aKeys = Object.keys(aValues);
+    const bKeys = Object.keys(bValues);
+    return (
+      aKeys.length === bKeys.length &&
+      aKeys.every((key) => Object.is(aValues[key], bValues[key]))
+    );
+  });
+}
+
+function notifyHistoryChanged() {
+  historyRevision.update((revision) => revision + 1);
+}
+
+function pushUndo(snapshot: RackParams) {
+  undoStack.push(snapshot);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+}
+
+function commitParams(next: RackParams) {
+  const current = get(moduleParams);
+  if (paramsEqual(current, next)) return;
+
+  if (transactionDepth === 0) {
+    pushUndo(cloneParams(current));
+    redoStack.length = 0;
+    notifyHistoryChanged();
+  }
+  moduleParams.set(next);
+}
+
+/** Starts a possibly long-running parameter gesture (for example pointer drag). */
+export function beginRackParamTransaction() {
+  const outermost = transactionDepth === 0;
+  if (outermost) transactionStart = cloneParams(get(moduleParams));
+  transactionDepth += 1;
+}
+
+/** Finishes a parameter gesture and records its initial state as one undo step. */
+export function endRackParamTransaction() {
+  if (transactionDepth === 0) return;
+  transactionDepth -= 1;
+  if (transactionDepth === 0) {
+    const before = transactionStart;
+    transactionStart = null;
+    if (before && !paramsEqual(before, get(moduleParams))) {
+      pushUndo(before);
+      redoStack.length = 0;
+      notifyHistoryChanged();
+    }
+  }
+}
+
+/** Groups any nested parameter mutations into one undoable rack operation. */
+export function runRackParamTransaction(operation: () => void) {
+  beginRackParamTransaction();
+  try {
+    operation();
+  } finally {
+    endRackParamTransaction();
+  }
+}
+
+export function undoRackParams() {
+  const previous = undoStack.pop();
+  if (!previous) return;
+  redoStack.push(cloneParams(get(moduleParams)));
+  moduleParams.set(previous);
+  notifyHistoryChanged();
+}
+
+export function redoRackParams() {
+  const next = redoStack.pop();
+  if (!next) return;
+  pushUndo(cloneParams(get(moduleParams)));
+  moduleParams.set(next);
+  notifyHistoryChanged();
+}
+
+/** Test/setup helper: clears history without changing current parameter values. */
+export function resetRackParamHistory() {
+  undoStack.length = 0;
+  redoStack.length = 0;
+  transactionDepth = 0;
+  transactionStart = null;
+  notifyHistoryChanged();
+}
 export const bypassed = writable(buildModuleRecord(catalogIds(), false));
 export const muted = writable(buildModuleRecord(catalogIds(), false));
-export const videoLayers = writable(buildModuleRecord(catalogIds(), null as VideoLayer | null));
+export const videoLayers = writable(
+  buildModuleRecord([...RACK_SLOT_IDS], null as VideoLayer | null)
+);
 export const midiLayers = writable(buildModuleRecord(catalogIds(), null as MidiLayer | null));
 export const fxHold = writable(false);
 
@@ -61,10 +223,18 @@ export function allRackModuleIds(top: string[], bottom: string[]): string[] {
 }
 
 export function updateParam(moduleId: string, key: string, value: number) {
-  moduleParams.update((params) => ({
+  const params = get(moduleParams);
+  commitParams({
     ...params,
     [moduleId]: { ...(params[moduleId] ?? {}), [key]: value }
-  }));
+  });
+}
+
+/** Applies a module preset or other multi-control update as one history entry. */
+export function updateParams(moduleId: string, values: Record<string, number>) {
+  runRackParamTransaction(() => {
+    for (const [key, value] of Object.entries(values)) updateParam(moduleId, key, value);
+  });
 }
 
 export function toggleBypass(moduleId: string) {
@@ -92,50 +262,62 @@ export function reorderInRow(row: RackRow, fromIndex: number, toIndex: number) {
 export function swapRackSlots(
   from: { row: RackRow; index: number },
   to: { row: RackRow; index: number }
-) {
-  if (from.row === to.row && from.index === to.index) return;
+): boolean {
+  if (from.row === to.row && from.index === to.index) return false;
 
-  let fromId = '';
-  let toId = '';
+  const top = get(rackTop);
+  const bottom = get(rackBottom);
+  const fromSlots = from.row === 'top' ? top : bottom;
+  const toSlots = to.row === 'top' ? top : bottom;
+  if (
+    !Number.isInteger(from.index) ||
+    !Number.isInteger(to.index) ||
+    from.index < 0 ||
+    to.index < 0 ||
+    from.index >= fromSlots.length ||
+    to.index >= toSlots.length
+  ) return false;
 
-  rackTop.update((top) => {
-    if (from.row === 'top') fromId = top[from.index] ?? '';
-    if (to.row === 'top') toId = top[to.index] ?? '';
-    return top;
-  });
-  rackBottom.update((bottom) => {
-    if (from.row === 'bottom') fromId = bottom[from.index] ?? '';
-    if (to.row === 'bottom') toId = bottom[to.index] ?? '';
-    return bottom;
-  });
-
-  if (!fromId) return;
+  const fromId = fromSlots[from.index];
+  const toId = toSlots[to.index];
+  if (!fromId || !toId) return false;
 
   if (from.row === to.row) {
     reorderInRow(from.row, from.index, to.index);
-    return;
+    return true;
+  }
+
+  const fromDef = getModuleDef(fromId);
+  const toDef = getModuleDef(toId);
+  if (!fromDef || !toDef || !canPlaceInRow(fromDef, to.row) || !canPlaceInRow(toDef, from.row)) {
+    return false;
   }
 
   rackTop.update((top) => {
     const next = [...top];
-    if (from.row === 'top') next[from.index] = toId || fromId;
+    if (from.row === 'top') next[from.index] = toId;
     if (to.row === 'top') next[to.index] = fromId;
     return next;
   });
   rackBottom.update((bottom) => {
     const next = [...bottom];
-    if (from.row === 'bottom') next[from.index] = toId || fromId;
+    if (from.row === 'bottom') next[from.index] = toId;
     if (to.row === 'bottom') next[to.index] = fromId;
     return next;
   });
+  return true;
 }
 
 /** Drop a palette module onto a rack slot — swaps if already in rack. */
-export function assignModuleToSlot(row: RackRow, slotIndex: number, moduleId: string) {
+export function assignModuleToSlot(row: RackRow, slotIndex: number, moduleId: string): boolean {
   const def = getModuleDef(moduleId);
-  if (!def) return;
+  if (!def || !canPlaceInRow(def, row)) return false;
 
   const store = row === 'top' ? rackTop : rackBottom;
+  const slots = get(store);
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= slots.length) return false;
+  if (slots[slotIndex] === moduleId) return false;
+
   store.update((slots) => {
     const next = [...slots];
     const existingIndex = next.indexOf(moduleId);
@@ -147,10 +329,12 @@ export function assignModuleToSlot(row: RackRow, slotIndex: number, moduleId: st
     next[slotIndex] = moduleId;
     return next;
   });
+  return true;
 }
 
 export function randomize() {
-  moduleParams.update((params) => {
+  const params = get(moduleParams);
+  const next = (() => {
     const next = { ...params };
     for (const id of catalogIds()) {
       const p = { ...(next[id] ?? {}) };
@@ -160,11 +344,12 @@ export function randomize() {
       next[id] = p;
     }
     return next;
-  });
+  })();
+  commitParams(next);
 }
 
 export function clearParams() {
-  moduleParams.set(defaultParams());
+  commitParams(defaultParams());
 }
 
 /** Legacy alias */

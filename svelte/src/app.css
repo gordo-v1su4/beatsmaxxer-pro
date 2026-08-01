@@ -5,22 +5,21 @@
 	--panel-bg: #131416;
 	--border: #0d0e0f;
 	--text-dim: #7a8090;
-	--font-ui: 'Rajdhani', sans-serif;
-	--font-mono: 'Share Tech Mono', monospace;
-	--font-brand: 'Orbitron', sans-serif;
+	--font-ui: 'Avenir Next Condensed', 'Arial Narrow', system-ui, sans-serif;
+	--font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+	--font-brand: 'Avenir Next', system-ui, sans-serif;
 
 	/* Rack layout — four equal modules; knobs stay aligned at this width */
 	--rack-module-min: 272px;
 	--mix-strip-height: 46px;
 	--fx-lib-width: 128px;
 	--fx-lib-collapsed: 22px;
-	--preset-browser-width: 148px;
 	--pgm-rail-width: 190px;
 	--pgm-rail-collapsed: 22px;
 	--side-rail-width: 8px;
 	--app-min-width: calc(
-		var(--rack-module-min) * 4 + var(--fx-lib-width) + var(--preset-browser-width) +
-			var(--pgm-rail-width) + var(--side-rail-width) * 2 + 3px
+		var(--rack-module-min) * 4 + var(--fx-lib-width) + var(--pgm-rail-width) +
+			var(--side-rail-width) * 2 + 3px
 	);
 	--app-min-height: 720px;
 }

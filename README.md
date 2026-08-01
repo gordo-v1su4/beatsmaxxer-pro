@@ -6,7 +6,7 @@
 
 Browser-native **audio-reactive video FX rack** with a broadcast-style program monitor. Load clips into eight modules, cut on the beat, and drive shader effects from live rhythm analysis — **SvelteKit 5 + WebGPU only** (no React, no Three.js fallback).
 
-`#vj` `#beat-sync` `#webgpu` `#webcodecs` `#svelte` `#vite` `#bun` `#realtime-video` `#shader-fx` `#audio-reactive` `#music-video` `#program-monitor` `#singlefile`
+`#vj` `#beat-sync` `#webgpu` `#svelte` `#vite` `#bun` `#realtime-video` `#shader-fx` `#audio-reactive` `#music-video` `#program-monitor` `#singlefile`
 
 ## Quick start
 
@@ -33,8 +33,8 @@ On every refresh, `?qa=1` auto-loads Redline + 8 rack clips via [`svelte/src/lib
 | Layer | Tech |
 |-------|------|
 | UI | SvelteKit 5 + runes |
-| Render | **WebGPU only** (WGSL) — one `WebGpuEngine` rAF loop |
-| Decode | WebCodecs + shared video pool |
+| Render | **WebGPU only** (WGSL) — the sole `AppLoop` rAF drives `WebGpuEngine` |
+| Decode | 8 slot-owned `HTMLVideoElement` pipelines in a shared pool; PGM reuses one |
 | Rhythm | Essentia hosted analysis + Web Audio fallback |
 | Audio FX | SoundTouch.js (KEY / PITCH / TEMPO) |
 | Build | Vite 8 + Bun → single HTML via `vite-plugin-singlefile` |
@@ -45,7 +45,7 @@ On every refresh, `?qa=1` auto-loads Redline + 8 rack clips via [`svelte/src/lib
 svelte/src/
   routes/+page.svelte       Main rack layout
   lib/audio/                AudioEngine, Essentia, SoundTouch
-  lib/rendering/webgpu/     WebGpuEngine, WGSL registry, VideoTextureCache
+  lib/rendering/webgpu/     WebGpuEngine, WGSL registry, frame-local external-video bindings
   lib/runtime/pgm/          Beat-quantized PGM director
   lib/modules/catalog.ts    FX module catalog (18 modules, drag-from-palette)
   lib/components/           TopBar, EffectModule, PgmRail, ModulePalette…
@@ -55,7 +55,9 @@ docs/                       Architecture notes, hero screenshot
 
 ## Docs
 
-- [`svelte/README.md`](svelte/README.md) — ship gate checklist, verify scripts
+- [`svelte/README.md`](svelte/README.md) — Svelte app quick start and documentation index
+- [`svelte/docs/ARCHITECTURE.md`](svelte/docs/ARCHITECTURE.md) — runtime ownership and render/media data flow
+- [`svelte/docs/SHIP_PLAN.md`](svelte/docs/SHIP_PLAN.md) — implemented work versus required release evidence
 - [`svelte/docs/LOCAL_TESTING.md`](svelte/docs/LOCAL_TESTING.md) — browser acceptance gates
 - [`svelte/docs/MODULES.md`](svelte/docs/MODULES.md) — register new effects
 - [`CLAUDE.md`](CLAUDE.md) — module param reference

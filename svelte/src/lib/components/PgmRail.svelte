@@ -16,6 +16,7 @@
     type PgmFeel
   } from '$lib/stores/pgm';
   import { pgmRailOpen } from '$lib/stores/rackUi';
+  import { currentRackSlotForModule, rackBottom, rackTop } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
@@ -30,6 +31,8 @@
   const quantizeLabel = $derived(formatQuantizeLabel($intervalBeats, $feel));
 
   function handleSelect(id: string) {
+    const sourceId = currentRackSlotForModule(id, $rackTop, $rackBottom);
+    if (!sourceId) return;
     if (id === $pgmSource) {
       clearPgmQueue();
       return;
@@ -37,14 +40,14 @@
     if (!$transportDisplay.playing) {
       clearPgmQueue();
       cutImmediate(id);
-      webGpuEngine.setPgmLiveModule(id);
+      webGpuEngine.setPgmLiveModule(id, sourceId);
       return;
     }
     if ($queuedPgmSource === id) {
       clearPgmQueue();
     } else {
       selectPgmSource(id);
-      mediaRuntime.clipRegistry.get(id);
+      void mediaRuntime.prewarmModule(sourceId).catch(() => {});
     }
   }
 </script>

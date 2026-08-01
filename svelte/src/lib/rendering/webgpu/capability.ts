@@ -1,4 +1,5 @@
 import type { RendererCapability } from '$lib/engine/contracts';
+import { getSharedWebGpuDevice } from './SharedGpuDevice';
 
 export interface CapabilityState {
   renderer: RendererCapability;
@@ -21,17 +22,15 @@ async function probeWebGpuInner(): Promise<CapabilityState> {
     };
   }
   try {
-    const adapter = await gpu.requestAdapter();
-    if (!adapter) {
+    const device = await getSharedWebGpuDevice();
+    if (!device) {
       return {
         renderer: 'webgpu_unavailable',
         webgpu: false,
         webcodecs,
-        reason: 'No WebGPU adapter found'
+        reason: 'No WebGPU device found'
       };
     }
-    const device = await adapter.requestDevice();
-    device.destroy();
     return {
       renderer: 'webgpu_active',
       webgpu: true,

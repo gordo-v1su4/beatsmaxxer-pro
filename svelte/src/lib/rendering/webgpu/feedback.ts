@@ -60,7 +60,9 @@ export function createFeedbackPair(
     views: [tex0.createView(), tex1.createView()],
     ping: 0,
     width: w,
-    height: h
+    height: h,
+    generation: -1,
+    fixedStepIndex: -1
   };
 }
 
@@ -70,6 +72,35 @@ export interface FeedbackPair {
   ping: 0 | 1;
   width: number;
   height: number;
+  generation: number;
+  fixedStepIndex: number;
+}
+
+export function advanceFeedbackTo(
+  fb: FeedbackPair,
+  generation: number,
+  fixedStepIndex: number,
+) {
+  if (fb.generation !== generation) {
+    fb.generation = generation;
+    fb.fixedStepIndex = fixedStepIndex;
+    fb.ping = 0;
+    return { reset: true, steps: 1, degraded: false, skippedSteps: 0 } as const;
+  }
+  const steps = Math.max(0, fixedStepIndex - fb.fixedStepIndex);
+  if (steps > 0) fb.fixedStepIndex = fixedStepIndex;
+  if (steps > 1) {
+    // Exact catch-up would require replaying every historical video/audio input.
+    // Reset instead of pretending one render pass advanced `steps` semantic frames.
+    fb.ping = 0;
+    return {
+      reset: true,
+      steps: 1,
+      degraded: true,
+      skippedSteps: steps - 1
+    } as const;
+  }
+  return { reset: false, steps, degraded: false, skippedSteps: 0 } as const;
 }
 
 export function swapFeedback(fb: FeedbackPair) {

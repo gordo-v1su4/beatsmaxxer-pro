@@ -44,3 +44,65 @@ export function computeSpeedRampRate(
   const rate = sw >= 0 ? Math.pow(rMax, sw) : Math.pow(rMin, -sw);
   return Math.max(0.0625, Math.min(4, rate));
 }
+
+export interface SpeedRampTimelineSample {
+  readonly generation: number;
+  readonly positionSeconds: number;
+  readonly beatPosition: number;
+  readonly beatIntervalSeconds: number;
+  readonly fixedStepSeconds: number;
+  readonly fixedStepIndex: number;
+  readonly fixedStepPhase: number;
+}
+
+export interface SpeedRampSourceState {
+  readonly generation: number;
+  readonly fixedStepIndex: number;
+  readonly sourceAtFixedStepSeconds: number;
+}
+
+/** Deterministic fixed-step source mapping; HTML media time is only an actuator. */
+export function advanceSpeedRampSource(
+  previous: SpeedRampSourceState | null,
+  frame: SpeedRampTimelineSample,
+  params: Record<string, number>,
+  bypassed = false
+) {
+  if (
+    previous === null ||
+    previous.generation !== frame.generation ||
+    frame.fixedStepIndex < previous.fixedStepIndex
+  ) {
+    const state = {
+      generation: frame.generation,
+      fixedStepIndex: frame.fixedStepIndex,
+      sourceAtFixedStepSeconds: frame.positionSeconds
+    } satisfies SpeedRampSourceState;
+    return {
+      state,
+      targetSeconds: frame.positionSeconds,
+      rate: computeSpeedRampRate(frame.beatPosition, params, bypassed)
+    };
+  }
+
+  const interval = Math.max(0.001, frame.beatIntervalSeconds);
+  let sourceAtFixedStepSeconds = previous.sourceAtFixedStepSeconds;
+  for (let step = previous.fixedStepIndex + 1; step <= frame.fixedStepIndex; step += 1) {
+    const stepPosition = step * frame.fixedStepSeconds;
+    const stepBeat = frame.beatPosition + (stepPosition - frame.positionSeconds) / interval;
+    sourceAtFixedStepSeconds +=
+      frame.fixedStepSeconds * computeSpeedRampRate(stepBeat, params, bypassed);
+  }
+
+  const rate = computeSpeedRampRate(frame.beatPosition, params, bypassed);
+  const state = {
+    generation: frame.generation,
+    fixedStepIndex: frame.fixedStepIndex,
+    sourceAtFixedStepSeconds
+  } satisfies SpeedRampSourceState;
+  return {
+    state,
+    targetSeconds: sourceAtFixedStepSeconds + frame.fixedStepPhase * frame.fixedStepSeconds * rate,
+    rate
+  };
+}

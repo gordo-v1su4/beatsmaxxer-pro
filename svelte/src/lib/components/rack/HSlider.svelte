@@ -1,12 +1,29 @@
 <script lang="ts">
+  import { sliderValueForKey } from '$lib/components/controlKeyboard';
+  import {
+    beginRackParamTransaction,
+    endRackParamTransaction,
+    runRackParamTransaction
+  } from '$lib/stores/rack';
+
   interface Props {
     value: number;
     onChange: (v: number) => void;
     color: string;
     label?: string;
+    ariaLabel?: string;
     compact?: boolean;
+    controlId?: string;
   }
-  let { value, onChange, color, label, compact = false }: Props = $props();
+  let {
+    value,
+    onChange,
+    color,
+    label,
+    ariaLabel = label,
+    compact = false,
+    controlId = label ?? 'slider'
+  }: Props = $props();
   let track: HTMLDivElement;
   let drag = $state(false);
 
@@ -16,18 +33,33 @@
     onChange(Math.max(0, Math.min(100, ((cx - rect.left) / rect.width) * 100)));
   }
 
-  function onDown(e: MouseEvent) {
+  function onDown(e: PointerEvent) {
     e.preventDefault();
+    (e.currentTarget as HTMLElement).focus();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag = true;
+    beginRackParamTransaction();
     update(e.clientX);
-    const move = (ev: MouseEvent) => update(ev.clientX);
-    const up = () => {
+    const target = e.currentTarget as HTMLElement;
+    const move = (ev: PointerEvent) => update(ev.clientX);
+    const up = (ev: PointerEvent) => {
       drag = false;
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
+      target.releasePointerCapture?.(ev.pointerId);
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+      target.removeEventListener('pointercancel', up);
+      endRackParamTransaction();
     };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
+    target.addEventListener('pointercancel', up);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    const next = sliderValueForKey(e.key, value, 0, 100);
+    if (next === null) return;
+    e.preventDefault();
+    runRackParamTransaction(() => onChange(next));
   }
 </script>
 
@@ -36,7 +68,21 @@
     <div class="hslider-label">{label}</div>
   {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="hslider-hit" bind:this={track} onmousedown={onDown} style="--accent:{color}">
+  <div
+    class="hslider-hit"
+    bind:this={track}
+    onpointerdown={onDown}
+    onkeydown={onKeyDown}
+    style="--accent:{color}"
+    role="slider"
+    tabindex="0"
+    data-bsp-proof-id="control-slider-{controlId}"
+    aria-label={ariaLabel ?? controlId}
+    aria-valuemin="0"
+    aria-valuemax="100"
+    aria-valuenow={value}
+    aria-valuetext={`${Math.round(value)} percent`}
+  >
     <div class="hslider-track">
       <div class="hslider-fill" style="width:{value}%"></div>
       {#each [25, 50, 75] as p (p)}

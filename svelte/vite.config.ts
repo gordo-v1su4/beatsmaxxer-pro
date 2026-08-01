@@ -5,20 +5,17 @@ import { defineConfig, loadEnv } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
+import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
 	const env = loadEnv(mode, repoRoot, '');
-	const essentiaApiBaseUrl =
-		env.ESSENTIA_API_BASE_URL ||
-		env.ESSENTIA_API_URL ||
-		env.VITE_ESSENTIA_API_BASE_URL ||
-		env.VITE_ESSENTIA_API_URL ||
-		'https://essentia.v1su4.dev';
-	const essentiaApiKey = (env.ESSENTIA_API_KEY || env.VITE_ESSENTIA_API_KEY || '').trim();
+	const essentiaProxyConfig = analysisProxyConfigFromEnv(
+		env,
+		command === 'serve' ? 'development' : 'production'
+	);
 	const essentiaAnalysisEngine = (
 		env.ESSENTIA_ANALYSIS_ENGINE ||
 		env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
@@ -37,10 +34,12 @@ export default defineConfig(({ mode }) => {
 				adapter: adapter({ fallback: 'index.html' })
 			}),
 			viteSingleFile({ useRecommendedBuildConfig: false }),
-			essentiaDevProxyPlugin(essentiaApiBaseUrl, essentiaApiKey)
+			essentiaDevProxyPlugin(essentiaProxyConfig)
 		],
 		define: {
-			__APP_ESSENTIA_API_BASE_URL__: JSON.stringify(essentiaApiBaseUrl),
+			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(
+				essentiaProxyConfig.enabled && essentiaProxyConfig.deploymentMode === 'development'
+			),
 			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine)
 		},
 		server: {

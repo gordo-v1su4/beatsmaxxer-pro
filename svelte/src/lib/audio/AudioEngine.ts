@@ -16,7 +16,7 @@ import type {
   TransportSample,
 } from "$lib/engine/contracts";
 import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
-import { TransportClock } from "$lib/transport";
+import { audioTimeline, TransportClock, type TimelineFrame } from "$lib/transport";
 import {
   liveScheduleRuntime,
   type LiveTimeSamplerInput,
@@ -29,6 +29,41 @@ import {
 } from "$lib/audio/soundtouch";
 
 const DEFAULT_BPM = 128;
+
+export interface AudioFileLoadOptions {
+  /** Enable only after an explicit, per-upload disclosure and user choice. */
+  hostedAnalysis?: boolean;
+}
+
+export type MediaTimelineEvent =
+  | 'playing' | 'pause' | 'waiting' | 'stalled'
+  | 'seeking' | 'seeked' | 'timeupdate';
+
+export type AudioStopReason =
+  | 'operator'
+  | 'replace-upload'
+  | 'replace-url'
+  | 'clear-upload'
+  | 'restart-near-zero'
+  | 'qa';
+
+export function mediaTimelineResyncAction(
+  event: MediaTimelineEvent,
+  currentTime: number,
+  previousTime: number
+) {
+  if (event === 'playing') return { action: 'play', positionSeconds: currentTime } as const;
+  if (event === 'pause' || event === 'waiting' || event === 'stalled') {
+    return { action: 'pause', positionSeconds: currentTime } as const;
+  }
+  if (event === 'seeking' || event === 'seeked') {
+    return { action: 'seek', reason: 'seek', positionSeconds: currentTime } as const;
+  }
+  if (currentTime + 0.05 < previousTime) {
+    return { action: 'seek', reason: 'loop-wrap', positionSeconds: currentTime } as const;
+  }
+  return { action: 'none', positionSeconds: currentTime } as const;
+}
 
 const ACCENT_MODE_INDEX = {
   LUM: 0,
@@ -48,6 +83,8 @@ export class AudioEngine implements IAudioEngine {
   private sourceNode: AudioBufferSourceNode | null = null;
   private mediaElement: HTMLAudioElement | null = null;
   private mediaSource: MediaElementAudioSourceNode | null = null;
+  private mediaTimelineAbort: AbortController | null = null;
+  private uploadedPlaybackValidated = false;
   private objectUrl: string | null = null;
 
   private _bpm = DEFAULT_BPM;
@@ -61,9 +98,12 @@ export class AudioEngine implements IAudioEngine {
   private _fftBands = new Array(8).fill(0);
   private _playing = false;
   private _starting = false;
+  private lastStopReason: AudioStopReason | null = null;
+  private stopCount = 0;
   private _trackName = "";
   /** Set when a user upload is loaded. */
   private _loadedUploadName: string | null = null;
+  private uploadedTrackLoadGeneration = 0;
   private _usingUploadedTrack = false;
   private _bpmLocked = false;
   private _analysisStatus: AudioEngineState["analysisStatus"] = "idle";
@@ -90,16 +130,18 @@ export class AudioEngine implements IAudioEngine {
   private onsetCooldown = 0;
   private pgmSelectionListeners = new Set<(source: string) => void>();
 
-  private rafId = 0;
-  private silentTransportStart = 0;
   private analysisRequestId = 0;
   private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
+
+  constructor() {
+    audioTimeline.subscribe(this.tick, 0);
+  }
 
   async start() {
     if (this._starting) return;
     if (this._playing) {
       if (this.getTransportTime() >= 0.05) return;
-      this.stop();
+      this.stop('restart-near-zero');
     }
     this._starting = true;
     try {
@@ -117,6 +159,7 @@ export class AudioEngine implements IAudioEngine {
       let useUploadedPlayback = this._usingUploadedTrack && Boolean(this.mediaElement);
 
       if (useUploadedPlayback && this.mediaElement) {
+        this.uploadedPlaybackValidated = false;
         this.mediaElement.currentTime = 0;
         try {
           await Promise.race([
@@ -140,19 +183,19 @@ export class AudioEngine implements IAudioEngine {
       }
 
       if (useUploadedPlayback && this.mediaElement) {
+        this.uploadedPlaybackValidated = true;
         this._playing = true;
-        this.transportClock.setPlaying(true, 0);
+        audioTimeline.play(this.mediaElement.currentTime);
         this.onsetHistory = [];
         this.prevEnergy = 0;
         this.bassEma = 0.08;
         this.onsetCooldown = 0;
-        this.startTicking();
 
         await new Promise((r) => setTimeout(r, 600));
         if (this.getTransportTime() >= 0.05) return;
 
         this._playing = false;
-        this.transportClock.setPlaying(false, 0);
+        audioTimeline.pause();
         this.mediaElement.pause();
         useUploadedPlayback = false;
       }
@@ -175,26 +218,25 @@ export class AudioEngine implements IAudioEngine {
         this.sourceNode = null;
       }
 
-      this.silentTransportStart = this.ctx.currentTime;
       this._usingUploadedTrack = false;
       this._trackName = this._loadedUploadName ?? "";
       this._playing = true;
-      this.transportClock.setPlaying(true, 0);
+      audioTimeline.play(0);
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.bassEma = 0.08;
       this.onsetCooldown = 0;
-      this.startTicking();
     } finally {
       this._starting = false;
     }
   }
 
-  stop() {
-    const stoppedAt = this.getTransportTime();
+  stop(reason: AudioStopReason = 'operator') {
+    this.lastStopReason = reason;
+    this.stopCount += 1;
     this._playing = false;
-    this.transportClock.setPlaying(false, stoppedAt);
     this.advanceLiveSchedule(this.sampleTransport(), 0);
+    audioTimeline.stop();
 
     if (this.mediaElement) {
       this.mediaElement.pause();
@@ -217,21 +259,21 @@ export class AudioEngine implements IAudioEngine {
     this._bassAmp = 0;
     this._highAmp = 0;
     this._fftBands = new Array(8).fill(0);
-    if (stoppedAt !== 0) {
-      this.transportClock.seek(0);
-    }
   }
 
-  async loadAudioFile(file: File) {
+  async loadAudioFile(file: File, options: AudioFileLoadOptions = {}) {
     await this.ensureContext();
     if (!this.ctx || !this.gainNode) return;
 
-    this.stop();
+    this.stop('replace-upload');
     this.disposeMediaElement();
 
     this.objectUrl = URL.createObjectURL(file);
     this.attachMediaElement(this.objectUrl, file.name);
-    this.prepareUploadedTrack(file.name);
+    this.prepareUploadedTrack(file.name, options.hostedAnalysis === true);
+    this.uploadedTrackLoadGeneration += 1;
+
+    if (options.hostedAnalysis !== true) return;
 
     const requestId = ++this.analysisRequestId;
 
@@ -249,39 +291,16 @@ export class AudioEngine implements IAudioEngine {
     await this.ensureContext();
     if (!this.ctx || !this.gainNode) return;
 
-    this.stop();
+    this.stop('replace-url');
     this.disposeMediaElement();
 
-    const requestId = ++this.analysisRequestId;
-
-    let file: File | null = null;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch audio source (${response.status})`);
-      }
-      const blob = await response.blob();
-      file = new File([blob], trackName, { type: blob.type || "audio/wav" });
-      this.objectUrl = URL.createObjectURL(blob);
-      this.attachMediaElement(this.objectUrl, trackName);
-    } catch {
-      this.attachMediaElement(url, trackName);
-    }
-    this.prepareUploadedTrack(trackName);
-
-    try {
-      if (!file) throw new Error("Audio source unavailable for analysis");
-      const analysis = await fetchEssentiaRhythmAnalysis(file);
-      if (requestId !== this.analysisRequestId) return;
-      this.applyRhythmAnalysis(analysis);
-    } catch (error) {
-      if (requestId !== this.analysisRequestId) return;
-      this.applyRealtimeFallback(error);
-    }
+    this.analysisRequestId += 1;
+    this.attachMediaElement(url, trackName);
+    this.prepareUploadedTrack(trackName, false);
   }
 
   clearUploadedTrack() {
-    this.stop();
+    this.stop('clear-upload');
     this.disposeMediaElement();
 
     this.analysisRequestId += 1;
@@ -290,10 +309,12 @@ export class AudioEngine implements IAudioEngine {
     this._loadedUploadName = null;
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
-    this._tempo = 1;
     this.beatGrid = [];
+    this._bpmLocked = false;
+    this.applyTempoRate(1);
     this.transportClock.setBeatGrid([], this._bpm, 0);
-    this.transportClock.sourceChanged(0);
+    audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
+    audioTimeline.configureSource({ id: null, positionSeconds: 0 });
     this._analysisStatus = "idle";
     this._analysisConfidence = null;
     this._analysisError = null;
@@ -324,6 +345,44 @@ export class AudioEngine implements IAudioEngine {
     audio.crossOrigin = "anonymous";
     audio.preservesPitch = false;
     audio.setAttribute("playsinline", "true");
+    this.mediaTimelineAbort?.abort();
+    const mediaTimelineAbort = new AbortController();
+    this.mediaTimelineAbort = mediaTimelineAbort;
+    let previousMediaTime = 0;
+    const resync = (event: Event) => {
+      if (this.mediaElement !== audio || !this._usingUploadedTrack) return;
+      const action = mediaTimelineResyncAction(
+        event.type as MediaTimelineEvent,
+        audio.currentTime,
+        previousMediaTime
+      );
+      previousMediaTime = audio.currentTime;
+      if (action.action === 'play') {
+        if (!this.uploadedPlaybackValidated) return;
+        this._playing = true;
+        audioTimeline.play(action.positionSeconds);
+      } else if (action.action === 'pause') {
+        if (!this._playing) return;
+        this._playing = false;
+        audioTimeline.pause();
+      } else if (action.action === 'seek') {
+        audioTimeline.seek(action.positionSeconds, action.reason);
+      }
+    };
+    for (const event of [
+      'playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked', 'timeupdate'
+    ] as const) {
+      audio.addEventListener(event, resync, { signal: mediaTimelineAbort.signal });
+    }
+    audio.addEventListener("loadedmetadata", () => {
+      if (this.mediaElement !== audio) return;
+      audioTimeline.configureSource({
+        id: trackName,
+        durationSeconds: audio.duration,
+        loop: audio.loop,
+        positionSeconds: audioTimeline.getPositionSeconds(),
+      });
+    }, { once: true, signal: mediaTimelineAbort.signal });
     audio.load();
 
     const source = this.ctx.createMediaElementSource(audio);
@@ -356,30 +415,36 @@ export class AudioEngine implements IAudioEngine {
     }
   }
 
-  private prepareUploadedTrack(trackName: string) {
+  private prepareUploadedTrack(trackName: string, hostedAnalysisRequested: boolean) {
     this._usingUploadedTrack = true;
     this._trackName = trackName;
     this._loadedUploadName = trackName;
     this._bpmLocked = false;
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
-    this._tempo = 1;
     this._analysisKeyIndex = 0;
     this._keyShift = 0;
     this._pitchSemitones = 0;
     this.beatGrid = [];
+    this.applyTempoRate(1);
     this.transportClock.setBeatGrid([], this._bpm, 0);
-    this.transportClock.sourceChanged(0);
+    audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
+    audioTimeline.configureSource({ id: trackName, positionSeconds: 0, loop: true });
     this.onsetHistory = [];
     this.prevEnergy = 0;
     this.bassEma = 0.08;
     this.onsetCooldown = 0;
-    this._analysisStatus = "analyzing";
+    this._analysisStatus = hostedAnalysisRequested ? "analyzing" : "fallback";
     this._analysisConfidence = null;
-    this._analysisError = null;
+    this._analysisError = hostedAnalysisRequested
+      ? null
+      : "Local-only mode — hosted rhythm analysis was not requested.";
   }
 
   private disposeMediaElement() {
+    this.uploadedPlaybackValidated = false;
+    this.mediaTimelineAbort?.abort();
+    this.mediaTimelineAbort = null;
     if (this.mediaSource) {
       this.mediaSource.disconnect();
       this.mediaSource = null;
@@ -451,6 +516,7 @@ export class AudioEngine implements IAudioEngine {
     this._bpmLocked = true;
     this.applyTempoRate(Math.max(0.5, Math.min(2, ratio)));
     this._bpm = Math.round(this._analysisBpm * this._tempo);
+    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
   }
 
   unlockBPM() {
@@ -462,6 +528,7 @@ export class AudioEngine implements IAudioEngine {
   /** Playback rate — shifts markers via source-time advance; does not re-analyze. */
   private applyTempoRate(rate: number) {
     this._tempo = rate;
+    audioTimeline.setPlaybackRate(rate);
     this.syncSoundTouch();
     this.transportClock.queueImmediateParameter(
       "rate",
@@ -471,6 +538,7 @@ export class AudioEngine implements IAudioEngine {
     if (!this._bpmLocked) {
       this._bpm = Math.round(this._analysisBpm * this._tempo);
     }
+    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
   }
 
   getState(): AudioEngineState {
@@ -495,10 +563,43 @@ export class AudioEngine implements IAudioEngine {
     };
   }
 
+  getUploadedTrackLoadGeneration() {
+    return this.uploadedTrackLoadGeneration;
+  }
+
+  /** Read-only diagnostics used by the physical, human-observed media proof. */
+  getProofPlaybackDiagnostics() {
+    let rms = 0;
+    if (this.analyserFull) {
+      const samples = new Float32Array(this.analyserFull.fftSize);
+      this.analyserFull.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      rms = Math.sqrt(sum / samples.length);
+    }
+    return {
+      contextState: this.ctx?.state ?? 'uninitialized',
+      contextCurrentTime: audioTimeline.getLastFrame()?.contextTimeSeconds ?? 0,
+      mediaCurrentTime: this.mediaElement?.currentTime ?? 0,
+      currentSrc: this.mediaElement?.currentSrc ?? '',
+      mediaPaused: this.mediaElement?.paused ?? true,
+      mediaMuted: this.mediaElement?.muted ?? false,
+      rms,
+      amplitude: this._amplitude,
+      volume: this._volume,
+      playing: this._playing,
+      usingUploadedTrack: this._usingUploadedTrack,
+      trackName: this._trackName,
+      uploadedTrackLoadGeneration: this.uploadedTrackLoadGeneration,
+      lastStopReason: this.lastStopReason,
+      stopCount: this.stopCount
+    };
+  }
+
   getTransportSample(
-    presentationTimeSeconds = performance.now() / 1_000,
+    _presentationTimeSeconds?: number,
   ): TransportSample {
-    const sample = this.sampleTransport(presentationTimeSeconds);
+    const sample = this.sampleTransport();
     return {
       transportSeconds: sample.transportSeconds,
       audioOutputTimeSeconds: sample.audioOutputTimeSeconds,
@@ -510,6 +611,10 @@ export class AudioEngine implements IAudioEngine {
       beatPosition: sample.beatPosition,
       beatPhase: sample.beatPhase,
     };
+  }
+
+  getTimelineFrame() {
+    return audioTimeline.getLastFrame();
   }
 
   drainTransportEvents() {
@@ -560,23 +665,17 @@ export class AudioEngine implements IAudioEngine {
     };
   }
 
-  private sampleTransport(presentationTimeSeconds = performance.now() / 1_000) {
-    const outputTimestamp = this.ctx?.getOutputTimestamp?.();
-    const audioOutputTimeSeconds =
-      outputTimestamp?.contextTime ?? this.ctx?.currentTime ?? 0;
-    const performanceTimeSeconds =
-      outputTimestamp?.performanceTime !== undefined
-        ? outputTimestamp.performanceTime / 1_000
-        : presentationTimeSeconds;
-
-    return this.transportClock.sample({
-      transportSeconds: this.getTransportTime(),
-      audioOutputTimeSeconds,
-      performanceTimeSeconds,
-      presentationTimeSeconds,
-      playing: this._playing,
+  private sampleTransport(frame = audioTimeline.getLastFrame()) {
+    const positionSeconds = frame?.positionSeconds ?? audioTimeline.getPositionSeconds();
+    const sampled = this.transportClock.sample({
+      transportSeconds: positionSeconds,
+      audioOutputTimeSeconds: frame?.contextTimeSeconds ?? 0,
+      performanceTimeSeconds: frame?.contextTimeSeconds ?? 0,
+      presentationTimeSeconds: positionSeconds,
+      playing: frame?.playing ?? this._playing,
       bypassHostedGrid: false,
     });
+    return frame ? { ...sampled, discontinuityGeneration: frame.generation } : sampled;
   }
 
   private advanceLiveSchedule(
@@ -604,15 +703,11 @@ export class AudioEngine implements IAudioEngine {
     }
   }
 
-  private startTicking() {
-    if (this.rafId) cancelAnimationFrame(this.rafId);
-    this.rafId = requestAnimationFrame(this.tick);
-  }
-
   private async ensureContext() {
     if (this.ctx) return;
 
     this.ctx = new AudioContext({ sampleRate: 44100 });
+    audioTimeline.bindContext(this.ctx);
 
     this.analyserFull = this.ctx.createAnalyser();
     this.analyserFull.fftSize = 2048;
@@ -653,23 +748,14 @@ export class AudioEngine implements IAudioEngine {
   }
 
   private getTransportTime(): number {
-    if (this._usingUploadedTrack && this.mediaElement) {
-      return this.mediaElement.currentTime || 0;
-    }
-    if (this.ctx && this._playing) {
-      return Math.max(0, (this.ctx.currentTime - this.silentTransportStart) * this._tempo);
-    }
-    return 0;
+    return audioTimeline.getPositionSeconds();
   }
 
-  private tick = () => {
+  private tick = (timelineFrame: TimelineFrame) => {
     if (!this.ctx) return;
-
-    this.rafId = requestAnimationFrame(this.tick);
-
     if (!this._playing) return;
 
-    const transport = this.sampleTransport();
+    const transport = this.sampleTransport(timelineFrame);
     this._beat = transport.beatPosition;
     this._beatPhase = transport.beatPhase;
 
@@ -744,6 +830,7 @@ export class AudioEngine implements IAudioEngine {
           const snapped = this.snapBPM(Math.round(med));
           this._bpm = this._bpm * 0.88 + snapped * 0.12;
           this.transportClock.setBpm(this._bpm, elapsed);
+          audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
         }
       }
 
@@ -789,7 +876,7 @@ export class AudioEngine implements IAudioEngine {
   ) {
     const bpm = Math.max(60, Math.min(200, analysis.bpm));
     this._analysisBpm = bpm;
-    this._tempo = 1;
+    this.applyTempoRate(1);
     this._bpm = bpm;
     this._analysisKeyIndex = analysis.keyIndex ?? 0;
     this._keyShift = 0;
@@ -802,6 +889,7 @@ export class AudioEngine implements IAudioEngine {
       bpm,
       this.getTransportTime(),
     );
+    audioTimeline.setBeatGrid(this.beatGrid, bpm, bpm / this._tempo);
     this._bpmLocked = false;
     this._analysisStatus = "ready";
     this._analysisConfidence = Number.isFinite(analysis.confidence)
@@ -814,6 +902,7 @@ export class AudioEngine implements IAudioEngine {
   private applyRealtimeFallback(error: unknown) {
     this.beatGrid = [];
     this.transportClock.setBeatGrid([], this._bpm, this.getTransportTime());
+    audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
     this._analysisStatus = "fallback";
     this._analysisConfidence = null;
     this._analysisError =

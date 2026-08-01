@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import type { AnalysisStatus } from '$lib/engine/contracts';
 import { transportBpm, transportBpmLocked, transportPlaying } from '$lib/stores/capabilities';
+import { audioTimeline } from '$lib/transport';
 
 export interface TransportDisplay {
   bpm: number;
@@ -37,12 +38,11 @@ export const transportDisplay = writable<TransportDisplay>({
   analysisError: null
 });
 
-let rafId = 0;
+let unsubscribe: (() => void) | null = null;
 
 export function startTransportPoll() {
-  if (typeof requestAnimationFrame !== 'function') return;
   stopTransportPoll();
-  const tick = () => {
+  unsubscribe = audioTimeline.subscribe(() => {
     const s = audioEngine.getState();
     transportDisplay.set({
       bpm: s.bpm,
@@ -63,12 +63,10 @@ export function startTransportPoll() {
     transportBpm.set(s.bpm);
     transportBpmLocked.set(s.bpmLocked);
     transportPlaying.set(s.playing);
-    rafId = requestAnimationFrame(tick);
-  };
-  rafId = requestAnimationFrame(tick);
+  }, 100);
 }
 
 export function stopTransportPoll() {
-  if (typeof cancelAnimationFrame !== 'function') return;
-  cancelAnimationFrame(rafId);
+  unsubscribe?.();
+  unsubscribe = null;
 }

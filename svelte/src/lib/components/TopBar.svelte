@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { Upload, AlignJustify, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle } from '@lucide/svelte';
+  import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
-  import { fxHold } from '$lib/stores/rack';
+  import { canRedo, canUndo, fxHold, redoRackParams, undoRackParams } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
@@ -33,6 +33,12 @@
 
   let audioInput: HTMLInputElement;
   let clipsInput: HTMLInputElement;
+  let bpmInput = $state<HTMLInputElement>();
+  let songButton = $state<HTMLButtonElement>();
+  let analyzeButton = $state<HTMLButtonElement>();
+  let localOnlyButton = $state<HTMLButtonElement>();
+  let cancelButton = $state<HTMLButtonElement>();
+  let pendingAudioFile = $state<File | null>(null);
 
   $effect(() => {
     const td = $transportDisplay;
@@ -121,6 +127,11 @@
     bpmEdit = null;
   }
 
+  function beginBpmEdit() {
+    bpmEdit = String(Math.round(td.bpm));
+    setTimeout(() => bpmInput?.focus(), 0);
+  }
+
   function handleTap() {
     const now = performance.now();
     tapTimes = tapTimes.filter((t) => now - t < 3000);
@@ -139,7 +150,7 @@
 
   async function togglePlay() {
     if (td.playing) {
-      audioEngine.stop();
+      audioEngine.stop('operator');
     } else {
       await audioEngine.start();
     }
@@ -147,9 +158,20 @@
 
   async function handleAudioUpload(e: Event) {
     const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-    await audioEngine.loadAudioFile(file);
     (e.target as HTMLInputElement).value = '';
+    if (!file) return;
+    pendingAudioFile = file;
+    setTimeout(() => localOnlyButton?.focus(), 0);
+  }
+
+  async function resolveAudioUpload(choice: 'analyze' | 'local' | 'cancel') {
+    const file = pendingAudioFile;
+    pendingAudioFile = null;
+    if (!file || choice === 'cancel') {
+      songButton?.focus();
+      return;
+    }
+    await audioEngine.loadAudioFile(file, { hostedAnalysis: choice === 'analyze' });
   }
 
   async function handleClipsUpload(e: Event) {
@@ -166,9 +188,6 @@
   <div class="topbar-row">
     <div class="topbar-main">
     <div class="topbar-brand">
-      <button type="button" class="icon-btn" aria-label="Menu">
-        <AlignJustify size={13} />
-      </button>
       <div
         class="status-dot"
         style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
@@ -185,7 +204,7 @@
       {td.playing ? 'STOP' : 'PLAY'}
     </button>
 
-    <button type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
+    <button bind:this={songButton} type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
       <Upload size={10} /> SONG
     </button>
 
@@ -222,7 +241,7 @@
         <div class="bpm-digit-slot">
           {#if bpmEdit !== null}
             <input
-              autofocus
+              bind:this={bpmInput}
               value={bpmEdit}
               oninput={(e) => (bpmEdit = e.currentTarget.value.replace(/[^0-9.]/g, ''))}
               onblur={commitBpm}
@@ -236,8 +255,8 @@
             <span
               role="button"
               tabindex="0"
-              onclick={() => (bpmEdit = String(Math.round(td.bpm)))}
-              onkeydown={(e) => e.key === 'Enter' && (bpmEdit = String(Math.round(td.bpm)))}
+              onclick={beginBpmEdit}
+              onkeydown={(e) => e.key === 'Enter' && beginBpmEdit()}
               class="bpm-value"
             >
               {Math.round(td.bpm).toString().padStart(3, '0')}
@@ -287,19 +306,19 @@
     <div class="divider"></div>
 
     <div class="step-block key-block" title="Musical key — SoundTouch pitch shift">
-      <button type="button" onclick={() => nudgeKey(-1)} class="step-btn">−</button>
+      <button type="button" onclick={() => nudgeKey(-1)} class="step-btn" aria-label="Key down">−</button>
       <span>KEY·{soundTouch.key}</span>
-      <button type="button" onclick={() => nudgeKey(1)} class="step-btn">+</button>
+      <button type="button" onclick={() => nudgeKey(1)} class="step-btn" aria-label="Key up">+</button>
     </div>
 
     <div class="step-block pitch-block" title="Pitch shift — audio only, beat markers unchanged">
-      <button type="button" onclick={() => nudgePitch(-1)} class="step-btn">−</button>
+      <button type="button" onclick={() => nudgePitch(-1)} class="step-btn" aria-label="Pitch down">−</button>
       <span>PITCH·{soundTouch.pitchSemitones >= 0 ? '+' : ''}{soundTouch.pitchSemitones}</span>
-      <button type="button" onclick={() => nudgePitch(1)} class="step-btn">+</button>
+      <button type="button" onclick={() => nudgePitch(1)} class="step-btn" aria-label="Pitch up">+</button>
     </div>
 
     <div class="tempo-block" class:soundtouch-on={soundTouch.active} title="Tempo — changes playback speed and effective BPM (0.5×–2×)">
-      <button type="button" onclick={() => nudgeTempo(-TEMPO_STEP)} class="step-btn">−</button>
+      <button type="button" onclick={() => nudgeTempo(-TEMPO_STEP)} class="step-btn" aria-label="Decrease tempo">−</button>
       <span class="slider-label">TEMPO</span>
       <input
         type="range"
@@ -310,7 +329,7 @@
         oninput={(e) => setTempo(Number(e.currentTarget.value))}
       />
       <span class="slider-val">{soundTouch.tempo.toFixed(1)}×</span>
-      <button type="button" onclick={() => nudgeTempo(TEMPO_STEP)} class="step-btn">+</button>
+      <button type="button" onclick={() => nudgeTempo(TEMPO_STEP)} class="step-btn" aria-label="Increase tempo">+</button>
     </div>
 
     <div class="slider-block vol-block" title="Master volume">
@@ -341,10 +360,10 @@
     </div>
 
     <div class="topbar-actions">
-    <TopBtn label="UNDO">
+    <TopBtn label="UNDO" onclick={undoRackParams} disabled={!$canUndo}>
       {#snippet icon()}<Undo2 size={10} />{/snippet}
     </TopBtn>
-    <TopBtn label="REDO">
+    <TopBtn label="REDO" onclick={redoRackParams} disabled={!$canRedo}>
       {#snippet icon()}<Redo2 size={10} />{/snippet}
     </TopBtn>
     <TopBtn label="RANDOMIZE" onclick={onRandomize} accent>
@@ -390,9 +409,144 @@
   </div>
 </div>
 
+{#if pendingAudioFile}
+  <div
+    class="analysis-consent-backdrop"
+  >
+    <div
+      class="analysis-consent-dialog"
+      role="dialog"
+      tabindex="-1"
+      aria-modal="true"
+      aria-labelledby="analysis-consent-title"
+      aria-describedby="analysis-consent-description"
+      onkeydown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          void resolveAudioUpload('cancel');
+        } else if (e.key === 'Tab' && !e.shiftKey && document.activeElement === cancelButton) {
+          e.preventDefault();
+          analyzeButton?.focus();
+        } else if (e.key === 'Tab' && e.shiftKey && document.activeElement === analyzeButton) {
+          e.preventDefault();
+          cancelButton?.focus();
+        }
+      }}
+    >
+      <h2 id="analysis-consent-title">Analyze this upload?</h2>
+      <p id="analysis-consent-description">
+        Analyze loads the song locally and sends a bounded, prepared excerpt to the configured
+        hosted analysis service. Repository evidence does not establish that service's retention
+        or ownership terms.
+      </p>
+      <p class="analysis-consent-file">{pendingAudioFile.name}</p>
+      <div class="analysis-consent-actions">
+        <button
+          bind:this={analyzeButton}
+          type="button"
+          class="consent-btn consent-btn-analyze"
+          onclick={() => resolveAudioUpload('analyze')}
+        >ANALYZE</button>
+        <button
+          bind:this={localOnlyButton}
+          type="button"
+          class="consent-btn"
+          onclick={() => resolveAudioUpload('local')}
+        >LOCAL ONLY</button>
+        <button
+          bind:this={cancelButton}
+          type="button"
+          class="consent-btn consent-btn-cancel"
+          onclick={() => resolveAudioUpload('cancel')}
+        >CANCEL</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .hidden {
     display: none;
+  }
+
+  .analysis-consent-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.78);
+  }
+
+  .analysis-consent-dialog {
+    width: min(440px, 100%);
+    padding: 18px;
+    border: 1px solid #303640;
+    border-radius: 5px;
+    background: linear-gradient(180deg, #1b1e22, #111316);
+    box-shadow: 0 20px 70px #000;
+    color: #aab2c0;
+    font-family: var(--font-ui);
+  }
+
+  .analysis-consent-dialog h2 {
+    margin: 0 0 8px;
+    color: #d5dae2;
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .analysis-consent-dialog p {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+  }
+
+  .analysis-consent-file {
+    margin-top: 10px !important;
+    overflow: hidden;
+    color: #38bdf8;
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .analysis-consent-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 7px;
+    margin-top: 16px;
+  }
+
+  .consent-btn {
+    min-height: 30px;
+    padding: 0 11px;
+    border: 1px solid #303640;
+    border-radius: 3px;
+    background: #171a1e;
+    color: #8d96a5;
+    cursor: pointer;
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .consent-btn:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+  }
+
+  .consent-btn-analyze {
+    border-color: #38bdf866;
+    color: #38bdf8;
+  }
+
+  .consent-btn-cancel {
+    color: #c46b6b;
   }
 
   .topbar-shell {
@@ -440,16 +594,6 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-  }
-
-  .icon-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 3px;
-    color: #454a52;
-    display: flex;
-    align-items: center;
   }
 
   .status-dot {

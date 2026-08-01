@@ -1,0 +1,265 @@
+export const ANALYSIS_PROXY_ENABLE_ENV = "ESSENTIA_ANALYSIS_ENABLED";
+export const ANALYSIS_MAX_REQUEST_BYTES = 3_500_000;
+export const ANALYSIS_MAX_RESPONSE_BYTES = 1_000_000;
+export const ANALYSIS_UPSTREAM_TIMEOUT_MS = 15_000;
+export const ANALYSIS_MAX_CONCURRENT_REQUESTS = 2;
+
+export type AnalysisEndpoint = "fast" | "rhythm";
+
+export interface AnalysisProxyConfig {
+  enabled: boolean;
+  apiBaseUrl: string;
+  apiKey: string;
+  deploymentMode: "development" | "production";
+}
+
+export interface AnalysisProxyRequest {
+  method?: string;
+  endpoint?: string;
+  contentType?: string;
+  contentLength?: string;
+  body: AsyncIterable<Uint8Array>;
+  signal?: AbortSignal;
+}
+
+export interface AnalysisProxyResponse {
+  status: number;
+  contentType: "application/json";
+  body: string;
+}
+
+export interface AnalysisProxyOptions {
+  fetch?: typeof globalThis.fetch;
+  maxRequestBytes?: number;
+  maxResponseBytes?: number;
+  timeoutMs?: number;
+  maxConcurrentRequests?: number;
+}
+
+const ERROR_MESSAGES: Record<string, string> = {
+  analysis_disabled: "Hosted analysis is disabled. Local playback and realtime analysis remain available.",
+  production_relay_blocked: "Hosted analysis is unavailable in production. Local playback and realtime analysis remain available.",
+  analysis_unavailable: "Hosted analysis is unavailable. Local playback and realtime analysis remain available.",
+  invalid_content_type: "Analysis uploads must use multipart/form-data with a valid boundary.",
+  upload_too_large: "Analysis upload exceeds the allowed request size.",
+  analysis_busy: "Hosted analysis is busy. Try again later or use realtime analysis.",
+  upstream_timeout: "Hosted analysis timed out. Realtime analysis remains available.",
+  upstream_rejected: "Hosted analysis rejected the upload.",
+  upstream_unavailable: "Hosted analysis is unavailable. Realtime analysis remains available.",
+  upstream_response_too_large: "Hosted analysis returned an invalid response.",
+};
+
+let activeRequests = 0;
+
+export function analysisProxyConfigFromEnv(
+  env: Record<string, string | undefined>,
+  deploymentMode: AnalysisProxyConfig["deploymentMode"] = "production",
+): AnalysisProxyConfig {
+  return {
+    enabled: env[ANALYSIS_PROXY_ENABLE_ENV]?.trim().toLowerCase() === "true",
+    apiBaseUrl: (env.ESSENTIA_API_BASE_URL ?? "").trim().replace(/\/+$/, ""),
+    apiKey: (env.ESSENTIA_API_KEY ?? "").trim(),
+    deploymentMode,
+  };
+}
+
+export function isAnalysisProxyConfigured(config: AnalysisProxyConfig) {
+  if (!config.enabled || !config.apiBaseUrl || !config.apiKey) return false;
+  try {
+    const url = new URL(config.apiBaseUrl);
+    const allowedProtocol = url.protocol === "https:" ||
+      ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && url.protocol === "http:");
+    return allowedProtocol && !url.username && !url.password && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+export function parseMultipartContentType(value: string | undefined): string | null {
+  if (!value) return null;
+  const match = value.match(/^multipart\/form-data\s*;\s*boundary=(?:"([^"]+)"|([^\s;]+))\s*$/i);
+  const boundary = match?.[1] ?? match?.[2];
+  if (!boundary || boundary.length > 70) return null;
+  // RFC 2046 bchars, ending in bcharsnospace. We validate only the outer envelope.
+  return /^[0-9A-Za-z'()+_,\-.\/:=? ]*[0-9A-Za-z'()+_,\-.\/:=?]$/.test(boundary)
+    ? boundary
+    : null;
+}
+
+export async function proxyAnalysisRequest(
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  options: AnalysisProxyOptions = {},
+): Promise<AnalysisProxyResponse | null> {
+  const endpoint = request.endpoint;
+  if (endpoint !== "fast" && endpoint !== "rhythm") return jsonError(404, "not_found", "Analysis endpoint not found.");
+  if (request.method !== "POST") return jsonError(405, "method_not_allowed", "Only POST analysis requests are supported.");
+  // This repository has no request-authentication authority or durable per-client
+  // rate limiter. Never expose its server credential through a production relay.
+  if (config.deploymentMode === "production") return jsonError(503, "production_relay_blocked");
+  if (!config.enabled) return jsonError(503, "analysis_disabled");
+  if (!isAnalysisProxyConfigured(config)) return jsonError(503, "analysis_unavailable");
+  if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
+
+  const maxRequestBytes = options.maxRequestBytes ?? ANALYSIS_MAX_REQUEST_BYTES;
+  const declaredLength = parseContentLength(request.contentLength);
+  if (declaredLength !== null && declaredLength > maxRequestBytes) {
+    return jsonError(413, "upload_too_large");
+  }
+
+  const maxConcurrent = options.maxConcurrentRequests ?? ANALYSIS_MAX_CONCURRENT_REQUESTS;
+  if (activeRequests >= maxConcurrent) return jsonError(429, "analysis_busy");
+  activeRequests += 1;
+
+  const controller = new AbortController();
+  const abortFromClient = () => controller.abort("client_disconnected");
+  request.signal?.addEventListener("abort", abortFromClient, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort("upstream_timeout"),
+    options.timeoutMs ?? ANALYSIS_UPSTREAM_TIMEOUT_MS,
+  );
+
+  try {
+    const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
+    if (controller.signal.aborted) return null;
+
+    let upstream: Response;
+    try {
+      upstream = await (options.fetch ?? globalThis.fetch)(`${config.apiBaseUrl}/analyze/${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": request.contentType!,
+          "X-API-Key": config.apiKey,
+        },
+        body,
+        signal: controller.signal,
+      });
+    } catch {
+      if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+      return jsonError(502, "upstream_unavailable");
+    }
+
+    if (!upstream.ok) {
+      await upstream.body?.cancel().catch(() => undefined);
+      return mapUpstreamFailure(upstream.status);
+    }
+    if (!isJsonContentType(upstream.headers.get("content-type"))) {
+      await upstream.body?.cancel().catch(() => undefined);
+      return jsonError(502, "upstream_unavailable");
+    }
+
+    try {
+      const responseBytes = await readBoundedResponse(
+        upstream,
+        options.maxResponseBytes ?? ANALYSIS_MAX_RESPONSE_BYTES,
+        controller.signal,
+      );
+      const responseText = new TextDecoder().decode(responseBytes);
+      JSON.parse(responseText);
+      return { status: upstream.status, contentType: "application/json", body: responseText };
+    } catch (error) {
+      if (error instanceof LimitExceededError) {
+        controller.abort("upstream_response_too_large");
+        return jsonError(502, "upstream_response_too_large");
+      }
+      if (request.signal?.aborted) return null;
+      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+      return jsonError(502, "upstream_unavailable");
+    }
+  } catch (error) {
+    if (error instanceof LimitExceededError) {
+      controller.abort("upload_too_large");
+      return jsonError(413, "upload_too_large");
+    }
+    if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+    if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+    return jsonError(400, "invalid_request", "Analysis request could not be read.");
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromClient);
+    activeRequests -= 1;
+  }
+}
+
+class LimitExceededError extends Error {}
+
+async function readBoundedBody(
+  body: AsyncIterable<Uint8Array>,
+  limit: number,
+  signal: AbortSignal,
+): Promise<ArrayBuffer> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const iterator = body[Symbol.asyncIterator]();
+  while (true) {
+    const next = await nextWithAbort(iterator.next(), signal);
+    if (next.done) break;
+    const chunk = next.value;
+    total += chunk.byteLength;
+    if (total > limit) throw new LimitExceededError();
+    chunks.push(chunk);
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result.buffer;
+}
+
+function nextWithAbort<T>(next: Promise<IteratorResult<T>>, signal: AbortSignal) {
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise<IteratorResult<T>>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, { once: true });
+    next.then(
+      (value) => { cleanup(); resolve(value); },
+      (error) => { cleanup(); reject(error); },
+    );
+  });
+}
+
+function abortError() {
+  const error = new Error("Aborted");
+  error.name = "AbortError";
+  return error;
+}
+
+async function readBoundedResponse(response: Response, limit: number, signal: AbortSignal) {
+  const declaredLength = parseContentLength(response.headers.get("content-length") ?? undefined);
+  if (declaredLength !== null && declaredLength > limit) throw new LimitExceededError();
+  if (!response.body) return new ArrayBuffer(0);
+  return readBoundedBody(response.body, limit, signal);
+}
+
+function parseContentLength(value: string | undefined): number | null {
+  if (!value || !/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function isJsonContentType(value: string | null) {
+  return Boolean(value && /^application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)/i.test(value));
+}
+
+function mapUpstreamFailure(status: number) {
+  if (status === 400 || status === 413 || status === 422) {
+    return jsonError(status, "upstream_rejected");
+  }
+  if (status === 429 || status === 503) return jsonError(503, "upstream_unavailable");
+  return jsonError(502, "upstream_unavailable");
+}
+
+function jsonError(status: number, code: string, message = ERROR_MESSAGES[code] ?? "Analysis request failed.") {
+  return {
+    status,
+    contentType: "application/json" as const,
+    body: JSON.stringify({ code, detail: message }),
+  };
+}

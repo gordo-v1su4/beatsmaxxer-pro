@@ -1,7 +1,10 @@
 /** Minimal Chrome DevTools Protocol client for acceptance scripts. */
-import { accessSync, constants } from 'node:fs';
+import { accessSync, constants, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const DEFAULT_CDP_TIMEOUT_MS = Number(process.env.CDP_TIMEOUT_MS ?? 20_000);
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
 function isExecutable(path: string) {
   try {
@@ -39,6 +42,7 @@ export class CdpSession {
     number,
     { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
   >();
+  private eventListeners = new Map<string, Array<(params: unknown) => void>>();
 
   constructor(private ws: WebSocket) {
     ws.addEventListener('message', (event) => {
@@ -47,7 +51,11 @@ export class CdpSession {
         result?: unknown;
         error?: { message?: string };
       };
-      if (!message.id) return;
+      if (!message.id) {
+        const event = message as unknown as { method?: string; params?: unknown };
+        if (event.method) for (const listener of this.eventListeners.get(event.method) ?? []) listener(event.params);
+        return;
+      }
       const entry = this.pending.get(message.id);
       if (!entry) return;
       clearTimeout(entry.timer);
@@ -81,6 +89,12 @@ export class CdpSession {
 
   close() {
     this.ws.close();
+  }
+
+  on(method: string, listener: (params: unknown) => void) {
+    const listeners = this.eventListeners.get(method) ?? [];
+    listeners.push(listener);
+    this.eventListeners.set(method, listeners);
   }
 }
 
@@ -139,18 +153,38 @@ export async function waitForDevServer(url: string, timeoutMs = 20_000) {
 export async function evalPage<T>(
   session: CdpSession,
   expression: string,
-  timeoutMs = DEFAULT_CDP_TIMEOUT_MS
+  timeoutMs = DEFAULT_CDP_TIMEOUT_MS,
+  label = expression.replace(/\s+/g, ' ').trim().slice(0, 160)
 ): Promise<T | null> {
-  const result = (await session.send(
-    'Runtime.evaluate',
-    {
-      expression,
-      returnByValue: true,
-      awaitPromise: true
-    },
-    timeoutMs
-  )) as { result?: { value?: T; description?: string } };
-  return result.result?.value ?? null;
+  try {
+    const result = (await session.send(
+      'Runtime.evaluate',
+      {
+        expression,
+        returnByValue: true,
+        awaitPromise: true
+      },
+      timeoutMs
+    )) as {
+      result?: { value?: T; description?: string };
+      exceptionDetails?: {
+        text?: string;
+        exception?: { description?: string; value?: unknown };
+      };
+    };
+    if (result.exceptionDetails) {
+      const exception = result.exceptionDetails.exception;
+      const detail = exception?.description
+        ?? (exception?.value === undefined ? undefined : String(exception.value))
+        ?? result.exceptionDetails.text
+        ?? 'Runtime.evaluate threw an unknown exception';
+      throw new Error(detail);
+    }
+    return result.result?.value ?? null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`CDP evaluation "${label || '<empty expression>'}" failed: ${message}`);
+  }
 }
 
 export async function screenshotPng(session: CdpSession, path: string) {
@@ -165,21 +199,30 @@ export function pickDebugPort(base = 9600, span = 400) {
   return base + Math.floor(Math.random() * span);
 }
 
-export function spawnChrome(
+export function chromeLaunchArgs(
+  chrome: string,
   debugPort: number,
   userDataDir: string,
   headed = process.env.HEADLESS !== '1'
 ) {
-  const chrome = chromePath();
-  const args = [
+  return [
     chrome,
-    ...(headed ? [] : ['--headless=new']),
+    ...(headed ? [] : [
+      '--headless=new',
+      '--enable-unsafe-swiftshader',
+      '--enable-unsafe-webgpu',
+      '--use-angle=swiftshader',
+      '--use-gl=angle'
+    ]),
     '--no-sandbox',
     '--disable-dev-shm-usage',
-    '--enable-unsafe-swiftshader',
-    '--enable-unsafe-webgpu',
-    '--use-angle=swiftshader',
-    '--use-gl=angle',
+    '--disable-background-networking',
+    '--disable-extensions',
+    '--no-first-run',
+    // Browser.getBrowserCommandLine intentionally refuses provenance unless
+    // Chrome was launched as an automation session. This does not make the
+    // browser headless or select a GPU backend.
+    '--enable-automation',
     // Without this the QA autoload's audioEngine.start() is blocked for lack of
     // a user gesture; the clip load then unwinds and the rack falls back to a
     // partially loaded state (observed: 8 clips ready, then down to 2).
@@ -191,6 +234,15 @@ export function spawnChrome(
     `--user-data-dir=${userDataDir}`,
     'about:blank'
   ];
+}
+
+export function spawnChrome(
+  debugPort: number,
+  userDataDir: string,
+  headed = process.env.HEADLESS !== '1'
+) {
+  const chrome = chromePath();
+  const args = chromeLaunchArgs(chrome, debugPort, userDataDir, headed);
   return Bun.spawn(args, { stdout: 'ignore', stderr: 'pipe' });
 }
 
@@ -217,6 +269,8 @@ export async function navigateAndReady(
   readyExpr = 'document.documentElement.dataset.bspQa === "1"',
   timeoutMs = 30_000
 ) {
+  const startedAt = Date.now();
+  console.log(`[cdp] navigating to ${url}`);
   await session.send('Page.enable');
   await session.send('Runtime.enable');
   // --window-size is ignored under --headless=new, so screenshots came back at
@@ -231,12 +285,35 @@ export async function navigateAndReady(
   await session.send('Page.navigate', { url }, 30_000);
 
   const deadline = Date.now() + timeoutMs;
+  let stalledProbes = 0;
   while (Date.now() < deadline) {
-    const ready = await evalPage<boolean>(session, readyExpr, 8_000);
-    if (ready) return;
+    const remainingMs = deadline - Date.now();
+    try {
+      const ready = await evalPage<boolean>(
+        session,
+        readyExpr,
+        Math.min(8_000, Math.max(1, remainingMs)),
+        'page readiness marker'
+      );
+      if (ready) {
+        console.log(`[cdp] page ready after ${Date.now() - startedAt}ms (${stalledProbes} stalled probe(s))`);
+        return;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('CDP timeout: Runtime.evaluate')) throw error;
+      stalledProbes++;
+      console.log(
+        `[cdp] readiness probe ${stalledProbes} stalled while the page main thread was busy; ` +
+        `${Math.max(0, deadline - Date.now())}ms remain`
+      );
+    }
     await Bun.sleep(250);
   }
-  throw new Error(`Timed out waiting for page ready: ${url}`);
+  throw new Error(
+    `Timed out waiting for page ready: ${url} ` +
+    `(overall ${timeoutMs}ms deadline; ${stalledProbes} stalled readiness probe(s))`
+  );
 }
 
 export async function withChrome<T>(
@@ -245,8 +322,11 @@ export async function withChrome<T>(
   fn: (session: CdpSession) => Promise<T>
 ): Promise<T> {
   const port = pickDebugPort(portBase);
-  const userDataDir = `/tmp/bsp-${label}-${Date.now()}-${port}`;
+  const profilesRoot = browserProfilesRoot();
+  mkdirSync(profilesRoot, { recursive: true });
+  const userDataDir = resolve(profilesRoot, `${label}-${Date.now()}-${port}`);
   console.log(`[${label}] Chrome debug port ${port}`);
+  console.log(`[${label}] Chrome profile ${userDataDir}`);
   const proc = spawnChrome(port, userDataDir);
   try {
     await Bun.sleep(500);
@@ -262,10 +342,13 @@ export async function withChrome<T>(
   }
 }
 
+export function browserProfilesRoot() {
+  // Vite watches the svelte/ project root. Chrome writes hundreds of profile
+  // files while a proof is running, so profiles must live at the repository
+  // artifact root rather than under svelte/.artifacts.
+  return resolve(REPO_ROOT, '.artifacts/browser-profiles');
+}
+
 export function cleanupStaleTestChrome() {
-  try {
-    Bun.spawnSync(['pkill', '-9', '-f', 'user-data-dir=/tmp/bsp-'], { stdout: 'ignore', stderr: 'ignore' });
-  } catch {
-    /* no stale processes */
-  }
+  // Exact spawned PIDs are terminated by withChrome; broad process killing is forbidden.
 }

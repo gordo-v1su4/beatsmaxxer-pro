@@ -1,8 +1,4 @@
-import type {
-	MediaFallback,
-	VideoDecoderConfigLike,
-	VideoTrackMetadata
-} from '$lib/media/types';
+import type { VideoDecoderConfigLike, VideoTrackMetadata } from '$lib/media/types';
 
 export type DirectPlaybackUnsupportedReason =
 	| 'insecure-context'
@@ -156,51 +152,4 @@ export async function probeDirectPlayback(
 		};
 	}
 	return { supported: true, reason: null, config };
-}
-
-export interface RendererCapabilities {
-	webgpuExternalTexture: {
-		available: boolean;
-		sampleFrameProbePassed: boolean;
-	};
-	webgl2VideoFrame: {
-		available: boolean;
-		sampleFrameProbePassed: boolean;
-	};
-	htmlVideo: boolean;
-}
-
-export function selectPlaybackFallback(
-	direct: DirectPlaybackProbe,
-	renderer: RendererCapabilities
-): MediaFallback {
-	if (
-		direct.supported &&
-		renderer.webgpuExternalTexture.available &&
-		renderer.webgpuExternalTexture.sampleFrameProbePassed
-	) {
-		return { path: 'webcodecs-webgpu', reason: null };
-	}
-	if (
-		direct.supported &&
-		renderer.webgl2VideoFrame.available &&
-		renderer.webgl2VideoFrame.sampleFrameProbePassed
-	) {
-		return {
-			path: 'webcodecs-webgl2',
-			reason: renderer.webgpuExternalTexture.available
-				? 'webgpu-sample-probe-failed'
-				: 'webgpu-unavailable'
-		};
-	}
-	if (renderer.htmlVideo) {
-		return {
-			path: 'html-video-webgl2',
-			reason: direct.supported ? 'decoded-renderer-unavailable' : direct.reason
-		};
-	}
-	return {
-		path: 'native-static',
-		reason: direct.supported ? 'live-renderer-unavailable' : direct.reason
-	};
 }

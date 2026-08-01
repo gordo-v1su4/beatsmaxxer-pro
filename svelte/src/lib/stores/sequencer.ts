@@ -6,8 +6,22 @@ export const sequencerSteps = writable<(string | null)[]>(Array.from({ length: 1
 export const sequencerArmed = writable(true);
 export const sequencerLastStep = writable(-1);
 
-/** Bonus rack row (visible when main rows collapsed) — film/texture modules. */
-export const bonusRow = writable<(string | null)[]>(['leak', 'vhs', 'bulge', 'grain']);
+export function crossedSequencerSteps(
+  previousAbsoluteStep: number | null,
+  beatPosition: number
+) {
+  const currentAbsoluteStep = Math.max(0, Math.floor(beatPosition * 4));
+  if (previousAbsoluteStep === null || currentAbsoluteStep <= previousAbsoluteStep) {
+    return { currentAbsoluteStep, steps: [currentAbsoluteStep % 16] };
+  }
+  return {
+    currentAbsoluteStep,
+    steps: Array.from(
+      { length: currentAbsoluteStep - previousAbsoluteStep },
+      (_, index) => (previousAbsoluteStep + index + 1) % 16
+    )
+  };
+}
 
 export function toggleSequencerStep(index: number, moduleId: string | null) {
   sequencerSteps.update((steps) => {

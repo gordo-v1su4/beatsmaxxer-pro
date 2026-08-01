@@ -1,4 +1,11 @@
 <script lang="ts">
+  import { sliderValueForKey } from '$lib/components/controlKeyboard';
+  import {
+    beginRackParamTransaction,
+    endRackParamTransaction,
+    runRackParamTransaction
+  } from '$lib/stores/rack';
+
   interface Props {
     label?: string;
     value: number;
@@ -61,28 +68,43 @@
   const indicatorPos = $derived(toXY(currentAngle));
   const showTooltip = $derived(hovering || dragging || showValue);
 
-  function onDown(e: MouseEvent) {
+  function onDown(e: PointerEvent) {
     e.preventDefault();
     e.stopPropagation();
+    (e.currentTarget as HTMLElement).focus();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragging = true;
     startY = e.clientY;
     startValue = value;
+    beginRackParamTransaction();
     document.body.style.cursor = 'ns-resize';
     document.body.style.userSelect = 'none';
-    const onMove = (ev: MouseEvent) => {
+    const target = e.currentTarget as HTMLElement;
+    const onMove = (ev: PointerEvent) => {
       const delta = startY - ev.clientY;
       const sensitivity = (max - min) / 160;
       onChange(Math.max(min, Math.min(max, startValue + delta * sensitivity)));
     };
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       dragging = false;
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      target.releasePointerCapture?.(ev.pointerId);
+      target.removeEventListener('pointermove', onMove);
+      target.removeEventListener('pointerup', onUp);
+      target.removeEventListener('pointercancel', onUp);
+      endRackParamTransaction();
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    target.addEventListener('pointermove', onMove);
+    target.addEventListener('pointerup', onUp);
+    target.addEventListener('pointercancel', onUp);
+  }
+
+  function onKeyDown(e: KeyboardEvent) {
+    const next = sliderValueForKey(e.key, value, min, max, (max - min) / 100, (max - min) / 10);
+    if (next === null) return;
+    e.preventDefault();
+    runRackParamTransaction(() => onChange(next));
   }
 </script>
 
@@ -95,13 +117,17 @@
   <div
     class="knob-hit"
     style="width:{dim + hitPad * 2}px;height:{dim + hitPad * 2}px;padding:{hitPad}px"
-    onmousedown={onDown}
-    ondblclick={() => onChange((max - min) / 2 + min)}
+    onpointerdown={onDown}
+    onkeydown={onKeyDown}
+    ondblclick={() => runRackParamTransaction(() => onChange((max - min) / 2 + min))}
     role="slider"
     tabindex="0"
+    data-bsp-proof-id="control-knob-{knobId}"
+    aria-label={label ?? knobId}
     aria-valuenow={value}
     aria-valuemin={min}
     aria-valuemax={max}
+    aria-valuetext={`${Math.round(value)} percent`}
   >
     <svg width={dim} height={dim} style="display:block;overflow:visible">
       <circle cx={cx} cy={cy} r={dim / 2 - 1} fill="none" stroke="rgba(0,0,0,0.6)" stroke-width="1" />

@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { updateParam } from '$lib/stores/rack';
+import { runRackParamTransaction, updateParam } from '$lib/stores/rack';
 import { DEFAULT_RACK_BOTTOM, DEFAULT_RACK_TOP } from '$lib/modules/catalog';
 
 export const FACTORY_PRESETS = [
@@ -93,9 +93,9 @@ function applyOneMacro(moduleId: RackMacroId, val: number) {
 }
 
 export function applyMacrosToParams(m: MacroState) {
-  for (const id of RACK_MACRO_MODULES) {
-    applyOneMacro(id, m[id]);
-  }
+  runRackParamTransaction(() => {
+    for (const id of RACK_MACRO_MODULES) applyOneMacro(id, m[id]);
+  });
 }
 
 export const macroBaseParams = writable<Record<string, Record<string, number>>>({});

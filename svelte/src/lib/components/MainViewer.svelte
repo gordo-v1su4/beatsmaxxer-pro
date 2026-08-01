@@ -6,7 +6,14 @@
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
   import { parseAccentColor } from '$lib/modules/registry';
   import { pgmSource } from '$lib/stores/pgm';
-  import { bypassed, moduleParams, videoLayers } from '$lib/stores/rack';
+  import {
+    bypassed,
+    currentRackSlotForModule,
+    moduleParams,
+    rackBottom,
+    rackTop,
+    videoLayers
+  } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
 
   interface Props {
@@ -16,7 +23,10 @@
   let { modules }: Props = $props();
 
   const live = $derived(modules.find((m) => m.id === $pgmSource) ?? modules[0]);
-  const clip = $derived(live ? $videoLayers[live.id] : null);
+  const sourceSlot = $derived(
+    live ? currentRackSlotForModule(live.id, $rackTop, $rackBottom) : null
+  );
+  const clip = $derived(sourceSlot ? $videoLayers[sourceSlot] : null);
   const params = $derived(live ? ($moduleParams[live.id] ?? {}) : {});
   const liveColor = $derived(parseAccentColor(live?.accentColor ?? '#38bdf8'));
   const isBypassed = $derived(live ? ($bypassed[live.id] ?? false) : false);

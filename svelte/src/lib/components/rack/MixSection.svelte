@@ -15,8 +15,9 @@
     color: string;
     moduleId: string;
     presets?: Preset[];
+    onApplyPreset?: (values: Record<string, number>) => void;
   }
-  let { params, onUpdate, color, moduleId, presets }: Props = $props();
+  let { params, onUpdate, onApplyPreset, color, moduleId, presets }: Props = $props();
 </script>
 
 <div class="mix-strip">
@@ -36,7 +37,10 @@
             {color}
             width={18}
             height={16}
-            onclick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}
+            onclick={() => {
+              if (onApplyPreset) onApplyPreset(p.set);
+              else Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v));
+            }}
           />
         {/each}
       </div>

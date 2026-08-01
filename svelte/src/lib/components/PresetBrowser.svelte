@@ -47,6 +47,7 @@
       <MacroDot
         label={def.short}
         title="{moduleId} · {def.param}"
+        controlId={moduleId}
         color={def.color}
         value={$macros[moduleId as RackMacroId]}
         onChange={(v) => updateModuleMacro(moduleId as RackMacroId, v)}

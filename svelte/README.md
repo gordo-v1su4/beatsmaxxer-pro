@@ -4,98 +4,62 @@
   <img src="../docs/beat-surfer-pro.webp" alt="Beat Surfer Pro UI with live clips and beat-synced PGM" width="100%" />
 </p>
 
-Browser-only rewrite: **SvelteKit 5** shell + **WebGPU-only** render engine. No Three.js, no WebGL fallback — progressive WGSL shader port behind a single `WebGpuEngine` loop.
+Browser-native audio-reactive video FX rack built with **SvelteKit 5** and **WebGPU/WGSL only**. The app has no WebGL or Three.js fallback.
 
-**Status: not production-ready.** Do not treat unchecked items below as done until browser acceptance + manual recording pass.
+**Release status: blocked pending physical-browser evidence.** The implementation is not a proved release until the headed real-media gate produces a valid report and PNG artifacts. See [the ship plan](docs/SHIP_PLAN.md).
 
 ## Commands
+
+Run these commands from `svelte/`:
 
 ```bash
 bun install
 bun run dev          # http://localhost:5174
-bun run test:local   # full local suite (unit + build + browser gates) — see docs/LOCAL_TESTING.md
-bun run build        # production build → build/
 bun run check        # svelte-check
-bun run test         # vitest only
-bash scripts/setup-qa-media.sh   # QA clips (cloud-safe tiny fixtures)
-bash scripts/link-qa-media.sh    # local dev: symlink 8 MP4s + Redline from ~/Downloads/archive (2)
-bun run verify:browser           # browser gates only
+bun run test         # Vitest
+bun run build        # production build -> build/
+bun run test:local   # unit, build, browser, and required physical-proof verification
+bun run verify:browser
 ```
 
-From repo root: `bun run dev` (same app — root scripts delegate to `svelte/`)
+From the repository root, `bun run dev`, `bun run check`, `bun run test`, `bun run build`, and `bun run test:local` delegate to this package.
 
 ## QA mode
 
-```
+Start the app and open:
+
+```text
 http://localhost:5174/?qa=1&qaAutoplay=1
 ```
 
-Uses fixtures in `tests/fixtures/media/` — run `bash scripts/link-qa-media.sh` locally for real clips, or `setup-qa-media.sh` for bundled stubs. On every refresh, `?qa=1` auto-loads song + 8 rack clips via [`loadQaMedia.ts`](src/lib/qa/loadQaMedia.ts).
+`?qa=1` loads the committed QA manifest through [`loadQaMedia.ts`](src/lib/qa/loadQaMedia.ts). QA fixtures exercise automation paths; they do not replace the required physical proof with staged real MP4 and MP3 files.
 
 ## Architecture
 
-| Piece | Location |
-|-------|----------|
-| UI + stores | `src/lib/components/`, `src/lib/stores/` |
-| WebGPU engine | `src/lib/rendering/webgpu/WebGpuEngine.ts` |
-| WGSL shaders | `src/lib/rendering/webgpu/shaders/` |
-| Video pool | `src/lib/media/VideoPool.ts` |
-| Audio + Essentia + SoundTouch | `src/lib/audio/` |
-| PGM beat cuts | `src/lib/runtime/pgm/PgmDirector.ts` |
-| QA hook | `window.__BSP_QA__` (`src/lib/qa/bspQa.ts`) |
+| Area | Current implementation |
+|---|---|
+| Renderer | Native WebGPU, task-scoped external video textures, WGSL FX, feedback ping-pong, final blit |
+| Canvas lifecycle | Stable rack canvas IDs attach once; `setCanvasModule()` hot-swaps module assignment |
+| PGM | Stable `pgm` canvas with dedicated `setPgmLiveModule()` source selection |
+| Timing | One `AudioTimeline` based on `AudioContext.currentTime`; one `AppLoop` rAF |
+| Media | Eight stable slot-owned video elements; candidate prewarm, transactional replacement, explicit release |
+| Audio | Web Audio, SoundTouch worklet controls, optional consent-gated hosted rhythm analysis |
+| QA | `window.__BSP_QA__`, automated gates, and a separate physical headed release-proof gate |
 
-## Ship gate checklist (honest)
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for ownership and data flow.
 
-Only check when **browser-verified** with artifacts or manual recording.
+## Documentation
 
-### P0 — must work before anything else
-
-- [x] Video pool loads clips; free-run playback independent of transport
-- [x] Per-module clip status (LOAD / RDY / ERR) in patch bay
-- [x] `window.__BSP_QA__` debug hook for acceptance scripts (`sampleTimeModules`, `exerciseLiveControls`, `exerciseAllShaderModes`, `auditShaderCatalog`)
-- [x] QA `?qa=1` auto-loads Redline + 8 rack clips on refresh (IDE browser verified; WebGPU `crossOrigin` + qa-media CORS)
-- [x] Automated `verify:playback` — 8/8 `hasReadyFrame`, video time advances (headless)
-- [x] Automated `verify:interaction` — controls fire without JS errors (headless)
-- [x] Automated `verify:stutter` — p95 delta gate on free-run modules (headless)
-- [x] Automated `verify:audio` — Essentia ready + SoundTouch KEY/PITCH/TEMPO + beat motion (headless)
-- [x] Automated `verify:beat` — beat phase advances with transport (headless)
-- [x] IDE browser: 8/8 rack viewports show real video; live param exercise; 18/18 WGSL effect modes registered; speedramp rate varies with beat cycle
-- [ ] **Manual:** upload via CLIP, drag-drop, top-bar bulk — visible motion in every preview
-- [ ] **Manual:** upload mp3 — audible playback + `RHY·OK` (or documented fallback)
-- [ ] **Manual:** 60s play while tweaking knobs, dragging modules, swapping clips — no freeze / black >200ms
-- [ ] **Manual:** screen recording + screenshots attached to PR
-
-### P1 — shader / FX parity
-
-- [x] Ping-pong feedback textures (offscreen FX → blit to canvas)
-- [x] Unified WGSL with beat-synced FX stubs per module + idle graphics
-- [ ] Full React GLSL parity (16 transition types, tapdelay trails, loop-seam hold, etc.)
-- [ ] Side-by-side screenshot diff vs React QA session per module
-
-### P2 — audio / transport
-
-- [x] SoundTouch.js integrated (`@soundtouchjs/audio-worklet`) — KEY / PIT / TMP / VOL
-- [ ] SoundTouch verified by ear on uploaded track (tempo without chipmunk, pitch shift)
-- [x] Essentia dev proxy (`/__api/analyze/*` → hosted analysis with `X-API-Key`) — acceptance via `verify:audio`
-- [ ] Essentia on production (`VITE_ESSENTIA_API_BASE_URL` on Vercel — not deployed yet)
-- [x] Beat-synced time modules (speedramp / tapdelay / timesampler / transition) driven by transport clock — IDE `sampleTimeModules` + unit tests; full accent/stutter ear-check still manual
-
-### P3 — UI
-
-- [x] PresetBrowser removed from side rail; 8 macro dots in top bar
-- [x] SoundTouch controls in top bar (KEY, pitch, tempo, volume)
-
-### P4 — deploy
-
-- [x] `vercel.json` points at `svelte/build`
-- [x] `bun run build` succeeds
-- [ ] Vercel preview/production checked on Chrome + Safari with WebGPU
-- [ ] Merge to `main` only after all unchecked items above are checked
+- [Architecture](docs/ARCHITECTURE.md) — WebGPU, timeline, canvas, PGM, and media lifecycle invariants
+- [Ship plan](docs/SHIP_PLAN.md) — implemented work versus required release evidence
+- [Local testing](docs/LOCAL_TESTING.md) — automated and browser gate workflow
+- [Module development](docs/MODULES.md) — catalog and shader registration
+- [Audio analysis](docs/ESSENTIA.md) — hosted-analysis consent and configuration
 
 ## Stack
 
-- Svelte 5, Vite 8, Tailwind CSS 4, WebGPU/WGSL
-- Vitest (transport, timesampler, PGM stress)
-- SoundTouchJS audio-worklet for pitch/tempo
-
-See also: [`docs/ESSENTIA.md`](docs/ESSENTIA.md), [`docs/MODULES.md`](docs/MODULES.md)
+- Svelte 5 and SvelteKit
+- Vite 8 and Bun
+- WebGPU and WGSL
+- Web Audio and `@soundtouchjs/audio-worklet`
+- Vitest plus CDP-based browser verification

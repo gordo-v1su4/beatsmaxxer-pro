@@ -11,7 +11,7 @@
   import MixSection from '$lib/components/rack/MixSection.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
-  import { bypassed, updateParam, toggleBypass } from '$lib/stores/rack';
+  import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
 
@@ -124,6 +124,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="rack-module"
+  data-bsp-module-id={mod.id}
   class:is-collapsed={collapsed}
   style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
@@ -189,6 +190,7 @@
       <button
         type="button"
         onclick={() => onClearVideo?.()}
+        aria-label="Clear clip from {mod.name}"
         style="width:14px;height:14px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0"
       >
         <X size={7} />
@@ -198,6 +200,7 @@
       type="button"
       onclick={() => toggleModuleCollapsed(mod.id)}
       title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
+      aria-label={collapsed ? `Expand ${mod.name} controls` : `Collapse ${mod.name} controls`}
       style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0;flex-shrink:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
@@ -226,7 +229,7 @@
             color={mod.accentColor}
             width={36}
             height={16}
-            onclick={() => Object.entries(btn.set).forEach(([k, v]) => updateParam(mod.id, k, v))}
+            onclick={() => updateParams(mod.id, btn.set)}
           />
         {/each}
         {#if spec.toggle}
@@ -256,6 +259,8 @@
                 value={params[sl.param] ?? 50}
                 onChange={(v) => updateParam(mod.id, sl.param, Math.round(v))}
                 color={mod.accentColor}
+                ariaLabel={sl.label}
+                controlId="{mod.id}-{sl.param}"
               />
             </div>
           </div>
@@ -268,6 +273,7 @@
       moduleId={mod.id}
       presets={modulePresets}
       onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
+      onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {:else if !collapsed}
     <div style="flex:1 1 auto;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
@@ -276,7 +282,13 @@
           <div style="display:flex;align-items:center;gap:4px">
             <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 5)}</span>
             <div style="flex:1">
-              <HSlider value={params[key] ?? 50} onChange={(v) => updateParam(mod.id, key, Math.round(v))} color={mod.accentColor} />
+              <HSlider
+                value={params[key] ?? 50}
+                onChange={(v) => updateParam(mod.id, key, Math.round(v))}
+                color={mod.accentColor}
+                ariaLabel={key}
+                controlId="{mod.id}-{key}"
+              />
             </div>
           </div>
         {/each}
@@ -288,6 +300,7 @@
       moduleId={mod.id}
       presets={modulePresets}
       onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
+      onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {/if}
 

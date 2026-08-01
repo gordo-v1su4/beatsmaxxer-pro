@@ -1,9 +1,11 @@
 import { getPreferredCanvasFormat, getSharedWebGpuDevice } from './SharedGpuDevice';
-import { MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
-import { BLIT_WGSL, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
+import { MODULE_FX_IDLE_WGSL, MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
+import { BLIT_WGSL, advanceFeedbackTo, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
 import { parseAccentColor } from '$lib/modules/registry';
 import { videoPool } from '$lib/media/VideoPool';
+import type { TimelineFrame } from '$lib/transport';
+import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { VideoTextureCache } from './VideoTextureCache';
 
 export interface ModuleRenderParams {
@@ -29,36 +31,59 @@ export interface FrameContext {
   bassAmp: number;
   pitchSemitones?: number;
   feedbackMix?: number;
+  timeline?: TimelineFrame;
 }
 
 export interface CanvasBinding {
+  bindingId: string;
   canvas: HTMLCanvasElement;
   context: GPUCanvasContext;
   pipeline: GPURenderPipeline;
+  idlePipeline: GPURenderPipeline;
   blitPipeline: GPURenderPipeline;
   uniformBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   bindGroupLayout: GPUBindGroupLayout;
+  idleBindGroupLayout: GPUBindGroupLayout;
   blitBindGroupLayout: GPUBindGroupLayout;
   color: [number, number, number];
-  moduleId: string;
-  feedback: FeedbackPair | null;
+  /** Effect identity may hot-swap without changing this binding's source. */
+  effectModuleId: string;
+  /** @deprecated Compatibility alias for injected bindings. */
+  moduleId?: string;
+  /** Stable media/decode identity. Rack canvases use their canvas id. */
+  sourceId: string;
+  feedback: FeedbackPair;
   placeholderFeedback: GPUTexture;
   placeholderFeedbackView: GPUTextureView;
+  active: boolean;
 }
+
+interface BindingScheduleState {
+  lastRenderContextTimeSeconds: number;
+  nextRenderContextTimeSeconds: number;
+  lastChangeKey: string;
+  renderCount: number;
+  skippedRenderCount: number;
+  lastFrameIntervalMs: number | null;
+}
+
+const PREVIEW_TARGET_FPS = 24;
+const PREVIEW_INTERVAL_SECONDS = 1 / PREVIEW_TARGET_FPS;
+const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler']);
 
 export class WebGpuEngine {
   private device: GPUDevice | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
   private bindings = new Map<string, CanvasBinding>();
-  private moduleColors = new Map<string, [number, number, number]>();
-  private renderDiag = new Map<string, Record<string, unknown>>();
+  private renderDiag = new Map<string, WebGpuRenderDiagnostics>();
   private renderParams = new Map<string, ModuleRenderParams>();
-  private rafId = 0;
-  private startTime = performance.now();
-  private running = false;
-  private onFrame: ((time: number) => void) | null = null;
+  private renderParamVersions = new Map<string, number>();
+  private bindingSchedule = new Map<string, BindingScheduleState>();
+  private taskExternalTextures: Map<HTMLVideoElement, GPUExternalTexture> | null = null;
+  private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
+  private pgmLiveSourceId = 'top-0';
   private paused = false;
   private frameCtx: FrameContext = {
     beat: 0,
@@ -73,7 +98,6 @@ export class WebGpuEngine {
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
-  private videoTextures = new VideoTextureCache();
   private initPromise: Promise<boolean> | null = null;
 
   /** Idempotent, race-safe init: concurrent callers share one in-flight attempt. */
@@ -111,12 +135,12 @@ export class WebGpuEngine {
     return true;
   }
 
-  setFrameCallback(cb: (time: number) => void) {
-    this.onFrame = cb;
-  }
-
-  setPgmLiveModule(moduleId: string) {
+  setPgmLiveModule(moduleId: string, sourceId: string) {
     this.pgmLiveModuleId = moduleId;
+    this.pgmLiveSourceId = sourceId;
+    const binding = this.bindings.get('pgm');
+    if (binding) binding.sourceId = sourceId;
+    this.bindingSchedule.delete('pgm');
   }
 
   setPaused(paused: boolean) {
@@ -128,13 +152,32 @@ export class WebGpuEngine {
   }
 
   setModuleParams(moduleId: string, params: ModuleRenderParams) {
+    const previous = this.renderParams.get(moduleId);
+    if (!previous || !sameRenderParams(previous, params)) {
+      this.renderParamVersions.set(moduleId, (this.renderParamVersions.get(moduleId) ?? 0) + 1);
+    }
     this.renderParams.set(moduleId, params);
   }
 
-  /** Update which effect module a stable canvas slot renders — no GPU reattach. */
-  setCanvasModule(canvasId: string, moduleId: string) {
+  setCanvasActive(canvasId: string, active: boolean): boolean {
     const binding = this.bindings.get(canvasId);
-    if (binding) binding.moduleId = moduleId;
+    if (!binding) return false;
+    binding.active = active;
+    return true;
+  }
+
+  /** Update which effect module a stable preview slot renders — no GPU reattach. */
+  setCanvasModule(canvasId: string, moduleId: string): boolean {
+    // PGM selection is owned exclusively by setPgmLiveModule(). Allowing the
+    // viewer's reactive moduleId prop to update this binding created a second,
+    // competing render source.
+    if (canvasId === 'pgm') return false;
+    const binding = this.bindings.get(canvasId);
+    if (!binding) return false;
+    binding.effectModuleId = moduleId;
+    binding.moduleId = moduleId;
+    this.bindingSchedule.delete(canvasId);
+    return true;
   }
 
   async attachCanvas(
@@ -168,8 +211,8 @@ export class WebGpuEngine {
     const existing = this.bindings.get(id);
     if (existing) {
       existing.uniformBuffer.destroy();
-      existing.feedback?.textures[0].destroy();
-      existing.feedback?.textures[1].destroy();
+      existing.feedback.textures[0].destroy();
+      existing.feedback.textures[1].destroy();
     }
 
     const w = canvas.width || 320;
@@ -178,7 +221,17 @@ export class WebGpuEngine {
     const placeholderFb = this.placeholderFeedbackView!;
 
     const shaderModule = this.device.createShaderModule({ code: MODULE_FX_WGSL });
+    const idleShaderModule = this.device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
     const bindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    const idleBindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -198,28 +251,44 @@ export class WebGpuEngine {
       },
       primitive: { topology: 'triangle-list' }
     });
+    const idlePipeline = this.device.createRenderPipeline({
+      layout: this.device.createPipelineLayout({ bindGroupLayouts: [idleBindGroupLayout] }),
+      vertex: { module: idleShaderModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: idleShaderModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: 'rgba8unorm' }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
 
     const uniformBuffer = this.device.createBuffer({
-      size: 96,
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
-    this.moduleColors.set(id, color);
     this.bindings.set(id, {
+      bindingId: id,
       canvas,
       context,
       pipeline,
+      idlePipeline,
       blitPipeline: this.blitPipeline!,
       uniformBuffer,
       bindGroup: null as unknown as GPUBindGroup,
       bindGroupLayout,
+      idleBindGroupLayout,
       blitBindGroupLayout: this.blitBindGroupLayout!,
       color,
+      effectModuleId: moduleId ?? id,
       moduleId: moduleId ?? id,
+      sourceId: id,
       feedback,
       placeholderFeedback: this.placeholderFeedback!,
-      placeholderFeedbackView: placeholderFb
+      placeholderFeedbackView: placeholderFb,
+      active: true
     });
+    this.bindingSchedule.delete(id);
 
     return true;
   }
@@ -228,57 +297,166 @@ export class WebGpuEngine {
     const binding = this.bindings.get(id);
     if (binding) {
       binding.uniformBuffer.destroy();
-      binding.feedback?.textures[0].destroy();
-      binding.feedback?.textures[1].destroy();
+      binding.feedback.textures[0].destroy();
+      binding.feedback.textures[1].destroy();
       this.bindings.delete(id);
-      this.moduleColors.delete(id);
+      this.bindingSchedule.delete(id);
+      this.renderDiag.delete(id);
     }
   }
 
   start() {
-    if (this.running || typeof requestAnimationFrame !== 'function') return;
-    this.running = true;
-    this.startTime = performance.now();
-    const tick = () => {
-      if (!this.running) return;
-      const t = (performance.now() - this.startTime) / 1000;
-      if (!this.paused) this.renderAll(t);
-      this.onFrame?.(t);
-      this.rafId = requestAnimationFrame(tick);
-    };
-    this.rafId = requestAnimationFrame(tick);
+    // Compatibility no-op: AppLoop is the sole requestAnimationFrame owner.
   }
 
   stop() {
-    this.running = false;
-    if (typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(this.rafId);
-    }
+    // Compatibility no-op: AppLoop owns lifecycle and cadence.
   }
 
-  renderAll(time: number) {
-    if (!this.device || this.bindings.size === 0) return;
-    this.videoTextures.beginFrame();
-    const encoder = this.device.createCommandEncoder();
+  renderAll(frame: TimelineFrame) {
+    if (this.paused || !this.device || this.bindings.size === 0) return;
+    this.frameCtx.timeline = frame;
+    const scheduled: Array<[string, CanvasBinding, string, string, string]> = [];
 
     for (const [id, binding] of this.bindings) {
-      let color = binding.color;
-      let moduleId = binding.moduleId;
+      // Older injected test bindings predate bindingId; normalize them at the
+      // map boundary so diagnostics remain keyed by the stable canvas slot.
+      binding.bindingId ||= id;
+      let moduleId = binding.effectModuleId ?? binding.moduleId ?? id;
+      let sourceId = binding.sourceId ?? id;
       if (id === 'pgm') {
         moduleId = this.pgmLiveModuleId;
-        color = this.moduleColors.get(this.pgmLiveModuleId) ?? binding.color;
+        sourceId = this.pgmLiveSourceId;
       }
-      this.encodeBinding(encoder, binding, color, moduleId);
+      const changeKey = this.bindingChangeKey(binding, moduleId, sourceId, frame);
+      const skipReason = this.bindingSkipReason(id, binding, frame, changeKey);
+      if (skipReason !== 'none') {
+        this.recordSkippedBinding(id, moduleId, skipReason);
+        continue;
+      }
+      scheduled.push([id, binding, moduleId, sourceId, changeKey]);
     }
 
+    if (scheduled.length === 0) return;
+    const encoder = this.device.createCommandEncoder();
+    this.taskExternalTextures = new Map<HTMLVideoElement, GPUExternalTexture>();
+    this.videoTextureCache.beginFrame();
+    try {
+      for (const [id, binding, moduleId, sourceId, changeKey] of scheduled) {
+        this.encodeBinding(encoder, binding, binding.color, moduleId, sourceId);
+        this.recordRenderedBinding(id, moduleId, frame, changeKey);
+      }
+    } finally {
+      // GPUExternalTexture objects are task-scoped and must never survive this call.
+      this.taskExternalTextures = null;
+    }
     this.device.queue.submit([encoder.finish()]);
+  }
+
+  private bindingChangeKey(
+    binding: CanvasBinding,
+    moduleId: string,
+    sourceId: string,
+    frame: TimelineFrame
+  ) {
+    const video = videoPool.get(sourceId);
+    const sourceTime = video && Number.isFinite(video.currentTime)
+      ? Math.floor(video.currentTime * PREVIEW_TARGET_FPS)
+      : -1;
+    return [
+      moduleId,
+      sourceId,
+      this.renderParamVersions.get(moduleId) ?? 0,
+      frame.generation,
+      frame.fixedStepIndex,
+      sourceTime,
+      binding.canvas?.width ?? 0,
+      binding.canvas?.height ?? 0
+    ].join(':');
+  }
+
+  private bindingSkipReason(
+    id: string,
+    binding: CanvasBinding,
+    frame: TimelineFrame,
+    changeKey: string
+  ): WebGpuRenderDiagnostics['skipReason'] {
+    if (binding.active === false) return 'inactive';
+    if (id === 'pgm') return 'none';
+    const state = this.bindingSchedule.get(id);
+    if (!state) return 'none';
+    const contextTimeSeconds = frame.contextTimeSeconds ?? frame.positionSeconds ?? 0;
+    if (contextTimeSeconds + Number.EPSILON < state.nextRenderContextTimeSeconds) return 'cadence';
+    if (changeKey === state.lastChangeKey) return 'unchanged';
+    return 'none';
+  }
+
+  private recordRenderedBinding(id: string, moduleId: string, frame: TimelineFrame, changeKey: string) {
+    const previous = this.bindingSchedule.get(id);
+    const contextTimeSeconds = frame.contextTimeSeconds ?? frame.positionSeconds ?? 0;
+    const intervalMs = previous
+      ? Math.max(0, (contextTimeSeconds - previous.lastRenderContextTimeSeconds) * 1000)
+      : null;
+    let nextRenderContextTimeSeconds = contextTimeSeconds + PREVIEW_INTERVAL_SECONDS;
+    if (previous) {
+      nextRenderContextTimeSeconds = previous.nextRenderContextTimeSeconds;
+      while (nextRenderContextTimeSeconds <= contextTimeSeconds + Number.EPSILON) {
+        nextRenderContextTimeSeconds += PREVIEW_INTERVAL_SECONDS;
+      }
+    }
+    const state: BindingScheduleState = {
+      lastRenderContextTimeSeconds: contextTimeSeconds,
+      nextRenderContextTimeSeconds,
+      lastChangeKey: changeKey,
+      renderCount: (previous?.renderCount ?? 0) + 1,
+      skippedRenderCount: previous?.skippedRenderCount ?? 0,
+      lastFrameIntervalMs: intervalMs
+    };
+    this.bindingSchedule.set(id, state);
+    const diag = this.renderDiag.get(id) ?? this.renderDiag.get(moduleId);
+    if (!diag) return;
+    const scheduledDiag = {
+      ...diag,
+      bindingId: id,
+      renderCount: state.renderCount,
+      skippedRenderCount: state.skippedRenderCount,
+      targetFps: id === 'pgm' ? 0 : PREVIEW_TARGET_FPS,
+      frameIntervalMs: intervalMs,
+      lastRenderContextTimeSeconds: contextTimeSeconds,
+      renderedThisFrame: true,
+      skipReason: 'none' as const
+    };
+    this.renderDiag.set(id, scheduledDiag);
+    // Compatibility for injected test encoders that still publish by effect.
+    // Never retain that alias: stable binding IDs are the production truth.
+    if (moduleId !== id) this.renderDiag.delete(moduleId);
+  }
+
+  private recordSkippedBinding(
+    id: string,
+    moduleId: string,
+    skipReason: Exclude<WebGpuRenderDiagnostics['skipReason'], 'none'>
+  ) {
+    const state = this.bindingSchedule.get(id);
+    if (state) state.skippedRenderCount += 1;
+    const previous = this.renderDiag.get(id);
+    if (!previous) return;
+    const diag = {
+      ...previous,
+      bindingId: id,
+      skippedRenderCount: state?.skippedRenderCount ?? previous.skippedRenderCount,
+      renderedThisFrame: false,
+      skipReason
+    };
+    this.renderDiag.set(id, diag);
   }
 
   private encodeBinding(
     encoder: GPUCommandEncoder,
     binding: CanvasBinding,
     color: [number, number, number],
-    moduleId: string
+    moduleId: string,
+    sourceId: string
   ) {
     if (!this.device || !this.sampler) return;
 
@@ -286,16 +464,17 @@ export class WebGpuEngine {
     const rp = this.renderParams.get(moduleId) ?? {};
     const shaderKey = def?.shaderKey ?? moduleId;
     const effectMode = SHADER_EFFECT_MODE[shaderKey] ?? 0;
-    const video = videoPool.get(moduleId);
-    const hasVideo = video && videoPool.hasReadyFrame(moduleId) ? 1 : 0;
+    const video = videoPool.get(sourceId);
+    const hasVideo = video && videoPool.hasReadyFrame(sourceId) ? 1 : 0;
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
-    const data = new Float32Array(22);
-    data[0] = this.frameCtx.beat;
-    data[1] = this.frameCtx.beatPhase;
-    data[2] = this.frameCtx.bpm;
-    data[3] = this.frameCtx.playing ? 1 : 0;
+    const timeline = this.frameCtx.timeline;
+    const data = new Float32Array(32);
+    data[0] = timeline?.beatPosition ?? this.frameCtx.beat;
+    data[1] = timeline?.beatPhase ?? this.frameCtx.beatPhase;
+    data[2] = timeline?.bpm ?? this.frameCtx.bpm;
+    data[3] = (timeline?.playing ?? this.frameCtx.playing) ? 1 : 0;
     data[4] = this.frameCtx.amplitude;
     data[5] = this.frameCtx.bassAmp;
     data[6] = (rp.mix ?? 100) / 100;
@@ -318,67 +497,135 @@ export class WebGpuEngine {
     data[19] = ch > 0 && cw > 0 ? cw / ch : 16 / 9;
     data[20] = rp.aux1 ?? 1;
     data[21] = rp.aux2 ?? 0;
+    if (timeline) writeTimelineUniformData(data, timeline);
 
-    // A clip that is mid-seek briefly reports not-ready. Falling back to the
-    // test card for those frames flashed SMPTE bars and white between every
-    // timesampler cut and dropped black frames in speedramp. Once a clip is
-    // attached, hold the last uploaded frame instead of showing the card.
-    const cached = this.videoTextures.cachedView(moduleId);
-    let shaderHasVideo = video ? 1 : 0;
-    let videoTextureView =
-      cached ?? this.videoTextures.ensurePlaceholder(this.device);
-    if (hasVideo && video) {
+    let shaderHasVideo = hasVideo;
+    let externalTextureImported = false;
+    let externalTextureBound = false;
+    let cachedTextureUploaded = false;
+    let cachedTextureBound = false;
+    let cachedVideoView = PERSISTENT_VIDEO_CACHE_MODULES.has(moduleId) && video
+      ? this.videoTextureCache.cachedView(sourceId, video)
+      : null;
+    if (hasVideo && video && PERSISTENT_VIDEO_CACHE_MODULES.has(moduleId)) {
       try {
-        videoTextureView = this.videoTextures.upload(this.device, moduleId, video);
+        cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
+        cachedTextureUploaded = true;
       } catch {
-        // keep the previous frame; only fall back to the card if we never had one
-        if (!cached) {
-          shaderHasVideo = 0;
-          videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
-        }
+        // A seek can invalidate the current external frame between readiness
+        // inspection and upload. Preserve the last successfully cached frame.
       }
-    } else if (!video || !cached) {
-      shaderHasVideo = 0;
-      videoTextureView = this.videoTextures.ensurePlaceholder(this.device);
     }
     data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
 
+    const fb = binding.feedback;
+    const feedbackAdvance = timeline
+      ? advanceFeedbackTo(fb, timeline.generation, timeline.fixedStepIndex)
+      : { reset: false, steps: 1, degraded: false, skippedSteps: 0 };
+    const readView = !feedbackAdvance.reset
+      ? feedbackReadView(fb)
+      : binding.placeholderFeedbackView;
+
     // Per-frame render diagnostics: black previews are ambiguous from the
-    // outside (no clip? texture upload failed? canvas sized 0? feedback stuck
+    // outside (no clip? external import failed? canvas sized 0? feedback stuck
     // at 2x2 and upscaled?). Recording it here makes __BSP_QA__ answer that in
     // one shot instead of a guessing round-trip.
-    this.renderDiag.set(moduleId, {
+    let bindGroup: GPUBindGroup;
+    let pipeline = binding.idlePipeline;
+    if (shaderHasVideo && video) {
+      try {
+        bindGroup = importAndBindExternalVideo(
+          this.device,
+          binding.bindGroupLayout,
+          binding.uniformBuffer,
+          video,
+          this.sampler,
+          readView,
+          this.taskExternalTextures ?? undefined
+        ).bindGroup;
+        pipeline = binding.pipeline;
+        externalTextureImported = true;
+        externalTextureBound = true;
+      } catch {
+        shaderHasVideo = cachedVideoView ? 1 : 0;
+        data[14] = shaderHasVideo;
+        this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
+        bindGroup = createIdleBindGroup(
+          this.device,
+          binding.idleBindGroupLayout,
+          binding.uniformBuffer,
+          cachedVideoView ?? binding.placeholderFeedbackView,
+          this.sampler,
+          readView
+        );
+        cachedTextureBound = cachedVideoView !== null;
+        if (cachedTextureBound) pipeline = binding.idlePipeline;
+      }
+    } else if (video && cachedVideoView) {
+      shaderHasVideo = 1;
+      data[14] = 1;
+      this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
+      bindGroup = createIdleBindGroup(
+        this.device,
+        binding.idleBindGroupLayout,
+        binding.uniformBuffer,
+        cachedVideoView,
+        this.sampler,
+        readView
+      );
+      pipeline = binding.idlePipeline;
+      cachedTextureBound = true;
+    } else {
+      bindGroup = createIdleBindGroup(
+        this.device,
+        binding.idleBindGroupLayout,
+        binding.uniformBuffer,
+        binding.placeholderFeedbackView,
+        this.sampler,
+        readView
+      );
+    }
+
+    this.renderDiag.set(binding.bindingId ?? moduleId, {
+      bindingId: binding.bindingId ?? '',
+      effectModuleId: moduleId,
+      sourceId,
       canvas: `${binding.canvas.width}x${binding.canvas.height}`,
       cssSize: `${Math.round(binding.canvas.clientWidth)}x${Math.round(binding.canvas.clientHeight)}`,
       effectMode,
       hasVideo: shaderHasVideo,
-      videoUploaded: shaderHasVideo === 1 && hasVideo === 1,
+      externalTextureImported,
+      externalTextureBound,
+      cachedTextureUploaded,
+      cachedTextureBound,
+      samplePath: externalTextureBound ? 'external-texture' : cachedTextureBound ? 'cached-video-texture' : 'test-card',
+      source: video?.currentSrc || video?.src || null,
+      dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
+      frameId: timeline?.frameId ?? null,
       videoSize: video ? `${video.videoWidth}x${video.videoHeight}` : null,
-      feedback: binding.feedback
-        ? `${binding.feedback.width ?? '?'}x${binding.feedback.height ?? '?'}`
-        : 'none(direct-to-canvas)',
-      mix: data[6]
+      feedback: `${binding.feedback.width}x${binding.feedback.height}`,
+      mix: data[6],
+      timelineFrameId: timeline?.frameId ?? null,
+      timelineGeneration: timeline?.generation ?? null,
+      fixedStepIndex: timeline?.fixedStepIndex ?? null,
+      feedbackDegraded: feedbackAdvance.degraded,
+      feedbackSkippedSteps: feedbackAdvance.skippedSteps,
+      uniformHash: hashUniformData(data),
+      renderCount: 0,
+      skippedRenderCount: 0,
+      targetFps: 0,
+      frameIntervalMs: null,
+      lastRenderContextTimeSeconds: timeline?.contextTimeSeconds ?? 0,
+      renderedThisFrame: true,
+      skipReason: 'none'
     });
 
-    const fb = binding.feedback;
-    const readView = fb ? feedbackReadView(fb) : binding.placeholderFeedbackView;
-    const writeView = fb ? feedbackWriteView(fb) : null;
-
-    const bindGroup = this.device.createBindGroup({
-      layout: binding.bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: binding.uniformBuffer } },
-        { binding: 1, resource: videoTextureView },
-        { binding: 2, resource: this.sampler },
-        { binding: 3, resource: readView },
-        { binding: 4, resource: this.sampler }
-      ]
-    });
+    const writeView = feedbackWriteView(fb);
 
     let blitSource = readView;
 
-    if (writeView && fb) {
+    if (feedbackAdvance.steps > 0) {
       const fxPass = encoder.beginRenderPass({
         colorAttachments: [
           {
@@ -389,28 +636,12 @@ export class WebGpuEngine {
           }
         ]
       });
-      fxPass.setPipeline(binding.pipeline);
+      fxPass.setPipeline(pipeline);
       fxPass.setBindGroup(0, bindGroup);
       fxPass.draw(3);
       fxPass.end();
       blitSource = writeView;
       swapFeedback(fb);
-    } else {
-      const fxPass = encoder.beginRenderPass({
-        colorAttachments: [
-          {
-            view: binding.context.getCurrentTexture().createView(),
-            clearValue: { r: 0.04, g: 0.05, b: 0.07, a: 1 },
-            loadOp: 'clear',
-            storeOp: 'store'
-          }
-        ]
-      });
-      fxPass.setPipeline(binding.pipeline);
-      fxPass.setBindGroup(0, bindGroup);
-      fxPass.draw(3);
-      fxPass.end();
-      return;
     }
 
     const blitBindGroup = this.device.createBindGroup({
@@ -442,7 +673,7 @@ export class WebGpuEngine {
   }
 
   /** Snapshot of what the renderer did on the last frame, per module. */
-  getRenderDiagnostics() {
+  getRenderDiagnostics(): Record<string, WebGpuRenderDiagnostics> {
     return Object.fromEntries(this.renderDiag);
   }
 
@@ -451,9 +682,90 @@ export class WebGpuEngine {
     for (const id of [...this.bindings.keys()]) {
       this.detachCanvas(id);
     }
-    this.videoTextures.dispose();
     this.device = null;
+    this.initPromise = null;
+    this.bindingSchedule.clear();
+    this.renderDiag.clear();
+    this.videoTextureCache.dispose();
   }
 }
 
+/** External textures expire after the current JavaScript task. Import and bind
+ * together at the render call site; callers must never cache either result. */
+export function importAndBindExternalVideo(
+  device: GPUDevice,
+  layout: GPUBindGroupLayout,
+  uniformBuffer: GPUBuffer,
+  source: HTMLVideoElement,
+  sampler: GPUSampler,
+  feedbackView: GPUTextureView,
+  taskExternalTextures?: Map<HTMLVideoElement, GPUExternalTexture>
+) {
+  let externalTexture = taskExternalTextures?.get(source);
+  if (!externalTexture) {
+    externalTexture = device.importExternalTexture({ source });
+    taskExternalTextures?.set(source, externalTexture);
+  }
+  const bindGroup = device.createBindGroup({
+    layout,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: externalTexture },
+      { binding: 2, resource: sampler },
+      { binding: 3, resource: feedbackView },
+      { binding: 4, resource: sampler }
+    ]
+  });
+  return { externalTexture, bindGroup };
+}
+
+function sameRenderParams(a: ModuleRenderParams, b: ModuleRenderParams) {
+  return a.mix === b.mix && a.p0 === b.p0 && a.p1 === b.p1 && a.p2 === b.p2 &&
+    a.p3 === b.p3 && a.accent === b.accent && a.aux1 === b.aux1 && a.aux2 === b.aux2;
+}
+
+function createIdleBindGroup(
+  device: GPUDevice,
+  layout: GPUBindGroupLayout,
+  uniformBuffer: GPUBuffer,
+  placeholderView: GPUTextureView,
+  sampler: GPUSampler,
+  feedbackView: GPUTextureView
+) {
+  return device.createBindGroup({
+    layout,
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: placeholderView },
+      { binding: 2, resource: sampler },
+      { binding: 3, resource: feedbackView },
+      { binding: 4, resource: sampler }
+    ]
+  });
+}
+
 export const webGpuEngine = new WebGpuEngine();
+
+export function hashUniformData(data: Float32Array) {
+  let hash = 0x811c9dc5;
+  const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function writeTimelineUniformData(data: Float32Array, timeline: TimelineFrame) {
+  if (data.length < 30) throw new Error('timeline uniform buffer requires 30 words');
+  const words = new Uint32Array(data.buffer, data.byteOffset, data.length);
+  data[22] = timeline.positionSeconds;
+  data[23] = timeline.fixedStepSeconds;
+  words[24] = timeline.fixedStepIndex >>> 0;
+  data[25] = timeline.fixedStepPhase;
+  data[26] = timeline.playbackRate;
+  words[27] = timeline.generation >>> 0;
+  words[28] = timeline.deterministicSeed >>> 0;
+  words[29] = timeline.audioFrameId >>> 0;
+  return data;
+}

@@ -49,6 +49,13 @@ export async function requestLegacySyncAnalysis(
   options: LegacySyncAdapterOptions,
 ): Promise<AnalysisResultV1> {
   const fetchImpl = options.fetch ?? globalThis.fetch;
+  if (options.engineHint?.trim().toLowerCase() === "essentia") {
+    const rhythm = await postLegacyEndpoint(fetchImpl, options, "rhythm", formData);
+    const rhythmPayload = await readResponsePayload(rhythm);
+    if (!rhythm.ok) throw httpError(rhythmPayload, rhythm);
+    return normalizeLegacySyncAnalysis(rhythmPayload);
+  }
+
   const fast = await postLegacyEndpoint(fetchImpl, options, "fast", formData);
   const fastPayload = await readResponsePayload(fast);
   if (fast.ok) return normalizeLegacySyncAnalysis(fastPayload);

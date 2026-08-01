@@ -3,16 +3,21 @@ import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
 import { isVideoFile } from '$lib/media/videoFile';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { rackTop, rackBottom, videoLayers } from '$lib/stores/rack';
+import {
+  currentRackSlotForModule,
+  RACK_SLOT_IDS,
+  videoLayers
+} from '$lib/stores/rack';
 
 function rackClipTargets(clips: File[], startId?: string): string[] {
-  const slotIds = [...get(rackTop), ...get(rackBottom)];
+  const slotIds = [...RACK_SLOT_IDS];
   const current = get(videoLayers);
-  const targets: string[] = startId ? [startId] : [];
+  const resolvedStart = startId ? (currentRackSlotForModule(startId) ?? startId) : undefined;
+  const targets: string[] = resolvedStart ? [resolvedStart] : [];
 
   for (const id of slotIds) {
     if (targets.length >= clips.length) break;
-    if (startId && id === startId) continue;
+    if (resolvedStart && id === resolvedStart) continue;
     if (current[id]) continue;
     targets.push(id);
   }
@@ -26,23 +31,8 @@ function rackClipTargets(clips: File[], startId?: string): string[] {
   return targets;
 }
 
-async function setModuleVideo(id: string, file: File) {
-  const layers = get(videoLayers);
-  const prev = layers[id];
-  if (prev?.url.startsWith('blob:')) URL.revokeObjectURL(prev.url);
-
-  const url = URL.createObjectURL(file);
-  videoLayers.update((state) => ({
-    ...state,
-    [id]: { name: file.name, url, file }
-  }));
-  try {
-    await mediaRuntime.registerModuleClip(id, file.name, url, file);
-    await videoPool.prewarm(id);
-  } catch (err) {
-    console.error(`[clip] failed to load video for ${id}:`, err);
-    throw err;
-  }
+async function setSlotVideo(id: string, file: File) {
+  return mediaRuntime.registerModuleFileClip(id, file);
 }
 
 async function finishClipLoad() {
@@ -60,14 +50,15 @@ export async function loadRackClipsFromFiles(files: File[], startId?: string) {
   const targets = rackClipTargets(clips, startId);
   if (targets.length === 0) return { loaded: 0, targets: [] as string[] };
 
-  await Promise.all(
-    targets.map((moduleId, index) => {
+  const results = await Promise.all(
+    targets.map((slotId, index) => {
       const file = clips[index];
-      return file ? setModuleVideo(moduleId, file) : Promise.resolve();
+      return file ? setSlotVideo(slotId, file) : Promise.resolve();
     })
   );
-  await finishClipLoad();
-  return { loaded: targets.length, targets };
+  const loadedTargets = targets.filter((_, index) => results[index]?.status === 'success');
+  if (loadedTargets.length > 0) await finishClipLoad();
+  return { loaded: loadedTargets.length, targets: loadedTargets, results };
 }
 
 /** QA helper — fetch manifest clips as File objects (simulates CLIPS picker). */

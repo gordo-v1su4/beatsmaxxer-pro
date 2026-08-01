@@ -219,6 +219,13 @@ export class LiveScheduleRuntime<T = string> {
   }
 
   configureTimeSampler(input: LiveTimeSamplerInput) {
+    if (input.sourceKey !== this.timeSamplerInput.sourceKey) {
+      this.timeSampler.reset();
+      this.frame = null;
+      this.accent = null;
+      this.lastTriggerScanSeconds = null;
+      this.lastTriggerGeneration = null;
+    }
     this.timeSamplerInput = { ...input };
   }
 

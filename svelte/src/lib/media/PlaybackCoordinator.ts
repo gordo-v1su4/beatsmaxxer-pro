@@ -4,7 +4,7 @@ import {
 	type FrameLease,
 	type FrameLeaseObserver
 } from '$lib/media/FrameCache';
-import type { DecodedFrameLike, MediaFallback } from '$lib/media/types';
+import type { DecodedFrameLike } from '$lib/media/types';
 
 export const PLAYBACK_LANE_ROLES = ['pgm', 'prewarm', 'overlap'] as const;
 export type PlaybackLaneRole = (typeof PLAYBACK_LANE_ROLES)[number];
@@ -38,7 +38,7 @@ export type PressureAction =
 	| 'prewarm-frames-dropped'
 	| 'prewarm-decoder-closed'
 	| 'overlap-disabled'
-	| 'html-fallback-selected';
+	| 'program-lane-released';
 
 export interface PlaybackCoordinatorSnapshot {
 	slots: Record<
@@ -55,7 +55,6 @@ export interface PlaybackCoordinatorSnapshot {
 	activeLeases: number;
 	activeDecoders: number;
 	overlapEnabled: boolean;
-	fallback: MediaFallback;
 	rendererResourceGeneration: number;
 	transport: PlaybackTransportState;
 	pressure: {
@@ -67,7 +66,6 @@ export interface PlaybackCoordinatorSnapshot {
 
 export interface PlaybackCoordinatorOptions {
 	onTelemetry?: (snapshot: PlaybackCoordinatorSnapshot) => void;
-	initialPlayback?: MediaFallback;
 }
 
 function isLaneRole(value: string): value is PlaybackLaneRole {
@@ -101,10 +99,6 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 	private disposed = false;
 	private overlapEnabled = true;
 	private rendererResourceGeneration = 0;
-	private fallback: MediaFallback = {
-		path: 'native-static',
-		reason: 'media-core-not-selected'
-	};
 	private transport: PlaybackTransportState = {
 		presentationTimeSeconds: 0,
 		playing: false,
@@ -120,9 +114,6 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 			},
 			onMetrics: () => this.report()
 		});
-		if (options.initialPlayback) {
-			this.fallback = { ...options.initialPlayback };
-		}
 	}
 
 	activate(
@@ -297,22 +288,12 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 		lane.decoder?.close();
 		lane.decoder = null;
 		lane.decodeBatchActive = false;
-		this.fallback = {
-			path: 'html-video-webgl2',
-			reason: 'decode-queue-budget-exceeded'
-		};
 		this.report();
 		return false;
 	}
 
 	updateTransport(transport: PlaybackTransportState) {
 		this.transport = { ...transport };
-		this.report();
-	}
-
-	selectPlaybackPath(fallback: MediaFallback) {
-		this.assertOpen();
-		this.fallback = { ...fallback };
 		this.report();
 	}
 
@@ -327,10 +308,6 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 				this.slots[role] = null;
 			}
 			this.inactiveCache.clear();
-			this.fallback = {
-				path: 'html-video-webgl2',
-				reason: 'renderer-device-lost'
-			};
 		}
 		this.report();
 	}
@@ -377,7 +354,6 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 			activeLeases: this.leases.size,
 			activeDecoders: PLAYBACK_LANE_ROLES.filter((role) => this.slots[role]?.decoder).length,
 			overlapEnabled: this.overlapEnabled,
-			fallback: { ...this.fallback },
 			rendererResourceGeneration: this.rendererResourceGeneration,
 			transport: { ...this.transport },
 			pressure: {
@@ -455,11 +431,7 @@ export class PlaybackCoordinator<Frame extends DecodedFrameLike> {
 		this.releaseLeases('pgm');
 		this.releaseLane(this.slots.pgm);
 		this.slots.pgm = null;
-		this.fallback = {
-			path: 'html-video-webgl2',
-			reason: 'decoded-frame-pressure'
-		};
-		return 'html-fallback-selected';
+		return 'program-lane-released';
 	}
 
 	private releaseLane(lane: PlaybackLane<Frame> | null) {

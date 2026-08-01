@@ -9,17 +9,20 @@ export interface RegisteredClip {
 
 export type ClipRegistryTelemetryCallback = (objectUrls: number) => void;
 
+/** Owns every object URL used by a file-backed clip, including staged replacements. */
 export class ClipRegistry {
 	private readonly clips = new Map<string, RegisteredClip>();
+	private readonly staged = new Set<RegisteredClip>();
 	private readonly references = new Map<RegisteredClip, number>();
 	private readonly retired = new Set<RegisteredClip>();
+	private readonly released = new Set<RegisteredClip>();
 	private revision = 0;
 
 	constructor(private readonly onTelemetry: ClipRegistryTelemetryCallback = () => {}) {}
 
-	registerUrl(id: string, name: string, url: string) {
+	stageUrl(id: string, name: string, url: string) {
 		this.validate(id, name, url);
-		return this.replace({
+		return this.stage({
 			id,
 			name,
 			url,
@@ -28,13 +31,13 @@ export class ClipRegistry {
 		});
 	}
 
-	registerFile(id: string, file: File) {
+	stageFile(id: string, file: File) {
 		if (!id.trim()) throw new Error('clip-id-required');
 		if (!(file instanceof File)) throw new Error('clip-file-required');
 		if (!file.name.trim()) throw new Error('clip-name-required');
 		const url = URL.createObjectURL(file);
 		try {
-			return this.replace({
+			return this.stage({
 				id,
 				name: file.name,
 				url,
@@ -48,6 +51,30 @@ export class ClipRegistry {
 		}
 	}
 
+	commit(clip: RegisteredClip) {
+		if (!this.staged.delete(clip)) throw new Error('clip-stage-not-active');
+		const previous = this.clips.get(clip.id) ?? null;
+		this.clips.set(clip.id, clip);
+		if (previous) this.retire(previous);
+		this.report();
+		return { clip, previous };
+	}
+
+	rollback(clip: RegisteredClip) {
+		if (!this.staged.delete(clip)) return false;
+		this.retire(clip);
+		this.report();
+		return true;
+	}
+
+	registerUrl(id: string, name: string, url: string) {
+		return this.commit(this.stageUrl(id, name, url)).clip;
+	}
+
+	registerFile(id: string, file: File) {
+		return this.commit(this.stageFile(id, file)).clip;
+	}
+
 	get(id: string) {
 		return this.clips.get(id) ?? null;
 	}
@@ -57,7 +84,11 @@ export class ClipRegistry {
 	}
 
 	retain(clip: RegisteredClip) {
-		if (this.clips.get(clip.id) !== clip && !this.retired.has(clip)) {
+		if (
+			this.clips.get(clip.id) !== clip &&
+			!this.staged.has(clip) &&
+			!this.retired.has(clip)
+		) {
 			throw new Error('clip-source-not-registered');
 		}
 		this.references.set(clip, (this.references.get(clip) ?? 0) + 1);
@@ -65,13 +96,15 @@ export class ClipRegistry {
 
 	releaseReference(clip: RegisteredClip) {
 		const current = this.references.get(clip) ?? 0;
-		if (current <= 1) this.references.delete(clip);
+		if (current === 0) return false;
+		if (current === 1) this.references.delete(clip);
 		else this.references.set(clip, current - 1);
 		if (this.retired.has(clip) && !this.references.has(clip)) {
 			this.retired.delete(clip);
 			this.release(clip);
 			this.report();
 		}
+		return true;
 	}
 
 	remove(id: string) {
@@ -84,27 +117,17 @@ export class ClipRegistry {
 	}
 
 	dispose() {
+		for (const clip of this.staged) this.retire(clip);
 		for (const clip of this.clips.values()) this.retire(clip);
+		this.staged.clear();
 		this.clips.clear();
 		this.report();
 	}
 
-	private replace(clip: RegisteredClip) {
+	private stage(clip: RegisteredClip) {
 		this.validate(clip.id, clip.name, clip.url);
-		const previous = this.clips.get(clip.id);
-		const nextOwned = new Set([
-			...[...this.clips.values()].filter((current) => current !== previous),
-			...this.retired.values(),
-			clip
-		]);
-		if (previous && (this.references.get(previous) ?? 0) > 0) {
-			nextOwned.add(previous);
-		}
-		this.onTelemetry(
-			[...nextOwned].filter((current) => current.objectUrlOwned).length
-		);
-		this.clips.set(clip.id, clip);
-		if (previous) this.retire(previous);
+		this.staged.add(clip);
+		this.report();
 		return clip;
 	}
 
@@ -115,6 +138,7 @@ export class ClipRegistry {
 	}
 
 	private retire(clip: RegisteredClip) {
+		if (this.released.has(clip)) return;
 		if ((this.references.get(clip) ?? 0) > 0) {
 			this.retired.add(clip);
 			return;
@@ -123,11 +147,13 @@ export class ClipRegistry {
 	}
 
 	private release(clip: RegisteredClip) {
+		if (this.released.has(clip)) return;
+		this.released.add(clip);
 		if (clip.objectUrlOwned) URL.revokeObjectURL(clip.url);
 	}
 
 	private report() {
-		const owned = new Set([...this.clips.values(), ...this.retired.values()]);
+		const owned = new Set([...this.clips.values(), ...this.staged, ...this.retired]);
 		this.onTelemetry([...owned].filter((clip) => clip.objectUrlOwned).length);
 	}
 }

@@ -1,8 +1,6 @@
 import type { DeckFrameHandleRef, HotDeckReadiness, HotDeckState } from '$lib/engine/contracts';
 
 export type HotDeckId = string;
-export type DecodeBackend = 'webcodecs' | 'htmlvideo' | 'native_ffmpeg';
-export type RendererBackend = 'webgpu' | 'webgl2' | 'htmlvideo';
 
 export type HotDeckTelemetryEvent =
 	| 'hotDeck.prepare.start'
@@ -24,8 +22,6 @@ export interface HotDeckLifecycleOptions {
 	id: HotDeckId;
 	slotId?: string;
 	sourceId?: string;
-	rendererBackend?: RendererBackend;
-	decodeBackend?: DecodeBackend;
 	now?: () => number;
 	onTelemetry?: (event: HotDeckTelemetryEvent, payload: Record<string, unknown>) => void;
 	onReleaseFrame?: (frame: DeckFrameHandleRef) => void;
@@ -60,14 +56,9 @@ export class HotDeckLifecycle {
 	private preparedFrame: DeckFrameHandleRef | null = null;
 	private lastError: string | null = null;
 	private updatedAtMs: number;
-	private readonly rendererBackend: RendererBackend;
-	private readonly decodeBackend: DecodeBackend;
-
 	constructor(private readonly options: HotDeckLifecycleOptions) {
 		this.slotId = options.slotId ?? '';
 		this.sourceId = options.sourceId ?? '';
-		this.rendererBackend = options.rendererBackend ?? 'webgpu';
-		this.decodeBackend = options.decodeBackend ?? 'webcodecs';
 		this.updatedAtMs = (options.now ?? Date.now)();
 	}
 

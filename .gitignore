@@ -42,6 +42,7 @@ yarn.lock
 pnpm-lock.yaml
 
 # Local QA / scratch (large media, Chrome profiles, benchmarks)
+.artifacts/
 .tmp/
 test_media/
 docs/preview.png
