@@ -7,6 +7,9 @@ import { videoPool } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { VideoTextureCache } from './VideoTextureCache';
+import { isTauriRuntime } from '$lib/platform/runtime';
+import { tauriNativeSource } from '$lib/media/sources/TauriNativeSource';
+import { isNativeFrameSurface } from '$lib/media/NativeFrameSurface';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -465,7 +468,9 @@ export class WebGpuEngine {
     const shaderKey = def?.shaderKey ?? moduleId;
     const effectMode = SHADER_EFFECT_MODE[shaderKey] ?? 0;
     const video = videoPool.get(sourceId);
-    const hasVideo = video && videoPool.hasReadyFrame(sourceId) ? 1 : 0;
+    const nativeSurface = isTauriRuntime() ? tauriNativeSource.getSurface(sourceId) : null;
+    const hasNative = isNativeFrameSurface(nativeSurface) ? 1 : 0;
+    const hasVideo = hasNative || (video && videoPool.hasReadyFrame(sourceId) ? 1 : 0);
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
@@ -533,7 +538,31 @@ export class WebGpuEngine {
     // one shot instead of a guessing round-trip.
     let bindGroup: GPUBindGroup;
     let pipeline = binding.idlePipeline;
-    if (shaderHasVideo && video) {
+    if (shaderHasVideo && isNativeFrameSurface(nativeSurface)) {
+      try {
+        const nativeView = this.videoTextureCache.uploadRgba(this.device, sourceId, nativeSurface);
+        bindGroup = createIdleBindGroup(
+          this.device,
+          binding.idleBindGroupLayout,
+          binding.uniformBuffer,
+          nativeView,
+          this.sampler,
+          readView
+        );
+        pipeline = binding.idlePipeline;
+        cachedTextureUploaded = true;
+        cachedTextureBound = true;
+      } catch {
+        bindGroup = createIdleBindGroup(
+          this.device,
+          binding.idleBindGroupLayout,
+          binding.uniformBuffer,
+          binding.placeholderFeedbackView,
+          this.sampler,
+          readView
+        );
+      }
+    } else if (shaderHasVideo && video) {
       try {
         bindGroup = importAndBindExternalVideo(
           this.device,

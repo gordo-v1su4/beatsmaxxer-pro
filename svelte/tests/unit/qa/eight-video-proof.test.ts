@@ -104,6 +104,12 @@ describe('eight-video research benchmark gate', () => {
     expect(evaluateEightVideoProof(report())).toEqual({ passed: true, blockers: [] });
   });
 
+  test('records optional desktop runtime label without changing web gate rules', () => {
+    const value = report();
+    value.environment.runtime = 'tauri-macos-native';
+    expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
+  });
+
   test('rejects serial, duplicate, short, and synthetic evidence', () => {
     const value = report();
     value.observationMs = 29_999;

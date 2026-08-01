@@ -65,6 +65,9 @@
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
     const params = new URLSearchParams(window.location.search);
+    const { initVideoSourcePort } = await import('$lib/platform/videoSource');
+    await initVideoSourcePort();
+
     if (params.has('qa')) {
       try {
         await fetchAndLoadQaMedia();

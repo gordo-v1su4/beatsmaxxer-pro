@@ -114,6 +114,8 @@ export interface EightVideoProofReport {
     userAgent: string;
     headless: boolean;
     commandLine: string[];
+    /** Optional runtime label, e.g. `web`, `tauri-macos-native`. */
+    runtime?: string;
     gpu: {
       vendor: string;
       architecture: string;

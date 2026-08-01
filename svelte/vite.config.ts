@@ -11,6 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
 export default defineConfig(({ mode, command }) => {
+	const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_PLATFORM);
 	const env = loadEnv(mode, repoRoot, '');
 	const essentiaProxyConfig = analysisProxyConfigFromEnv(
 		env,
@@ -51,7 +52,13 @@ export default defineConfig(({ mode, command }) => {
 		},
 		resolve: {
 			alias: {
-				$lib: path.resolve('./src/lib')
+				$lib: path.resolve('./src/lib'),
+				...(isTauriBuild
+					? {}
+					: {
+							'@tauri-apps/api/core': path.resolve('./src/lib/platform/tauri-stubs/core.ts'),
+							'@tauri-apps/api/event': path.resolve('./src/lib/platform/tauri-stubs/event.ts')
+						})
 			}
 		},
 		ssr: {

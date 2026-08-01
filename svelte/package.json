@@ -24,10 +24,15 @@
 		"capture:eight-video-proof": "bash scripts/capture-eight-video-proof.sh",
 		"verify:eight-video-proof": "bash scripts/verify-eight-video-proof.sh",
 		"verify:browser": "bash scripts/verify-ui.sh && bash scripts/verify-playback.sh && bash scripts/verify-interaction.sh && bash scripts/verify-stutter.sh && bash scripts/verify-audio.sh && bash scripts/verify-beat.sh && bash scripts/verify-visual-proof.sh",
+		"verify:cloud-smoke": "bash scripts/verify-cloud-smoke.sh",
+		"verify:desktop-eight-video": "bash scripts/verify-desktop-eight-video-proof.sh",
 		"test:local": "bash scripts/verify-local.sh",
 		"verify:all": "bash scripts/verify-local.sh",
 		"demo": "bun scripts/open-qa-demo.ts",
 		"open": "bash scripts/open-native.sh"
+	},
+	"optionalDependencies": {
+		"@tauri-apps/api": "^2.4.0"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",
