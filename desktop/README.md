@@ -38,8 +38,8 @@ From `desktop/`:
 
 ```bash
 bun install
-cargo tauri dev
-cargo tauri build
+bunx tauri dev
+bunx tauri build
 ```
 
 ## Architecture
