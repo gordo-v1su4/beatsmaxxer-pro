@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   analysisProxyConfigFromEnv,
+  isAnalysisProxyConfigured,
   parseMultipartContentType,
   proxyAnalysisRequest,
   type AnalysisProxyConfig,
@@ -32,6 +33,21 @@ function request(body = new Uint8Array([1, 2, 3])) {
 }
 
 describe("analysis proxy policy", () => {
+  it("accepts Tailscale CGNAT http bases for the development proxy", () => {
+    expect(isAnalysisProxyConfigured({
+      enabled: true,
+      apiBaseUrl: "http://100.73.126.36:8080",
+      apiKey: "server-secret",
+      deploymentMode: "development",
+    })).toBe(true);
+    expect(isAnalysisProxyConfigured({
+      enabled: true,
+      apiBaseUrl: "http://10.0.0.5:8080",
+      apiKey: "server-secret",
+      deploymentMode: "development",
+    })).toBe(false);
+  });
+
   it("is default-off and ignores client-visible aliases", () => {
     expect(analysisProxyConfigFromEnv({
       VITE_ESSENTIA_API_BASE_URL: "https://leak.invalid",
