@@ -11,7 +11,9 @@ macOS-first desktop shell for Beat Surfer Pro. Embeds the same Svelte + WebGPU U
 
 ### Runtime secrets (desktop dev)
 
-Create a repo-root `.env` from [`.env.example`](../.env.example) — `dev-desktop.sh` loads it automatically.
+Create a repo-root **`.env`** from [`.env.example`](../.env.example) — `dev-desktop.sh` loads it automatically.
+
+> **`.env.example` is intentionally empty** (template for git). Put real values only in **`.env`** at the repo root. The app never reads `.env.example`.
 
 Set before `bun run dev:desktop` (or in `.env`):
 
