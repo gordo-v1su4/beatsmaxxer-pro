@@ -2,6 +2,26 @@
 
 macOS-first desktop shell for Beat Surfer Pro. Embeds the same Svelte + WebGPU UI from [`../svelte/`](../svelte/) and adds a native decode path via Rust.
 
+## Fresh machine setup (macOS)
+
+Desktop work lives on **`cursor/desktop-tauri-e0e8`** (not `main`). `.env` is gitignored — copy secrets manually to each machine.
+
+```bash
+git clone https://github.com/gordo-v1su4/beat-surfer-pro.git
+cd beat-surfer-pro
+git checkout cursor/desktop-tauri-e0e8
+git pull origin cursor/desktop-tauri-e0e8
+
+cp .env.example .env
+# Edit .env — ESSENTIA_API_BASE_URL + ESSENTIA_API_KEY (for SONG → ANALYZE)
+
+bun install
+bun run build
+bun run dev:desktop
+```
+
+Optional release build: `bun run build:desktop`
+
 ## Prerequisites
 
 - macOS (VideoToolbox decode — Phase 2)
