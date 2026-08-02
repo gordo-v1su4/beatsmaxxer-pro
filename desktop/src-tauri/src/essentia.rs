@@ -4,6 +4,18 @@ use reqwest::blocking::multipart;
 use reqwest::blocking::Client;
 
 #[tauri::command]
+pub fn essentia_configured() -> bool {
+    !std::env::var("ESSENTIA_API_BASE_URL")
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+        && !std::env::var("ESSENTIA_API_KEY")
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+}
+
+#[tauri::command]
 pub fn analyze_rhythm(file_name: String, bytes: Vec<u8>) -> Result<String, String> {
     let base_url = std::env::var("ESSENTIA_API_BASE_URL")
         .map_err(|_| "ESSENTIA_API_BASE_URL is not set".to_string())?

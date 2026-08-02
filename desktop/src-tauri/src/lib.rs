@@ -76,6 +76,7 @@ pub fn run() {
             ipc::probe_clip,
             ipc::start_decode,
             ipc::stage_clip_file,
+            essentia::essentia_configured,
             essentia::analyze_rhythm
         ])
         .run(tauri::generate_context!())

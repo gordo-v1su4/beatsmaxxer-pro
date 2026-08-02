@@ -5,6 +5,7 @@ import {
 } from "$lib/analysis/adapters/legacySync";
 import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
 import { isTauriRuntime } from "$lib/platform/runtime";
+import { isDesktopEssentiaConfigured, tauriInvoke } from "$lib/platform/tauriInvoke";
 
 export interface EssentiaRhythmAnalysis {
   bpm: number;
@@ -34,6 +35,12 @@ export interface EssentiaRhythmAnalysis {
 
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
   if (isTauriRuntime()) {
+    const configured = await isDesktopEssentiaConfigured();
+    if (!configured) {
+      throw new Error(
+        "Essentia is not configured for desktop. Set ESSENTIA_API_BASE_URL and ESSENTIA_API_KEY in .env, then restart bun run dev:desktop."
+      );
+    }
     const analysisFile = await prepareAnalysisUpload(file);
     return fetchEssentiaViaTauri(analysisFile);
   }
@@ -49,11 +56,10 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
 }
 
 async function fetchEssentiaViaTauri(analysisFile: File): Promise<EssentiaRhythmAnalysis> {
-  const { invoke } = await import("@tauri-apps/api/core");
   const bytes = new Uint8Array(await analysisFile.arrayBuffer());
-  const payload = await invoke<string>("analyze_rhythm", {
+  const payload = await tauriInvoke<string>("analyze_rhythm", {
     fileName: analysisFile.name,
-    bytes: Array.from(bytes),
+    bytes,
   });
   return normalizeRhythmAnalysis(JSON.parse(payload));
 }

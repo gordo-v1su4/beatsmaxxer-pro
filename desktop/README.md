@@ -11,13 +11,16 @@ macOS-first desktop shell for Beat Surfer Pro. Embeds the same Svelte + WebGPU U
 
 ### Runtime secrets (desktop dev)
 
-Set in your shell or Cursor Runtime Secrets before `bun run dev:desktop`:
+Create a repo-root `.env` from [`.env.example`](../.env.example) — `dev-desktop.sh` loads it automatically.
+
+Set before `bun run dev:desktop` (or in `.env`):
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `ESSENTIA_ANALYSIS_ENABLED` | For ANALYZE | Must be `true` for hosted rhythm |
-| `ESSENTIA_API_BASE_URL` | For ANALYZE | e.g. `https://essentia.v1su4.dev` |
+| `ESSENTIA_API_BASE_URL` | For ANALYZE | e.g. `https://essentia.v1su4.dev` or `http://100.x.x.x` (Tailscale) |
 | `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust `analyze_rhythm` command uses it |
+
+`ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.
 
 Uploaded clips are staged to the app cache via `stage_clip_file` and decoded through `bsp-decode` → `bsp://frame` → WebGPU.
 
