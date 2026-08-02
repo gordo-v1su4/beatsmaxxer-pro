@@ -1,0 +1,16 @@
+{
+  "//": "Merge this fragment into the existing Tailscale policy; do not replace the whole policy.",
+  "tagOwners": {
+    "tag:cursor-agent": ["autogroup:admin"]
+  },
+  "hosts": {
+    "home-essentia": "100.x.x.x"
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["tag:cursor-agent"],
+      "dst": ["home-essentia:443"]
+    }
+  ]
+}

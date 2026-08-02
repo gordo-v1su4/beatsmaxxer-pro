@@ -16,12 +16,16 @@ Instructions for AI coding agents working in this repository.
 
 - Cursor automatically loads the repository-root [`.cursor/environment.json`](.cursor/environment.json).
 - Cloud startup is [`scripts/cloud-agent-start.sh`](scripts/cloud-agent-start.sh); do **not** create `.env` files in the agent VM.
-- Dev server: **`http://127.0.0.1:5174`** (Svelte in `svelte/`).
+- The installer pins **Bun 1.3.10**, **Tailscale**, and optional **bws** with SHA-256 verified downloads (same pattern as [project-stack-structure Hermes PR #5](https://github.com/gordo-v1su4/project-stack-structure/pull/5)).
+- Dev server: **`http://127.0.0.1:5174`** (Svelte in `svelte/`). Vite runs in a process group for reliable cleanup.
+- Optional **Tailscale userspace** networking when `TS_AUTHKEY` is set — reach tailnet-only Essentia hosts from the cloud VM.
+- Secret mode is explicit: either provide both `BWS_ACCESS_TOKEN` and `BWS_PROJECT_ID`, or provide app variables as Cursor environment-scoped secrets. Never use a broad org Bitwarden token in Cursor.
 - QA fixtures: `bash svelte/scripts/setup-qa-media.sh` (bundled tiny `.webm`, not `~/Downloads/archive`).
 - Before claiming the app is running, run `cd svelte && bash scripts/verify-cloud-smoke.sh` — must exit 0.
 - If port 5174 is closed or smoke fails, **stop and fix the environment** — do not claim success.
 - Never mark "8-video proof passed" from cloud alone. Full proof requires native Chrome + archive MP4s locally.
-- Setup runbook: [`docs/cursor-cloud-setup.md`](docs/cursor-cloud-setup.md).
+- Setup runbook: [`cursor-cloud-setup/README.md`](cursor-cloud-setup/README.md).
+- Secrets inventory: [`cursor-cloud-setup/docs/secrets-inventory.md`](cursor-cloud-setup/docs/secrets-inventory.md).
 
 ### Cloud secrets (Runtime Secrets — names only)
 
@@ -30,6 +34,8 @@ Instructions for AI coding agents working in this repository.
 | `ESSENTIA_API_KEY` | Optional | Without it, rhythm stub is used |
 | `ESSENTIA_API_BASE_URL` | Optional | Hosted Essentia |
 | `TS_AUTHKEY` | Optional | Tailscale if Essentia is tailnet-only |
+| `BWS_ACCESS_TOKEN` | Optional | BWS mode — with `BWS_PROJECT_ID` |
+| `BWS_PROJECT_ID` | Optional | BWS mode — with `BWS_ACCESS_TOKEN` |
 
 ## Commands
 

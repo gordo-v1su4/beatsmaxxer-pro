@@ -7,7 +7,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SVELTE="$ROOT/svelte"
 DEV_HOST="127.0.0.1"
 DEV_PORT=5174
+DEV_URL="http://${DEV_HOST}:${DEV_PORT}/"
+TAILSCALED_PID=""
 APP_PGID=""
+TAILSCALE_SOCKET="/tmp/tailscaled-cursor-bsp.sock"
+TAILSCALE_STATE="/tmp/tailscaled-cursor-bsp.state"
 
 cleanup() {
   if [[ -n "$APP_PGID" ]] && kill -0 -- "-$APP_PGID" 2>/dev/null; then
@@ -18,6 +22,10 @@ cleanup() {
     done
     kill -KILL -- "-$APP_PGID" 2>/dev/null || true
   fi
+  if [[ -n "$TAILSCALED_PID" ]] && sudo kill -0 "$TAILSCALED_PID" 2>/dev/null; then
+    sudo kill "$TAILSCALED_PID" 2>/dev/null || true
+  fi
+  sudo rm -f "$TAILSCALE_SOCKET" "$TAILSCALE_STATE" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 143' INT TERM
@@ -31,31 +39,146 @@ log_secret() {
   fi
 }
 
-echo "[cloud-agent] Beat Surfer Pro — Svelte + WebGPU (web only)"
-log_secret ESSENTIA_API_KEY
-log_secret ESSENTIA_API_BASE_URL
-log_secret TS_AUTHKEY
+start_tailscale() {
+  if [[ -z "${TS_AUTHKEY:-}" ]]; then
+    echo "[cloud-agent] TS_AUTHKEY is not set; private Tailnet services will be unavailable." >&2
+    return 0
+  fi
 
-cd "$SVELTE"
-bash scripts/setup-qa-media.sh
+  local tailscaled_bin
+  local tailscale_bin
+  tailscaled_bin="$(command -v tailscaled)" || {
+    echo "[cloud-agent] tailscaled is not installed." >&2
+    exit 1
+  }
+  tailscale_bin="$(command -v tailscale)" || {
+    echo "[cloud-agent] tailscale is not installed." >&2
+    exit 1
+  }
 
-if ! curl -sf "http://${DEV_HOST}:${DEV_PORT}/" >/dev/null 2>&1; then
-  echo "[cloud-agent] starting vite on ${DEV_HOST}:${DEV_PORT}..."
-  setsid bun run dev --host "$DEV_HOST" --port "$DEV_PORT" &
+  sudo rm -f "$TAILSCALE_SOCKET"
+  sudo "$tailscaled_bin" \
+    --state="$TAILSCALE_STATE" \
+    --socket="$TAILSCALE_SOCKET" \
+    --tun=userspace-networking \
+    --outbound-http-proxy-listen=localhost:1054 \
+    --socks5-server=localhost:1055 &
+  TAILSCALED_PID=$!
+
+  for _ in $(seq 1 30); do
+    [[ -S "$TAILSCALE_SOCKET" ]] && break
+    sleep 1
+  done
+  [[ -S "$TAILSCALE_SOCKET" ]] || {
+    echo "[cloud-agent] tailscaled control socket did not become ready." >&2
+    exit 1
+  }
+
+  sudo "$tailscale_bin" --socket="$TAILSCALE_SOCKET" up \
+    --auth-key="$TS_AUTHKEY" \
+    --hostname=cursor-beat-surfer-pro \
+    --accept-dns=true
+  unset TS_AUTHKEY
+
+  export ALL_PROXY="socks5h://localhost:1055/"
+  export HTTP_PROXY="http://localhost:1054/"
+  export HTTPS_PROXY="http://localhost:1054/"
+  export NO_PROXY="localhost,127.0.0.1"
+  echo "[cloud-agent] Tailscale userspace networking is ready."
+}
+
+validate_runtime() {
+  command -v bun >/dev/null 2>&1 || {
+    echo "[cloud-agent] Bun is not installed; run the Cursor install step first." >&2
+    exit 1
+  }
+  command -v setsid >/dev/null 2>&1 || {
+    echo "[cloud-agent] setsid is not installed." >&2
+    exit 1
+  }
+  [[ -d "$SVELTE/node_modules" ]] || {
+    echo "[cloud-agent] svelte/node_modules is missing; run the Cursor install step first." >&2
+    exit 1
+  }
+}
+
+validate_secret_mode() {
+  local have_token=0
+  local have_project=0
+  [[ -n "${BWS_ACCESS_TOKEN:-}" ]] && have_token=1
+  [[ -n "${BWS_PROJECT_ID:-}" ]] && have_project=1
+
+  if ((have_token != have_project)); then
+    echo "[cloud-agent] Set both BWS_ACCESS_TOKEN and BWS_PROJECT_ID, or neither." >&2
+    exit 1
+  fi
+
+  if ((have_token)); then
+    command -v bws >/dev/null 2>&1 || {
+      echo "[cloud-agent] bws is not installed." >&2
+      exit 1
+    }
+    if ! bws project get "$BWS_PROJECT_ID" >/dev/null; then
+      echo "[cloud-agent] BWS authentication/project access failed." >&2
+      exit 1
+    fi
+    echo "[cloud-agent] Bitwarden project access is valid." >&2
+    echo "bws"
+  else
+    echo "cursor"
+  fi
+}
+
+start_app() {
+  local mode="$1"
+  local status=0
+  local -a app_command=(
+    bun run dev --host "$DEV_HOST" --port "$DEV_PORT"
+  )
+
+  cd "$SVELTE"
+  bash scripts/setup-qa-media.sh
+
+  if curl -sf "$DEV_URL" >/dev/null 2>&1; then
+    echo "[cloud-agent] dev server already running at $DEV_URL"
+    while sleep 3600; do :; done
+  fi
+
+  if [[ "$mode" == "bws" ]]; then
+    echo "[cloud-agent] Starting Beat Surfer with Bitwarden-injected app secrets."
+    setsid bws run --project-id "$BWS_PROJECT_ID" -- "${app_command[@]}" &
+  else
+    echo "[cloud-agent] Starting Beat Surfer with Cursor environment-scoped secrets."
+    setsid "${app_command[@]}" &
+  fi
   APP_PGID=$!
+
   for _ in $(seq 1 80); do
-    if curl -sf "http://${DEV_HOST}:${DEV_PORT}/" >/dev/null 2>&1; then
-      echo "[cloud-agent] dev server ready at http://${DEV_HOST}:${DEV_PORT}/"
+    if curl -sf "$DEV_URL" >/dev/null 2>&1; then
+      echo "[cloud-agent] dev server ready at $DEV_URL"
       break
     fi
     sleep 0.25
   done
-  curl -sf "http://${DEV_HOST}:${DEV_PORT}/" >/dev/null || {
+  curl -sf "$DEV_URL" >/dev/null || {
     echo "[cloud-agent] dev server failed to start on port ${DEV_PORT}" >&2
     exit 1
   }
-else
-  echo "[cloud-agent] dev server already running on port ${DEV_PORT}"
-fi
 
-wait "$APP_PGID" 2>/dev/null || true
+  wait "$APP_PGID" || status=$?
+  cleanup
+  APP_PGID=""
+  return "$status"
+}
+
+echo "[cloud-agent] Beat Surfer Pro — Svelte + WebGPU (web only)"
+log_secret ESSENTIA_API_KEY
+log_secret ESSENTIA_API_BASE_URL
+log_secret TS_AUTHKEY
+log_secret BWS_ACCESS_TOKEN
+log_secret BWS_PROJECT_ID
+
+start_tailscale
+validate_runtime
+secret_mode="$(validate_secret_mode)"
+start_app "$secret_mode"
