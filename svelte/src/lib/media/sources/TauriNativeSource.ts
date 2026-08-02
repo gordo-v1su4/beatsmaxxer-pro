@@ -39,6 +39,10 @@ export interface NativeDecodeStats {
     surfaces: Record<string, {
       surfaceId: string;
       sourceId: string;
+      effectModuleId: string;
+      effectMode: number;
+      effectRequestedFrame: number;
+      effectAppliedFrame: number;
       width: number;
       height: number;
       timestampUs: number;

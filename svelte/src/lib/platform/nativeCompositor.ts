@@ -1,8 +1,15 @@
+import { get } from 'svelte/store';
+import { getModuleDef } from '$lib/modules/catalog';
 import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
 import { isTauriRuntime } from '$lib/platform/runtime';
+import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
+import { pgmSource } from '$lib/stores/pgm';
+import { rackBottom, rackTop } from '$lib/stores/rack';
 
 interface NativeSurfaceRect {
   surfaceId: string;
+  effectModuleId: string;
+  effectMode: number;
   x: number;
   y: number;
   width: number;
@@ -21,6 +28,15 @@ export function startNativeCompositorBridge() {
   let pendingFrame = 0;
   let resizeObserver: ResizeObserver | null = null;
   let mutationObserver: MutationObserver | null = null;
+  let storeUnsubscribers: Array<() => void> = [];
+
+  const moduleForSurface = (surfaceId: string) => {
+    if (surfaceId === 'pgm') return get(pgmSource);
+    const match = /^(top|bottom)-(\d+)$/.exec(surfaceId);
+    if (!match) return '';
+    const index = Number(match[2]);
+    return (match[1] === 'top' ? get(rackTop) : get(rackBottom))[index] ?? '';
+  };
 
   const schedule = () => {
     if (disposed || pendingFrame) return;
@@ -47,10 +63,16 @@ export function startNativeCompositorBridge() {
     for (const canvas of document.querySelectorAll<HTMLCanvasElement>('canvas[data-canvas-id]')) {
       const surfaceId = canvas.dataset.canvasId;
       if (!surfaceId) continue;
+      const effectModuleId = moduleForSurface(surfaceId) || canvas.dataset.nativeModuleId || '';
+      const effectMode = SHADER_EFFECT_MODE[
+        getModuleDef(effectModuleId)?.shaderKey ?? effectModuleId
+      ] ?? Number(canvas.dataset.nativeEffectMode ?? 0);
       const rect = canvas.getBoundingClientRect();
       const style = getComputedStyle(canvas);
       rects.push({
         surfaceId,
+        effectModuleId,
+        effectMode,
         x: Math.round(rect.left * scale),
         y: Math.round(rect.top * scale),
         width: Math.round(rect.width * scale),
@@ -80,8 +102,29 @@ export function startNativeCompositorBridge() {
 
   window.addEventListener('resize', schedule);
   window.addEventListener('scroll', schedule, true);
-  mutationObserver = new MutationObserver(observeCanvases);
-  mutationObserver.observe(document.body, { childList: true, subtree: true });
+  mutationObserver = new MutationObserver((mutations) => {
+    if (mutations.some((mutation) => mutation.type === 'childList')) {
+      observeCanvases();
+      return;
+    }
+    // Effect swaps only change two data attributes. Send them immediately so
+    // Rust can select the new shader on the next native presentation.
+    void syncLayout();
+  });
+  mutationObserver.observe(document.body, {
+    attributes: true,
+    attributeFilter: ['data-native-module-id', 'data-native-effect-mode'],
+    childList: true,
+    subtree: true
+  });
+  // Store notifications are synchronous with drag/drop and quantized PGM
+  // promotion. They bypass Svelte DOM flush latency, while the payload remains
+  // layout/effect metadata only—never video pixels.
+  storeUnsubscribers = [
+    rackTop.subscribe(() => void syncLayout()),
+    rackBottom.subscribe(() => void syncLayout()),
+    pgmSource.subscribe(() => void syncLayout())
+  ];
   observeCanvases();
   // Register the already-mounted canvases immediately. A macOS WKWebView may
   // defer requestAnimationFrame while its window is being activated; native
@@ -93,6 +136,8 @@ export function startNativeCompositorBridge() {
     if (pendingFrame) cancelAnimationFrame(pendingFrame);
     resizeObserver?.disconnect();
     mutationObserver?.disconnect();
+    for (const unsubscribe of storeUnsubscribers) unsubscribe();
+    storeUnsubscribers = [];
     window.removeEventListener('resize', schedule);
     window.removeEventListener('scroll', schedule, true);
   };

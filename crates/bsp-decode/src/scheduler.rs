@@ -9,9 +9,8 @@ use crate::types::{DecodeError, DecodeFrame, NativeDecodeFrame};
 
 const PREVIEW_MAX_WIDTH: u32 = 256;
 const PREVIEW_MAX_HEIGHT: u32 = 144;
-const PROGRAM_MAX_WIDTH: u32 = 960;
-const PROGRAM_MAX_HEIGHT: u32 = 540;
 pub const PROGRAM_FRAME_PREFIX: &str = "__bsp_pgm__:";
+pub const PREPARED_PROGRAM_FRAME_PREFIX: &str = "__bsp_pgm_prepared__:";
 
 struct ClipLane {
     path: String,
@@ -863,6 +862,12 @@ impl DecodeScheduler {
                 self.last_worker_error = Some(format!("prepared {}: {error}", prepared.source_id));
             }
             if let Some(frame) = prepared.lane.worker.take_latest() {
+                let mut hidden = frame.retained_for_sequence(frame.sequence);
+                hidden.module_id = format!(
+                    "{PREPARED_PROGRAM_FRAME_PREFIX}{}",
+                    prepared.source_id
+                );
+                frames.push(hidden);
                 prepared.ready = Some(frame);
             }
         }
@@ -890,11 +895,10 @@ impl DecodeScheduler {
 }
 
 fn target_dimensions(source_width: u32, source_height: u32, program: bool) -> (u32, u32) {
-    let (max_width, max_height) = if program {
-        (PROGRAM_MAX_WIDTH, PROGRAM_MAX_HEIGHT)
-    } else {
-        (PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT)
-    };
+    if program {
+        return (source_width, source_height);
+    }
+    let (max_width, max_height) = (PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT);
     let scale = (max_width as f64 / source_width as f64)
         .min(max_height as f64 / source_height as f64)
         .min(1.0);
@@ -956,8 +960,8 @@ mod tests {
     }
 
     #[test]
-    fn program_dimensions_match_the_interactive_viewer_proxy() {
-        assert_eq!(target_dimensions(1920, 1080, true), (960, 540));
+    fn program_dimensions_keep_source_quality() {
+        assert_eq!(target_dimensions(1920, 1080, true), (1920, 1080));
         assert_eq!(target_dimensions(640, 360, true), (640, 360));
     }
 }

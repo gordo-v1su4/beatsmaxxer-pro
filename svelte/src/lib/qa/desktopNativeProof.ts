@@ -4,6 +4,7 @@ import { fetchManifestClipFiles, loadRackClipsFromFiles } from '$lib/media/loadR
 import { tauriNativeSource } from '$lib/media/sources/TauriNativeSource';
 import { canPlaceInRow, listCatalog } from '$lib/modules/catalog';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
+import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 import {
   DESKTOP_NATIVE_PROOF_RUNTIME,
   DESKTOP_NATIVE_PROOF_SCHEMA_VERSION,
@@ -20,6 +21,7 @@ import {
 } from '$lib/stores/rack';
 
 const PROGRAM_FRAME_PREFIX = '__bsp_pgm__:';
+const PREPARED_PROGRAM_FRAME_PREFIX = '__bsp_pgm_prepared__:';
 
 async function wait(ms: number) {
   if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
@@ -76,7 +78,11 @@ async function sampleNativeCadence(durationMs: number) {
   const unresolvedCuts = native.nativeCompositor.pendingProgramSource ? 1 : 0;
   const elapsedSeconds = Math.max(native.elapsedMs / 1_000, 0.001);
   const sourceEntries = Object.entries(native.sources);
-  const previewEntries = sourceEntries.filter(([sourceId]) => !sourceId.startsWith(PROGRAM_FRAME_PREFIX));
+  const previewEntries = sourceEntries.filter(
+    ([sourceId]) =>
+      !sourceId.startsWith(PROGRAM_FRAME_PREFIX) &&
+      !sourceId.startsWith(PREPARED_PROGRAM_FRAME_PREFIX)
+  );
   const programEntries = sourceEntries.filter(([sourceId]) => sourceId.startsWith(PROGRAM_FRAME_PREFIX));
   const programProducedFrames = programEntries.reduce(
     (sum, [, source]) => sum + source.producedFrames,
@@ -152,6 +158,7 @@ async function verifyOneFrameEffectSwap() {
     (module) => canPlaceInRow(module, 'top') && !beforeTop.includes(module.id) && !beforeBottom.includes(module.id)
   );
   if (!replacement) throw new Error('desktop proof found no compatible palette replacement');
+  const expectedEffectMode = SHADER_EFFECT_MODE[replacement.shaderKey ?? replacement.id] ?? 0;
   const beforeNative = await tauriNativeSource.getDecodeStats();
   const clipNameBefore = get(videoLayers)['top-0']?.name ?? null;
   const effectBefore = beforeTop[0] ?? null;
@@ -160,10 +167,29 @@ async function verifyOneFrameEffectSwap() {
     { row: 'top', index: 0 }
   );
   if (!changed) throw new Error(`desktop proof could not swap ${replacement.id} onto top-0`);
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  const afterNative = await tauriNativeSource.getDecodeStats();
+  let afterNative = beforeNative;
+  const deadline = performance.now() + 500;
+  while (performance.now() < deadline) {
+    afterNative = await tauriNativeSource.getDecodeStats();
+    const nativeSurface = afterNative.nativeCompositor.surfaces['top-0'];
+    if (
+      nativeSurface?.effectModuleId === replacement.id &&
+      nativeSurface.effectMode === expectedEffectMode
+    ) {
+      break;
+    }
+    await wait(1);
+  }
+  const appliedSurface = afterNative.nativeCompositor.surfaces['top-0'];
+  const nativeEffectApplied =
+    appliedSurface?.effectModuleId === replacement.id &&
+    appliedSurface.effectMode === expectedEffectMode;
+  const beforeTimelineFrame = appliedSurface?.effectRequestedFrame ??
+    beforeNative.nativeCompositor.presentedFrames;
+  const afterTimelineFrame = appliedSurface?.effectAppliedFrame ??
+    afterNative.nativeCompositor.presentedFrames;
   return {
-    nativeEffectApplied: false,
+    nativeEffectApplied,
     replacementModuleId: replacement.id,
     slotId: 'top-0',
     clipNameBefore,
@@ -172,17 +198,23 @@ async function verifyOneFrameEffectSwap() {
     sourceAfter: 'top-0',
     effectBefore,
     effectAfter: get(rackTop)[0] ?? null,
-    beforeTimelineFrame: null,
-    afterTimelineFrame: null,
-    timelineFrameDelta: null,
+    beforeTimelineFrame,
+    afterTimelineFrame,
+    timelineFrameDelta: afterTimelineFrame - beforeTimelineFrame,
     previewOpenCountsBefore: Object.fromEntries(
       Object.entries(beforeNative.sources)
-        .filter(([sourceId]) => !sourceId.startsWith(PROGRAM_FRAME_PREFIX))
+        .filter(([sourceId]) =>
+          !sourceId.startsWith(PROGRAM_FRAME_PREFIX) &&
+          !sourceId.startsWith(PREPARED_PROGRAM_FRAME_PREFIX)
+        )
         .map(([sourceId, stats]) => [sourceId, stats.openCount])
     ),
     previewOpenCountsAfter: Object.fromEntries(
       Object.entries(afterNative.sources)
-        .filter(([sourceId]) => !sourceId.startsWith(PROGRAM_FRAME_PREFIX))
+        .filter(([sourceId]) =>
+          !sourceId.startsWith(PROGRAM_FRAME_PREFIX) &&
+          !sourceId.startsWith(PREPARED_PROGRAM_FRAME_PREFIX)
+        )
         .map(([sourceId, stats]) => [sourceId, stats.openCount])
     )
   };

@@ -8,7 +8,9 @@ mod types;
 pub mod videotoolbox;
 
 pub use demux::{probe_mp4, Mp4Probe};
-pub use scheduler::{DecodeScheduler, PROGRAM_FRAME_PREFIX};
+pub use scheduler::{
+    DecodeScheduler, PREPARED_PROGRAM_FRAME_PREFIX, PROGRAM_FRAME_PREFIX,
+};
 pub use types::{DecodeError, DecodeFrame, NativeDecodeFrame};
 
 /// Runtime decode backend label for diagnostics.

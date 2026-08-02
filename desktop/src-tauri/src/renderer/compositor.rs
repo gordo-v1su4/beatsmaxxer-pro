@@ -1,11 +1,12 @@
 use std::collections::{HashMap, VecDeque};
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use bsp_decode::{NativeDecodeFrame, PROGRAM_FRAME_PREFIX};
+use bsp_decode::{NativeDecodeFrame, PREPARED_PROGRAM_FRAME_PREFIX, PROGRAM_FRAME_PREFIX};
 use bytemuck::{Pod, Zeroable};
 use tauri::WebviewWindow;
 use wgpu::util::DeviceExt;
@@ -17,6 +18,10 @@ use super::macos_view::attach_overlay;
 #[serde(rename_all = "camelCase")]
 pub struct NativeSurfaceRect {
     pub surface_id: String,
+    #[serde(default)]
+    pub effect_module_id: String,
+    #[serde(default)]
+    pub effect_mode: f32,
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -40,6 +45,8 @@ pub struct NativeCompositorMetrics {
 }
 
 const MAX_PRESENTATION_INTERVALS: usize = 4_096;
+const PREPARED_SURFACE_PREFIX: &str = "__prepared_surface__:";
+const MAX_IMPORTED_PREVIEW_TEXTURES: usize = 8_192;
 
 #[derive(Default)]
 struct NativeCompositorTiming {
@@ -70,6 +77,10 @@ pub struct NativeCutSnapshot {
 pub struct NativeSurfaceSnapshot {
     pub surface_id: String,
     pub source_id: String,
+    pub effect_module_id: String,
+    pub effect_mode: f32,
+    pub effect_requested_frame: u64,
+    pub effect_applied_frame: u64,
     pub width: u32,
     pub height: u32,
     pub timestamp_us: i64,
@@ -102,7 +113,12 @@ impl Default for NativeCompositorMetrics {
 }
 
 impl NativeCompositorMetrics {
-    fn record_present(&self, frames: &HashMap<String, ImportedFrame>) {
+    fn record_present(
+        &self,
+        frames: &HashMap<String, ImportedFrame>,
+        rects: &[NativeSurfaceRect],
+        layout_requested_frame: u64,
+    ) {
         let now = Instant::now();
         let Ok(mut timing) = self.timing.lock() else {
             return;
@@ -115,14 +131,42 @@ impl NativeCompositorMetrics {
                 .intervals_us
                 .push_back(now.duration_since(previous).as_micros() as u64);
         }
+        let presented_frame = self.presented_frames.load(Ordering::Relaxed);
+        let previous_surfaces = std::mem::take(&mut timing.surfaces);
         timing.surfaces = frames
             .iter()
+            .filter(|(surface_id, _)| !surface_id.starts_with(PREPARED_SURFACE_PREFIX))
             .map(|(surface_id, frame)| {
+                let effect = rects.iter().find(|rect| rect.surface_id == *surface_id);
+                let effect_module_id = effect
+                    .map(|rect| rect.effect_module_id.clone())
+                    .unwrap_or_default();
+                let effect_mode = effect.map(|rect| rect.effect_mode).unwrap_or_default();
+                let effect_applied_frame = previous_surfaces
+                    .get(surface_id)
+                    .filter(|previous| {
+                        previous.effect_module_id == effect_module_id
+                            && previous.effect_mode == effect_mode
+                    })
+                    .map(|previous| previous.effect_applied_frame)
+                    .unwrap_or(presented_frame);
+                let effect_requested_frame = previous_surfaces
+                    .get(surface_id)
+                    .filter(|previous| {
+                        previous.effect_module_id == effect_module_id
+                            && previous.effect_mode == effect_mode
+                    })
+                    .map(|previous| previous.effect_requested_frame)
+                    .unwrap_or(layout_requested_frame);
                 (
                     surface_id.clone(),
                     NativeSurfaceSnapshot {
                         surface_id: surface_id.clone(),
                         source_id: frame.source_id.clone(),
+                        effect_module_id,
+                        effect_mode,
+                        effect_requested_frame,
+                        effect_applied_frame,
                         width: frame.width,
                         height: frame.height,
                         timestamp_us: frame.timestamp_us,
@@ -205,15 +249,35 @@ impl NativeCompositorMetrics {
 
 enum Command {
     Resize(u32, u32),
-    Layout(Vec<NativeSurfaceRect>),
     Frames(Vec<NativeDecodeFrame>),
     TestPattern(bool),
     Shutdown,
 }
 
+#[derive(Default)]
+struct ProgramSourceMailbox {
+    generation: u64,
+    source_id: Option<String>,
+    requested_at: Option<Instant>,
+}
+
+#[derive(Default)]
+struct LayoutMailbox {
+    generation: u64,
+    requested_frame: u64,
+    rects: Vec<NativeSurfaceRect>,
+}
+
+#[derive(Default)]
+struct NativeControlMailboxes {
+    program_source: Mutex<ProgramSourceMailbox>,
+    layout: Mutex<LayoutMailbox>,
+}
+
 pub struct NativeCompositorState {
     sender: Mutex<Option<Sender<Command>>>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
+    controls: Arc<NativeControlMailboxes>,
     pub metrics: Arc<NativeCompositorMetrics>,
 }
 
@@ -222,6 +286,7 @@ impl Default for NativeCompositorState {
         Self {
             sender: Mutex::new(None),
             worker: Mutex::new(None),
+            controls: Arc::new(NativeControlMailboxes::default()),
             metrics: Arc::new(NativeCompositorMetrics::default()),
         }
     }
@@ -284,7 +349,10 @@ impl NativeCompositorState {
             width: size.width.max(1),
             height: size.height.max(1),
             present_mode: wgpu::PresentMode::AutoVsync,
-            desired_maximum_frame_latency: 2,
+            // Beat cuts must be visible on the very next refresh. Allowing two
+            // CAMetalLayer frames in flight made an already-imported PGM
+            // promotion measure as roughly 30ms on a 60Hz display.
+            desired_maximum_frame_latency: 1,
             alpha_mode,
             view_formats: Vec::new(),
         };
@@ -292,11 +360,12 @@ impl NativeCompositorState {
 
         let (sender, receiver) = mpsc::channel();
         let metrics = Arc::clone(&self.metrics);
+        let controls = Arc::clone(&self.controls);
         metrics.active.store(true, Ordering::Release);
         let worker = thread::Builder::new()
             .name("bsp-native-compositor".into())
             .spawn(move || {
-                run_renderer(receiver, surface, device, queue, config, metrics);
+                run_renderer(receiver, surface, device, queue, config, metrics, controls);
             })
             .map_err(|error| format!("spawn native compositor: {error}"))?;
         *self
@@ -325,7 +394,15 @@ impl NativeCompositorState {
     }
 
     pub fn update_layout(&self, rects: Vec<NativeSurfaceRect>) -> Result<(), String> {
-        self.send(Command::Layout(rects))
+        let mut mailbox = self
+            .controls
+            .layout
+            .lock()
+            .map_err(|_| "native compositor layout mailbox poisoned".to_string())?;
+        mailbox.generation = mailbox.generation.wrapping_add(1);
+        mailbox.requested_frame = self.metrics.presented_frames.load(Ordering::Relaxed);
+        mailbox.rects = rects;
+        Ok(())
     }
 
     pub fn submit_frames(&self, frames: Vec<NativeDecodeFrame>) -> Result<(), String> {
@@ -348,8 +425,11 @@ impl NativeCompositorState {
     }
 
     pub fn request_program_source(&self, source_id: Option<String>) {
-        self.metrics
-            .request_program_source(source_id, Instant::now());
+        if let Ok(mut mailbox) = self.controls.program_source.lock() {
+            mailbox.generation = mailbox.generation.wrapping_add(1);
+            mailbox.source_id = source_id;
+            mailbox.requested_at = Some(Instant::now());
+        }
     }
 
     pub fn shutdown(&self) {
@@ -370,19 +450,59 @@ impl NativeCompositorState {
 struct Vertex {
     position: [f32; 2],
     texcoord: [f32; 2],
+    effect_mode: f32,
 }
 
-struct ImportedFrame {
+struct ImportedTexture {
     _owner: NativeDecodeFrame,
     // Keep the imported wgpu wrapper alive explicitly for the full bind-group
     // lifetime. `_owner` independently retains the CVPixelBuffer/IOSurface.
     _texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
+}
+
+struct ImportedFrame {
+    texture: Rc<ImportedTexture>,
     source_id: String,
     width: u32,
     height: u32,
     timestamp_us: i64,
     sequence: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct RectGeometryKey {
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    viewport_width: u32,
+    viewport_height: u32,
+    source_width: u32,
+    source_height: u32,
+    effect_mode: u32,
+}
+
+impl RectGeometryKey {
+    fn new(
+        rect: &NativeSurfaceRect,
+        viewport_width: u32,
+        viewport_height: u32,
+        source_width: u32,
+        source_height: u32,
+    ) -> Self {
+        Self {
+            x: rect.x.to_bits(),
+            y: rect.y.to_bits(),
+            width: rect.width.to_bits(),
+            height: rect.height.to_bits(),
+            viewport_width,
+            viewport_height,
+            source_width,
+            source_height,
+            effect_mode: rect.effect_mode.to_bits(),
+        }
+    }
 }
 
 fn run_renderer(
@@ -392,6 +512,7 @@ fn run_renderer(
     queue: wgpu::Queue,
     mut config: wgpu::SurfaceConfiguration,
     metrics: Arc<NativeCompositorMetrics>,
+    controls: Arc<NativeControlMailboxes>,
 ) {
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         label: Some("native video sampler"),
@@ -427,17 +548,87 @@ fn run_renderer(
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
   @location(0) texcoord: vec2<f32>,
+  @location(1) @interpolate(flat) effect_mode: f32,
 }
-@vertex fn vs_main(@location(0) position: vec2<f32>, @location(1) texcoord: vec2<f32>) -> VertexOut {
+@vertex fn vs_main(
+  @location(0) position: vec2<f32>,
+  @location(1) texcoord: vec2<f32>,
+  @location(2) effect_mode: f32
+) -> VertexOut {
   var out: VertexOut;
   out.position = vec4<f32>(position, 0.0, 1.0);
   out.texcoord = texcoord;
+  out.effect_mode = effect_mode;
   return out;
 }
 @group(0) @binding(0) var video_texture: texture_2d<f32>;
 @group(0) @binding(1) var video_sampler: sampler;
+
+fn sample_video(uv: vec2<f32>) -> vec3<f32> {
+  return textureSample(video_texture, video_sampler, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
+}
+
+fn hash21(p: vec2<f32>) -> f32 {
+  return fract(sin(dot(p, vec2<f32>(12.9898, 78.233))) * 43758.5453);
+}
+
 @fragment fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
-  return textureSample(video_texture, video_sampler, in.texcoord);
+  let uv = in.texcoord;
+  let dry = sample_video(uv);
+  let mode = floor(in.effect_mode + 0.5);
+  var wet = dry;
+  if (mode == 1.0) {
+    wet.r = sample_video(uv + vec2<f32>(0.006, 0.0)).r;
+    wet.b = sample_video(uv - vec2<f32>(0.006, 0.0)).b;
+  } else if (mode == 2.0) {
+    wet = (sample_video(uv - vec2<f32>(0.012, 0.0)) + dry * 2.0 + sample_video(uv + vec2<f32>(0.012, 0.0))) / 4.0;
+  } else if (mode == 3.0) {
+    wet = max(dry, sample_video(uv + vec2<f32>(0.025, 0.0)) * 0.72);
+  } else if (mode == 4.0) {
+    let row = floor(uv.y * 8.0);
+    wet = sample_video(uv + vec2<f32>((fract(row * 0.5) - 0.25) * 0.045, 0.0));
+  } else if (mode == 5.0) {
+    wet = sample_video((uv - vec2<f32>(0.5)) / 1.075 + vec2<f32>(0.5));
+  } else if (mode == 6.0) {
+    wet = sample_video(uv + vec2<f32>(0.006, -0.004));
+  } else if (mode == 7.0) {
+    wet = sample_video((uv - vec2<f32>(0.5)) / 1.08 + vec2<f32>(0.515, 0.49));
+  } else if (mode == 8.0) {
+    let radius = length(uv - vec2<f32>(0.5));
+    let blur = (sample_video(uv + vec2<f32>(0.008, 0.0)) + sample_video(uv - vec2<f32>(0.008, 0.0)) + dry * 2.0) / 4.0;
+    wet = mix(dry, blur, smoothstep(0.18, 0.55, radius));
+  } else if (mode == 9.0) {
+    wet = sample_video(vec2<f32>((uv.x - 0.5) * 0.88 + 0.5, uv.y));
+  } else if (mode == 10.0) {
+    wet = dry + vec3<f32>((hash21(uv * 913.0) - 0.5) * 0.09);
+  } else if (mode == 11.0) {
+    wet = dry + vec3<f32>(1.0, 0.28, 0.04) * pow(1.0 - uv.x, 4.0) * 0.45;
+  } else if (mode == 12.0) {
+    let p = uv - vec2<f32>(0.5);
+    let c = 0.9928;
+    let s = 0.1197;
+    wet = sample_video(vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c) + vec2<f32>(0.5));
+  } else if (mode == 13.0) {
+    let halo = (sample_video(uv + vec2<f32>(0.010, 0.0)) + sample_video(uv - vec2<f32>(0.010, 0.0))) * 0.5;
+    wet = dry + vec3<f32>(halo.r * 0.22, halo.g * 0.06, 0.0);
+  } else if (mode == 14.0) {
+    let p = uv - vec2<f32>(0.5);
+    let r2 = dot(p, p);
+    wet = sample_video(vec2<f32>(0.5) + p * (1.0 - r2 * 0.42));
+  } else if (mode == 15.0) {
+    let wobble = sin(uv.y * 95.0) * 0.0035;
+    wet = sample_video(uv + vec2<f32>(wobble, 0.0));
+    wet *= 0.92 + step(0.5, fract(uv.y * 240.0)) * 0.08;
+  } else if (mode == 16.0) {
+    wet = dry * (0.86 + step(0.5, fract(uv.y * 180.0)) * 0.14);
+    wet.b *= 1.06;
+  } else if (mode == 17.0) {
+    wet.r = sample_video(uv + vec2<f32>(0.012, 0.004)).r;
+    wet.b = sample_video(uv - vec2<f32>(0.012, 0.004)).b;
+  } else if (mode == 18.0) {
+    wet = (dry * 4.0 + sample_video(uv - vec2<f32>(0.018, 0.0)) * 2.0 + sample_video(uv - vec2<f32>(0.036, 0.0))) / 7.0;
+  }
+  return vec4<f32>(clamp(wet, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 "#
             .into(),
@@ -458,7 +649,7 @@ struct VertexOut {
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32],
             }],
         },
         fragment: Some(wgpu::FragmentState {
@@ -481,6 +672,12 @@ struct VertexOut {
     let test_bind_groups = make_test_bind_groups(&device, &queue, &bind_group_layout, &sampler);
     let mut rects = Vec::<NativeSurfaceRect>::new();
     let mut frames = HashMap::<String, ImportedFrame>::new();
+    let mut imported_preview_textures = HashMap::<usize, Rc<ImportedTexture>>::new();
+    let mut rect_geometry = HashMap::<String, (RectGeometryKey, wgpu::Buffer)>::new();
+    let mut program_source = None::<String>;
+    let mut program_generation = 0_u64;
+    let mut layout_generation = 0_u64;
+    let mut layout_requested_frame = 0_u64;
     let mut test_pattern = false;
     let mut running = true;
 
@@ -498,8 +695,9 @@ struct VertexOut {
                 &mut config,
                 &bind_group_layout,
                 &sampler,
-                &mut rects,
                 &mut frames,
+                &mut imported_preview_textures,
+                &mut program_source,
                 &mut test_pattern,
                 &metrics,
             ),
@@ -515,12 +713,26 @@ struct VertexOut {
                 &mut config,
                 &bind_group_layout,
                 &sampler,
-                &mut rects,
                 &mut frames,
+                &mut imported_preview_textures,
+                &mut program_source,
                 &mut test_pattern,
                 &metrics,
             );
         }
+        apply_latest_program_source(
+            &controls.program_source,
+            &mut program_generation,
+            &mut program_source,
+            &mut frames,
+            &metrics,
+        );
+        apply_latest_layout(
+            &controls.layout,
+            &mut layout_generation,
+            &mut layout_requested_frame,
+            &mut rects,
+        );
         if !running || rects.is_empty() || (!test_pattern && frames.is_empty()) {
             continue;
         }
@@ -535,9 +747,60 @@ struct VertexOut {
             Err(wgpu::SurfaceError::OutOfMemory) => break,
         };
         let view = output.texture.create_view(&Default::default());
+        // A cut can arrive while CAMetalLayer is waiting for the next drawable.
+        // Re-read the latest-value mailbox here so the prepared frame is
+        // promoted into the drawable we just acquired, not one refresh later.
+        apply_latest_program_source(
+            &controls.program_source,
+            &mut program_generation,
+            &mut program_source,
+            &mut frames,
+            &metrics,
+        );
+        apply_latest_layout(
+            &controls.layout,
+            &mut layout_generation,
+            &mut layout_requested_frame,
+            &mut rects,
+        );
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("native compositor frame"),
         });
+        for rect in rects.iter().filter(|rect| rect.visible) {
+            let imported = frames.get(&rect.surface_id);
+            if imported.is_none() && !test_pattern {
+                continue;
+            }
+            let (source_width, source_height) = imported
+                .map(|frame| (frame.width, frame.height))
+                .unwrap_or((16, 9));
+            let key = RectGeometryKey::new(
+                rect,
+                config.width,
+                config.height,
+                source_width,
+                source_height,
+            );
+            if rect_geometry
+                .get(&rect.surface_id)
+                .is_some_and(|(existing, _)| *existing == key)
+            {
+                continue;
+            }
+            let vertices = rect_vertices(
+                rect,
+                config.width,
+                config.height,
+                source_width,
+                source_height,
+            );
+            let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("native surface rect"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            rect_geometry.insert(rect.surface_id.clone(), (key, vertex_buffer));
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("native compositor pass"),
@@ -556,27 +819,15 @@ struct VertexOut {
             pass.set_pipeline(&pipeline);
             for (index, rect) in rects.iter().filter(|rect| rect.visible).enumerate() {
                 let imported = frames.get(&rect.surface_id);
-                let bind_group = imported.map(|frame| &frame.bind_group).or_else(|| {
+                let bind_group = imported.map(|frame| &frame.texture.bind_group).or_else(|| {
                     test_pattern.then(|| &test_bind_groups[index % test_bind_groups.len()])
                 });
                 let Some(bind_group) = bind_group else {
                     continue;
                 };
-                let (source_width, source_height) = imported
-                    .map(|frame| (frame.width, frame.height))
-                    .unwrap_or((16, 9));
-                let vertices = rect_vertices(
-                    rect,
-                    config.width,
-                    config.height,
-                    source_width,
-                    source_height,
-                );
-                let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("native surface rect"),
-                    contents: bytemuck::cast_slice(&vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
+                let Some((_, vertex_buffer)) = rect_geometry.get(&rect.surface_id) else {
+                    continue;
+                };
                 pass.set_bind_group(0, bind_group, &[]);
                 pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 pass.draw(0..6, 0..1);
@@ -586,7 +837,7 @@ struct VertexOut {
         output.present();
         metrics.gpu_submissions.fetch_add(1, Ordering::Relaxed);
         metrics.presented_frames.fetch_add(1, Ordering::Relaxed);
-        metrics.record_present(&frames);
+        metrics.record_present(&frames, &rects, layout_requested_frame);
     }
     metrics.active.store(false, Ordering::Release);
 }
@@ -600,8 +851,9 @@ fn apply_command(
     config: &mut wgpu::SurfaceConfiguration,
     bind_group_layout: &wgpu::BindGroupLayout,
     sampler: &wgpu::Sampler,
-    rects: &mut Vec<NativeSurfaceRect>,
     frames: &mut HashMap<String, ImportedFrame>,
+    imported_preview_textures: &mut HashMap<usize, Rc<ImportedTexture>>,
+    program_source: &mut Option<String>,
     test_pattern: &mut bool,
     metrics: &NativeCompositorMetrics,
 ) {
@@ -613,12 +865,17 @@ fn apply_command(
                 surface.configure(device, config);
             }
         }
-        Command::Layout(next) => *rects = next,
         Command::TestPattern(enabled) => *test_pattern = enabled,
         Command::Shutdown => *running = false,
         Command::Frames(next) => {
             for frame in next {
-                let (surface_id, source_id) = if frame.module_id.starts_with(PROGRAM_FRAME_PREFIX) {
+                let is_prepared = frame.module_id.starts_with(PREPARED_PROGRAM_FRAME_PREFIX);
+                let is_program = frame.module_id.starts_with(PROGRAM_FRAME_PREFIX);
+                let (surface_id, source_id) = if is_prepared {
+                    let source_id =
+                        frame.module_id[PREPARED_PROGRAM_FRAME_PREFIX.len()..].to_string();
+                    (format!("{PREPARED_SURFACE_PREFIX}{source_id}"), source_id)
+                } else if is_program {
                     (
                         "pgm".to_string(),
                         frame.module_id[PROGRAM_FRAME_PREFIX.len()..].to_string(),
@@ -626,52 +883,142 @@ fn apply_command(
                 } else {
                     (frame.module_id.clone(), frame.module_id.clone())
                 };
+                if is_program && program_source.as_deref() != Some(source_id.as_str()) {
+                    continue;
+                }
+                if is_prepared {
+                    frames.retain(|surface_id, _| {
+                        !surface_id.starts_with(PREPARED_SURFACE_PREFIX)
+                            || surface_id == &format!("{PREPARED_SURFACE_PREFIX}{source_id}")
+                    });
+                }
                 let width = frame.width;
                 let height = frame.height;
                 let timestamp_us = frame.timestamp_us;
                 let sequence = frame.sequence;
-                match unsafe { import_bgra_iosurface(device, frame.iosurface_ptr(), width, height) }
-                {
-                    Ok(texture) => {
-                        let view = texture.create_view(&Default::default());
-                        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: Some("native video frame bind group"),
-                            layout: bind_group_layout,
-                            entries: &[
-                                wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::TextureView(&view),
-                                },
-                                wgpu::BindGroupEntry {
-                                    binding: 1,
-                                    resource: wgpu::BindingResource::Sampler(sampler),
-                                },
-                            ],
-                        });
-                        frames.insert(
-                            surface_id,
-                            ImportedFrame {
+                let iosurface_key = frame.iosurface_ptr() as usize;
+                let cacheable_preview = !is_program && !is_prepared;
+                let cached_texture = cacheable_preview
+                    .then(|| imported_preview_textures.get(&iosurface_key).cloned())
+                    .flatten();
+                let imported_texture = if let Some(cached_texture) = cached_texture {
+                    Some(cached_texture)
+                } else {
+                    match unsafe {
+                        import_bgra_iosurface(device, frame.iosurface_ptr(), width, height)
+                    } {
+                        Ok(texture) => {
+                            let view = texture.create_view(&Default::default());
+                            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                                label: Some("native video frame bind group"),
+                                layout: bind_group_layout,
+                                entries: &[
+                                    wgpu::BindGroupEntry {
+                                        binding: 0,
+                                        resource: wgpu::BindingResource::TextureView(&view),
+                                    },
+                                    wgpu::BindGroupEntry {
+                                        binding: 1,
+                                        resource: wgpu::BindingResource::Sampler(sampler),
+                                    },
+                                ],
+                            });
+                            let imported_texture = Rc::new(ImportedTexture {
                                 _owner: frame,
                                 _texture: texture,
                                 bind_group,
-                                source_id,
-                                width,
-                                height,
-                                timestamp_us,
-                                sequence,
-                            },
-                        );
-                        metrics.zero_copy_frames.fetch_add(1, Ordering::Relaxed);
-                        metrics.iosurface_imports.fetch_add(1, Ordering::Relaxed);
+                            });
+                            metrics.iosurface_imports.fetch_add(1, Ordering::Relaxed);
+                            if cacheable_preview {
+                                if imported_preview_textures.len() >= MAX_IMPORTED_PREVIEW_TEXTURES
+                                {
+                                    imported_preview_textures.clear();
+                                }
+                                imported_preview_textures
+                                    .insert(iosurface_key, Rc::clone(&imported_texture));
+                            }
+                            Some(imported_texture)
+                        }
+                        Err(_) => {
+                            metrics
+                                .iosurface_import_failures
+                                .fetch_add(1, Ordering::Relaxed);
+                            None
+                        }
                     }
-                    Err(_) => {
-                        metrics
-                            .iosurface_import_failures
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
+                };
+                if let Some(texture) = imported_texture {
+                    frames.insert(
+                        surface_id,
+                        ImportedFrame {
+                            texture,
+                            source_id,
+                            width,
+                            height,
+                            timestamp_us,
+                            sequence,
+                        },
+                    );
+                    metrics.zero_copy_frames.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
+    }
+}
+
+fn apply_latest_layout(
+    mailbox: &Mutex<LayoutMailbox>,
+    applied_generation: &mut u64,
+    requested_frame: &mut u64,
+    rects: &mut Vec<NativeSurfaceRect>,
+) {
+    let latest = mailbox.lock().ok().and_then(|mailbox| {
+        (mailbox.generation != *applied_generation).then(|| {
+            (
+                mailbox.generation,
+                mailbox.requested_frame,
+                mailbox.rects.clone(),
+            )
+        })
+    });
+    if let Some((generation, latest_requested_frame, latest_rects)) = latest {
+        *applied_generation = generation;
+        *requested_frame = latest_requested_frame;
+        *rects = latest_rects;
+    }
+}
+
+fn apply_latest_program_source(
+    mailbox: &Mutex<ProgramSourceMailbox>,
+    applied_generation: &mut u64,
+    program_source: &mut Option<String>,
+    frames: &mut HashMap<String, ImportedFrame>,
+    metrics: &NativeCompositorMetrics,
+) {
+    let latest = mailbox.lock().ok().and_then(|mailbox| {
+        (mailbox.generation != *applied_generation).then(|| {
+            (
+                mailbox.generation,
+                mailbox.source_id.clone(),
+                mailbox.requested_at,
+            )
+        })
+    });
+    let Some((generation, source_id, requested_at)) = latest else {
+        return;
+    };
+    *applied_generation = generation;
+    *program_source = source_id.clone();
+    if let Some(requested_at) = requested_at {
+        metrics.request_program_source(source_id.clone(), requested_at);
+    }
+    let Some(source_id) = source_id else {
+        frames.remove("pgm");
+        return;
+    };
+    let prepared_id = format!("{PREPARED_SURFACE_PREFIX}{source_id}");
+    if let Some(prepared) = frames.remove(&prepared_id) {
+        frames.insert("pgm".into(), prepared);
     }
 }
 
@@ -696,26 +1043,32 @@ fn rect_vertices(
         Vertex {
             position: [left, top],
             texcoord: [u0, v0],
+            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [left, bottom],
             texcoord: [u0, v1],
+            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, bottom],
             texcoord: [u1, v1],
+            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [left, top],
             texcoord: [u0, v0],
+            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, bottom],
             texcoord: [u1, v1],
+            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, top],
             texcoord: [u1, v0],
+            effect_mode: rect.effect_mode,
         },
     ]
 }
