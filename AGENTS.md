@@ -63,11 +63,12 @@ Use **bun** only (not npm/yarn/pnpm).
 - **`WebGpuEngine.ts`** — `importExternalTexture` + `VideoTextureCache` fallback
 - **`MediaRuntime.ts`** — transactional clip registration + hot-deck
 
-### Desktop path (`feat/desktop-tauri`)
+### Desktop path (`cursor/desktop-tauri-e0e8`)
 
 - Tauri 2 shell embeds `svelte/build`
 - Rust **`bsp-decode`** crate: MP4 demux + VideoToolbox (macOS) → IPC → WebGPU upload
 - Platform abstraction: `svelte/src/lib/platform/` + `VideoSourcePort`
+- **Dev ports:** web `5174`, desktop Tauri `5175` (run both without conflict)
 
 See [`svelte/docs/ARCHITECTURE.md`](svelte/docs/ARCHITECTURE.md) and [`desktop/README.md`](desktop/README.md).
 

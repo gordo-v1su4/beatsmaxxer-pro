@@ -5,6 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
+		"dev:desktop": "vite dev --host 127.0.0.1 --port 5175 --strictPort",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo '' && cp node_modules/@soundtouchjs/audio-worklet/.dist/soundtouch-processor.js static/soundtouch-processor.js 2>/dev/null || true",

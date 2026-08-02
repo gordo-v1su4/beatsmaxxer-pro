@@ -29,8 +29,10 @@ From repo root:
 
 ```bash
 bun run build          # build svelte frontend first
-bun run dev:desktop    # Tauri dev (starts svelte dev + native shell)
+bun run dev:desktop    # Tauri dev — Vite on :5175 + native shell
 ```
+
+**Ports:** web dev uses **5174** (`bun run dev`); desktop Tauri dev uses **5175** so both can run side-by-side without conflict.
 
 From `desktop/`:
 
