@@ -59,11 +59,15 @@ impl DecodeRuntime {
 pub struct ClipRegistry;
 
 mod decode;
+mod env;
 mod essentia;
 mod ipc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    env::load_repo_dotenv();
+    env::log_essentia_startup();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(DecodeRuntime::default())

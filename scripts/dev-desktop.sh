@@ -13,7 +13,9 @@ fi
 
 if [[ -z "${ESSENTIA_API_BASE_URL:-}" || -z "${ESSENTIA_API_KEY:-}" ]]; then
   echo "[desktop] warning: ESSENTIA_API_BASE_URL / ESSENTIA_API_KEY not set — SONG → ANALYZE will fail" >&2
-  echo "[desktop] copy .env.example to .env and fill in your Essentia host + key" >&2
+  echo "[desktop] copy .env.example to .env at repo root and fill in your Essentia host + key" >&2
+else
+  echo "[desktop] Essentia env loaded (${ESSENTIA_API_BASE_URL})"
 fi
 
 echo "[desktop] starting Vite on http://127.0.0.1:5175 ..."

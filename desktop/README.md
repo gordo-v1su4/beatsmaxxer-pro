@@ -22,6 +22,19 @@ Set before `bun run dev:desktop` (or in `.env`):
 
 `ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.
 
+**`.env` location:** repo root (`beat-surfer-pro/.env`), not `svelte/.env`. Restart after edits.
+
+**Verify at startup:** `bun run dev:desktop` should print `[desktop] Essentia env loaded (https://…)`. The Tauri terminal also logs `[desktop] Essentia: configured (…)` when Rust sees both vars.
+
+**Verify in the app:** open WebView inspector (`Cmd+Option+I`) → Console:
+
+```js
+await window.__TAURI__.core.invoke('essentia_configured')
+// → true
+```
+
+If `true` but ANALYZE still fails, hover the **RHY** pill in the top bar — the tooltip shows the Rust error (network, 401, timeout, etc.).
+
 Uploaded clips are staged to the app cache via `stage_clip_file` and decoded through `bsp-decode` → `bsp://frame` → WebGPU.
 
 > **Linux / cloud VMs:** `crates/bsp-decode` unit tests run cross-platform; full `cargo tauri build` requires macOS (VideoToolbox + WKWebView). On Linux, `cargo check` in `desktop/src-tauri` needs GTK dev packages and is not a CI target.
