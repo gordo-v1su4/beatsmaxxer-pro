@@ -2,7 +2,7 @@
 
 Date: 2026-08-02
 Branch: `cursor/desktop-tauri-e0e8`
-Status: **native zero-copy proof works; multi-video playback is not yet acceptable**
+Status: **prepared native previews are smooth; quantized cuts and native effects remain**
 
 This is the current pickup document for the Tauri desktop work. The desktop
 branch remains separate from `main` and must not be merged until the native
@@ -16,7 +16,9 @@ acceptance gates below pass.
   never mutate tempo, pitch, key, or volume.
 - Each rack slot owns its loaded video independently of the effect module.
   Replacing an effect must not reopen or replace that slot's media.
-- Preview media is bounded to at most 256x144. PGM remains source resolution.
+- Preview media is predecoded at no more than 256x144 before transport starts.
+- Interactive PGM is bounded to 960x540, matching the compact viewer. Original
+  media remains attached for later high-quality output/export.
 - Ten previews plus PGM must remain smooth through clip loops and 1BT cuts.
 - Normal desktop playback must have zero decoded video-plane bytes in Tauri IPC
   and no CPU pixel fallback.
@@ -29,8 +31,12 @@ acceptance gates below pass.
 - macOS AVFoundation/VideoToolbox decode returning retained,
   IOSurface-backed `CVPixelBuffer` frames.
 - Direct IOSurface -> Metal -> wgpu HAL import in the native compositor.
-- Preview decode requests are aspect-preserving and bounded to 256x144.
-- PGM uses an independent source-resolution decoder.
+- Preview clips are decoded once at 256x144 during import into immutable,
+  IOSurface-backed frame caches. Their VideoToolbox sessions are released before
+  playback.
+- PGM uses independent current/next 960x540 interactive decoder lanes.
+- The compositor uses aspect-preserving centered cover UVs, so non-16:9 DOM
+  rectangles crop rather than stretch or add side letterboxing.
 - Native compositor surfaces are controlled by layout-only IPC; video frames do
   not pass through JavaScript.
 - Persistent, thread-affine decoder workers with one-frame latest mailboxes.
@@ -58,6 +64,11 @@ acceptance gates below pass.
   previews, and eight previews plus one 1280x720 PGM each delivering 23.95 fps
   across a 20-second run when using one repeated test asset. This proves the
   machine and base VideoToolbox path can sustain the target cadence.
+- `report.predecoded-previews.json` is the first real distinct-media proof to
+  cross the synchronized loop without `Cannot Decode`: all eight previews
+  delivered 23.92 fps or better, PGM delivered 22.72 fps, drop rate was 0.11%,
+  CPU/IPC frame bytes and IOSurface import failures stayed zero, and process
+  memory high-water was 433,766,400 bytes (about 414 MiB).
 
 ## Measured failures and rejected experiments
 
@@ -69,6 +80,8 @@ Artifacts are intentionally local under `.artifacts/desktop-eight-video/`.
 | `report.fully-parallel-lanes.json` | Rayon/shared-turn parallelism fell to roughly 1.3 fps and AVFoundation reported `Cannot Decode`. | Reject decoder migration and Rayon pool ownership. |
 | `report.persistent-workers.json` | Thread affinity removed `Cannot Decode` and improved sources to roughly 5 fps, but the rack degraded after the synchronized clip-loop boundary. | Keep thread affinity; fix looping. |
 | `report.seamless-loop-workers.json` | Two live readers per lane passed an isolated repeated-file probe, but the real 8-distinct-clip rack plus active/prepared PGM created roughly 20 readers, triggered `Cannot Decode`, and collapsed below 2 fps. | Reject dual live readers per slot. The checkpoint source does not retain this experiment. |
+| `report.loop-head-cache.json` | A three-second preview cache delayed the failure but previews still averaged roughly 4 fps once the bridge expired. | Reject partial loop-head retention for these fixed 15-second clips. |
+| `report.predecoded-previews.json` | Eight fully prepared previews plus 960x540 PGM stayed fresh through the loop with no decoder error. One >50 ms compositor stall, 33.6 ms p95 cut latency, and missing native effect swap still failed the complete gate. | Keep prepared previews; next fix current/next PGM cut ownership and native effects. |
 
 The user-observed signature is consistent and important: playback starts well,
 then all clips degrade/freeze together at approximately 15 seconds, when the
@@ -104,24 +117,22 @@ bounded decoded queue.
 
 ## Next implementation plan
 
-### Gate 1: bridge the synchronized loop with one reader
+### Gate 1: prepared preview cache
 
-- Retain the first 2–3 seconds of decoded 256x144 preview IOSurfaces per slot.
-- At wrap, present that cached loop head while the slot's existing worker
-  reopens its single AVAssetReader off-air.
-- Do not create another VideoToolbox session.
-- Prove eight distinct previews plus PGM remain at least 20 fresh fps across two
-  loop boundaries with no `Cannot Decode`.
-- Expected bounded cache budget at 24 fps is about 7–10 MiB per preview.
+- Implemented: decode each fixed 15-second preview once during clip import,
+  retain the 256x144 IOSurface timeline, and release its decoder before Play.
+- Current measured budget is about 414 MiB process high-water for eight prepared
+  previews plus current/next PGM activity.
+- Next optimization: persist a small native proxy/cache identity so a subsequent
+  app launch can reuse preparation instead of decoding the originals again.
 
-### Gate 2: native persistent preview proxies
+### Gate 2: current/next interactive PGM
 
-- If the loop-head bridge cannot recover the original reader before its bounded
-  cache expires, generate a small native proxy once on import/background load.
-- Prefer Apple-native hardware encode/export on macOS; do not transcode on the
-  cut path.
-- Persist by source identity so subsequent app launches reuse the proxy.
-- Decode proxies to retained IOSurfaces; keep original files for PGM only.
+- Keep no more than current and predicted-next 960x540 PGM lanes alive.
+- Complete each random choice before the musical boundary and atomically promote
+  the already-presented next surface on the boundary.
+- Eliminate the remaining 33.6 ms p95 / 39.2 ms maximum cut latency and the
+  single measured compositor stall.
 
 ### Gate 3: audio and source scheduling correctness
 

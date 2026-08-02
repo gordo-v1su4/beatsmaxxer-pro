@@ -555,16 +555,23 @@ struct VertexOut {
             });
             pass.set_pipeline(&pipeline);
             for (index, rect) in rects.iter().filter(|rect| rect.visible).enumerate() {
-                let bind_group = frames
-                    .get(&rect.surface_id)
-                    .map(|frame| &frame.bind_group)
-                    .or_else(|| {
-                        test_pattern.then(|| &test_bind_groups[index % test_bind_groups.len()])
-                    });
+                let imported = frames.get(&rect.surface_id);
+                let bind_group = imported.map(|frame| &frame.bind_group).or_else(|| {
+                    test_pattern.then(|| &test_bind_groups[index % test_bind_groups.len()])
+                });
                 let Some(bind_group) = bind_group else {
                     continue;
                 };
-                let vertices = rect_vertices(rect, config.width, config.height);
+                let (source_width, source_height) = imported
+                    .map(|frame| (frame.width, frame.height))
+                    .unwrap_or((16, 9));
+                let vertices = rect_vertices(
+                    rect,
+                    config.width,
+                    config.height,
+                    source_width,
+                    source_height,
+                );
                 let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("native surface rect"),
                     contents: bytemuck::cast_slice(&vertices),
@@ -672,37 +679,64 @@ fn rect_vertices(
     rect: &NativeSurfaceRect,
     viewport_width: u32,
     viewport_height: u32,
+    source_width: u32,
+    source_height: u32,
 ) -> [Vertex; 6] {
     let left = rect.x / viewport_width as f32 * 2.0 - 1.0;
     let right = (rect.x + rect.width) / viewport_width as f32 * 2.0 - 1.0;
     let top = 1.0 - rect.y / viewport_height as f32 * 2.0;
     let bottom = 1.0 - (rect.y + rect.height) / viewport_height as f32 * 2.0;
+    let (u0, v0, u1, v1) = cover_texcoords(
+        rect.width,
+        rect.height,
+        source_width as f32,
+        source_height as f32,
+    );
     [
         Vertex {
             position: [left, top],
-            texcoord: [0.0, 0.0],
+            texcoord: [u0, v0],
         },
         Vertex {
             position: [left, bottom],
-            texcoord: [0.0, 1.0],
+            texcoord: [u0, v1],
         },
         Vertex {
             position: [right, bottom],
-            texcoord: [1.0, 1.0],
+            texcoord: [u1, v1],
         },
         Vertex {
             position: [left, top],
-            texcoord: [0.0, 0.0],
+            texcoord: [u0, v0],
         },
         Vertex {
             position: [right, bottom],
-            texcoord: [1.0, 1.0],
+            texcoord: [u1, v1],
         },
         Vertex {
             position: [right, top],
-            texcoord: [1.0, 0.0],
+            texcoord: [u1, v0],
         },
     ]
+}
+
+fn cover_texcoords(
+    rect_width: f32,
+    rect_height: f32,
+    source_width: f32,
+    source_height: f32,
+) -> (f32, f32, f32, f32) {
+    let rect_aspect = rect_width.max(1.0) / rect_height.max(1.0);
+    let source_aspect = source_width.max(1.0) / source_height.max(1.0);
+    if source_aspect > rect_aspect {
+        let span = (rect_aspect / source_aspect).clamp(0.0, 1.0);
+        let inset = (1.0 - span) * 0.5;
+        (inset, 0.0, 1.0 - inset, 1.0)
+    } else {
+        let span = (source_aspect / rect_aspect).clamp(0.0, 1.0);
+        let inset = (1.0 - span) * 0.5;
+        (0.0, inset, 1.0, 1.0 - inset)
+    }
 }
 
 fn make_test_bind_groups(
@@ -776,4 +810,30 @@ fn make_test_bind_groups(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cover_texcoords;
+
+    fn close(left: f32, right: f32) {
+        assert!((left - right).abs() < 0.0001, "{left} != {right}");
+    }
+
+    #[test]
+    fn matching_aspect_uses_the_full_texture() {
+        let (u0, v0, u1, v1) = cover_texcoords(640.0, 360.0, 1920.0, 1080.0);
+        close(u0, 0.0);
+        close(v0, 0.0);
+        close(u1, 1.0);
+        close(v1, 1.0);
+    }
+
+    #[test]
+    fn cover_crops_without_stretching_or_letterboxing() {
+        let (u0, v0, u1, v1) = cover_texcoords(400.0, 300.0, 1920.0, 1080.0);
+        assert!(u0 > 0.0 && u1 < 1.0);
+        close(v0, 0.0);
+        close(v1, 1.0);
+    }
 }

@@ -9,6 +9,8 @@ use crate::types::{DecodeError, DecodeFrame, NativeDecodeFrame};
 
 const PREVIEW_MAX_WIDTH: u32 = 256;
 const PREVIEW_MAX_HEIGHT: u32 = 144;
+const PROGRAM_MAX_WIDTH: u32 = 960;
+const PROGRAM_MAX_HEIGHT: u32 = 540;
 pub const PROGRAM_FRAME_PREFIX: &str = "__bsp_pgm__:";
 
 struct ClipLane {
@@ -51,12 +53,15 @@ struct WorkerTarget {
     target_us: i64,
     generation: u64,
     revision: u64,
+    cache_only: bool,
     stop: bool,
 }
 
 struct WorkerMailbox {
     latest: Option<NativeDecodeFrame>,
     error: Option<String>,
+    preview_cache: Vec<NativeDecodeFrame>,
+    preview_cache_complete: bool,
 }
 
 /// A decoder lane with permanent thread affinity.
@@ -68,6 +73,12 @@ struct LaneWorker {
     control: Arc<(Mutex<WorkerTarget>, Condvar)>,
     mailbox: Arc<Mutex<WorkerMailbox>>,
     handle: Option<JoinHandle<()>>,
+    sequence: Arc<AtomicU64>,
+    preview_cache_us: i64,
+    current_target_us: i64,
+    last_target_us: i64,
+    serving_preview_cache: bool,
+    last_cache_timestamp_us: Option<i64>,
 }
 
 impl LaneWorker {
@@ -80,12 +91,14 @@ impl LaneWorker {
         start_us: i64,
         generation: u64,
         sequence: Arc<AtomicU64>,
+        preview_cache_us: i64,
     ) -> Result<Self, DecodeError> {
         let control = Arc::new((
             Mutex::new(WorkerTarget {
                 target_us: start_us,
                 generation,
                 revision: 1,
+                cache_only: false,
                 stop: false,
             }),
             Condvar::new(),
@@ -93,9 +106,12 @@ impl LaneWorker {
         let mailbox = Arc::new(Mutex::new(WorkerMailbox {
             latest: None,
             error: None,
+            preview_cache: Vec::new(),
+            preview_cache_complete: false,
         }));
         let worker_control = Arc::clone(&control);
         let worker_mailbox = Arc::clone(&mailbox);
+        let worker_sequence = Arc::clone(&sequence);
         let (init_tx, init_rx) = mpsc::sync_channel(1);
         let thread_name = format!("bsp-decode-{frame_id}");
         let handle = thread::Builder::new()
@@ -108,7 +124,8 @@ impl LaneWorker {
                     target_height,
                     start_us,
                     generation,
-                    sequence,
+                    worker_sequence,
+                    preview_cache_us,
                     worker_control,
                     worker_mailbox,
                     init_tx,
@@ -121,6 +138,12 @@ impl LaneWorker {
                 control,
                 mailbox,
                 handle: Some(handle),
+                sequence,
+                preview_cache_us,
+                current_target_us: start_us,
+                last_target_us: start_us,
+                serving_preview_cache: preview_cache_us > 0,
+                last_cache_timestamp_us: None,
             }),
             Ok(Err(error)) => {
                 let _ = handle.join();
@@ -135,24 +158,71 @@ impl LaneWorker {
         }
     }
 
-    fn set_target(&self, target_us: i64, generation: u64) {
+    fn set_target(&mut self, target_us: i64, generation: u64) {
+        let wrapped = target_us + 100_000 < self.last_target_us;
+        if wrapped && self.preview_cache_us > 0 {
+            let cache_complete = self
+                .mailbox
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .preview_cache_complete;
+            if cache_complete {
+                self.serving_preview_cache = true;
+                self.last_cache_timestamp_us = None;
+            }
+        }
+        self.current_target_us = target_us;
+        self.last_target_us = target_us;
+
         let (lock, wake) = &*self.control;
         let mut control = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if self.serving_preview_cache {
+            if !control.cache_only {
+                control.cache_only = true;
+                control.revision = control.revision.wrapping_add(1);
+                wake.notify_one();
+            }
+            return;
+        }
         if control.target_us == target_us && control.generation == generation {
             return;
         }
         control.target_us = target_us;
         control.generation = generation;
+        control.cache_only = false;
         control.revision = control.revision.wrapping_add(1);
         wake.notify_one();
     }
 
-    fn take_latest(&self) -> Option<NativeDecodeFrame> {
-        self.mailbox
+    fn take_latest(&mut self) -> Option<NativeDecodeFrame> {
+        let mut mailbox = self
+            .mailbox
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .latest
-            .take()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+        if self.serving_preview_cache {
+            if self.current_target_us <= self.preview_cache_us {
+                let cached = mailbox
+                    .preview_cache
+                    .iter()
+                    .rev()
+                    .find(|frame| frame.timestamp_us <= self.current_target_us)
+                    .or_else(|| mailbox.preview_cache.first());
+                if let Some(frame) = cached {
+                    if self.last_cache_timestamp_us != Some(frame.timestamp_us) {
+                        self.last_cache_timestamp_us = Some(frame.timestamp_us);
+                        let sequence = self
+                            .sequence
+                            .fetch_add(1, Ordering::Relaxed)
+                            .wrapping_add(1);
+                        return Some(frame.retained_for_sequence(sequence));
+                    }
+                    return None;
+                }
+            }
+        }
+
+        mailbox.latest.take()
     }
 
     fn take_error(&self) -> Option<String> {
@@ -192,6 +262,7 @@ fn run_lane_worker(
     start_us: i64,
     initial_generation: u64,
     sequence: Arc<AtomicU64>,
+    preview_cache_us: i64,
     control: Arc<(Mutex<WorkerTarget>, Condvar)>,
     mailbox: Arc<Mutex<WorkerMailbox>>,
     init_tx: mpsc::SyncSender<Result<(), String>>,
@@ -203,17 +274,46 @@ fn run_lane_worker(
         target_height,
         start_us,
     ) {
-        Ok(decoder) => {
-            let _ = init_tx.send(Ok(()));
-            Some(decoder)
-        }
+        Ok(decoder) => Some(decoder),
         Err(error) => {
             let _ = init_tx.send(Err(error.to_string()));
             return;
         }
     };
 
-    #[cfg(not(target_os = "macos"))]
+    // Preview clips are short and fixed. Decode the bounded 256x144 timeline
+    // once during import, retain its IOSurfaces, then release VideoToolbox
+    // before transport begins. Runtime preview playback becomes a cache lookup.
+    #[cfg(target_os = "macos")]
+    if preview_cache_us > 0 {
+        let Some(active_decoder) = decoder.as_mut() else {
+            let _ = init_tx.send(Err("preview decoder was not initialized".into()));
+            return;
+        };
+        loop {
+            let next_sequence = sequence.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+            match active_decoder.next_native_frame(&frame_id, next_sequence) {
+                Ok(Some(frame)) => retain_preview_frame(&mailbox, &frame, preview_cache_us),
+                Ok(None) => {
+                    let mut mailbox = mailbox
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if mailbox.preview_cache.is_empty() {
+                        let _ = init_tx.send(Err("preview decoder produced no frames".into()));
+                        return;
+                    }
+                    mailbox.preview_cache_complete = true;
+                    break;
+                }
+                Err(error) => {
+                    let _ = init_tx.send(Err(error.to_string()));
+                    return;
+                }
+            }
+        }
+        decoder = None;
+    }
+
     let _ = init_tx.send(Ok(()));
 
     let mut pending: Option<NativeDecodeFrame> = None;
@@ -237,9 +337,22 @@ fn run_lane_worker(
         }
         seen_revision = target.revision;
 
+        if target.cache_only {
+            pending = None;
+            #[cfg(target_os = "macos")]
+            {
+                decoder = None;
+            }
+            last_target_us = target.target_us;
+            continue;
+        }
+
         let wrapped = target.target_us + 100_000 < last_target_us;
         let jumped_forward = target.target_us > last_target_us + 500_000;
-        if lane_generation != target.generation || wrapped || jumped_forward {
+        if lane_generation != target.generation
+            || wrapped
+            || (jumped_forward && preview_cache_us <= 0)
+        {
             pending = None;
             lane_generation = target.generation;
             #[cfg(target_os = "macos")]
@@ -278,9 +391,11 @@ fn run_lane_worker(
                 let next_sequence = sequence.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
                 match active_decoder.next_native_frame(&frame_id, next_sequence) {
                     Ok(Some(frame)) if frame.timestamp_us <= target.target_us => {
+                        retain_preview_frame(&mailbox, &frame, preview_cache_us);
                         chosen = Some(frame);
                     }
                     Ok(Some(frame)) => {
+                        retain_preview_frame(&mailbox, &frame, preview_cache_us);
                         pending = Some(frame);
                         break;
                     }
@@ -318,6 +433,33 @@ fn run_lane_worker(
                 .latest = Some(frame);
         }
         last_target_us = target.target_us;
+    }
+}
+
+fn retain_preview_frame(
+    mailbox: &Arc<Mutex<WorkerMailbox>>,
+    frame: &NativeDecodeFrame,
+    preview_cache_us: i64,
+) {
+    if preview_cache_us <= 0 || frame.timestamp_us < 0 || frame.timestamp_us > preview_cache_us {
+        return;
+    }
+    let mut mailbox = mailbox
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if mailbox
+        .preview_cache
+        .last()
+        .is_some_and(|cached| cached.timestamp_us >= frame.timestamp_us)
+    {
+        return;
+    }
+    mailbox.preview_cache.push(frame.retained_for_sequence(0));
+    // Container duration often extends a fraction beyond the final video
+    // sample. Being within 250ms is enough to prove the immutable frame cache
+    // covers the complete visible loop.
+    if frame.timestamp_us >= preview_cache_us.saturating_sub(250_000) {
+        mailbox.preview_cache_complete = true;
     }
 }
 
@@ -404,7 +546,7 @@ impl DecodeScheduler {
         let source_width = probe.width.unwrap_or(1280).max(1);
         let source_height = probe.height.unwrap_or(720).max(1);
         let duration_us = probe.duration_us.unwrap_or(0).max(0);
-        let start_us = looped_target(self.transport.current_position_us(), duration_us);
+        let start_us = 0;
         // Preview decoders are permanently bounded. PGM owns a separate
         // source-resolution decoder so selecting a live slot never promotes
         // that slot's preview transport to full-resolution frames.
@@ -417,6 +559,7 @@ impl DecodeScheduler {
             start_us,
             self.transport.generation,
             Arc::clone(&self.sequence),
+            duration_us,
         )?;
 
         self.clips.insert(
@@ -606,14 +749,17 @@ impl DecodeScheduler {
         request: ProgramLaneRequest,
     ) -> Result<PreparedProgramLane, DecodeError> {
         let frame_id = format!("{PROGRAM_FRAME_PREFIX}{}", request.source_id);
+        let (target_width, target_height) =
+            target_dimensions(request.source_width, request.source_height, true);
         let worker = LaneWorker::spawn(
             frame_id,
             request.path.clone(),
-            request.source_width,
-            request.source_height,
+            target_width,
+            target_height,
             request.start_us,
             request.generation,
             request.sequence,
+            0,
         )?;
         let lane = ClipLane {
             path: request.path,
@@ -744,11 +890,13 @@ impl DecodeScheduler {
 }
 
 fn target_dimensions(source_width: u32, source_height: u32, program: bool) -> (u32, u32) {
-    if program {
-        return (source_width, source_height);
-    }
-    let scale = (PREVIEW_MAX_WIDTH as f64 / source_width as f64)
-        .min(PREVIEW_MAX_HEIGHT as f64 / source_height as f64)
+    let (max_width, max_height) = if program {
+        (PROGRAM_MAX_WIDTH, PROGRAM_MAX_HEIGHT)
+    } else {
+        (PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT)
+    };
+    let scale = (max_width as f64 / source_width as f64)
+        .min(max_height as f64 / source_height as f64)
         .min(1.0);
     let width = ((source_width as f64 * scale).round() as u32).max(2) & !1;
     let height = ((source_height as f64 * scale).round() as u32).max(2) & !1;
@@ -808,7 +956,8 @@ mod tests {
     }
 
     #[test]
-    fn program_dimensions_keep_source_quality() {
-        assert_eq!(target_dimensions(1920, 1080, true), (1920, 1080));
+    fn program_dimensions_match_the_interactive_viewer_proxy() {
+        assert_eq!(target_dimensions(1920, 1080, true), (960, 540));
+        assert_eq!(target_dimensions(640, 360, true), (640, 360));
     }
 }

@@ -47,6 +47,27 @@ impl std::fmt::Debug for NativeDecodeFrame {
     }
 }
 
+impl NativeDecodeFrame {
+    /// Retain the same immutable decoded surface for another presentation.
+    ///
+    /// Preview loop smoothing uses this to replay a small cache of IOSurface
+    /// backed frames while that lane's single AVAssetReader reopens. Pixels are
+    /// not copied and no second VideoToolbox session is created.
+    pub(crate) fn retained_for_sequence(&self, sequence: u64) -> Self {
+        Self {
+            module_id: self.module_id.clone(),
+            width: self.width,
+            height: self.height,
+            timestamp_us: self.timestamp_us,
+            sequence,
+            #[cfg(target_os = "macos")]
+            pixel_buffer: self.pixel_buffer.clone(),
+            #[cfg(not(target_os = "macos"))]
+            bgra: self.bgra.clone(),
+        }
+    }
+}
+
 // Core Video objects are thread-safe to retain and release. Each frame is
 // otherwise consumed by exactly one decode/compositor worker; the pixel buffer
 // is never mutated by Beat Surfer.
