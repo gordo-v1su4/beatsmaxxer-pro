@@ -1,4 +1,5 @@
 use bsp_decode::{backend_name, probe_mp4, DecodeFrame};
+use tauri::Emitter;
 
 pub fn emit_frame(app: &tauri::AppHandle, frame: &DecodeFrame) -> Result<(), String> {
     app.emit(

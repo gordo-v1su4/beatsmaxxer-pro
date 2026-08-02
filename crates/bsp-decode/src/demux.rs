@@ -60,6 +60,7 @@ pub fn probe_mp4_bytes(path: &str, bytes: &[u8]) -> Result<Mp4Probe, String> {
     })
 }
 
+#[allow(dead_code)]
 pub fn file_exists(path: &str) -> bool {
     Path::new(path).is_file()
 }

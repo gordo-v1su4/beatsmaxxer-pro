@@ -34,6 +34,7 @@
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
+  import { initVideoSourcePort } from '$lib/platform/videoSource';
 
   const ALL_MODULES = listCatalog();
   const rackModules = $derived(
@@ -65,9 +66,7 @@
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
     const params = new URLSearchParams(window.location.search);
-    const { initVideoSourcePort } = await import('$lib/platform/videoSource');
     await initVideoSourcePort();
-
     if (params.has('qa')) {
       try {
         await fetchAndLoadQaMedia();

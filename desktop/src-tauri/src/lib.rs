@@ -1,5 +1,3 @@
-use std::fs;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -64,34 +62,6 @@ mod decode;
 mod essentia;
 mod ipc;
 
-fn clip_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_cache_dir()
-        .map_err(|error| error.to_string())?
-        .join("clips");
-    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
-    Ok(dir)
-}
-
-#[tauri::command]
-pub fn stage_clip_file(
-    app: AppHandle,
-    module_id: String,
-    file_name: String,
-    bytes: Vec<u8>,
-) -> Result<String, String> {
-    let safe_name = file_name
-        .chars()
-        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') { ch } else { '_' })
-        .collect::<String>();
-    let path = clip_cache_dir(&app)?.join(format!("{module_id}-{safe_name}"));
-    fs::write(&path, bytes).map_err(|error| error.to_string())?;
-    path.to_str()
-        .map(str::to_string)
-        .ok_or_else(|| "clip path is not valid UTF-8".to_string())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -105,7 +75,7 @@ pub fn run() {
             ipc::stop_decode,
             ipc::probe_clip,
             ipc::start_decode,
-            stage_clip_file,
+            ipc::stage_clip_file,
             essentia::analyze_rhythm
         ])
         .run(tauri::generate_context!())
