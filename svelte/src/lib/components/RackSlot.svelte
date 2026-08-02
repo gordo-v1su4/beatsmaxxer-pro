@@ -150,34 +150,36 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   {/if}
 
   {#if mod}
-    {#if compact}
-      <CompactModule
-        {mod}
-        {params}
-        canvasId={slotCanvasId}
-        videoLayer={$videoLayers[slotCanvasId]}
-        {isOnAir}
-        {onHeaderPointerDown}
-        {onVideoUpload}
-        {onVideosUpload}
-        {onClearVideo}
-      />
-    {:else}
-      <EffectModule
-        {mod}
-        {params}
-        canvasId={slotCanvasId}
-        mediaSlotId={slotCanvasId}
-        videoLayer={$videoLayers[slotCanvasId]}
-        midiLayer={$midiLayers[moduleId]}
-        {isOnAir}
-        {onHeaderPointerDown}
-        {onVideoUpload}
-        {onVideosUpload}
-        {onClearVideo}
-        {onMidiUpload}
-        onClearMidi={onClearMidi}
-      />
-    {/if}
+    {#key moduleId}
+      {#if compact}
+        <CompactModule
+          {mod}
+          {params}
+          canvasId={slotCanvasId}
+          videoLayer={$videoLayers[slotCanvasId]}
+          {isOnAir}
+          {onHeaderPointerDown}
+          {onVideoUpload}
+          {onVideosUpload}
+          {onClearVideo}
+        />
+      {:else}
+        <EffectModule
+          {mod}
+          {params}
+          canvasId={slotCanvasId}
+          mediaSlotId={slotCanvasId}
+          videoLayer={$videoLayers[slotCanvasId]}
+          midiLayer={$midiLayers[moduleId]}
+          {isOnAir}
+          {onHeaderPointerDown}
+          {onVideoUpload}
+          {onVideosUpload}
+          {onClearVideo}
+          {onMidiUpload}
+          onClearMidi={onClearMidi}
+        />
+      {/if}
+    {/key}
   {/if}
 </div>

@@ -33,7 +33,9 @@
   });
 
   $effect(() => {
-    if (ready && id !== 'pgm') webGpuEngine.setCanvasModule(id, moduleId);
+    if (!ready || id === 'pgm') return;
+    webGpuEngine.setCanvasModule(id, moduleId);
+    webGpuEngine.setCanvasAccent(id, color);
   });
 </script>
 

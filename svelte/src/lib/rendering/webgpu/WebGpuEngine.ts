@@ -183,6 +183,16 @@ export class WebGpuEngine {
     return true;
   }
 
+  /** Hot-swap idle/test-card accent when a rack slot's module changes. */
+  setCanvasAccent(canvasId: string, color: [number, number, number]): boolean {
+    if (canvasId === 'pgm') return false;
+    const binding = this.bindings.get(canvasId);
+    if (!binding) return false;
+    binding.color = color;
+    this.bindingSchedule.delete(canvasId);
+    return true;
+  }
+
   async attachCanvas(
     id: string,
     canvas: HTMLCanvasElement,
