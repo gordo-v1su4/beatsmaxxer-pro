@@ -9,6 +9,18 @@ macOS-first desktop shell for Beat Surfer Pro. Embeds the same Svelte + WebGPU U
 - Rust **1.88+** (`rust-toolchain.toml` at repo root)
 - Bun (for Svelte frontend build)
 
+### Runtime secrets (desktop dev)
+
+Set in your shell or Cursor Runtime Secrets before `bun run dev:desktop`:
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `ESSENTIA_ANALYSIS_ENABLED` | For ANALYZE | Must be `true` for hosted rhythm |
+| `ESSENTIA_API_BASE_URL` | For ANALYZE | e.g. `https://essentia.v1su4.dev` |
+| `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust `analyze_rhythm` command uses it |
+
+Uploaded clips are staged to the app cache via `stage_clip_file` and decoded through `bsp-decode` → `bsp://frame` → WebGPU.
+
 > **Linux / cloud VMs:** `crates/bsp-decode` unit tests run cross-platform; full `cargo tauri build` requires macOS (VideoToolbox + WKWebView). On Linux, `cargo check` in `desktop/src-tauri` needs GTK dev packages and is not a CI target.
 
 ## Commands

@@ -6,6 +6,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
+import { isAnalysisProxyConfigured } from '../api/analyze/policy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -22,6 +23,9 @@ export default defineConfig(({ mode, command }) => {
 		env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
 		''
 	).trim();
+	const essentiaEnabled =
+		isAnalysisProxyConfigured(essentiaProxyConfig) &&
+		(command === 'serve' || isTauriBuild);
 
 	return {
 		base: './',
@@ -38,9 +42,7 @@ export default defineConfig(({ mode, command }) => {
 			essentiaDevProxyPlugin(essentiaProxyConfig)
 		],
 		define: {
-			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(
-				essentiaProxyConfig.enabled && essentiaProxyConfig.deploymentMode === 'development'
-			),
+			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(essentiaEnabled),
 			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine)
 		},
 		server: {

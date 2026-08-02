@@ -4,6 +4,7 @@ import {
   normalizeLegacySyncAnalysis,
 } from "$lib/analysis/adapters/legacySync";
 import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
+import { isTauriRuntime } from "$lib/platform/runtime";
 
 export interface EssentiaRhythmAnalysis {
   bpm: number;
@@ -32,6 +33,10 @@ export interface EssentiaRhythmAnalysis {
 }
 
 export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
+  if (isTauriRuntime()) {
+    const analysisFile = await prepareAnalysisUpload(file);
+    return fetchEssentiaViaTauri(analysisFile);
+  }
   if (!isHostedAnalysisEnabled()) {
     throw new Error("Hosted analysis is disabled. Local playback and realtime analysis remain available.");
   }
@@ -41,6 +46,16 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
     engineHint: "essentia",
   });
   return toRhythmAnalysis(result);
+}
+
+async function fetchEssentiaViaTauri(analysisFile: File): Promise<EssentiaRhythmAnalysis> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  const bytes = new Uint8Array(await analysisFile.arrayBuffer());
+  const payload = await invoke<string>("analyze_rhythm", {
+    fileName: analysisFile.name,
+    bytes: Array.from(bytes),
+  });
+  return normalizeRhythmAnalysis(JSON.parse(payload));
 }
 
 export function isHostedAnalysisEnabled() {

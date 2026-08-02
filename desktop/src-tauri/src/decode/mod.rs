@@ -8,7 +8,7 @@ pub fn emit_frame(app: &tauri::AppHandle, frame: &DecodeFrame) -> Result<(), Str
             "width": frame.width,
             "height": frame.height,
             "timestampUs": frame.timestamp_us,
-            "data": frame.rgba,
+            "dataB64": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &frame.rgba),
         }),
     )
     .map_err(|error| error.to_string())

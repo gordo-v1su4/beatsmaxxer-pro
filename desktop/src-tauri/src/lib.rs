@@ -1,13 +1,15 @@
+use std::fs;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use bsp_decode::DecodeScheduler;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Manager, State};
 
 pub struct DecodeRuntime {
-    scheduler: Mutex<DecodeScheduler>,
+    pub(crate) scheduler: Mutex<DecodeScheduler>,
     stop_flag: Arc<AtomicBool>,
     worker: Mutex<Option<thread::JoinHandle<()>>>,
 }
@@ -23,7 +25,7 @@ impl Default for DecodeRuntime {
 }
 
 impl DecodeRuntime {
-    fn stop_worker(&self) {
+    pub(crate) fn stop_worker(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
         if let Some(handle) = self.worker.lock().ok().and_then(|mut guard| guard.take()) {
             let _ = handle.join();
@@ -31,7 +33,7 @@ impl DecodeRuntime {
         self.stop_flag.store(false, Ordering::SeqCst);
     }
 
-    fn ensure_worker(&self, app: AppHandle) {
+    pub(crate) fn ensure_worker(&self, app: AppHandle) {
         let mut worker = self.worker.lock().expect("decode worker lock");
         if worker.is_some() {
             return;
@@ -59,7 +61,36 @@ impl DecodeRuntime {
 pub struct ClipRegistry;
 
 mod decode;
+mod essentia;
 mod ipc;
+
+fn clip_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| error.to_string())?
+        .join("clips");
+    fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    Ok(dir)
+}
+
+#[tauri::command]
+pub fn stage_clip_file(
+    app: AppHandle,
+    module_id: String,
+    file_name: String,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let safe_name = file_name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') { ch } else { '_' })
+        .collect::<String>();
+    let path = clip_cache_dir(&app)?.join(format!("{module_id}-{safe_name}"));
+    fs::write(&path, bytes).map_err(|error| error.to_string())?;
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "clip path is not valid UTF-8".to_string())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -73,7 +104,9 @@ pub fn run() {
             ipc::release_clip,
             ipc::stop_decode,
             ipc::probe_clip,
-            ipc::start_decode
+            ipc::start_decode,
+            stage_clip_file,
+            essentia::analyze_rhythm
         ])
         .run(tauri::generate_context!())
         .expect("error while running Beat Surfer Pro desktop");

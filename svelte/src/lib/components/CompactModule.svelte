@@ -108,6 +108,102 @@
         { param: 'soft', label: 'BLOOM' }
       ],
       toggle: { param: 'xeye', label: 'XEYE' }
+    },
+    grain: {
+      buttons: [
+        { label: '16MM', set: { size: 25, amount: 30, drift: 15 } },
+        { label: 'GATE', set: { size: 55, amount: 65, drift: 35 } },
+        { label: 'WEAVE', set: { size: 40, amount: 50, drift: 70 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'size', label: 'SIZE' },
+        { param: 'drift', label: 'DRIFT' }
+      ]
+    },
+    dutch: {
+      buttons: [
+        { label: '5°', set: { tilt: 25, drift: 30, snap: 20 } },
+        { label: 'DRIFT', set: { tilt: 55, drift: 55, snap: 35 } },
+        { label: 'SNAP', set: { tilt: 70, drift: 40, snap: 85 } }
+      ],
+      primary: 'tilt',
+      sliders: [
+        { param: 'drift', label: 'DRIFT' },
+        { param: 'snap', label: 'SNAP' }
+      ]
+    },
+    anamorphic: {
+      buttons: [
+        { label: '2.39', set: { bars: 60, squeeze: 40, flare: 25 } },
+        { label: 'FLARE', set: { bars: 55, squeeze: 35, flare: 70 } },
+        { label: 'SQZ', set: { bars: 70, squeeze: 75, flare: 15 } }
+      ],
+      primary: 'bars',
+      sliders: [
+        { param: 'squeeze', label: 'SQZ' },
+        { param: 'flare', label: 'FLARE' }
+      ]
+    },
+    halation: {
+      buttons: [
+        { label: 'SOFT', set: { threshold: 40, spread: 35, tint: 30 } },
+        { label: 'FLARE', set: { threshold: 60, spread: 55, tint: 50 } },
+        { label: 'HOT', set: { threshold: 75, spread: 70, tint: 40 } }
+      ],
+      primary: 'threshold',
+      sliders: [
+        { param: 'spread', label: 'SPREAD' },
+        { param: 'tint', label: 'TINT' }
+      ]
+    },
+    bulge: {
+      buttons: [
+        { label: 'BARREL', set: { amount: 25, center: 50, falloff: 55 } },
+        { label: 'FISH', set: { amount: 65, center: 50, falloff: 40 } },
+        { label: 'POP', set: { amount: 45, center: 50, falloff: 70 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'center', label: 'CENTER' },
+        { param: 'falloff', label: 'FALL' }
+      ]
+    },
+    vhs: {
+      buttons: [
+        { label: 'TRACK', set: { tracking: 25, bleed: 30, noise: 20 } },
+        { label: 'WORN', set: { tracking: 55, bleed: 60, noise: 45 } },
+        { label: 'DAMAGE', set: { tracking: 85, bleed: 75, noise: 65 } }
+      ],
+      primary: 'tracking',
+      sliders: [
+        { param: 'bleed', label: 'BLEED' },
+        { param: 'noise', label: 'NOISE' }
+      ]
+    },
+    camcorder: {
+      buttons: [
+        { label: '90S', set: { interlace: 35, ccd: 40, datestamp: 0 } },
+        { label: 'DATE', set: { interlace: 45, ccd: 50, datestamp: 100 } },
+        { label: 'CCD', set: { interlace: 55, ccd: 70, datestamp: 0 } }
+      ],
+      primary: 'interlace',
+      sliders: [
+        { param: 'ccd', label: 'CCD' },
+        { param: 'datestamp', label: 'DATE' }
+      ]
+    },
+    prism: {
+      buttons: [
+        { label: 'EDGE', set: { split: 30, angle: 50, edge: 35 } },
+        { label: 'RAIN', set: { split: 55, angle: 35, edge: 50 } },
+        { label: 'HEAVY', set: { split: 75, angle: 65, edge: 45 } }
+      ],
+      primary: 'split',
+      sliders: [
+        { param: 'angle', label: 'ANGLE' },
+        { param: 'edge', label: 'EDGE' }
+      ]
     }
   };
 

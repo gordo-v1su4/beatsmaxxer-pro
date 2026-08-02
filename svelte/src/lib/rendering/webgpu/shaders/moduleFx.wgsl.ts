@@ -572,6 +572,7 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
   let amt = u.p0;
   let pulseP = u.p1;
   let soft = u.p2;
+  let xeye = u.p3;
 
   let rack = 0.5 - 0.5 * cos(fract(u.beat / 2.0) * 6.28318530718);
   let k = rack * (0.2 + pulseP * 0.8);
@@ -583,8 +584,13 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
     wet += sampleSource(clamp(uv + vec2f(cos(a), sin(a)) * blur, vec2f(0.0), vec2f(1.0)));
   }
   wet /= 8.0;
-  // out-of-focus highlights bloom, the way a fast lens does wide open
   wet += max(wet - vec3f(0.62), vec3f(0.0)) * soft * min(1.0, blur * 45.0);
+  if (xeye > 0.5) {
+    let split = step(0.5, uv.x);
+    let left = sampleSource(clamp(vec2f(uv.x * 0.92 + 0.04, uv.y), vec2f(0.0), vec2f(1.0)));
+    let right = sampleSource(clamp(vec2f((uv.x - 0.5) * 0.92 + 0.54, uv.y), vec2f(0.0), vec2f(1.0)));
+    wet = mix(left, right, split);
+  }
   return wet;
 }
 

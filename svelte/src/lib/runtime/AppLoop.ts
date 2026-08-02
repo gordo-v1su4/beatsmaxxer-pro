@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
+import { getVideoSourcePort } from '$lib/platform/videoSource';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import {
   advanceSpeedRampSource,
@@ -80,7 +81,7 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'orbit':
       return { mix: p.mix, p0: p.spd, p1: p.drift, p2: p.nudge };
     case 'focus':
-      return { mix: p.mix, p0: p.amt, p1: p.pulse, p2: p.soft };
+      return { mix: p.mix, p0: p.amt, p1: p.pulse, p2: p.soft, p3: p.xeye ?? 0 };
     case 'anamorphic':
       return { mix: p.mix, p0: p.bars, p1: p.squeeze, p2: p.flare };
     case 'grain':
@@ -255,7 +256,7 @@ export function startAppLoop() {
       audioEngine.getLiveScheduleFrame()?.accent
     );
     syncVideoModes(assignments);
-    videoPool.tick(frame);
+    getVideoSourcePort().tick(frame);
 
     const params = get(moduleParams);
     const layers = get(videoLayers);

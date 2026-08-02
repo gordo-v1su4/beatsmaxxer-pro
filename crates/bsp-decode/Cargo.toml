@@ -5,6 +5,8 @@ edition = "2021"
 description = "Beat Surfer Pro native decode — MP4 demux + VideoToolbox (macOS)"
 
 [dependencies]
+base64 = "0.22"
+mp4 = "0.14"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 

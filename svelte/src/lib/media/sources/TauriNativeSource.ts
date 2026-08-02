@@ -56,16 +56,27 @@ export class TauriNativeSource implements VideoSourcePort {
       width: number;
       height: number;
       timestampUs: number;
-      data: number[];
+      data?: number[];
+      dataB64?: string;
     }>('bsp://frame', (event) => {
       const payload = event.payload;
+      let data: Uint8ClampedArray;
+      if (payload.dataB64) {
+        const binary = atob(payload.dataB64);
+        data = new Uint8ClampedArray(binary.length);
+        for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+      } else if (payload.data) {
+        data = Uint8ClampedArray.from(payload.data);
+      } else {
+        return;
+      }
       const surface: NativeFrameSurface = {
         kind: 'native-rgba',
         moduleId: payload.moduleId,
         width: payload.width,
         height: payload.height,
         timestampUs: payload.timestampUs,
-        data: Uint8ClampedArray.from(payload.data)
+        data
       };
       this.latest.set(payload.moduleId, surface);
       for (const listener of this.listeners) listener(surface);
