@@ -1,4 +1,4 @@
-use bsp_decode::{backend_name, probe_mp4, DecodeFrame};
+use bsp_decode::DecodeFrame;
 use tauri::Emitter;
 
 pub fn emit_frame(app: &tauri::AppHandle, frame: &DecodeFrame) -> Result<(), String> {
@@ -13,12 +13,4 @@ pub fn emit_frame(app: &tauri::AppHandle, frame: &DecodeFrame) -> Result<(), Str
         }),
     )
     .map_err(|error| error.to_string())
-}
-
-pub fn probe(path: &str) -> Result<bsp_decode::Mp4Probe, String> {
-    probe_mp4(path)
-}
-
-pub fn backend() -> &'static str {
-    backend_name()
 }
