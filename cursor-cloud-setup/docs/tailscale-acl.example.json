@@ -1,0 +1,23 @@
+{
+  "//": "Example Tailscale ACL fragment — merge into your tailnet policy.",
+  "tagOwners": {
+    "tag:cursor-agent": ["autogroup:admin"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["tag:cursor-agent"],
+      "dst": ["desktop-q20uuvd:5174"]
+    },
+    {
+      "action": "accept",
+      "src": ["tag:cursor-agent"],
+      "dst": ["desktop-q20uuvd:*"]
+    },
+    {
+      "action": "accept",
+      "src": ["desktop-q20uuvd:*"],
+      "dst": ["tag:cursor-agent:5174"]
+    }
+  ]
+}
