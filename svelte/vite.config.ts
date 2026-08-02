@@ -48,9 +48,9 @@ export default defineConfig(({ mode, command }) => {
 		server: {
 			port: 5174,
 			strictPort: true,
-			// Bind IPv4 explicitly — default Vite can listen on ::1 only, which breaks
-			// http://localhost:5174 and Tauri devUrl (127.0.0.1) with ERR_CONNECTION_REFUSED.
-			host: '127.0.0.1',
+			// Tailscale cloud: DEV_HOST=0.0.0.0. Local/Tauri: bind IPv4 explicitly
+			// (default Vite can listen on ::1 only → ERR_CONNECTION_REFUSED on 127.0.0.1).
+			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1',
 			fs: {
 				allow: ['..']
 			}

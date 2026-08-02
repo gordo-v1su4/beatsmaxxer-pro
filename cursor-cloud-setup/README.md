@@ -1,117 +1,85 @@
-# Cursor Cloud Agent setup — Beat Surfer Pro
+# Beat Surfer Pro — Cursor Cloud + Tailscale GPU setup
 
-This repository runs in a Cursor-hosted Ubuntu VM. The wiring follows the same pattern as [project-stack-structure PR #5 (Hermes)](https://github.com/gordo-v1su4/project-stack-structure/pull/5), adapted for **Svelte + Vite on port 5174**.
+This runbook wires the repo for **cloud-agent development** with **WebGPU on your Tailnet GPU desktop**.
 
-## Verified topology
+## Topology
 
 ```text
-Cursor Cloud Agent VM
-  ├─ checks out beat-surfer-pro
-  ├─ installs pinned Bun, Tailscale, optional bws, Chromium
-  ├─ receives environment-scoped Runtime Secrets from Cursor
-  ├─ seeds bundled QA .webm fixtures (8 clips)
-  └─ optional Tailscale userspace proxy
-       └─ home server / Essentia API on your tailnet
+┌─────────────────────────┐         Tailscale          ┌──────────────────────────┐
+│  Cursor Cloud VM        │ ◄──────────────────────────► │  GPU desktop             │
+│  Vite dev :5174         │                              │  Chrome + WebGPU         │
+│  (no GPU)               │                              │  (shader output here)    │
+│  optional Essentia proxy│ ──HTTP via TS proxy────────► │  optional analysis API │
+└─────────────────────────┘                              └──────────────────────────┘
 ```
 
-Public Essentia URLs work without Tailscale. Only **tailnet-only** Essentia hosts need `TS_AUTHKEY`.
+WebGPU always executes **in the desktop browser**. The cloud VM only serves the SvelteKit app and optional server-side dev proxy routes.
 
-## What this repo installs
+## Repository files
 
-Cursor auto-detects the repository-root files:
+| File | Role |
+|------|------|
+| `.cursor/environment.json` | Cursor install/start + port 5174 |
+| `.cursor/install-cloud-tools.sh` | Pin Bun + Tailscale with verified checksums |
+| `scripts/cloud-agent-start.sh` | Tailscale userspace + Vite on `0.0.0.0:5174` |
+| `AGENTS.md` | Agent instructions and caveats |
 
-- [`.cursor/environment.json`](../.cursor/environment.json)
-- [`.cursor/install-cloud-tools.sh`](../.cursor/install-cloud-tools.sh)
-- [`scripts/cloud-agent-start.sh`](../scripts/cloud-agent-start.sh)
-- the **Cursor Cloud** section in [`AGENTS.md`](../AGENTS.md)
+## Activation (operator checklist)
 
-The environment installs dependencies, optionally starts Tailscale when `TS_AUTHKEY` is present, then starts Vite on port **5174**.
+### 1. Link Cursor environment
 
-## Secret modes
+In Cursor → **Cloud Agents** → **Environments**, connect this repository. Cursor reads `.cursor/environment.json` from the repo root.
 
-The startup script supports two explicit modes (same as Hermes).
+### 2. Add Runtime Secrets
 
-### Mode 1 — Cursor environment-scoped secrets (usable now)
+See [`docs/secrets-inventory.md`](./docs/secrets-inventory.md). Minimum for Tailnet access:
 
-Add the app variables listed in [`docs/secrets-inventory.md`](docs/secrets-inventory.md) directly to the repository's Cursor Cloud environment. Sensitive values should be **Runtime Secrets**; non-sensitive URLs can be environment variables.
+- `TS_AUTHKEY` — ephemeral or reusable auth key tagged for cloud agents
 
-This does not write a `.env` file.
+Optional (hosted rhythm analysis on your desktop):
 
-### Mode 2 — scoped Bitwarden Secrets Manager project (preferred when available)
+- `ESSENTIA_ANALYSIS_ENABLED=true`
+- `ESSENTIA_API_BASE_URL=http://100.73.126.36:<port>` (Tailscale IP of your analysis service)
+- `ESSENTIA_API_KEY=<server secret>`
 
-Set both:
+Never commit secret values. Verify presence as SET/MISSING only.
 
-- `BWS_ACCESS_TOKEN` — Runtime Secret
-- `BWS_PROJECT_ID` — environment variable
+### 3. Tailscale ACL
 
-The startup script validates access with `bws project get` and launches Vite through `bws run`. `BWS_SERVER_URL` is optional (omit for Bitwarden Cloud).
+Use [`docs/tailscale-acl.example.json`](./docs/tailscale-acl.example.json) as a starting point. Restrict:
 
-Never use a broad organization-wide Bitwarden token in Cursor. Use a dedicated project such as `beat-surfer-pro-dev`.
+- Cloud agent tag → your GPU desktop (dev server access from desktop)
+- Cloud agent tag → analysis service port (if using Essentia on desktop)
 
-## Cursor dashboard values
+### 4. Open the app on your GPU machine
 
-Open [Cursor → Cloud Agents → Environments](https://cursor.com/dashboard/cloud-agents#environments), select the environment for this repository, and add:
+After a cloud agent starts:
 
-| Name | Type | Required |
-| --- | --- | --- |
-| `TS_AUTHKEY` | Runtime Secret | For tailnet-only Essentia |
-| App variables from `docs/secrets-inventory.md` | Runtime Secret or env var | Mode 1 |
-| `BWS_ACCESS_TOKEN` | Runtime Secret | Mode 2 only |
-| `BWS_PROJECT_ID` | Environment variable | Mode 2 only |
-| `BWS_SERVER_URL` | Environment variable | Self-hosted Bitwarden only |
+1. Note the Cursor forwarded URL for port **5174**, or the VM's Tailscale IP.
+2. On your **GPU desktop**, open Chrome/Edge 113+:
+   ```
+   http://<host>:5174/?qa=1&qaAutoplay=1
+   ```
+3. Confirm WebGPU previews animate (CapabilityGate should not block).
 
-## Tailscale policy
-
-1. Add `tag:cursor-agent` to the tailnet policy.
-2. Permit that tag to reach your Essentia host/port only.
-3. Create a reusable auth key carrying `tag:cursor-agent`.
-4. Save the auth key as Cursor Runtime Secret `TS_AUTHKEY`.
-
-Start from [`docs/tailscale-acl.example.json`](docs/tailscale-acl.example.json), merging into your existing policy.
-
-## Verification
-
-### Repository checks
+### 5. Local verification (on GPU desktop)
 
 ```bash
-python3 -m json.tool .cursor/environment.json >/dev/null
-bash -n .cursor/install-cloud-tools.sh
-bash -n scripts/cloud-agent-start.sh
-cd svelte && bun run test
-cd svelte && bun run build
-cd svelte && bash scripts/verify-cloud-smoke.sh
+bun install
+cd svelte && bun run test          # unit tests, no GPU
+cd svelte && bun run test:local    # full suite + browser gates (needs Chrome + WebGPU)
 ```
 
-### Cursor Cloud setup run
+## Troubleshooting
 
-Start a setup run from the Cursor dashboard and confirm:
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| "WebGPU unavailable" in cloud VM | Expected — no GPU in VM | Open app on GPU desktop browser |
+| Dev server unreachable from desktop | VM not on tailnet / firewall | Set `TS_AUTHKEY`; check ACL |
+| Essentia proxy 503 | Missing env or bad URL | Set all three `ESSENTIA_*` vars; use `100.x` HTTP or HTTPS |
+| Port 5174 in use after restart | Stale Vite process | Restart agent; startup script kills process group on exit |
+| Black previews on desktop | User gesture needed | Click PLAY or use `?qaAutoplay=1` |
 
-1. `.cursor/install-cloud-tools.sh` completes.
-2. Tailscale reports userspace networking ready (if `TS_AUTHKEY` set).
-3. The startup script selects the intended secret mode.
-4. Vite listens on port **5174**.
-5. `cd svelte && bash scripts/verify-cloud-smoke.sh` exits 0.
+## Differences from `project-stack-structure`
 
-## What cloud CAN vs CANNOT verify
-
-| Task | Cloud VM | Local Mac |
-| --- | --- | --- |
-| vitest + build | Yes | Yes |
-| Dev server :5174 | Yes | Yes |
-| `?qa=1` 8 bundled clips | Yes | Yes |
-| WebGPU rendering | Unreliable | Yes |
-| Headed 8-video proof (30s, archive MP4s) | No | Yes |
-
-**Rule:** Never mark "8-video proof passed" from cloud alone.
-
-## Security rules
-
-- Never commit `.env` files or real credentials.
-- Never paste access tokens into GitHub comments or agent prompts.
-- Do not give Cursor broad Bitwarden org tokens — use a dedicated BWS project.
-- Cloud tool downloads are pinned to exact versions with SHA-256 verification.
-- Vite runs in its own process group so Cursor stop/restart releases port 5174.
-
-## Tauri / desktop branch
-
-Cloud agents run the **web/Svelte** app only. The desktop branch requires macOS + Xcode and is not a Cursor Cloud target.
+That repo offloads **AI generation** to SwarmUI on the desktop. Beat Surfer Pro offloads **WebGPU rendering** to whichever browser runs on your GPU machine — there is no server-side render farm.

@@ -63,12 +63,19 @@ export function analysisProxyConfigFromEnv(
   };
 }
 
+function isTailscaleCgnatHost(hostname: string): boolean {
+  const parts = hostname.split(".").map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => Number.isNaN(part))) return false;
+  return parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+}
+
 export function isAnalysisProxyConfigured(config: AnalysisProxyConfig) {
   if (!config.enabled || !config.apiBaseUrl || !config.apiKey) return false;
   try {
     const url = new URL(config.apiBaseUrl);
     const allowedProtocol = url.protocol === "https:" ||
-      ((url.hostname === "localhost" || url.hostname === "127.0.0.1") && url.protocol === "http:");
+      ((url.hostname === "localhost" || url.hostname === "127.0.0.1" || isTailscaleCgnatHost(url.hostname)) &&
+        url.protocol === "http:");
     return allowedProtocol && !url.username && !url.password && !url.search && !url.hash;
   } catch {
     return false;

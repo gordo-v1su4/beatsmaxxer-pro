@@ -1,49 +1,40 @@
-# Secrets inventory — beat-surfer-pro
+# Cursor Cloud Runtime Secrets inventory
 
-These names match the variables read by the application. Values are operator-specific and must not be committed.
+Add these in **Cursor → Cloud Agents → Environments → Secrets** for the `beat-surfer-pro` environment.
 
-For direct Cursor mode, sensitive values are environment-scoped **Runtime Secrets**. For Bitwarden mode, the same names live in the dedicated BWS project.
+## Required for Tailnet access
 
-## Bootstrap
+| Name | Example shape | Notes |
+|------|---------------|-------|
+| `TS_AUTHKEY` | `tskey-auth-...` | Ephemeral key with `tag:cursor-agent` (or your chosen tag). Consumed once at Tailscale `up`. |
 
-| Name | Type in Cursor | Required |
-| --- | --- | --- |
-| `TS_AUTHKEY` | Runtime Secret | Private Tailnet access (tailnet-only Essentia) |
-| `BWS_ACCESS_TOKEN` | Runtime Secret | BWS mode only |
-| `BWS_PROJECT_ID` | Environment variable | BWS mode only |
-| `BWS_SERVER_URL` | Environment variable | Self-hosted BWS only; omit for Bitwarden Cloud |
+## Optional — hosted rhythm analysis (development proxy)
 
-## Audio analysis (Essentia)
+The Vite dev server proxies `/__api/analyze/*` to your upstream. Only active when all three are set.
 
-| Name | Aliases | Notes |
-| --- | --- | --- |
-| `ESSENTIA_API_KEY` | — | Optional; without it the app uses a local rhythm stub |
-| `ESSENTIA_API_BASE_URL` | `ESSENTIA_API_URL`, `VITE_ESSENTIA_API_BASE_URL` | Optional hosted Essentia base URL |
-| `ESSENTIA_ANALYSIS_ENABLED` | — | Server-side dev proxy toggle |
-| `ESSENTIA_ANALYSIS_ENGINE` | `VITE_ESSENTIA_ANALYSIS_ENGINE` | Optional engine label |
+| Name | Example shape | Notes |
+|------|---------------|-------|
+| `ESSENTIA_ANALYSIS_ENABLED` | `true` | Must be exactly `true` |
+| `ESSENTIA_API_BASE_URL` | `https://analysis.example` or `http://100.73.126.36:8080` | Tailscale CGNAT (`100.64.0.0/10`) allowed over HTTP in dev |
+| `ESSENTIA_API_KEY` | `<server secret>` | Never exposed to the browser bundle |
 
-Sources: [`.env.example`](../.env.example), [`svelte/vite/essentiaDevProxy.ts`](../svelte/vite/essentiaDevProxy.ts).
+## Optional — local QA media path
 
-## QA media (local only)
+| Name | Example shape | Notes |
+|------|---------------|-------|
+| `QA_MEDIA_DIR` | `/path/to/clips` | Only for linking custom clips; committed fixtures work without this |
 
-| Name | Notes |
-| --- | --- |
-| `QA_MEDIA_DIR` | **Not used in cloud** — cloud uses `svelte/scripts/setup-qa-media.sh` bundled fixtures |
+## Never store in git
 
-## Safe verification
+- Real `TS_AUTHKEY` values
+- `ESSENTIA_API_KEY` or upstream credentials
+- Bitwarden / Hermes tokens (not used by this repo's cloud setup)
 
-Never print `env` or `bws run ... env` in CI logs. Check names only:
+## Verification commands (secrets redacted)
 
 ```bash
-python3 - <<'PY'
-import os
-for name in [
-    "ESSENTIA_API_KEY",
-    "ESSENTIA_API_BASE_URL",
-    "TS_AUTHKEY",
-    "BWS_ACCESS_TOKEN",
-    "BWS_PROJECT_ID",
-]:
-    print(f"{name}={'SET' if os.environ.get(name) else 'MISSING'}")
-PY
+# Inside a cloud agent shell — print SET/MISSING only
+for v in TS_AUTHKEY ESSENTIA_ANALYSIS_ENABLED ESSENTIA_API_BASE_URL ESSENTIA_API_KEY; do
+  if [[ -n "${!v:-}" ]]; then echo "$v=SET"; else echo "$v=MISSING"; fi
+done
 ```

@@ -32,7 +32,9 @@ bun run build          # build svelte frontend first
 bun run dev:desktop    # Tauri dev — Vite on :5175 + native shell
 ```
 
-**Ports:** web dev uses **5174** (`bun run dev`); desktop Tauri dev uses **5175** so both can run side-by-side without conflict.
+**Ports:** web dev uses **5174** (`bun run dev`); desktop Tauri dev uses **5175** so both can run side-by-side.
+
+**UI:** matches verified `main` layout — FX LIB + PGM rail only (PresetBrowser middle column removed).
 
 From `desktop/`:
 

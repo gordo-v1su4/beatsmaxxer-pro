@@ -1,83 +1,84 @@
-# Beat Surfer Pro — Agent Guide
+# AGENTS.md
 
-Instructions for AI coding agents working in this repository.
+Beat Surfer Pro is a **SvelteKit 5 + WebGPU** browser app (no backend). See [`README.md`](./README.md) and [`svelte/docs/ARCHITECTURE.md`](./svelte/docs/ARCHITECTURE.md).
 
-**Stack:** SvelteKit 5 + WebGPU-only rewrite in `svelte/`. There is no React app — do not recreate or reference a root `src/` React tree.
-
-## Agent files
-
-| File | Purpose |
-|------|---------|
-| **`AGENTS.md`** | Canonical instructions — Cursor, Codex, Copilot, etc. read this directly. |
-| **`CLAUDE.md`** | Symlink → `AGENTS.md` so Claude Code finds the same guide under its native filename. |
-| **`CLAUDE.local.md`** | Optional, gitignored (`*.local`) — Claude-only notes that other IDEs never see. |
-
-## Cursor Cloud
-
-- Cursor automatically loads the repository-root [`.cursor/environment.json`](.cursor/environment.json).
-- Cloud startup is [`scripts/cloud-agent-start.sh`](scripts/cloud-agent-start.sh); do **not** create `.env` files in the agent VM.
-- The installer pins **Bun 1.3.10**, **Tailscale**, and optional **bws** with SHA-256 verified downloads (same pattern as [project-stack-structure Hermes PR #5](https://github.com/gordo-v1su4/project-stack-structure/pull/5)).
-- Dev server: **`http://127.0.0.1:5174`** (Svelte in `svelte/`). Vite runs in a process group for reliable cleanup.
-- Optional **Tailscale userspace** networking when `TS_AUTHKEY` is set — reach tailnet-only Essentia hosts from the cloud VM.
-- Secret mode is explicit: either provide both `BWS_ACCESS_TOKEN` and `BWS_PROJECT_ID`, or provide app variables as Cursor environment-scoped secrets. Never use a broad org Bitwarden token in Cursor.
-- QA fixtures: `bash svelte/scripts/setup-qa-media.sh` (bundled tiny `.webm`, not `~/Downloads/archive`).
-- Before claiming the app is running, run `cd svelte && bash scripts/verify-cloud-smoke.sh` — must exit 0.
-- If port 5174 is closed or smoke fails, **stop and fix the environment** — do not claim success.
-- Never mark "8-video proof passed" from cloud alone. Full proof requires native Chrome + archive MP4s locally.
-- Setup runbook: [`cursor-cloud-setup/README.md`](cursor-cloud-setup/README.md).
-- Secrets inventory: [`cursor-cloud-setup/docs/secrets-inventory.md`](cursor-cloud-setup/docs/secrets-inventory.md).
-
-### Cloud secrets (Runtime Secrets — names only)
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `ESSENTIA_API_KEY` | Optional | Without it, rhythm stub is used |
-| `ESSENTIA_API_BASE_URL` | Optional | Hosted Essentia |
-| `TS_AUTHKEY` | Optional | Tailscale if Essentia is tailnet-only |
-| `BWS_ACCESS_TOKEN` | Optional | BWS mode — with `BWS_PROJECT_ID` |
-| `BWS_PROJECT_ID` | Optional | BWS mode — with `BWS_ACCESS_TOKEN` |
+Use **`bun`** for all installs, dev, test, and build commands.
 
 ## Commands
 
-```bash
-bun install              # from repo root (postinstall → svelte/)
-bun run dev              # http://localhost:5174
-bun run build            # production → svelte/build/
-bun run test             # vitest
-bun run test:local       # full suite (unit + build + browser gates)
-bun run link-qa          # symlink 8 archive MP4s + Redline (local Mac only)
-cd svelte && bash scripts/verify-cloud-smoke.sh   # cloud smoke gate
-```
+| Task | Command |
+|------|---------|
+| Install | `bun install` (postinstall also installs `svelte/`) |
+| Dev server | `bun run dev` → `http://localhost:5174` |
+| Unit tests | `bun run test` |
+| Full local suite | `bun run test:local` (needs Chrome + WebGPU) |
+| Production build | `bun run build` → `svelte/build/` |
 
-**QA URL:** `http://localhost:5174/?qa=1&qaAutoplay=1`
+QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`).
 
-Use **bun** only (not npm/yarn/pnpm).
+## Cursor Cloud
 
-## Architecture
+- Cursor loads repository-root [`.cursor/environment.json`](./.cursor/environment.json) automatically.
+- Install: [`.cursor/install-cloud-tools.sh`](./.cursor/install-cloud-tools.sh) pins **Bun 1.3.10** and **Tailscale 1.98.10**.
+- Startup: [`scripts/cloud-agent-start.sh`](./scripts/cloud-agent-start.sh) — optional Tailscale userspace networking, then Vite on **`0.0.0.0:5174`**.
+- Setup runbook: [`cursor-cloud-setup/README.md`](./cursor-cloud-setup/README.md).
+- Do **not** create `.env` files in the cloud VM; use Cursor environment-scoped Runtime Secrets.
 
-**Audio Analysis → Parameter System → Effect Modules → WebGPU Canvases**
+### WebGPU runs on your GPU desktop, not in the cloud VM
 
-### Decode (web path on `main`)
+Cloud VMs have **no WebGPU** (`navigator.gpu` is null). Shader output only appears when you open the dev server in **Chrome or Edge on a machine with a GPU** — typically your Tailnet desktop (`desktop-q20uuvd` or similar).
 
-- **`VideoPool.ts`** — 8× `HTMLVideoElement`, one decode lane per rack slot
-- **`WebGpuEngine.ts`** — `importExternalTexture` + `VideoTextureCache` fallback
-- **`MediaRuntime.ts`** — transactional clip registration + hot-deck
+**Workflow:**
 
-### Desktop path (`cursor/desktop-tauri-e0e8`)
+1. Launch a cloud agent (or run `bash scripts/cloud-agent-start.sh` locally).
+2. On your **GPU machine**, open Chrome and visit either:
+   - the Cursor forwarded port URL for `:5174`, or
+   - `http://<cloud-vm-tailscale-ip>:5174/?qa=1&qaAutoplay=1` if the VM joined your tailnet.
+3. WebGPU initializes in that desktop browser; previews and PGM render with your local GPU.
 
-- Tauri 2 shell embeds `svelte/build`
-- Rust **`bsp-decode`** crate: MP4 demux + VideoToolbox (macOS) → IPC → WebGPU upload
-- Platform abstraction: `svelte/src/lib/platform/` + `VideoSourcePort`
-- **Dev ports:** web `5174`, desktop Tauri `5175` (run both without conflict)
+Cloud agents can still run **`bun run test`** (vitest, no GPU) and edit code. Browser acceptance gates (`bun run test:local`) require Chrome + WebGPU on the machine running the tests.
 
-See [`svelte/docs/ARCHITECTURE.md`](svelte/docs/ARCHITECTURE.md) and [`desktop/README.md`](desktop/README.md).
+### Tailscale (optional)
 
-## Conventions
+Set **`TS_AUTHKEY`** in Cursor Runtime Secrets so the cloud VM joins your tailnet. This enables:
 
-- Path alias `$lib/` → `svelte/src/lib/`.
-- WebGPU required — no WebGL fallback.
-- Ship gate: [`svelte/README.md`](svelte/README.md).
+- Your GPU desktop to reach the dev server via Tailscale IP.
+- The Vite Essentia dev proxy to reach a rhythm-analysis service on your desktop (e.g. `ESSENTIA_API_BASE_URL=http://100.73.126.36:<port>`).
 
-## Deploy
+Tailscale uses Cursor-required **userspace networking** (`--tun=userspace-networking`). Restrict ACL access per [`cursor-cloud-setup/docs/tailscale-acl.example.json`](./cursor-cloud-setup/docs/tailscale-acl.example.json).
 
-Vercel builds from `svelte/` ([`vercel.json`](vercel.json)).
+### Secrets
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `TS_AUTHKEY` | For Tailnet | Cursor Runtime Secret only; never commit |
+| `ESSENTIA_ANALYSIS_ENABLED` | Optional | `true` to enable dev proxy |
+| `ESSENTIA_API_BASE_URL` | Optional | HTTPS or `http://100.x.x.x` (Tailscale CGNAT) |
+| `ESSENTIA_API_KEY` | Optional | Server-side only; injected by dev proxy |
+
+Hosted analysis is **development-only**; production relay is blocked. Without Essentia, local Web Audio rhythm analysis is the fallback.
+
+### QA media
+
+Committed VP9/WebM fixtures (`svelte/tests/fixtures/media-src/qa-clip.webm`) work on any machine. Run `cd svelte && bash scripts/setup-qa-media.sh` before browser gates.
+
+### Known cloud limitations
+
+- No live WebGPU shader output inside the cloud VM browser.
+- Physical visual proof (`capture:visual-proof`) requires a native GPU — run on your desktop, not the cloud VM.
+- Chrome is required for `verify:browser` / `test:local`.
+
+## Desktop branch (`cursor/desktop-tauri-e0e8`)
+
+Separate from `main` — do **not** merge desktop into main until promoted.
+
+| Target | Command | Port |
+|--------|---------|------|
+| Web (browser) | `bun run dev` | 5174 |
+| Tauri desktop | `bun run dev:desktop` | Vite 5175 → native shell |
+
+- Tauri 2 shell in `desktop/` embeds `svelte/build`
+- Rust **`bsp-decode`**: MP4 demux + VideoToolbox (macOS) → IPC → WebGPU
+- Platform layer: `svelte/src/lib/platform/` + `VideoSourcePort`
+- UI matches verified `main` layout (no PresetBrowser middle column)
+- See [`desktop/README.md`](./desktop/README.md)
