@@ -20,7 +20,7 @@
     "demo": "cd svelte && bun run demo",
     "open": "cd svelte && bun run open",
     "dev:desktop": "bash scripts/dev-desktop.sh",
-    "build:desktop": "cd svelte && bun run build && cd ../desktop && bunx tauri build",
+    "build:desktop": "cd svelte && TAURI_ENV_PLATFORM=1 bun run build && cd ../desktop && bunx tauri build",
     "qa:secret-scan": "bun run scripts/secret-scan.ts"
   }
 }

@@ -74,6 +74,8 @@ bun run dev:desktop    # Tauri dev — Vite on :5175 + native shell
 
 **UI:** matches verified `main` layout — FX LIB + PGM rail only (PresetBrowser middle column removed).
 
+**Video clips:** desktop uses the same **HTMLVideo** path as web (blob URLs + WebGPU). Real MP4 playback works in the Tauri webview. The experimental Rust decode path (`DESKTOP_NATIVE_DECODE=true`) is off by default — it only emits synthetic test patterns until VideoToolbox is wired.
+
 From `desktop/`:
 
 ```bash

@@ -26,6 +26,9 @@ export default defineConfig(({ mode, command }) => {
 	const essentiaEnabled =
 		isAnalysisProxyConfigured(essentiaProxyConfig) &&
 		(command === 'serve' || isTauriBuild);
+	const desktopNativeDecode =
+		isTauriBuild &&
+		(env.DESKTOP_NATIVE_DECODE === 'true' || env.VITE_DESKTOP_NATIVE_DECODE === 'true');
 
 	return {
 		base: './',
@@ -43,7 +46,8 @@ export default defineConfig(({ mode, command }) => {
 		],
 		define: {
 			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(essentiaEnabled),
-			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine)
+			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine),
+			__APP_DESKTOP_NATIVE_DECODE__: JSON.stringify(desktopNativeDecode)
 		},
 		server: {
 			port: 5174,
