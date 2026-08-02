@@ -1,6 +1,13 @@
 # Beat Surfer Pro — Desktop (Tauri)
 
-macOS-first desktop shell for Beat Surfer Pro. Embeds the same Svelte + WebGPU UI from [`../svelte/`](../svelte/) and adds a native decode path via Rust.
+macOS-first desktop shell for Beat Surfer Pro. It shares the Svelte controls and
+rack model with the web app while the desktop branch moves video presentation to
+a Rust-owned native wgpu compositor.
+
+Architecture and measured release gates:
+
+- [`../docs/desktop-native-video-architecture.md`](../docs/desktop-native-video-architecture.md)
+- [`../docs/desktop-video-player-research.md`](../docs/desktop-video-player-research.md)
 
 ## Fresh machine setup (macOS)
 
@@ -57,7 +64,11 @@ await window.__TAURI__.core.invoke('essentia_configured')
 
 If `true` but ANALYZE still fails, hover the **RHY** pill in the top bar — the tooltip shows the Rust error (network, 401, timeout, etc.).
 
-Uploaded clips are staged to the app cache via `stage_clip_file` and decoded through `bsp-decode` → `bsp://frame` → WebGPU.
+Uploaded clips are staged to the app cache via `stage_clip_file`. The current
+native path decodes with `bsp-decode`/VideoToolbox, retains IOSurface-backed Core
+Video frames, imports them into Metal/wgpu, and submits them directly to the
+native compositor. The legacy `bsp://frame` CPU/IPC bridge is diagnostic-only and
+must not be enabled for performance qualification.
 
 > **Linux / cloud VMs:** `crates/bsp-decode` unit tests run cross-platform; full `cargo tauri build` requires macOS (VideoToolbox + WKWebView). On Linux, `cargo check` in `desktop/src-tauri` needs GTK dev packages and is not a CI target.
 
@@ -74,7 +85,11 @@ bun run dev:desktop    # Tauri dev — Vite on :5175 + native shell
 
 **UI:** matches verified `main` layout — FX LIB + PGM rail only (PresetBrowser middle column removed).
 
-**Video clips:** desktop uses the same **HTMLVideo** path as web (blob URLs + WebGPU). Real MP4 playback works in the Tauri webview. The experimental Rust decode path (`DESKTOP_NATIVE_DECODE=true`) is off by default — it only emits synthetic test patterns until VideoToolbox is wired.
+**Video clips:** web and desktop intentionally use different platform playback
+implementations. The browser target retains its HTMLVideo/WebGPU path. Desktop
+normal playback uses VideoToolbox → IOSurface → Metal/wgpu and does not send
+decoded frame pixels through the webview. `BSP_DESKTOP_CPU_FRAME_BRIDGE=1`
+enables the old CPU/IPC bridge for diagnostics only.
 
 From `desktop/`:
 
@@ -87,9 +102,9 @@ bunx tauri build
 ## Architecture
 
 ```text
-svelte/build/          UI + WebGPU WGSL (shared with web)
-desktop/src-tauri/     Tauri shell + IPC commands
-crates/bsp-decode/     MP4 probe + VideoToolbox decode (macOS)
+svelte/build/          shared controls, layout, rack state, and shader semantics
+desktop/src-tauri/     Tauri shell + native wgpu compositor + sparse control IPC
+crates/bsp-decode/     MP4 demux + retained VideoToolbox frame handles (macOS)
 ```
 
 ### IPC commands
@@ -101,14 +116,17 @@ crates/bsp-decode/     MP4 probe + VideoToolbox decode (macOS)
 | `stop_decode` | Stop all native decode lanes |
 | `probe_clip` | MP4 probe via `bsp-decode` |
 | `decode_backend_name` | Diagnostics |
+| `update_native_compositor_layout` | Update native preview/PGM rectangles |
+| `set_native_compositor_test_pattern` | Native surface alignment proof |
 
-Frames emit on event `bsp://frame` as RGBA payloads consumed by [`TauriNativeSource`](../svelte/src/lib/media/sources/TauriNativeSource.ts).
+Transport anchors, source assignments, layout rectangles, and compact control
+changes cross IPC. Normal playback frames do not.
 
 ## Web vs desktop
 
 | Target | Branch | Decode |
 |--------|--------|--------|
-| Web / Vercel | `main` | 8× HTMLVideo → WebGPU |
-| Desktop | `cursor/desktop-tauri-e0e8` | Rust demux + VideoToolbox → IPC → WebGPU |
+| Web / Vercel | `main` | HTMLVideo → browser WebGPU |
+| Desktop | `cursor/desktop-tauri-e0e8` | VideoToolbox → IOSurface → Metal/native wgpu |
 
 Cloud agents run the **web** app only — see [`docs/cursor-cloud-setup.md`](../docs/cursor-cloud-setup.md).

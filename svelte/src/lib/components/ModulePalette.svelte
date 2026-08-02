@@ -1,7 +1,7 @@
 <script lang="ts">
   import { dragState, endDrag, moveDrag, setHoverTarget, startDrag } from '$lib/stores/drag';
   import { listByCategory, type ModuleCategory } from '$lib/modules/catalog';
-  import { rackTop, rackBottom, assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
+  import { rackTop, rackBottom, applyModuleDrop } from '$lib/stores/rack';
   import { fxLibOpen } from '$lib/stores/rackUi';
   import type { RackRow } from '$lib/stores/drag';
   import { get } from 'svelte/store';
@@ -17,25 +17,15 @@
   const inRack = $derived(new Set([...$rackTop, ...$rackBottom]));
 
   function beginDrag(moduleId: string, e: PointerEvent) {
-    if (inRack.has(moduleId)) {
-      const row: RackRow = $rackTop.includes(moduleId) ? 'top' : 'bottom';
-      const slotIndex = row === 'top' ? $rackTop.indexOf(moduleId) : $rackBottom.indexOf(moduleId);
-      startDrag({ moduleId, source: 'rack', row, slotIndex }, e.clientX, e.clientY);
-    } else {
-      startDrag({ moduleId, source: 'palette' }, e.clientX, e.clientY);
-    }
+    // The library is an effect picker even when that effect is already in the
+    // rack. Dropping from here replaces the target effect; slot media stays put.
+    startDrag({ moduleId, source: 'palette' }, e.clientX, e.clientY);
     window.addEventListener('pointermove', onWindowMove);
     window.addEventListener('pointerup', onWindowUp);
   }
 
   async function beginKeyboardDrag(moduleId: string) {
-    if (inRack.has(moduleId)) {
-      const row: RackRow = $rackTop.includes(moduleId) ? 'top' : 'bottom';
-      const slotIndex = row === 'top' ? $rackTop.indexOf(moduleId) : $rackBottom.indexOf(moduleId);
-      startDrag({ moduleId, source: 'rack', row, slotIndex }, 0, 0, 'keyboard');
-    } else {
-      startDrag({ moduleId, source: 'palette' }, 0, 0, 'keyboard');
-    }
+    startDrag({ moduleId, source: 'palette' }, 0, 0, 'keyboard');
     await tick();
     document.querySelector<HTMLElement>('[data-keyboard-drop-target]')?.focus();
   }
@@ -65,14 +55,7 @@
     const target = state.hoverTarget;
     const payload = state.payload;
     if (target) {
-      if (payload.source === 'palette') {
-        assignModuleToSlot(target.row, target.slotIndex, payload.moduleId);
-      } else if (payload.row !== undefined && payload.slotIndex !== undefined) {
-        swapRackSlots(
-          { row: payload.row, index: payload.slotIndex },
-          { row: target.row, index: target.slotIndex }
-        );
-      }
+      applyModuleDrop(payload, { row: target.row, index: target.slotIndex });
     }
     endDrag();
   }

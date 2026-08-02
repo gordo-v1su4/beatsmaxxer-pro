@@ -13,14 +13,24 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-base64 = "0.22"
-bsp-decode = { path = "../../crates/bsp-decode" }
+bsp-decode = { path = "../../crates/bsp-decode", features = ["cpu-frame-bridge"] }
 dotenvy = "0.15"
+libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+bytemuck = { version = "1", features = ["derive"] }
+raw-window-handle = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.31"
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSGraphics", "NSResponder", "NSView"] }
+objc2-foundation = { version = "0.3.2", features = ["NSGeometry", "NSObject"] }
+pollster = "0.4"
+wgpu = { version = "24", features = ["metal"] }
 
 [profile.release]
 panic = "abort"

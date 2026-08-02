@@ -5,12 +5,12 @@ import { isVideoFile } from '$lib/media/videoFile';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import {
   currentRackSlotForModule,
-  RACK_SLOT_IDS,
+  activeRackSlotIds,
   videoLayers
 } from '$lib/stores/rack';
 
 function rackClipTargets(clips: File[], startId?: string): string[] {
-  const slotIds = [...RACK_SLOT_IDS];
+  const slotIds = activeRackSlotIds();
   const current = get(videoLayers);
   const resolvedStart = startId ? (currentRackSlotForModule(startId) ?? startId) : undefined;
   const targets: string[] = resolvedStart ? [resolvedStart] : [];

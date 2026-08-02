@@ -1,7 +1,8 @@
 import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { RACK_SLOT_IDS } from '$lib/stores/rack';
+import { activeRackSlotIds } from '$lib/stores/rack';
+import { isTauriRuntime } from '$lib/platform/runtime';
 
 export interface QaManifest {
   clips?: string[];
@@ -10,7 +11,7 @@ export interface QaManifest {
 
 export async function loadQaMediaFromManifest(manifest: QaManifest) {
   const clips = manifest.clips ?? [];
-  const slotIds = [...RACK_SLOT_IDS];
+  const slotIds = activeRackSlotIds();
   const errors: string[] = [];
 
   for (let i = 0; i < slotIds.length; i++) {
@@ -19,7 +20,14 @@ export async function loadQaMediaFromManifest(manifest: QaManifest) {
     const slotId = slotIds[i];
     const url = `/qa-media/${clip}`;
     try {
-      const result = await mediaRuntime.registerModuleClip(slotId, clip, url);
+      let file: File | undefined;
+      if (isTauriRuntime()) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`clip fetch failed: ${response.status}`);
+        const blob = await response.blob();
+        file = new File([blob], clip, { type: blob.type || 'video/mp4' });
+      }
+      const result = await mediaRuntime.registerModuleClip(slotId, clip, url, file);
       if (result.status !== 'success') {
         throw new Error(result.status === 'failed' ? result.error : result.status);
       }

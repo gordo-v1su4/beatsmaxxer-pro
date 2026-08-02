@@ -22,8 +22,8 @@ pub fn analyze_rhythm(file_name: String, bytes: Vec<u8>) -> Result<String, Strin
         .trim()
         .trim_end_matches('/')
         .to_string();
-    let api_key = std::env::var("ESSENTIA_API_KEY")
-        .map_err(|_| "ESSENTIA_API_KEY is not set".to_string())?;
+    let api_key =
+        std::env::var("ESSENTIA_API_KEY").map_err(|_| "ESSENTIA_API_KEY is not set".to_string())?;
 
     if bytes.is_empty() {
         return Err("analysis upload is empty".into());

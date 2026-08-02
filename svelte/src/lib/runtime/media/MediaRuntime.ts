@@ -227,16 +227,7 @@ export class MediaRuntime {
           setClipReady(moduleId, clip.name);
           return { status: 'success', clip, previous: committed.previous };
         } catch (nativeError) {
-          console.warn(
-            `[MediaRuntime] native decode failed for ${moduleId}, falling back to HTMLVideo:`,
-            nativeError
-          );
-          if (!this.isFresh(moduleId, generation)) {
-            this.clipRegistry.releaseReference(clip);
-            this.clipRegistry.rollback(clip);
-            return { status: 'superseded', previous };
-          }
-          return await this.attachViaHtmlVideo(moduleId, generation, clip, previous);
+          throw new Error(`native-decode-failed:${moduleId}:${String(nativeError)}`);
         }
       }
 
@@ -281,6 +272,7 @@ export class MediaRuntime {
   }
 
   async prewarmModule(moduleId: string) {
+    if (getVideoSourcePort().kind === 'tauri-native') return;
     await this.pool.prewarm(this.resolveSourceId(moduleId));
   }
 

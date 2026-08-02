@@ -1,0 +1,779 @@
+use std::collections::{HashMap, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
+use bsp_decode::{NativeDecodeFrame, PROGRAM_FRAME_PREFIX};
+use bytemuck::{Pod, Zeroable};
+use tauri::WebviewWindow;
+use wgpu::util::DeviceExt;
+
+use super::macos_import::import_bgra_iosurface;
+use super::macos_view::attach_overlay;
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeSurfaceRect {
+    pub surface_id: String,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    #[serde(default = "default_visible")]
+    pub visible: bool,
+}
+
+fn default_visible() -> bool {
+    true
+}
+
+pub struct NativeCompositorMetrics {
+    pub zero_copy_frames: AtomicU64,
+    pub iosurface_imports: AtomicU64,
+    pub iosurface_import_failures: AtomicU64,
+    pub gpu_submissions: AtomicU64,
+    pub presented_frames: AtomicU64,
+    pub active: AtomicBool,
+    timing: Mutex<NativeCompositorTiming>,
+}
+
+const MAX_PRESENTATION_INTERVALS: usize = 4_096;
+
+#[derive(Default)]
+struct NativeCompositorTiming {
+    last_presented_at: Option<Instant>,
+    intervals_us: VecDeque<u64>,
+    surfaces: HashMap<String, NativeSurfaceSnapshot>,
+    pending_cut: Option<PendingProgramCut>,
+    cuts: Vec<NativeCutSnapshot>,
+    pgm_black_frames: u64,
+}
+
+struct PendingProgramCut {
+    source_id: String,
+    requested_at: Instant,
+    black_frames: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCutSnapshot {
+    pub source_id: String,
+    pub latency_us: u64,
+    pub black_frames: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeSurfaceSnapshot {
+    pub surface_id: String,
+    pub source_id: String,
+    pub width: u32,
+    pub height: u32,
+    pub timestamp_us: i64,
+    pub sequence: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeCompositorSnapshot {
+    pub presented_frames: u64,
+    pub intervals_us: Vec<u64>,
+    pub surfaces: HashMap<String, NativeSurfaceSnapshot>,
+    pub cuts: Vec<NativeCutSnapshot>,
+    pub pgm_black_frames: u64,
+    pub pending_program_source: Option<String>,
+}
+
+impl Default for NativeCompositorMetrics {
+    fn default() -> Self {
+        Self {
+            zero_copy_frames: AtomicU64::new(0),
+            iosurface_imports: AtomicU64::new(0),
+            iosurface_import_failures: AtomicU64::new(0),
+            gpu_submissions: AtomicU64::new(0),
+            presented_frames: AtomicU64::new(0),
+            active: AtomicBool::new(false),
+            timing: Mutex::new(NativeCompositorTiming::default()),
+        }
+    }
+}
+
+impl NativeCompositorMetrics {
+    fn record_present(&self, frames: &HashMap<String, ImportedFrame>) {
+        let now = Instant::now();
+        let Ok(mut timing) = self.timing.lock() else {
+            return;
+        };
+        if let Some(previous) = timing.last_presented_at.replace(now) {
+            if timing.intervals_us.len() == MAX_PRESENTATION_INTERVALS {
+                timing.intervals_us.pop_front();
+            }
+            timing
+                .intervals_us
+                .push_back(now.duration_since(previous).as_micros() as u64);
+        }
+        timing.surfaces = frames
+            .iter()
+            .map(|(surface_id, frame)| {
+                (
+                    surface_id.clone(),
+                    NativeSurfaceSnapshot {
+                        surface_id: surface_id.clone(),
+                        source_id: frame.source_id.clone(),
+                        width: frame.width,
+                        height: frame.height,
+                        timestamp_us: frame.timestamp_us,
+                        sequence: frame.sequence,
+                    },
+                )
+            })
+            .collect();
+        let pgm_source = frames.get("pgm").map(|frame| frame.source_id.as_str());
+        if pgm_source.is_none() {
+            timing.pgm_black_frames = timing.pgm_black_frames.saturating_add(1);
+            if let Some(pending) = timing.pending_cut.as_mut() {
+                pending.black_frames = pending.black_frames.saturating_add(1);
+            }
+        }
+        if timing
+            .pending_cut
+            .as_ref()
+            .is_some_and(|pending| pgm_source == Some(pending.source_id.as_str()))
+        {
+            if let Some(pending) = timing.pending_cut.take() {
+                timing.cuts.push(NativeCutSnapshot {
+                    source_id: pending.source_id,
+                    latency_us: now.duration_since(pending.requested_at).as_micros() as u64,
+                    black_frames: pending.black_frames,
+                });
+            }
+        }
+    }
+
+    fn request_program_source(&self, source_id: Option<String>, requested_at: Instant) {
+        let Ok(mut timing) = self.timing.lock() else {
+            return;
+        };
+        timing.pending_cut = source_id.map(|source_id| PendingProgramCut {
+            source_id,
+            requested_at,
+            black_frames: 0,
+        });
+    }
+
+    fn reset(&self) {
+        self.zero_copy_frames.store(0, Ordering::Relaxed);
+        self.iosurface_imports.store(0, Ordering::Relaxed);
+        self.iosurface_import_failures.store(0, Ordering::Relaxed);
+        self.gpu_submissions.store(0, Ordering::Relaxed);
+        self.presented_frames.store(0, Ordering::Relaxed);
+        if let Ok(mut timing) = self.timing.lock() {
+            *timing = NativeCompositorTiming::default();
+        }
+    }
+
+    fn snapshot(&self) -> NativeCompositorSnapshot {
+        let timing = self.timing.lock().ok();
+        NativeCompositorSnapshot {
+            presented_frames: self.presented_frames.load(Ordering::Relaxed),
+            intervals_us: timing
+                .as_ref()
+                .map(|timing| timing.intervals_us.iter().copied().collect())
+                .unwrap_or_default(),
+            surfaces: timing
+                .as_ref()
+                .map(|timing| timing.surfaces.clone())
+                .unwrap_or_default(),
+            cuts: timing
+                .as_ref()
+                .map(|timing| timing.cuts.clone())
+                .unwrap_or_default(),
+            pgm_black_frames: timing
+                .as_ref()
+                .map(|timing| timing.pgm_black_frames)
+                .unwrap_or_default(),
+            pending_program_source: timing
+                .as_ref()
+                .and_then(|timing| timing.pending_cut.as_ref())
+                .map(|pending| pending.source_id.clone()),
+        }
+    }
+}
+
+enum Command {
+    Resize(u32, u32),
+    Layout(Vec<NativeSurfaceRect>),
+    Frames(Vec<NativeDecodeFrame>),
+    TestPattern(bool),
+    Shutdown,
+}
+
+pub struct NativeCompositorState {
+    sender: Mutex<Option<Sender<Command>>>,
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
+    pub metrics: Arc<NativeCompositorMetrics>,
+}
+
+impl Default for NativeCompositorState {
+    fn default() -> Self {
+        Self {
+            sender: Mutex::new(None),
+            worker: Mutex::new(None),
+            metrics: Arc::new(NativeCompositorMetrics::default()),
+        }
+    }
+}
+
+impl NativeCompositorState {
+    pub fn attach(&self, window: &WebviewWindow) -> Result<(), String> {
+        if self
+            .sender
+            .lock()
+            .map_err(|_| "native compositor sender poisoned".to_string())?
+            .is_some()
+        {
+            return Ok(());
+        }
+        let size = window.inner_size().map_err(|error| error.to_string())?;
+        let handle = attach_overlay(window.ns_view().map_err(|error| error.to_string())?)?;
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::METAL,
+            ..Default::default()
+        });
+        let surface = instance
+            .create_surface(Arc::new(handle))
+            .map_err(|error| format!("create native compositor surface: {error}"))?;
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            force_fallback_adapter: false,
+            compatible_surface: Some(&surface),
+        }))
+        .ok_or_else(|| "no Metal adapter supports the native compositor surface".to_string())?;
+        let (device, queue) = pollster::block_on(adapter.request_device(
+            &wgpu::DeviceDescriptor {
+                label: Some("Beat Surfer native compositor"),
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::Performance,
+            },
+            None,
+        ))
+        .map_err(|error| format!("request native compositor device: {error}"))?;
+        let capabilities = surface.get_capabilities(&adapter);
+        let format = capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(|format| *format == wgpu::TextureFormat::Bgra8Unorm)
+            .unwrap_or(capabilities.formats[0]);
+        let alpha_mode = capabilities
+            .alpha_modes
+            .iter()
+            .copied()
+            // wgpu's Metal backend advertises PostMultiplied, not
+            // PreMultiplied. Falling back to Auto leaves the CAMetalLayer
+            // opaque and blacks out the WebView beneath this overlay.
+            .find(|mode| *mode == wgpu::CompositeAlphaMode::PostMultiplied)
+            .unwrap_or(wgpu::CompositeAlphaMode::Auto);
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: size.width.max(1),
+            height: size.height.max(1),
+            present_mode: wgpu::PresentMode::AutoVsync,
+            desired_maximum_frame_latency: 2,
+            alpha_mode,
+            view_formats: Vec::new(),
+        };
+        surface.configure(&device, &config);
+
+        let (sender, receiver) = mpsc::channel();
+        let metrics = Arc::clone(&self.metrics);
+        metrics.active.store(true, Ordering::Release);
+        let worker = thread::Builder::new()
+            .name("bsp-native-compositor".into())
+            .spawn(move || {
+                run_renderer(receiver, surface, device, queue, config, metrics);
+            })
+            .map_err(|error| format!("spawn native compositor: {error}"))?;
+        *self
+            .sender
+            .lock()
+            .map_err(|_| "native compositor sender poisoned".to_string())? = Some(sender);
+        *self
+            .worker
+            .lock()
+            .map_err(|_| "native compositor worker poisoned".to_string())? = Some(worker);
+        Ok(())
+    }
+
+    fn send(&self, command: Command) -> Result<(), String> {
+        self.sender
+            .lock()
+            .map_err(|_| "native compositor sender poisoned".to_string())?
+            .as_ref()
+            .ok_or_else(|| "native compositor is not attached".to_string())?
+            .send(command)
+            .map_err(|_| "native compositor worker stopped".to_string())
+    }
+
+    pub fn resize(&self, width: u32, height: u32) {
+        let _ = self.send(Command::Resize(width.max(1), height.max(1)));
+    }
+
+    pub fn update_layout(&self, rects: Vec<NativeSurfaceRect>) -> Result<(), String> {
+        self.send(Command::Layout(rects))
+    }
+
+    pub fn submit_frames(&self, frames: Vec<NativeDecodeFrame>) -> Result<(), String> {
+        if frames.is_empty() {
+            return Ok(());
+        }
+        self.send(Command::Frames(frames))
+    }
+
+    pub fn set_test_pattern(&self, enabled: bool) -> Result<(), String> {
+        self.send(Command::TestPattern(enabled))
+    }
+
+    pub fn reset_metrics(&self) {
+        self.metrics.reset();
+    }
+
+    pub fn metrics_snapshot(&self) -> NativeCompositorSnapshot {
+        self.metrics.snapshot()
+    }
+
+    pub fn request_program_source(&self, source_id: Option<String>) {
+        self.metrics
+            .request_program_source(source_id, Instant::now());
+    }
+
+    pub fn shutdown(&self) {
+        if let Ok(mut sender) = self.sender.lock() {
+            if let Some(sender) = sender.take() {
+                let _ = sender.send(Command::Shutdown);
+            }
+        }
+        if let Some(worker) = self.worker.lock().ok().and_then(|mut worker| worker.take()) {
+            let _ = worker.join();
+        }
+        self.metrics.active.store(false, Ordering::Release);
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct Vertex {
+    position: [f32; 2],
+    texcoord: [f32; 2],
+}
+
+struct ImportedFrame {
+    _owner: NativeDecodeFrame,
+    // Keep the imported wgpu wrapper alive explicitly for the full bind-group
+    // lifetime. `_owner` independently retains the CVPixelBuffer/IOSurface.
+    _texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    source_id: String,
+    width: u32,
+    height: u32,
+    timestamp_us: i64,
+    sequence: u64,
+}
+
+fn run_renderer(
+    receiver: Receiver<Command>,
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    mut config: wgpu::SurfaceConfiguration,
+    metrics: Arc<NativeCompositorMetrics>,
+) {
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("native video sampler"),
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
+        ..Default::default()
+    });
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("native video bind group layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    view_dimension: wgpu::TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("native compositor shader"),
+        source: wgpu::ShaderSource::Wgsl(
+            r#"
+struct VertexOut {
+  @builtin(position) position: vec4<f32>,
+  @location(0) texcoord: vec2<f32>,
+}
+@vertex fn vs_main(@location(0) position: vec2<f32>, @location(1) texcoord: vec2<f32>) -> VertexOut {
+  var out: VertexOut;
+  out.position = vec4<f32>(position, 0.0, 1.0);
+  out.texcoord = texcoord;
+  return out;
+}
+@group(0) @binding(0) var video_texture: texture_2d<f32>;
+@group(0) @binding(1) var video_sampler: sampler;
+@fragment fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+  return textureSample(video_texture, video_sampler, in.texcoord);
+}
+"#
+            .into(),
+        ),
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("native compositor pipeline layout"),
+        bind_group_layouts: &[&bind_group_layout],
+        push_constant_ranges: &[],
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("native compositor pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<Vertex>() as u64,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
+            }],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: config.format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    });
+
+    let test_bind_groups = make_test_bind_groups(&device, &queue, &bind_group_layout, &sampler);
+    let mut rects = Vec::<NativeSurfaceRect>::new();
+    let mut frames = HashMap::<String, ImportedFrame>::new();
+    let mut test_pattern = false;
+    let mut running = true;
+
+    while running {
+        // CAMetalLayer/vsync provides the back-pressure. Waiting a full display
+        // period here as well produced ~20 ms presentation intervals on a
+        // 60 Hz display. A short command wait keeps idle CPU bounded without
+        // adding an extra frame of latency before every present.
+        match receiver.recv_timeout(Duration::from_millis(1)) {
+            Ok(command) => apply_command(
+                command,
+                &mut running,
+                &surface,
+                &device,
+                &mut config,
+                &bind_group_layout,
+                &sampler,
+                &mut rects,
+                &mut frames,
+                &mut test_pattern,
+                &metrics,
+            ),
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        while let Ok(command) = receiver.try_recv() {
+            apply_command(
+                command,
+                &mut running,
+                &surface,
+                &device,
+                &mut config,
+                &bind_group_layout,
+                &sampler,
+                &mut rects,
+                &mut frames,
+                &mut test_pattern,
+                &metrics,
+            );
+        }
+        if !running || rects.is_empty() || (!test_pattern && frames.is_empty()) {
+            continue;
+        }
+        let output = match surface.get_current_texture() {
+            Ok(output) => output,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                surface.configure(&device, &config);
+                continue;
+            }
+            Err(wgpu::SurfaceError::Timeout) => continue,
+            Err(wgpu::SurfaceError::Other) => continue,
+            Err(wgpu::SurfaceError::OutOfMemory) => break,
+        };
+        let view = output.texture.create_view(&Default::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("native compositor frame"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("native compositor pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(&pipeline);
+            for (index, rect) in rects.iter().filter(|rect| rect.visible).enumerate() {
+                let bind_group = frames
+                    .get(&rect.surface_id)
+                    .map(|frame| &frame.bind_group)
+                    .or_else(|| {
+                        test_pattern.then(|| &test_bind_groups[index % test_bind_groups.len()])
+                    });
+                let Some(bind_group) = bind_group else {
+                    continue;
+                };
+                let vertices = rect_vertices(rect, config.width, config.height);
+                let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("native surface rect"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.draw(0..6, 0..1);
+            }
+        }
+        queue.submit([encoder.finish()]);
+        output.present();
+        metrics.gpu_submissions.fetch_add(1, Ordering::Relaxed);
+        metrics.presented_frames.fetch_add(1, Ordering::Relaxed);
+        metrics.record_present(&frames);
+    }
+    metrics.active.store(false, Ordering::Release);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_command(
+    command: Command,
+    running: &mut bool,
+    surface: &wgpu::Surface<'_>,
+    device: &wgpu::Device,
+    config: &mut wgpu::SurfaceConfiguration,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    rects: &mut Vec<NativeSurfaceRect>,
+    frames: &mut HashMap<String, ImportedFrame>,
+    test_pattern: &mut bool,
+    metrics: &NativeCompositorMetrics,
+) {
+    match command {
+        Command::Resize(width, height) => {
+            if config.width != width || config.height != height {
+                config.width = width.max(1);
+                config.height = height.max(1);
+                surface.configure(device, config);
+            }
+        }
+        Command::Layout(next) => *rects = next,
+        Command::TestPattern(enabled) => *test_pattern = enabled,
+        Command::Shutdown => *running = false,
+        Command::Frames(next) => {
+            for frame in next {
+                let (surface_id, source_id) = if frame.module_id.starts_with(PROGRAM_FRAME_PREFIX) {
+                    (
+                        "pgm".to_string(),
+                        frame.module_id[PROGRAM_FRAME_PREFIX.len()..].to_string(),
+                    )
+                } else {
+                    (frame.module_id.clone(), frame.module_id.clone())
+                };
+                let width = frame.width;
+                let height = frame.height;
+                let timestamp_us = frame.timestamp_us;
+                let sequence = frame.sequence;
+                match unsafe { import_bgra_iosurface(device, frame.iosurface_ptr(), width, height) }
+                {
+                    Ok(texture) => {
+                        let view = texture.create_view(&Default::default());
+                        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("native video frame bind group"),
+                            layout: bind_group_layout,
+                            entries: &[
+                                wgpu::BindGroupEntry {
+                                    binding: 0,
+                                    resource: wgpu::BindingResource::TextureView(&view),
+                                },
+                                wgpu::BindGroupEntry {
+                                    binding: 1,
+                                    resource: wgpu::BindingResource::Sampler(sampler),
+                                },
+                            ],
+                        });
+                        frames.insert(
+                            surface_id,
+                            ImportedFrame {
+                                _owner: frame,
+                                _texture: texture,
+                                bind_group,
+                                source_id,
+                                width,
+                                height,
+                                timestamp_us,
+                                sequence,
+                            },
+                        );
+                        metrics.zero_copy_frames.fetch_add(1, Ordering::Relaxed);
+                        metrics.iosurface_imports.fetch_add(1, Ordering::Relaxed);
+                    }
+                    Err(_) => {
+                        metrics
+                            .iosurface_import_failures
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn rect_vertices(
+    rect: &NativeSurfaceRect,
+    viewport_width: u32,
+    viewport_height: u32,
+) -> [Vertex; 6] {
+    let left = rect.x / viewport_width as f32 * 2.0 - 1.0;
+    let right = (rect.x + rect.width) / viewport_width as f32 * 2.0 - 1.0;
+    let top = 1.0 - rect.y / viewport_height as f32 * 2.0;
+    let bottom = 1.0 - (rect.y + rect.height) / viewport_height as f32 * 2.0;
+    [
+        Vertex {
+            position: [left, top],
+            texcoord: [0.0, 0.0],
+        },
+        Vertex {
+            position: [left, bottom],
+            texcoord: [0.0, 1.0],
+        },
+        Vertex {
+            position: [right, bottom],
+            texcoord: [1.0, 1.0],
+        },
+        Vertex {
+            position: [left, top],
+            texcoord: [0.0, 0.0],
+        },
+        Vertex {
+            position: [right, bottom],
+            texcoord: [1.0, 1.0],
+        },
+        Vertex {
+            position: [right, top],
+            texcoord: [1.0, 0.0],
+        },
+    ]
+}
+
+fn make_test_bind_groups(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+) -> Vec<wgpu::BindGroup> {
+    const COLORS: [[u8; 4]; 9] = [
+        [34, 211, 238, 230],
+        [52, 211, 153, 230],
+        [250, 204, 21, 230],
+        [251, 146, 60, 230],
+        [244, 63, 94, 230],
+        [232, 121, 249, 230],
+        [167, 139, 250, 230],
+        [96, 165, 250, 230],
+        [45, 212, 191, 230],
+    ];
+    COLORS
+        .iter()
+        .enumerate()
+        .map(|(index, color)| {
+            let texture = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("native compositor test texture"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                color,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: None,
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let view = texture.create_view(&Default::default());
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(&format!("native compositor test bind group {index}")),
+                layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(sampler),
+                    },
+                ],
+            })
+        })
+        .collect()
+}

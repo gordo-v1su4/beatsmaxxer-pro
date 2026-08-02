@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DESKTOP_DEV_URL="${DESKTOP_DEV_URL:-http://127.0.0.1:5175}"
+export BSP_DESKTOP_PROOF_PATH="${BSP_DESKTOP_PROOF_PATH:-$ROOT/.artifacts/desktop-eight-video/report.json}"
 
 # Real @tauri-apps/api (not web stubs) + Essentia keys for the Rust analyze_rhythm command.
 export TAURI_ENV_PLATFORM=1
@@ -24,6 +26,9 @@ bun run dev:desktop &
 VITE_PID=$!
 
 cleanup() {
+  if [[ -n "${TAURI_PID:-}" ]]; then
+    kill "$TAURI_PID" 2>/dev/null || true
+  fi
   kill "$VITE_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -42,4 +47,6 @@ fi
 
 echo "[desktop] launching Tauri shell ..."
 cd "$ROOT/desktop"
-exec bunx tauri dev
+bunx tauri dev --config "{\"build\":{\"devUrl\":\"$DESKTOP_DEV_URL\"}}" &
+TAURI_PID=$!
+wait "$TAURI_PID"

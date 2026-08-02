@@ -5,16 +5,17 @@ import type { NativeFrameSurface } from '$lib/media/NativeFrameSurface';
 import { TauriNativeSource } from '$lib/media/sources/TauriNativeSource';
 
 describe('TauriNativeSource', () => {
-  test('stores native RGBA surfaces keyed by module id', async () => {
+  test('stores native BGRA surfaces keyed by stable slot id', async () => {
     const source = new TauriNativeSource();
     const off = source.onFrame(() => {});
     const surface: NativeFrameSurface = {
-      kind: 'native-rgba',
+      kind: 'native-bgra',
       moduleId: 'top-0',
       width: 2,
       height: 2,
       timestampUs: 0,
-      data: Uint8ClampedArray.from([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255])
+      sequence: 1,
+      data: Uint8Array.from([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255])
     };
     (source as unknown as { latest: Map<string, NativeFrameSurface> }).latest.set('top-0', surface);
     expect(source.getSurface('top-0')).toEqual(surface);

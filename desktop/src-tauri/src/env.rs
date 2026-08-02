@@ -15,10 +15,7 @@ pub fn load_repo_dotenv() {
 
     let Ok(iter) = dotenvy::from_path_iter(&env_path) else {
         #[cfg(debug_assertions)]
-        eprintln!(
-            "[desktop] note: could not parse {}",
-            env_path.display()
-        );
+        eprintln!("[desktop] note: could not parse {}", env_path.display());
         return;
     };
 

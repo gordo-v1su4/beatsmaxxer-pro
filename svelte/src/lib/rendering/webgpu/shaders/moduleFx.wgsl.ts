@@ -214,6 +214,8 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
 /** Test card shown when no clip is loaded: SMPTE bars and a grey ramp up top for
     colour-effect readout, the module's own idle graphic filling the band below. */
 fn testCard(uv: vec2f) -> vec3f {
+  // TODO(ui): Remove the SMPTE/grey calibration bands and let the cleaner
+  // effect-specific idle graphic use the full preview once the swap path lands.
   let t = u.beat;
   let mode = floor(u.effectMode + 0.5);
   var col: vec3f;

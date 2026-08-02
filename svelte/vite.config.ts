@@ -26,9 +26,12 @@ export default defineConfig(({ mode, command }) => {
 	const essentiaEnabled =
 		isAnalysisProxyConfigured(essentiaProxyConfig) &&
 		(command === 'serve' || isTauriBuild);
+	// Native decode/composition is the desktop contract. The legacy CPU-frame
+	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
+	// values from the older experimental phase must not silently disable the
+	// compositor UI/layout bridge.
 	const desktopNativeDecode =
-		isTauriBuild &&
-		(env.DESKTOP_NATIVE_DECODE === 'true' || env.VITE_DESKTOP_NATIVE_DECODE === 'true');
+		isTauriBuild && process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
 
 	return {
 		base: './',

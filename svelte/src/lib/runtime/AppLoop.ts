@@ -3,6 +3,10 @@ import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { getVideoSourcePort } from '$lib/platform/videoSource';
+import {
+  tauriNativeSource,
+  type NativeSourceTimeline
+} from '$lib/media/sources/TauriNativeSource';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import {
   advanceSpeedRampSource,
@@ -156,18 +160,29 @@ function syncControlledVideos(
   assignments: Array<{ slotId: string; moduleId: string }>,
   params: Record<string, Record<string, number>>,
   frame: TimelineFrame
-) {
+): NativeSourceTimeline[] {
+  const native = getVideoSourcePort().kind === 'tauri-native';
+  const sourceTimelines: NativeSourceTimeline[] = [];
   const live = audioEngine.getLiveScheduleFrame();
   const timeSamplerSlot = assignments.find(({ moduleId }) => moduleId === 'timesampler')?.slotId;
   if (timeSamplerSlot && live?.timeSampler) {
     const ts = live.timeSampler;
-    videoPool.syncControlledModule(
-      timeSamplerSlot,
-      ts.sourceTimestampSeconds,
-      ts.targetPlaybackRate,
-      frame,
-      ts.jumpGeneration
-    );
+    if (native) {
+      sourceTimelines.push({
+        sourceId: timeSamplerSlot,
+        positionUs: Math.round(ts.sourceTimestampSeconds * 1_000_000),
+        playbackRate: ts.targetPlaybackRate,
+        revision: ts.jumpGeneration
+      });
+    } else {
+      videoPool.syncControlledModule(
+        timeSamplerSlot,
+        ts.sourceTimestampSeconds,
+        ts.targetPlaybackRate,
+        frame,
+        ts.jumpGeneration
+      );
+    }
   }
 
   const speedRampSlot = assignments.find(({ moduleId }) => moduleId === 'speedramp')?.slotId;
@@ -181,7 +196,16 @@ function syncControlledVideos(
     );
     speedRampSourceState = mapped.state;
     const rate = mapped.rate;
-    videoPool.syncControlledModule(speedRampSlot, mapped.targetSeconds, mapped.rate, frame);
+    if (native) {
+      sourceTimelines.push({
+        sourceId: speedRampSlot,
+        positionUs: Math.round(mapped.targetSeconds * 1_000_000),
+        playbackRate: mapped.rate,
+        revision: frame.generation
+      });
+    } else {
+      videoPool.syncControlledModule(speedRampSlot, mapped.targetSeconds, mapped.rate, frame);
+    }
     // hand the shader the rate it cannot derive (bezier solve lives in JS), plus
     // the cycle phase, so streaking/chroma track the real speed
     const cycleBeats = SPEEDRAMP_CYCLE_BEATS[
@@ -194,6 +218,7 @@ function syncControlledVideos(
   } else {
     speedRampSourceState = null;
   }
+  return sourceTimelines;
 }
 
 /** Configure before AudioEngine's order-0 schedule advance, so a source/effect
@@ -203,7 +228,9 @@ function configureTimeSampler() {
   const tsParams = params.timesampler ?? {};
   const timeSamplerSlot = currentRackSlotForModule('timesampler');
   const tsMidi = get(midiLayers).timesampler;
-  const tsDuration = (timeSamplerSlot ? videoPool.getDuration(timeSamplerSlot) : 0) || 120;
+  const tsDuration = timeSamplerSlot
+    ? tauriNativeSource.getDuration(timeSamplerSlot) || videoPool.getDuration(timeSamplerSlot) || 120
+    : 120;
   audioEngine.configureTimeSampler({
     sourceDurationSeconds: tsDuration,
     sourceKey: timeSamplerSlot ?? 'timesampler-off-rack',
@@ -256,6 +283,11 @@ export function startAppLoop() {
       audioEngine.getLiveScheduleFrame()?.accent
     );
     syncVideoModes(assignments);
+
+    const livePgm = get(pgmSource);
+    const livePgmSlot = currentRackSlotForModule(livePgm);
+    tauriNativeSource.setProgramSource(livePgmSlot);
+    tauriNativeSource.setSourceTimelines(syncControlledVideos(assignments, get(moduleParams), frame));
     getVideoSourcePort().tick(frame);
 
     const params = get(moduleParams);
@@ -264,18 +296,18 @@ export function startAppLoop() {
       webGpuEngine.setModuleParams(id, paramsForGpu(id, params[id] ?? {}));
     }
 
-    const livePgm = get(pgmSource);
-    const livePgmSlot = currentRackSlotForModule(livePgm);
     if (livePgmSlot && layers[livePgmSlot]) {
       webGpuEngine.setModuleParams(livePgm, paramsForGpu(livePgm, params[livePgm] ?? {}));
     }
 
-    syncControlledVideos(assignments, params, frame);
     runSequencer(frame);
 
     const queued = get(queuedPgmSource);
     const queuedSlot = queued ? currentRackSlotForModule(queued) : null;
     if (queuedSlot) void mediaRuntime.prewarmModule(queuedSlot).catch(() => {});
+    const plannedPgm = queued ?? audioEngine.getPgmPreparation().source;
+    const plannedPgmSlot = plannedPgm ? currentRackSlotForModule(plannedPgm) : null;
+    tauriNativeSource.prepareProgramSource(plannedPgmSlot);
     webGpuEngine.renderAll(frame);
   }, 10);
 

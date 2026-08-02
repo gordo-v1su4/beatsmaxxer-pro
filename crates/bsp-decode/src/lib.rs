@@ -1,4 +1,6 @@
 mod demux;
+#[cfg(target_os = "macos")]
+mod macos_surface;
 mod scheduler;
 mod types;
 
@@ -6,8 +8,8 @@ mod types;
 pub mod videotoolbox;
 
 pub use demux::{probe_mp4, Mp4Probe};
-pub use scheduler::DecodeScheduler;
-pub use types::{DecodeError, DecodeFrame};
+pub use scheduler::{DecodeScheduler, PROGRAM_FRAME_PREFIX};
+pub use types::{DecodeError, DecodeFrame, NativeDecodeFrame};
 
 /// Runtime decode backend label for diagnostics.
 pub fn backend_name() -> &'static str {
@@ -19,17 +21,6 @@ pub fn backend_name() -> &'static str {
     {
         "stub"
     }
-}
-
-/// Single decode tick for one module — delegates to platform backend.
-pub fn decode_tick(module_id: &str, path: &str, timestamp_us: i64) -> Result<Option<DecodeFrame>, DecodeError> {
-    #[cfg(target_os = "macos")]
-    {
-        if let Ok(frame) = videotoolbox::decode_frame(module_id, path, timestamp_us) {
-            return Ok(frame);
-        }
-    }
-    Ok(Some(scheduler::synthetic_frame(module_id, path, timestamp_us)?))
 }
 
 #[cfg(test)]
@@ -53,17 +44,17 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_frame_has_expected_dimensions() {
+    #[cfg(not(target_os = "macos"))]
+    fn synthetic_frame_has_expected_dimensions_off_macos() {
         let dir = std::env::temp_dir().join("bsp-decode-synth");
         let _ = std::fs::create_dir_all(&dir);
         let path = dir.join("clip.mp4");
         std::fs::write(&path, b"....ftypisom....moov....").unwrap();
-        let frame = decode_tick("mod-0", path.to_str().unwrap(), 1_000_000)
-            .unwrap()
-            .expect("frame");
+        let frame =
+            scheduler::synthetic_frame("mod-0", path.to_str().unwrap(), 1_000_000, 1).unwrap();
         assert_eq!(frame.module_id, "mod-0");
         assert_eq!(frame.width, 1280);
         assert_eq!(frame.height, 720);
-        assert_eq!(frame.rgba.len(), 1280 * 720 * 4);
+        assert_eq!(frame.bgra.len(), 1280 * 720 * 4);
     }
 }

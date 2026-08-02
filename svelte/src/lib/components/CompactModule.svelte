@@ -14,6 +14,7 @@
   import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
+  import { previewTargetFps } from '$lib/platform/desktopPerformance';
 
   interface Props {
     mod: ModuleDefinition;
@@ -310,13 +311,13 @@
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
     <ScreenOverlay />
     <ScreenBadge
-      text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'}
+      text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
       color={mod.accentColor}
     />
   </div>
 
   {#if !collapsed && spec}
-    <div style="flex:1 1 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;gap:2px;flex-wrap:wrap">
         {#each spec.buttons as btn (btn.label)}
           <RackBtn
@@ -372,7 +373,7 @@
       onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {:else if !collapsed}
-    <div style="flex:1 1 auto;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;flex-direction:column;gap:3px">
         {#each Object.keys(params).filter((k) => k !== 'mix') as key (key)}
           <div style="display:flex;align-items:center;gap:4px">

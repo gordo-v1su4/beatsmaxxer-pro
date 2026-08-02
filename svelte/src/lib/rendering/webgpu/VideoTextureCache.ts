@@ -8,6 +8,7 @@ export class VideoTextureCache {
     width: number;
     height: number;
     source: HTMLVideoElement;
+    nativeSequence?: number;
   }>();
   private frameViews = new Map<string, GPUTextureView>();
 
@@ -39,7 +40,7 @@ export class VideoTextureCache {
     return entry.view;
   }
 
-  uploadRgba(device: GPUDevice, key: string, surface: NativeFrameSurface): GPUTextureView {
+  uploadBgra(device: GPUDevice, key: string, surface: NativeFrameSurface): GPUTextureView {
     const inFrame = this.frameViews.get(key);
     if (inFrame) return inFrame;
     const { width, height, data } = surface;
@@ -52,11 +53,22 @@ export class VideoTextureCache {
       entry?.texture.destroy();
       const texture = device.createTexture({
         size: [width, height],
-        format: 'rgba8unorm',
+        format: 'bgra8unorm',
         usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
       });
-      entry = { texture, view: texture.createView(), width, height, source: null as unknown as HTMLVideoElement };
+      entry = {
+        texture,
+        view: texture.createView(),
+        width,
+        height,
+        source: null as unknown as HTMLVideoElement
+      };
       this.entries.set(key, entry);
+    }
+
+    if (entry.nativeSequence === surface.sequence) {
+      this.frameViews.set(key, entry.view);
+      return entry.view;
     }
 
     device.queue.writeTexture(
@@ -65,6 +77,7 @@ export class VideoTextureCache {
       { bytesPerRow: width * 4, rowsPerImage: height },
       [width, height]
     );
+    entry.nativeSequence = surface.sequence;
     this.frameViews.set(key, entry.view);
     return entry.view;
   }

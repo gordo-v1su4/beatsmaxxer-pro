@@ -186,6 +186,7 @@ export class AudioEngine implements IAudioEngine {
         this.uploadedPlaybackValidated = true;
         this._playing = true;
         audioTimeline.play(this.mediaElement.currentTime);
+        audioTimeline.publishFrame();
         this.onsetHistory = [];
         this.prevEnergy = 0;
         this.bassEma = 0.08;
@@ -196,6 +197,7 @@ export class AudioEngine implements IAudioEngine {
 
         this._playing = false;
         audioTimeline.pause();
+        audioTimeline.publishFrame();
         this.mediaElement.pause();
         useUploadedPlayback = false;
       }
@@ -222,6 +224,7 @@ export class AudioEngine implements IAudioEngine {
       this._trackName = this._loadedUploadName ?? "";
       this._playing = true;
       audioTimeline.play(0);
+      audioTimeline.publishFrame();
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.bassEma = 0.08;
@@ -237,6 +240,7 @@ export class AudioEngine implements IAudioEngine {
     this._playing = false;
     this.advanceLiveSchedule(this.sampleTransport(), 0);
     audioTimeline.stop();
+    audioTimeline.publishFrame();
 
     if (this.mediaElement) {
       this.mediaElement.pause();
@@ -641,6 +645,10 @@ export class AudioEngine implements IAudioEngine {
     liveScheduleRuntime.configurePgm(input);
   }
 
+  getPgmPreparation() {
+    return liveScheduleRuntime.getPgmPreparation();
+  }
+
   getLiveScheduleFrame(): LiveScheduleFrame | null {
     const frame = liveScheduleRuntime.getFrame();
     if (!frame) return null;
@@ -925,7 +933,8 @@ export class AudioEngine implements IAudioEngine {
       this.prevEnergy = 0;
       this.bassEma = 0.08;
       for (let i = 0; i < 120; i++) {
-        this.tick();
+        const timelineFrame = audioTimeline.getLastFrame();
+        if (timelineFrame) this.tick(timelineFrame);
         await new Promise((resolve) => setTimeout(resolve, 16));
         if (this.beatGrid.length >= 4 || this._bpm !== DEFAULT_BPM) break;
       }

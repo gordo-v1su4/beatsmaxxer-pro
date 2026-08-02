@@ -4,11 +4,22 @@ version = "0.1.0"
 edition = "2021"
 description = "Beat Surfer Pro native decode — MP4 demux + VideoToolbox (macOS)"
 
+[features]
+default = []
+# Temporary compatibility bridge for the WebView BSPF renderer. Native desktop
+# playback must not enable or call this after compositor integration.
+cpu-frame-bridge = []
+
 [dependencies]
-base64 = "0.22"
 mp4 = "0.14"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# VideoToolbox bindings land in a follow-up; macOS build exposes the module stub today.
+objc2 = "0.6.4"
+objc2-av-foundation = { version = "0.3.2", features = ["AVAsset", "AVAssetReader", "AVAssetReaderOutput", "AVAssetTrack", "AVMediaFormat", "objc2-core-media"] }
+objc2-core-foundation = "0.3.2"
+objc2-core-media = { version = "0.3.2", features = ["CMSampleBuffer", "CMTime", "CMTimeRange"] }
+objc2-core-video = { version = "0.3.2", features = ["CVPixelBuffer", "CVPixelBufferIOSurface", "objc2-io-surface"] }
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSDictionary", "NSError", "NSObject", "NSString", "NSURL", "NSValue"] }
+objc2-io-surface = { version = "0.3.2", features = ["IOSurfaceRef", "objc2-core-foundation"] }

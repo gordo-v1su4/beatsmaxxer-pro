@@ -14,7 +14,11 @@
       {
         "title": "Beat Surfer Pro",
         "width": 1440,
-        "height": 960,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 700,
+        "center": true,
+        "maximized": false,
         "resizable": true
       }
     ],

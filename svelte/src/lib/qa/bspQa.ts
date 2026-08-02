@@ -3,7 +3,7 @@ import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { audioEngine } from '$lib/audio';
 import { clipStatus } from '$lib/stores/clipStatus';
-import { rackTop, rackBottom, videoLayers, moduleParams, updateParam, updateParams, clearParams, bypassed, assignModuleToSlot, currentRackSlotForModule, RACK_SLOT_IDS } from '$lib/stores/rack';
+import { rackTop, rackBottom, videoLayers, moduleParams, updateParam, updateParams, clearParams, bypassed, assignModuleToSlot, currentRackSlotForModule, activeRackSlotIds, RACK_SLOT_IDS } from '$lib/stores/rack';
 import { pgmSource, cutImmediate } from '$lib/stores/pgm';
 import { capabilities } from '$lib/stores/capabilities';
 import { listCatalog } from '$lib/modules/catalog';
@@ -520,13 +520,14 @@ export function installBspQaHook() {
       if (files.length !== 8) throw new Error(`Visual proof requires 8 fixture clips; received ${files.length}`);
       const result = await loadRackClipsFromFiles(files);
       if (result.loaded !== 8) throw new Error(`Fixture assignment loaded ${result.loaded}/8 stable slots`);
+      const slotIds = activeRackSlotIds();
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
-        const missing = RACK_SLOT_IDS.filter((slotId) => !videoPool.hasReadyFrame(slotId));
+        const missing = slotIds.filter((slotId) => !videoPool.hasReadyFrame(slotId));
         if (missing.length === 0) {
           return {
-            loaded: RACK_SLOT_IDS.length,
-            assignments: Object.fromEntries(RACK_SLOT_IDS.map((slotId) => [slotId, get(videoLayers)[slotId]?.name ?? null]))
+            loaded: slotIds.length,
+            assignments: Object.fromEntries(slotIds.map((slotId) => [slotId, get(videoLayers)[slotId]?.name ?? null]))
           };
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -587,7 +588,7 @@ export function installBspQaHook() {
         moduleId,
         released: !sourceId || !videoPool.get(sourceId),
         previousSourceUnbound: !previousSource || pgm?.source !== previousSource,
-        decodedCount: RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length
+        decodedCount: activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length
       };
     },
     async releaseAllVisualProofClips() {
@@ -595,10 +596,10 @@ export function installBspQaHook() {
         if (videoPool.get(slotId)) await mediaRuntime.removeModuleClip(slotId);
       }
       visualProofModuleSlots.clear();
-      return { decodedCount: RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length };
+      return { decodedCount: activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length };
     },
     realMediaDecodedCount() {
-      return RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length;
+      return activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length;
     },
     focusVisualProofModule(moduleId: string) {
       const sourceId = ensureVisualProofModuleSlot(moduleId);

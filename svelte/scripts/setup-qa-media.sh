@@ -27,14 +27,26 @@ for i in 1 2 3 4 5 6 7 8; do
   cp -f "$SRC_CLIP" "$MEDIA/clip$i.$EXT"
 done
 
-# Audio: reuse a committed wav if present, else synthesise a short tone so the
-# transport has something to run against.
-if [[ -f "$SRCDIR/qa-audio.wav" ]]; then
-  cp -f "$SRCDIR/qa-audio.wav" "$MEDIA/redline.wav"
+# Keep real song names and generated QA audio separate. A test tone must never
+# masquerade as Redline or replace a symlink to the user's master file.
+AUDIO_NAME=""
+if [[ -n "${QA_AUDIO:-}" ]]; then
+  if [[ ! -f "$QA_AUDIO" ]]; then
+    echo "ERROR: QA_AUDIO does not exist: $QA_AUDIO" >&2
+    exit 1
+  fi
+  AUDIO_NAME="$(basename "$QA_AUDIO")"
+  rm -f "$MEDIA/$AUDIO_NAME"
+  ln -s "$QA_AUDIO" "$MEDIA/$AUDIO_NAME"
+elif [[ -f "$SRCDIR/qa-audio.wav" ]]; then
+  cp -f "$SRCDIR/qa-audio.wav" "$MEDIA/qa-audio.wav"
+  AUDIO_NAME="qa-audio.wav"
 elif [[ -f "$MEDIA/gem-test-tone.wav" ]]; then
-  cp -f "$MEDIA/gem-test-tone.wav" "$MEDIA/redline.wav"
+  cp -f "$MEDIA/gem-test-tone.wav" "$MEDIA/qa-audio.wav"
+  AUDIO_NAME="qa-audio.wav"
 elif command -v ffmpeg >/dev/null 2>&1; then
-  ffmpeg -y -f lavfi -i "sine=frequency=440:duration=5" "$MEDIA/redline.wav" 2>/dev/null
+  ffmpeg -y -f lavfi -i "sine=frequency=440:duration=5" "$MEDIA/qa-audio.wav" 2>/dev/null
+  AUDIO_NAME="qa-audio.wav"
 fi
 
 # Minimal deterministic SMF (format 0, one empty track) for advertised MIDI pickers.
@@ -49,9 +61,9 @@ done
 cat > "$MEDIA/manifest.json" <<EOF
 {
   "clips": [$CLIP_LIST],
-  "audio": "redline.wav",
+  "audio": "${AUDIO_NAME}",
   "midi": "qa.mid",
-  "audios": ["redline.wav"]
+  "audios": ["${AUDIO_NAME}"]
 }
 EOF
 

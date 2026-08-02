@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FIXTURES="$ROOT/tests/fixtures/media"
 DOWNLOADS="${HOME}/Downloads"
 ARCHIVE="${ARCHIVE:-$DOWNLOADS/archive (2)}"
-REDLINE="${REDLINE:-$HOME/Music/Music/Media.localized/Music/Unknown Artist/Unknown Album/Redline.wav}"
+REDLINE="${REDLINE:-$HOME/Music/Music/Media.localized/Music/Unknown Artist/Unknown Album/new-Redline (Remastered).wav}"
 CLIP_COUNT="${CLIP_COUNT:-8}"
 MIN_CLIP_BYTES="${MIN_CLIP_BYTES:-100000}"
 
@@ -65,22 +65,24 @@ for f in "${CLIPS[@]}"; do
 done
 
 if [[ -f "$REDLINE" ]]; then
-  ln -sf "$REDLINE" "$FIXTURES/redline.wav"
-  echo "redline.wav -> $REDLINE"
+  AUDIO_NAME="$(basename "$REDLINE")"
+  ln -sf "$REDLINE" "$FIXTURES/$AUDIO_NAME"
+  echo "$AUDIO_NAME -> $REDLINE"
 else
   echo "Redline not found: $REDLINE" >&2
   echo "Set REDLINE= to your test audio file." >&2
+  AUDIO_NAME=""
 fi
 
 clips_json=$(IFS=,; echo "${clip_names[*]}")
 cat > "$FIXTURES/manifest.json" << EOF
 {
   "clips": [${clips_json}],
-  "audio": "redline.wav",
-  "audios": ["redline.wav"]
+  "audio": "${AUDIO_NAME}",
+  "audios": ["${AUDIO_NAME}"]
 }
 EOF
 
 echo ""
 echo "Linked $linked clips from: $ARCHIVE"
-echo "QA URL: http://127.0.0.1:5174/?qa=1 (Redline.wav + ${linked} clips; BPM from Essentia)"
+echo "QA URL: http://127.0.0.1:5174/?qa=1 (${AUDIO_NAME:-no audio} + ${linked} clips; BPM from Essentia)"
