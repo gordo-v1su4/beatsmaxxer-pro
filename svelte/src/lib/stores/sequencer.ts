@@ -3,7 +3,10 @@ import { writable } from 'svelte/store';
 /** 16 sixteenth-note steps per bar — module id to cut to, or null = hold. */
 export const sequencerSteps = writable<(string | null)[]>(Array.from({ length: 16 }, () => null));
 
-export const sequencerArmed = writable(true);
+/** Off by default: an idle sequencer that still animates its playhead reads as
+ * activity the user did not ask for. Arming it starts both the cuts and the
+ * running highlight. */
+export const sequencerArmed = writable(false);
 export const sequencerLastStep = writable(-1);
 
 export function crossedSequencerSteps(

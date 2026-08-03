@@ -12,6 +12,10 @@
 	/* Rack modules are fixed design objects. Collapsing side rails reveals empty
 	   black workspace; it never stretches controls or changes button spacing. */
 	--rack-module-width: 272px;
+	/* Ceiling on module growth. The preview is 16:9, so every pixel of extra
+	   width is 0.5625 of extra row height; 320 keeps two rows plus controls
+	   inside a 1080p window while still filling a wide screen. */
+	--rack-module-max: 320px;
 	--rack-preview-height: 153px;
 	--rack-module-min: var(--rack-module-width);
 	--mix-strip-height: 46px;
@@ -131,10 +135,14 @@ input[type='range']::-moz-range-thumb {
 
 .rack-row {
 	display: grid;
-	grid-template-columns: repeat(5, var(--rack-module-width));
+	/* Fill the available width rather than sitting fixed-width with dead space
+	   to the sides, but cap growth so the 16:9 previews cannot push the
+	   controls off the bottom. Leftover space above the cap is split evenly. */
+	grid-template-columns: repeat(5, minmax(var(--rack-module-width), var(--rack-module-max)));
+	justify-content: center;
 	align-items: stretch;
 	gap: 1px;
-	width: max-content;
+	width: 100%;
 	max-width: 100%;
 	overflow: visible;
 	background: #000;
@@ -142,9 +150,10 @@ input[type='range']::-moz-range-thumb {
 
 .rack-slot {
 	position: relative;
-	width: var(--rack-module-width);
+	/* Sized by the grid track so modules can grow into a wide window. */
+	width: auto;
 	min-width: var(--rack-module-width);
-	max-width: var(--rack-module-width);
+	max-width: none;
 	display: flex;
 	background: #000;
 	transition:
@@ -222,9 +231,11 @@ input[type='range']::-moz-range-thumb {
 	   bottom without scrolling, and keep the program monitor clearly dominant.
 	   Full-width previews pushed the controls out of the rows. */
 	max-width: 100%;
-	height: var(--rack-preview-height);
+	/* Height follows width at 16:9 rather than being pinned. Pinning it while
+	   the module grows stretches the picture horizontally; growth is bounded
+	   by --rack-module-max on the row instead. */
+	height: auto;
 	min-height: var(--rack-preview-height);
-	max-height: var(--rack-preview-height);
 	aspect-ratio: 16 / 9;
 	align-self: center;
 	flex-shrink: 0;

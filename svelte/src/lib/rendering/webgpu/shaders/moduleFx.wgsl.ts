@@ -75,6 +75,13 @@ fn hash21(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
 }
 
+/** Mirrored repeat that maps 0.5 back to 0.5, so a fold centred on the frame
+    stays centred on the source. Folding with fract(x + 0.5) instead lands the
+    centre of the frame on the corner of the source. */
+fn mirrorRepeat(x: f32) -> f32 {
+  return 1.0 - abs(fract(x * 0.5) * 2.0 - 1.0);
+}
+
 /** Shared idle-card treatment: graphics fade to black toward the top and bottom
     of the lower band so every module's idle reads as one family. */
 fn idleFade(y: f32) -> f32 {
@@ -194,8 +201,112 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
       let w = 0.014 - z * 0.006;
       col += acc * smoothstep(w + 0.010, w * 0.5, abs(m - sz)) * (0.22 + z * 0.42) * fade;
     }
+  } else if (mode == 9.0) {
+    // ANAMORPHIC — scope bars closing in with a horizontal blue flare
+    let bar = step(p.y, 0.17) + step(0.83, p.y);
+    col += acc * (smoothstep(0.010, 0.0, abs(p.y - 0.17))
+                + smoothstep(0.010, 0.0, abs(p.y - 0.83))) * 0.7 * fade;
+    let flare = smoothstep(0.05, 0.0, abs(p.y - 0.5)) * (0.45 + 0.55 * beatPulse(3.0));
+    col += vec3f(0.35, 0.62, 1.0) * flare * 0.55 * (1.0 - bar);
+    col += vec3f(0.9) * smoothstep(0.004, 0.0, abs(p.y - 0.5))
+         * smoothstep(0.55, 0.1, abs(p.x - 0.5)) * 0.5;
+  } else if (mode == 10.0) {
+    // FILM GRAIN — speckle field jittering on a gate weave
+    let weave = vec2f(sin(t * 3.1) * 0.006, cos(t * 2.3) * 0.006);
+    let g = hash21(floor((p + weave) * vec2f(asp * 110.0, 110.0)) + floor(t * 24.0));
+    col += vec3f(g * g) * 0.30 * fade;
+    col += acc * step(0.98, g) * 0.55 * fade;
+  } else if (mode == 11.0) {
+    // LIGHT LEAK — warm bloom washing in from the frame edge
+    let sweep = 0.55 + 0.35 * sin(t * 0.5);
+    let edge = smoothstep(sweep, 0.0, p.x);
+    col += vec3f(1.0, 0.52, 0.18) * edge * edge * 0.65 * fade;
+    col += acc * edge * 0.22 * fade;
+    col += vec3f(1.0, 0.8, 0.5) * smoothstep(0.06, 0.0, p.x) * 0.5 * fade;
+  } else if (mode == 12.0) {
+    // DUTCH ANGLE — a level grid rocking past horizontal
+    let ang = sin(t * 0.6) * 0.42;
+    let q = rot2(vec2f((p.x - 0.5) * asp, p.y - 0.5), ang);
+    col += vec3f(0.09, 0.10, 0.12) * step(0.93, fract(q.y * 5.0 + 0.5)) * fade;
+    col += acc * smoothstep(0.014, 0.003, abs(q.y)) * 0.9 * fade;
+    col += acc * smoothstep(0.06, 0.0, abs(q.y)) * 0.18 * fade;
+  } else if (mode == 13.0) {
+    // HALATION — a hot core blooming into soft rings
+    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    let r = length(c);
+    let pulse = 0.55 + 0.45 * beatPulse(3.0);
+    col += vec3f(1.0, 0.88, 0.74) * smoothstep(0.09, 0.0, r) * pulse;
+    col += vec3f(1.0, 0.62, 0.42) * smoothstep(0.30, 0.04, r) * 0.42 * pulse * fade;
+    col += acc * smoothstep(0.44, 0.16, r) * 0.16 * fade;
+  } else if (mode == 14.0) {
+    // LENS BULGE — a grid pushed outward through the centre
+    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    let r = length(c);
+    let k = 1.0 + 1.5 * r * r * (0.55 + 0.45 * sin(t * 0.8));
+    let q = c / max(k, 0.0001) + vec2f(0.5);
+    let gr = fract(q * vec2f(asp * 7.0, 7.0));
+    col += acc * step(0.90, max(gr.x, gr.y)) * 0.55 * fade;
+    col += vec3f(0.85) * smoothstep(0.028, 0.0, r) * 0.3;
+  } else if (mode == 15.0) {
+    // VHS / CAM — scanlines, a rolling tracking tear and chroma split
+    col += vec3f(0.05, 0.06, 0.07) * step(0.5, fract(p.y * 55.0));
+    let band = fract(p.y + t * 0.22);
+    let tear = smoothstep(0.055, 0.0, abs(band - 0.5));
+    let sx = p.x + tear * 0.06;
+    col += vec3f(0.85, 0.12, 0.16) * step(0.5, fract(sx * 8.0)) * 0.14 * fade;
+    col += vec3f(0.12, 0.42, 0.9) * step(0.5, fract(sx * 8.0 + 0.5)) * 0.14 * fade;
+    col += acc * tear * 0.45 * fade;
+    col += vec3f(hash21(vec2f(floor(p.y * 220.0), floor(t * 20.0))) - 0.5) * 0.10 * fade;
+  } else if (mode == 17.0) {
+    // PRISM — one edge fanned into red, green and blue copies
+    let spread = 0.030 + 0.018 * sin(t * 0.7);
+    col += vec3f(1.0, 0.22, 0.22) * smoothstep(0.018, 0.0, abs(p.x - 0.5 + spread)) * 0.6 * fade;
+    col += vec3f(0.25, 1.0, 0.42) * smoothstep(0.018, 0.0, abs(p.x - 0.5)) * 0.6 * fade;
+    col += vec3f(0.28, 0.48, 1.0) * smoothstep(0.018, 0.0, abs(p.x - 0.5 - spread)) * 0.6 * fade;
+    col += acc * smoothstep(0.30, 0.0, abs(p.x - 0.5)) * 0.10 * fade;
+  } else if (mode == 18.0) {
+    // MOTION STREAK — comet heads dragging trails along the move axis
+    for (var i = 0; i < 4; i = i + 1) {
+      let fi = f32(i);
+      let y = 0.24 + fi * 0.17;
+      let head = fract(t * 0.32 + fi * 0.29);
+      let d = p.x - head;
+      let trail = smoothstep(0.34, 0.0, -d) * step(d, 0.0);
+      let lane = smoothstep(0.030, 0.0, abs(p.y - y));
+      col += acc * trail * lane * 0.85 * fade;
+      col += vec3f(0.95) * smoothstep(0.014, 0.0, length(vec2f(d * asp, p.y - y))) * 0.8 * fade;
+    }
+  } else if (mode == 19.0) {
+    // INCEPTION — a marker folded around the centre into kaleidoscope wedges
+    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    let seg = 6.2831853 / 6.0;
+    let r = length(c);
+    var ang = atan2(c.y, c.x) + t * 0.22;
+    ang = abs(fract(ang / seg) - 0.5) * seg;
+    let q = vec2f(cos(ang), sin(ang)) * r;
+    col += acc * smoothstep(0.012, 0.0, abs(q.y - 0.11))
+         * smoothstep(0.40, 0.04, r) * 0.95 * fade;
+    col += acc * smoothstep(0.012, 0.0, abs(r - 0.26)) * 0.3 * fade;
+    for (var i = 0; i < 6; i = i + 1) {
+      let a = f32(i) * seg + t * 0.22;
+      let dir = vec2f(cos(a), sin(a));
+      col += acc * smoothstep(0.005, 0.0, abs(dot(c, vec2f(-dir.y, dir.x))))
+           * step(r, 0.44) * 0.20 * fade;
+    }
+    col += vec3f(0.9) * smoothstep(0.02, 0.0, r) * 0.35;
+  } else if (mode == 20.0) {
+    // SPECIALTY LENS — a grid bent through a fisheye element
+    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    let r = length(c);
+    let bend = 1.0 + 2.0 * r * r;
+    let q = c * bend / 1.5 + vec2f(0.5);
+    let gr = fract(q * vec2f(asp * 6.0, 6.0));
+    col += acc * step(0.90, max(gr.x, gr.y)) * smoothstep(0.50, 0.08, r) * 0.65 * fade;
+    col += acc * smoothstep(0.012, 0.003, abs(r - 0.38))
+         * (0.7 + 0.3 * beatPulse(4.0)) * 0.8 * fade;
+    col += vec3f(0.85) * smoothstep(0.035, 0.0, r) * 0.32;
   } else {
-    // film-look modules: fine scan lines
+    // any future module before it earns bespoke art: fine scan lines
     col += acc * step(0.5, fract(p.y * 120.0 + t * 2.0)) * 0.08 * fade;
   }
   return col;
@@ -793,9 +904,12 @@ fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
     p = vec2f(cos(ang), sin(ang)) * r;
     uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
   } else {
+    // Recursive fold. mirrorRepeat keeps the screen centre on the source
+    // centre; folding with fract(p + 0.5) instead lands the centre of the
+    // frame on the corner of the source, which reads as an off-centre smear.
     let z = 1.0 + u.p2 * 2.0 + pulse * 1.5;
-    let p = (uv0 - vec2f(0.5)) * z;
-    uv = abs(fract(p + vec2f(0.5)) * 2.0 - vec2f(1.0));
+    let q = (uv0 - vec2f(0.5)) * z + vec2f(0.5);
+    uv = vec2f(mirrorRepeat(q.x), mirrorRepeat(q.y));
   }
   return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
 }

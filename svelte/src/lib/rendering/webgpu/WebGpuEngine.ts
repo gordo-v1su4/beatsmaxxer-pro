@@ -81,6 +81,21 @@ const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler']);
  * of a black flash or the idle test card. */
 const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
 
+/** How far into a clip a source still counts as "just wrapped" for the purpose
+ * of a PGM cut. Cutting onto a source in this window can import an external
+ * texture that is still empty even though the element reports
+ * HAVE_ENOUGH_DATA, which presents as a single black program frame. Inside the
+ * window the cut renders from the cached last-good frame for one frame
+ * instead; the next frame takes the live external texture as usual.
+ *
+ * The window is generous because the cover costs exactly one frame — it is
+ * gated on the pending-cut marker, which clears as soon as PGM renders — and
+ * because the cache is known fresh here, having been refreshed on the way out
+ * of the previous loop. Worst case a cut shows the previous loop's final frame
+ * for one refresh instead of the true frame, which is imperceptible; the
+ * alternative is a full black frame, which is not. */
+const LOOP_SEAM_CUT_COVER_SECONDS = 1;
+
 /** WKWebView can accept GPUExternalTexture imports yet present them as black.
  * Desktop therefore uses an explicit GPUTexture copy for every module; web
  * keeps the lower-overhead external-texture path except where persistence is
@@ -561,13 +576,18 @@ export class WebGpuEngine {
     const preferPersistentVideoTexture = shouldUsePersistentVideoTexture(moduleId);
     let cachedVideoView = video ? this.videoTextureCache.cachedView(sourceId, video) : null;
     const duration = video?.duration ?? 0;
-    const nearLoopSeam =
-      !!video &&
-      Number.isFinite(duration) &&
-      duration > 0 &&
-      (duration - video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS ||
-        video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS);
-    if (hasVideo && video && (preferPersistentVideoTexture || nearLoopSeam || !cachedVideoView)) {
+    const hasTimedSource = !!video && Number.isFinite(duration) && duration > 0;
+    // Refresh the last-good copy while the clip runs out, never once it has
+    // wrapped: copying in the post-wrap window can capture the same empty frame
+    // this cache exists to cover, overwriting the good frame with black.
+    const approachingLoopEnd =
+      hasTimedSource && duration - video!.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS;
+    const justWrapped = hasTimedSource && video!.currentTime < LOOP_SEAM_CUT_COVER_SECONDS;
+    if (
+      hasVideo &&
+      video &&
+      (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView)
+    ) {
       try {
         cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
         cachedTextureUploaded = true;
@@ -576,6 +596,14 @@ export class WebGpuEngine {
         // inspection and upload. Preserve the last successfully cached frame.
       }
     }
+    // A cut landing on a source that just wrapped can import an external
+    // texture that is still empty, presenting one black program frame. Cover
+    // exactly that frame from cache; the next frame goes back to live video.
+    const coverCutSeam =
+      binding.bindingId === 'pgm' &&
+      this.pendingPgmCut?.sourceId === sourceId &&
+      justWrapped &&
+      !!cachedVideoView;
     data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
 
@@ -618,7 +646,7 @@ export class WebGpuEngine {
           readView
         );
       }
-    } else if (shaderHasVideo && video && preferPersistentVideoTexture) {
+    } else if (shaderHasVideo && video && (preferPersistentVideoTexture || coverCutSeam)) {
       shaderHasVideo = cachedVideoView ? 1 : 0;
       data[14] = shaderHasVideo;
       this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
