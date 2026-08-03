@@ -238,7 +238,7 @@
   class="rack-module"
   data-bsp-module-id={mod.id}
   class:is-collapsed={collapsed}
-  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
+  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden;box-shadow:{isOnAir ? `inset 0 0 0 1px ${mod.accentColor}66, inset 0 0 18px ${mod.accentColor}14` : 'none'}"
   ondragenter={(e) => {
     e.preventDefault();
     if (e.dataTransfer?.types.includes('Files')) {
@@ -267,17 +267,10 @@
     style="display:flex;align-items:center;padding:0 5px;height:20px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0;cursor:grab"
   >
     <span
-      style="font-family:var(--font-ui);font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#7a8090;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="font-family:var(--font-ui);font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {mod.name}
     </span>
-    {#if isOnAir}
-      <span
-        style="font-family:var(--font-ui);font-size:6.5px;font-weight:700;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
-      >
-        ON AIR
-      </span>
-    {/if}
     <div style="flex:1"></div>
     <input
       bind:this={fileInput}
