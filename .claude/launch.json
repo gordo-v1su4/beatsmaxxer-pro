@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "dev",
+      "name": "web",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev", "--port", "2174"],
-      "port": 2174
+      "runtimeArgs": ["--cwd=C:\\Users\\Gordo\\Documents\\Github\\beat-surfer-pro\\.claude\\worktrees\\available-branches-d7af94\\svelte", "run", "dev"],
+      "port": 5174
     }
   ]
 }

@@ -6,11 +6,13 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
+import { isAnalysisProxyConfigured } from '../api/analyze/policy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 
 export default defineConfig(({ mode, command }) => {
+	const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_PLATFORM);
 	const env = loadEnv(mode, repoRoot, '');
 	const essentiaProxyConfig = analysisProxyConfigFromEnv(
 		env,
@@ -21,6 +23,18 @@ export default defineConfig(({ mode, command }) => {
 		env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
 		''
 	).trim();
+	const essentiaEnabled =
+		isAnalysisProxyConfigured(essentiaProxyConfig) &&
+		(command === 'serve' || isTauriBuild);
+	// Native decode/composition is the desktop contract. The legacy CPU-frame
+	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
+	// values from the older experimental phase must not silently disable the
+	// compositor UI/layout bridge. The native compositor only exists on macOS;
+	// other hosts must fall back to htmlVideoSource inside the Tauri webview.
+	const desktopNativeDecode =
+		isTauriBuild &&
+		process.platform === 'darwin' &&
+		process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
 
 	return {
 		base: './',
@@ -37,22 +51,29 @@ export default defineConfig(({ mode, command }) => {
 			essentiaDevProxyPlugin(essentiaProxyConfig)
 		],
 		define: {
-			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(
-				essentiaProxyConfig.enabled && essentiaProxyConfig.deploymentMode === 'development'
-			),
-			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine)
+			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(essentiaEnabled),
+			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine),
+			__APP_DESKTOP_NATIVE_DECODE__: JSON.stringify(desktopNativeDecode)
 		},
 		server: {
 			port: 5174,
 			strictPort: true,
-			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : undefined,
+			// Tailscale cloud: DEV_HOST=0.0.0.0. Local/Tauri: bind IPv4 explicitly
+			// (default Vite can listen on ::1 only → ERR_CONNECTION_REFUSED on 127.0.0.1).
+			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1',
 			fs: {
 				allow: ['..']
 			}
 		},
 		resolve: {
 			alias: {
-				$lib: path.resolve('./src/lib')
+				$lib: path.resolve('./src/lib'),
+				...(isTauriBuild
+					? {}
+					: {
+							'@tauri-apps/api/core': path.resolve('./src/lib/platform/tauri-stubs/core.ts'),
+							'@tauri-apps/api/event': path.resolve('./src/lib/platform/tauri-stubs/event.ts')
+						})
 			}
 		},
 		ssr: {

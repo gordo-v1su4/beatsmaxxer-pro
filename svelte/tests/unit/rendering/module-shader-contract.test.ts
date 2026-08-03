@@ -10,6 +10,8 @@ import {
   getModuleShader
 } from '$lib/rendering/webgpu/shaders/registry';
 
+// camcorder merged into the unified vhs tape shader (mode 16 retired); the
+// remaining mode numbers stay stable for native-compositor parity.
 const EXPECTED_MODULE_IDS = [
   'transition',
   'speedramp',
@@ -26,33 +28,37 @@ const EXPECTED_MODULE_IDS = [
   'halation',
   'bulge',
   'vhs',
-  'camcorder',
   'prism',
-  'streak'
+  'streak',
+  'mirror',
+  'lens'
 ] as const;
 
+const EXPECTED_EFFECT_MODES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20];
+
 describe('module shader identity contract', () => {
-  test('locks the 18 advertised catalog entries', () => {
+  test('locks the 19 advertised catalog entries', () => {
     expect(catalogIds()).toEqual(EXPECTED_MODULE_IDS);
-    expect(MODULE_CATALOG.size).toBe(18);
+    expect(MODULE_CATALOG.size).toBe(19);
   });
 
-  test('provides exactly three named presets for every advertised module', () => {
+  test('provides sequentially numbered named presets for every advertised module', () => {
     expect(Object.keys(MODULE_PRESETS).sort()).toEqual([...EXPECTED_MODULE_IDS].sort());
 
     for (const id of EXPECTED_MODULE_IDS) {
-      expect(MODULE_PRESETS[id], `${id} presets`).toHaveLength(3);
-      expect(MODULE_PRESETS[id].map((preset) => preset.n)).toEqual(['1', '2', '3']);
-      expect(MODULE_PRESETS[id].every((preset) => preset.title.length > 0)).toBe(true);
+      const presets = MODULE_PRESETS[id];
+      expect(presets.length, `${id} presets`).toBeGreaterThanOrEqual(3);
+      expect(presets.map((preset) => preset.n)).toEqual(
+        presets.map((_, index) => String(index + 1))
+      );
+      expect(presets.every((preset) => preset.title.length > 0)).toBe(true);
     }
   });
 
   test('assigns one explicit, unique effect mode per module', () => {
     expect(Object.keys(SHADER_EFFECT_MODE)).toEqual(EXPECTED_MODULE_IDS);
-    expect(new Set(Object.values(SHADER_EFFECT_MODE)).size).toBe(18);
-    expect(Object.values(SHADER_EFFECT_MODE).sort((a, b) => a - b)).toEqual(
-      Array.from({ length: 18 }, (_, index) => index + 1)
-    );
+    expect(new Set(Object.values(SHADER_EFFECT_MODE)).size).toBe(EXPECTED_MODULE_IDS.length);
+    expect(Object.values(SHADER_EFFECT_MODE).sort((a, b) => a - b)).toEqual(EXPECTED_EFFECT_MODES);
   });
 
   test('has no catalog shader missing from either registry', () => {
@@ -65,16 +71,17 @@ describe('module shader identity contract', () => {
   });
 
   test('dispatches every unique mode to an explicit effect body', () => {
-    const bodies = [
-      'Transition', 'SpeedRamp', 'TapDelay', 'TimeSampler', 'Punch', 'Shake',
-      'Drift', 'Focus', 'Anamorphic', 'Grain', 'Leak', 'Dutch', 'Halation',
-      'Bulge', 'Vhs', 'Camcorder', 'Prism', 'Streak'
+    const bodies: Array<[string, number]> = [
+      ['Transition', 1], ['SpeedRamp', 2], ['TapDelay', 3], ['TimeSampler', 4],
+      ['Punch', 5], ['Shake', 6], ['Drift', 7], ['Focus', 8], ['Anamorphic', 9],
+      ['Grain', 10], ['Leak', 11], ['Dutch', 12], ['Halation', 13], ['Bulge', 14],
+      ['Vhs', 15], ['Prism', 17], ['Streak', 18], ['Mirror', 19], ['Lens', 20]
     ];
 
-    bodies.forEach((body, index) => {
+    bodies.forEach(([body, mode]) => {
       expect(MODULE_FX_WGSL).toContain(`fn effect${body}(`);
       expect(MODULE_FX_WGSL).toContain(
-        `mode == ${index + 1}.0) { wet = effect${body}(dry, uv); }`
+        `mode == ${mode}.0) { wet = effect${body}(dry, uv); }`
       );
     });
   });
@@ -82,7 +89,7 @@ describe('module shader identity contract', () => {
   test('new effect bodies consume each advertised primary parameter channel', () => {
     const bodies = [
       'Anamorphic', 'Grain', 'Leak', 'Dutch', 'Halation',
-      'Bulge', 'Vhs', 'Camcorder', 'Prism', 'Streak'
+      'Bulge', 'Vhs', 'Prism', 'Streak', 'Mirror', 'Lens'
     ];
 
     for (const body of bodies) {

@@ -69,6 +69,18 @@ describe('VideoPool timeline mapping', () => {
     expect(timelineMediaDrift(0.1, 9.9, 10)).toBeCloseTo(-0.2);
   });
 
+  test('starts free-run playback when tick receives boolean true', () => {
+    const pool = new VideoPool();
+    const video = actuatorVideo();
+    (pool as unknown as { videos: Map<string, unknown> }).videos.set('grain', video);
+    pool.markFreeRun('grain');
+
+    pool.tick(true);
+
+    expect(video.play).toHaveBeenCalledOnce();
+    expect(video.paused).toBe(false);
+  });
+
   test('does not seek on every animation frame during natural playback', () => {
     const pool = new VideoPool();
     const video = actuatorVideo();

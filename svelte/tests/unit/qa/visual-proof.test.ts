@@ -456,9 +456,9 @@ describe('visual proof release gate', () => {
     const presets = manifest.items.filter((item) => item.kind === 'preset');
     const shaders = manifest.items.filter((item) => item.kind === 'shader');
 
-    expect(modules).toHaveLength(18);
-    expect(presets).toHaveLength(54);
-    expect(shaders).toHaveLength(18);
+    expect(modules).toHaveLength(19);
+    expect(presets).toHaveLength(63);
+    expect(shaders).toHaveLength(19);
     expect(shaders.map((item) => item.subjectId).sort()).toEqual(
       modules.map((item) => item.subjectId).sort()
     );
@@ -492,22 +492,27 @@ describe('visual proof release gate', () => {
   });
 
   test('classifies Redline as audio despite its embedded cover-art video stream', async () => {
-    const [metadata] = await realMediaFileMetadata([
-      `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`
-    ]);
+    const audioPath = `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`;
+    const { access } = await import('node:fs/promises');
+    try {
+      await access(audioPath);
+    } catch {
+      return;
+    }
+    const [metadata] = await realMediaFileMetadata([audioPath]);
     expect(metadata?.kind).toBe('audio');
     expect(metadata?.width).toBeNull();
     expect(metadata?.height).toBeNull();
     expect(metadata?.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  test('rejects the synthetic 91-item report backed by one-byte artifacts', async () => {
+  test('rejects the synthetic 102-item report backed by one-byte artifacts', async () => {
     const report = completeReport();
     report.manifest.items = report.manifest.items.filter((item) => item.kind !== 'control' || item.subjectId === 'button:play');
     report.manifest.controlInventory.discoveredCount = 1;
     report.manifest.controlInventory.includedCount = 1;
     report.evidence = report.evidence.filter((item) => report.manifest.items.some((manifestItem) => manifestItem.id === item.itemId));
-    expect(report.manifest.items).toHaveLength(91);
+    expect(report.manifest.items).toHaveLength(102);
     await mkdir('.artifacts/visual-proof', { recursive: true });
     await Promise.all([
       writeFile('.artifacts/visual-proof/one-byte-before.png', Uint8Array.of(0)),

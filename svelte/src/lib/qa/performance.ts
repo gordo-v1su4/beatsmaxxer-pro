@@ -11,6 +11,16 @@ export function recordLatency(label: string, ms: number) {
   if (samples.length > 200) samples.shift();
 }
 
+/** Wall-clock reads stay in this QA module: the render engine must never touch
+ * performance.now directly (shared-timeline-authority contract). */
+export function latencyMarkNow(): number {
+  return performance.now();
+}
+
+export function recordLatencySince(label: string, startMark: number) {
+  recordLatency(label, performance.now() - startMark);
+}
+
 export function getLatencySamples() {
   return [...samples];
 }

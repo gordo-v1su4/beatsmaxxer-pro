@@ -7,20 +7,26 @@ import {
   startDrag,
   type RackRow
 } from '$lib/stores/drag';
-import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
+import {
+  applyModuleDrop,
+  canDropModuleOnSlot,
+  midiLayers,
+  rackBottom,
+  rackTop,
+  videoLayers
+} from '$lib/stores/rack';
   import { getModuleDef } from '$lib/modules/catalog';
   import EffectModule from '$lib/components/EffectModule.svelte';
   import CompactModule from '$lib/components/CompactModule.svelte';
   import { pgmSource } from '$lib/stores/pgm';
-  import { videoLayers, midiLayers } from '$lib/stores/rack';
   import { get } from 'svelte/store';
 
   interface Props {
     row: RackRow;
     slotIndex: number;
-    moduleId: string;
+    moduleId?: string;
     canvasId?: string;
-    params: Record<string, number>;
+    params?: Record<string, number>;
     onVideoUpload?: (file: File) => void;
     onVideosUpload?: (files: File[]) => void;
     onClearVideo?: () => void;
@@ -33,7 +39,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     slotIndex,
     moduleId,
     canvasId,
-    params,
+    params = {},
     onVideoUpload,
     onVideosUpload,
     onClearVideo,
@@ -41,15 +47,20 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     onClearMidi
   }: Props = $props();
 
-  const mod = $derived(getModuleDef(moduleId));
+  const mod = $derived(moduleId ? getModuleDef(moduleId) : undefined);
   const slotCanvasId = $derived(canvasId ?? `${row}-${slotIndex}`);
   const compact = $derived(mod?.compact ?? row === 'bottom');
   const isOnAir = $derived($pgmSource === moduleId);
   const isHover = $derived(
     $dragState.hoverTarget?.row === row && $dragState.hoverTarget?.slotIndex === slotIndex
   );
+  const canAcceptDrop = $derived(
+    !$dragState.payload ||
+      canDropModuleOnSlot($dragState.payload, { row, index: slotIndex }, $rackTop, $rackBottom)
+  );
   const isDragging = $derived(
-    $dragState.active &&
+    !!moduleId &&
+      $dragState.active &&
       $dragState.payload?.moduleId === moduleId &&
       $dragState.payload?.source === 'rack' &&
       $dragState.payload?.row === row &&
@@ -59,7 +70,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   function onHeaderPointerDown(e: PointerEvent) {
     if (!mod) return;
     e.preventDefault();
-    startDrag({ moduleId, source: 'rack', row, slotIndex }, e.clientX, e.clientY);
+    startDrag({ moduleId: mod.id, source: 'rack', row, slotIndex }, e.clientX, e.clientY);
     window.addEventListener('pointermove', onWindowMove);
     window.addEventListener('pointerup', onWindowUp);
   }
@@ -89,14 +100,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     const target = state.hoverTarget;
     const payload = state.payload;
     if (target) {
-      if (payload.source === 'palette') {
-        assignModuleToSlot(target.row, target.slotIndex, payload.moduleId);
-      } else if (payload.row !== undefined && payload.slotIndex !== undefined) {
-        swapRackSlots(
-          { row: payload.row, index: payload.slotIndex },
-          { row: target.row, index: target.slotIndex }
-        );
-      }
+      applyModuleDrop(payload, { row: target.row, index: target.slotIndex });
     }
     endDrag();
   }
@@ -105,14 +109,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
     const state = get(dragState);
     const payload = state.payload;
     if (!state.active || state.input !== 'keyboard' || !payload) return;
-    if (payload.source === 'palette') {
-      assignModuleToSlot(row, slotIndex, payload.moduleId);
-    } else if (payload.row !== undefined && payload.slotIndex !== undefined) {
-      swapRackSlots(
-        { row: payload.row, index: payload.slotIndex },
-        { row, index: slotIndex }
-      );
-    }
+    applyModuleDrop(payload, { row, index: slotIndex });
     endDrag();
   }
 </script>
@@ -121,13 +118,17 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   data-rack-slot
   data-row={row}
   data-index={slotIndex}
+  data-drop-valid={canAcceptDrop}
   class="rack-slot {isHover ? 'z-20' : 'z-0'} {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
 >
   {#if $dragState.active && $dragState.input === 'keyboard' && $dragState.payload}
     <button
       type="button"
       data-keyboard-drop-target
-      class="absolute inset-0 z-50 border-2 border-dashed border-sky-400 bg-black/70 text-xs font-bold tracking-widest text-sky-300"
+      aria-disabled={!canAcceptDrop}
+      class="absolute inset-0 z-50 border-2 border-dashed bg-black/70 text-xs font-bold tracking-widest {canAcceptDrop
+        ? 'border-sky-400 text-sky-300'
+        : 'cursor-not-allowed border-red-500/80 text-red-300'}"
       aria-label="Drop {$dragState.payload.moduleId} in {row} rack slot {slotIndex + 1}"
       onclick={finishKeyboardDrop}
       onfocus={() => setHoverTarget({ row, slotIndex })}
@@ -144,8 +145,10 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
   {/if}
   {#if isHover && $dragState.active}
     <div
-      class="pointer-events-none absolute -inset-1 z-30 rounded-lg border-2 border-dashed border-sky-400/90"
-      style="box-shadow: 0 8px 32px {mod?.accentColor ?? '#38bdf8'}44, inset 0 0 20px {mod?.accentColor ?? '#38bdf8'}22"
+      class="pointer-events-none absolute -inset-1 z-30 rounded-lg border-2 border-dashed {canAcceptDrop
+        ? 'border-sky-400/90'
+        : 'border-red-500/80'}"
+      style="box-shadow: 0 8px 32px {canAcceptDrop ? (mod?.accentColor ?? '#38bdf8') + '44' : '#ef444444'}, inset 0 0 20px {canAcceptDrop ? (mod?.accentColor ?? '#38bdf8') + '22' : '#ef444422'}"
     ></div>
   {/if}
 
@@ -169,7 +172,7 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
         canvasId={slotCanvasId}
         mediaSlotId={slotCanvasId}
         videoLayer={$videoLayers[slotCanvasId]}
-        midiLayer={$midiLayers[moduleId]}
+        midiLayer={$midiLayers[mod.id]}
         {isOnAir}
         {onHeaderPointerDown}
         {onVideoUpload}
@@ -179,5 +182,18 @@ import { assignModuleToSlot, swapRackSlots } from '$lib/stores/rack';
         onClearMidi={onClearMidi}
       />
     {/if}
+  {:else}
+    <div
+      class={[
+        'rack-add-card',
+        isHover && $dragState.active && canAcceptDrop && 'rack-add-card-active',
+        isHover && $dragState.active && !canAcceptDrop && 'rack-add-card-invalid'
+      ]}
+      aria-label="Empty {row} rack slot {slotIndex + 1}; drag a compatible effect here"
+    >
+      <span class="placeholder-plus">+</span>
+      <span class="placeholder-label">ADD MODULE</span>
+      <span class="placeholder-hint">DRAG EFFECT HERE</span>
+    </div>
   {/if}
 </div>

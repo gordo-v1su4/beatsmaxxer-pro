@@ -81,16 +81,6 @@ fn idleFade(y: f32) -> f32 {
   return 0.22 + 0.78 * smoothstep(0.50, 0.18, abs(y - 0.5));
 }
 
-fn smpteBar(i: f32) -> vec3f {
-  if (i < 0.5) { return vec3f(0.82); }
-  else if (i < 1.5) { return vec3f(0.82, 0.82, 0.0); }
-  else if (i < 2.5) { return vec3f(0.0, 0.82, 0.82); }
-  else if (i < 3.5) { return vec3f(0.0, 0.82, 0.0); }
-  else if (i < 4.5) { return vec3f(0.82, 0.0, 0.82); }
-  else if (i < 5.5) { return vec3f(0.82, 0.0, 0.0); }
-  return vec3f(0.0, 0.0, 0.82);
-}
-
 /** Per-module idle graphic, drawn in the lower band of the test card. Each one
     shows what the module DOES before any clip is loaded, in a shared house style:
     dark ground, accent-coloured marks, faded top and bottom.
@@ -211,20 +201,13 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
   return col;
 }
 
-/** Test card shown when no clip is loaded: SMPTE bars and a grey ramp up top for
-    colour-effect readout, the module's own idle graphic filling the band below. */
+/** Test card shown when no clip is loaded: the module's own idle graphic fills
+    the whole preview, matching the shared house style (dark ground, accent
+    marks). */
 fn testCard(uv: vec2f) -> vec3f {
   let t = u.beat;
   let mode = floor(u.effectMode + 0.5);
-  var col: vec3f;
-  if (uv.y < 0.26) {
-    col = smpteBar(floor(uv.x * 7.0)) * 0.9;
-    col *= 0.82 + 0.18 * smoothstep(0.0, 0.03, abs(fract(uv.x * 7.0) - 0.5));
-  } else if (uv.y < 0.36) {
-    col = vec3f(floor(uv.x * 12.0) / 11.0);
-  } else {
-    col = idleGraphic(vec2f(uv.x, (uv.y - 0.36) / 0.64), mode, t);
-  }
+  var col = idleGraphic(uv, mode, t);
   // beat flash marker, top-left corner
   let mk = step(max(abs(uv.x - 0.03) * max(u.aspect, 0.0001), abs(uv.y - 0.04)), 0.028);
   col = mix(col, accentRgb(), mk * beatPulse(10.0) * 0.9);
@@ -572,6 +555,7 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
   let amt = u.p0;
   let pulseP = u.p1;
   let soft = u.p2;
+  let xeye = u.p3;
 
   let rack = 0.5 - 0.5 * cos(fract(u.beat / 2.0) * 6.28318530718);
   let k = rack * (0.2 + pulseP * 0.8);
@@ -583,8 +567,13 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
     wet += sampleSource(clamp(uv + vec2f(cos(a), sin(a)) * blur, vec2f(0.0), vec2f(1.0)));
   }
   wet /= 8.0;
-  // out-of-focus highlights bloom, the way a fast lens does wide open
   wet += max(wet - vec3f(0.62), vec3f(0.0)) * soft * min(1.0, blur * 45.0);
+  if (xeye > 0.5) {
+    let split = step(0.5, uv.x);
+    let left = sampleSource(clamp(vec2f(uv.x * 0.92 + 0.04, uv.y), vec2f(0.0), vec2f(1.0)));
+    let right = sampleSource(clamp(vec2f((uv.x - 0.5) * 0.92 + 0.54, uv.y), vec2f(0.0), vec2f(1.0)));
+    wet = mix(left, right, split);
+  }
   return wet;
 }
 
@@ -674,34 +663,75 @@ fn effectBulge(col: vec3f, uv: vec2f) -> vec3f {
 
 /** Analogue tape tracking, chroma bleed and deterministic line noise.
     p0 = tracking, p1 = bleed, p2 = noise. */
-fn effectVhs(col: vec3f, uv: vec2f) -> vec3f {
-  let frame = floor(u.beat * 30.0);
-  let line = floor(uv.y * 240.0);
-  let jitter = (hash21(vec2f(line, frame)) - 0.5) * u.p0 * 0.025;
-  let tearBand = exp(-abs(fract(uv.y + u.beat * 0.017) - 0.5) * 70.0) * u.p0 * 0.06;
-  let suv = clamp(uv + vec2f(jitter + tearBand, 0.0), vec2f(0.0), vec2f(1.0));
-  let split = 0.001 + u.p1 * 0.012;
-  var wet = sampleSource(suv);
-  wet.r = sampleSource(clamp(suv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
-  wet.b = sampleSource(clamp(suv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
-  let noise = hash21(vec2f(line * 0.37, frame * 1.7)) - 0.5;
-  return wet + vec3f(noise) * u.p2 * 0.18;
+/** Multi-octave interpolated hash noise, ported from the svelte-video-shaders
+    vhs shader's iHash/vhsNoise pair. */
+fn vhsNoise(v: vec2f) -> f32 {
+  var sum = 0.0;
+  for (var i = 1; i < 5; i = i + 1) {
+    let r = vec2f(2.0 * pow(2.0, f32(i)));
+    let vv = v + vec2f(f32(i));
+    let h00 = hash21(floor(vv * r) / r);
+    let h10 = hash21(floor(vv * r + vec2f(1.0, 0.0)) / r);
+    let h01 = hash21(floor(vv * r + vec2f(0.0, 1.0)) / r);
+    let h11 = hash21(floor(vv * r + vec2f(1.0, 1.0)) / r);
+    let ip = smoothstep(vec2f(0.0), vec2f(1.0), fract(vv * r));
+    sum += mix(mix(h00, h10, ip.x), mix(h01, h11, ip.x), ip.y) / pow(2.0, f32(i));
+  }
+  return sum;
 }
 
-/** CCD-era interlace and highlight rolloff with an optional deterministic
-    viewfinder/date-stamp glyph block. p0 = interlace, p1 = CCD softness,
-    p2 = date stamp visibility. */
-fn effectCamcorder(col: vec3f, uv: vec2f) -> vec3f {
-  let radius = 0.001 + u.p1 * 0.012;
-  var wet = (sampleSource(clamp(uv - vec2f(radius, 0.0), vec2f(0.0), vec2f(1.0)))
-           + sampleSource(uv)
-           + sampleSource(clamp(uv + vec2f(radius, 0.0), vec2f(0.0), vec2f(1.0)))) / 3.0;
-  wet = pow(max(wet, vec3f(0.0)), vec3f(0.92 - u.p1 * 0.12));
-  let field = step(0.5, fract(uv.y * 240.0 + floor(u.beat * 30.0)));
-  wet *= 1.0 - field * u.p0 * 0.16;
-  let stampArea = step(0.68, uv.x) * step(0.84, uv.y);
-  let glyph = step(0.58, fract(uv.x * 72.0)) * step(0.35, fract(uv.y * 54.0));
-  return mix(wet, vec3f(1.0, 0.72, 0.16), stampArea * glyph * u.p2 * 0.75);
+/** Unified VHS / camcorder tape treatment, ported from the svelte-video-shaders
+    repo's vhs + glitch shaders and driven by the beat clock. Covers the retired
+    CAMCORDER module's interlace/CCD look via the noise/chroma channels.
+    p0 = tracking (tape wave + tracking bands + barrel), p1 = chroma (RGB shift
+    + color bleed), p2 = noise (grain + scanlines + vignette + flicker),
+    p3 = beat glitch (block/line rips spiking on every beat). */
+fn effectVhs(col: vec3f, uv0: vec2f) -> vec3f {
+  let t = u.beat * 0.5;
+  let glitch = u.p3 * (0.15 + 0.85 * beatPulse(6.0));
+
+  var uv = uv0;
+  let cc = uv - vec2f(0.5);
+  let d = dot(cc, cc) * u.p0 * 0.35;
+  uv = uv + cc * (1.0 + d) * d;
+
+  uv.x += (vhsNoise(vec2f(uv.y, t)) - 0.5) * 0.05 * u.p0;
+  uv.x += (vhsNoise(vec2f(uv.y * 100.0, t * 10.0)) - 0.5) * 0.01 * u.p0;
+
+  let tcPhase = clamp((sin(uv.y * 50.0 - t * 6.2831853) - 0.92) * vhsNoise(vec2f(t, 0.37)), 0.0, 0.01) * 10.0;
+  let tcNoise = max(vhsNoise(vec2f(uv.y * 100.0, t * 10.0)) - 0.5, 0.0);
+  uv.x -= tcNoise * tcPhase * u.p0 * 6.0;
+
+  let blockRow = floor(uv.y * (8.0 + u.p3 * 24.0));
+  let blockNoise = hash21(vec2f(blockRow, floor(u.beat * 8.0)));
+  uv.x += (blockNoise - 0.5) * 0.20 * glitch;
+  let lineRip = step(0.985 - glitch * 0.01, hash21(vec2f(floor(uv0.y * 220.0), floor(u.beat * 16.0))));
+  uv.x += (hash21(vec2f(uv0.y, fract(u.beat))) - 0.5) * 0.25 * glitch * lineRip;
+
+  let suv = clamp(uv, vec2f(0.0), vec2f(1.0));
+
+  let split = u.p1 * 0.006 + glitch * 0.010;
+  var wet = sampleSource(suv);
+  let bleedTap = sampleSource(clamp(suv - vec2f(u.p1 * 0.006, 0.0), vec2f(0.0), vec2f(1.0)));
+  wet = (wet * 3.0 + bleedTap) / 4.0;
+  wet = vec3f(
+    sampleSource(clamp(suv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r,
+    wet.g,
+    sampleSource(clamp(suv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b
+  );
+
+  wet *= 1.0 - tcPhase * u.p0 * 3.0;
+
+  let scan = sin((uv0.y * 90.0 + t * 5.0) * 6.2831853) * 0.5 + 0.5;
+  wet *= 1.0 - u.p2 * 0.35 + u.p2 * 0.35 * scan;
+
+  wet *= 1.0 - dot(cc, cc) * (0.4 + u.p2 * 0.8);
+
+  wet += vec3f(hash21(uv0 + vec2f(fract(t), fract(t * 7.3))) - 0.5) * u.p2 * 0.25;
+
+  wet *= 1.0 - u.p2 * 0.08 * (0.5 + 0.5 * sin(u.beat * 12.566371));
+
+  return clamp(wet, vec3f(0.0), vec3f(1.0));
 }
 
 /** Radially weighted RGB refraction. p0 = split, p1 = angle,
@@ -736,6 +766,67 @@ fn effectStreak(col: vec3f, uv: vec2f) -> vec3f {
   return wet / max(weight, 0.0001);
 }
 
+/** INCEPTION — the mirror family. p0 selects the fold (mirror X, mirror Y,
+    quad, kaleido-6, recursive inception tiles), p1 shifts the fold pivot,
+    p2 spins, p3 = beat reaction (kaleido spin snap / inception zoom pump). */
+fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
+  let kind = floor(u.p0 * 4.0 + 0.5);
+  let asp = max(u.aspect, 0.0001);
+  let pivot = 0.25 + u.p1 * 0.5;
+  let pulse = beatPulse(5.0) * u.p3;
+  var uv = uv0;
+
+  if (kind < 0.5) {
+    uv.x = pivot - abs(uv0.x - pivot);
+  } else if (kind < 1.5) {
+    uv.y = pivot - abs(uv0.y - pivot);
+  } else if (kind < 2.5) {
+    uv.x = pivot - abs(uv0.x - pivot);
+    uv.y = 0.5 - abs(uv0.y - 0.5);
+  } else if (kind < 3.5) {
+    var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
+    let seg = 6.2831853 / 6.0;
+    let base = (u.p2 - 0.5) * 2.0 + u.beat * 0.15 * u.p3 + pulse * 0.35;
+    var ang = atan2(p.y, p.x) + base;
+    ang = abs(fract(ang / seg) - 0.5) * seg;
+    let r = length(p);
+    p = vec2f(cos(ang), sin(ang)) * r;
+    uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
+  } else {
+    let z = 1.0 + u.p2 * 2.0 + pulse * 1.5;
+    let p = (uv0 - vec2f(0.5)) * z;
+    uv = abs(fract(p + vec2f(0.5)) * 2.0 - vec2f(1.0));
+  }
+  return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
+}
+
+/** SPECIALTY LENS — fisheye to tele-crush glass. p0 = glass (0 = tele
+    flatten, 0.5 = neutral, 1 = full fisheye), p1 = punch-in zoom, p2 = edge
+    treatment (chromatic fringe + falloff), p3 = beat pump (the lens breathes
+    on every beat). */
+fn effectLens(col: vec3f, uv0: vec2f) -> vec3f {
+  let asp = max(u.aspect, 0.0001);
+  let glass = (u.p0 - 0.5) * 2.0;
+  let pump = 1.0 - beatPulse(5.0) * u.p3 * 0.12;
+  var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
+  let r = length(p);
+  let bend = 1.0 + glass * r * r * 2.2;
+  p = p * bend / (1.0 + glass * 0.55);
+  p = p * mix(1.0, 0.62, u.p1) * pump;
+  let uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
+  let edge = smoothstep(0.15, 0.75, r) * u.p2;
+  let split = edge * 0.012;
+  let dir = normalize(p + vec2f(0.00001));
+  var wet = sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
+  wet = vec3f(
+    sampleSource(clamp(uv + dir * split, vec2f(0.0), vec2f(1.0))).r,
+    wet.g,
+    sampleSource(clamp(uv - dir * split, vec2f(0.0), vec2f(1.0))).b
+  );
+  wet = wet * (1.0 - edge * 0.45);
+  return wet;
+}
+
 @fragment fn fragmentMain(input: VertexOutput) -> @location(0) vec4f {
   let uv = input.uv;
   let dry = sampleSource(uv);
@@ -757,9 +848,10 @@ fn effectStreak(col: vec3f, uv: vec2f) -> vec3f {
   else if (mode == 13.0) { wet = effectHalation(dry, uv); }
   else if (mode == 14.0) { wet = effectBulge(dry, uv); }
   else if (mode == 15.0) { wet = effectVhs(dry, uv); }
-  else if (mode == 16.0) { wet = effectCamcorder(dry, uv); }
   else if (mode == 17.0) { wet = effectPrism(dry, uv); }
   else if (mode == 18.0) { wet = effectStreak(dry, uv); }
+  else if (mode == 19.0) { wet = effectMirror(dry, uv); }
+  else if (mode == 20.0) { wet = effectLens(dry, uv); }
 
   let m = clamp(u.mix, 0.0, 1.0);
   let rgb = mix(dry, wet, m) * (1.0 + clamp(u.amplitude, 0.0, 1.0) * 0.06);
@@ -792,7 +884,8 @@ export const SHADER_EFFECT_MODE: Record<string, number> = {
   halation: 13,
   bulge: 14,
   vhs: 15,
-  camcorder: 16,
   prism: 17,
-  streak: 18
+  streak: 18,
+  mirror: 19,
+  lens: 20
 };

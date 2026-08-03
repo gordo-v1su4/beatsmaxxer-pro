@@ -36,6 +36,9 @@ artifacts
 # Build files
 *.tsbuildinfo
 
+# Rust / Tauri
+**/target/
+
 # npm/yarn/pnpm lockfiles (this project uses bun.lock)
 package-lock.json
 yarn.lock

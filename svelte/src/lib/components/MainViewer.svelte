@@ -34,6 +34,7 @@
 </script>
 
 <div
+  class="main-viewer"
   style="flex:0 0 auto;height:clamp(260px, 28vh, 460px);display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#101214,#0c0d0f);border-bottom:2px solid #0d0e0f;padding:6px;min-width:0;container-type:size"
 >
   {#if live}

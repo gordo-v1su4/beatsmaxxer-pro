@@ -347,6 +347,7 @@ export class VideoPool {
       if (this.freeRun.has(moduleId)) {
         if (frame) this.syncFreeRunVideo(moduleId, video, frame);
         else if (frameOrPlaying === false && !video.paused) video.pause();
+        else if (frameOrPlaying === true && video.paused) void video.play().catch(() => {});
         continue;
       }
       if (this.controlledSyncStates.has(moduleId)) {

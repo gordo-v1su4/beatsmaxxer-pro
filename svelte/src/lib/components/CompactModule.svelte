@@ -14,6 +14,7 @@
   import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
+  import { previewTargetFps } from '$lib/platform/desktopPerformance';
 
   interface Props {
     mod: ModuleDefinition;
@@ -108,6 +109,117 @@
         { param: 'soft', label: 'BLOOM' }
       ],
       toggle: { param: 'xeye', label: 'XEYE' }
+    },
+    grain: {
+      buttons: [
+        { label: '16MM', set: { size: 25, amount: 30, drift: 15 } },
+        { label: 'GATE', set: { size: 55, amount: 65, drift: 35 } },
+        { label: 'WEAVE', set: { size: 40, amount: 50, drift: 70 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'size', label: 'SIZE' },
+        { param: 'drift', label: 'DRIFT' }
+      ]
+    },
+    dutch: {
+      buttons: [
+        { label: '5°', set: { tilt: 25, drift: 30, snap: 20 } },
+        { label: 'DRIFT', set: { tilt: 55, drift: 55, snap: 35 } },
+        { label: 'SNAP', set: { tilt: 70, drift: 40, snap: 85 } }
+      ],
+      primary: 'tilt',
+      sliders: [
+        { param: 'drift', label: 'DRIFT' },
+        { param: 'snap', label: 'SNAP' }
+      ]
+    },
+    anamorphic: {
+      buttons: [
+        { label: '2.39', set: { bars: 60, squeeze: 40, flare: 25 } },
+        { label: 'FLARE', set: { bars: 55, squeeze: 35, flare: 70 } },
+        { label: 'SQZ', set: { bars: 70, squeeze: 75, flare: 15 } }
+      ],
+      primary: 'bars',
+      sliders: [
+        { param: 'squeeze', label: 'SQZ' },
+        { param: 'flare', label: 'FLARE' }
+      ]
+    },
+    halation: {
+      buttons: [
+        { label: 'SOFT', set: { threshold: 40, spread: 35, tint: 30 } },
+        { label: 'FLARE', set: { threshold: 60, spread: 55, tint: 50 } },
+        { label: 'HOT', set: { threshold: 75, spread: 70, tint: 40 } }
+      ],
+      primary: 'threshold',
+      sliders: [
+        { param: 'spread', label: 'SPREAD' },
+        { param: 'tint', label: 'TINT' }
+      ]
+    },
+    bulge: {
+      buttons: [
+        { label: 'BARREL', set: { amount: 25, center: 50, falloff: 55 } },
+        { label: 'FISH', set: { amount: 65, center: 50, falloff: 40 } },
+        { label: 'POP', set: { amount: 45, center: 50, falloff: 70 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'center', label: 'CENTER' },
+        { param: 'falloff', label: 'FALL' }
+      ]
+    },
+    vhs: {
+      buttons: [
+        { label: 'CLEAN', set: { tracking: 15, chroma: 25, noise: 15, beat: 15 } },
+        { label: 'WORN', set: { tracking: 50, chroma: 55, noise: 40, beat: 35 } },
+        { label: 'GLITCH', set: { tracking: 45, chroma: 60, noise: 35, beat: 80 } },
+        { label: 'WRECK', set: { tracking: 85, chroma: 80, noise: 70, beat: 100 } }
+      ],
+      primary: 'tracking',
+      sliders: [
+        { param: 'chroma', label: 'CHROMA' },
+        { param: 'beat', label: 'BEAT' }
+      ]
+    },
+    prism: {
+      buttons: [
+        { label: 'EDGE', set: { split: 30, angle: 50, edge: 35 } },
+        { label: 'RAIN', set: { split: 55, angle: 35, edge: 50 } },
+        { label: 'HEAVY', set: { split: 75, angle: 65, edge: 45 } }
+      ],
+      primary: 'split',
+      sliders: [
+        { param: 'angle', label: 'ANGLE' },
+        { param: 'edge', label: 'EDGE' }
+      ]
+    },
+    mirror: {
+      buttons: [
+        { label: 'MIRROR', set: { fold: 0, offset: 50, spin: 50, beat: 20 } },
+        { label: 'QUAD', set: { fold: 50, offset: 50, spin: 50, beat: 30 } },
+        { label: 'KALEID', set: { fold: 75, offset: 50, spin: 60, beat: 55 } },
+        { label: 'INCEPT', set: { fold: 100, offset: 50, spin: 40, beat: 75 } }
+      ],
+      primary: 'spin',
+      sliders: [
+        { param: 'offset', label: 'OFFSET' },
+        { param: 'beat', label: 'BEAT' }
+      ]
+    },
+    lens: {
+      buttons: [
+        { label: 'FISH', set: { amount: 95, zoom: 55, edge: 55, beat: 30 } },
+        { label: 'PEEP', set: { amount: 100, zoom: 20, edge: 85, beat: 25 } },
+        { label: 'TELE', set: { amount: 15, zoom: 65, edge: 30, beat: 20 } },
+        { label: 'PUMP', set: { amount: 70, zoom: 50, edge: 45, beat: 85 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'zoom', label: 'ZOOM' },
+        { param: 'beat', label: 'BEAT' }
+      ]
     }
   };
 
@@ -214,13 +326,13 @@
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
     <ScreenOverlay />
     <ScreenBadge
-      text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'}
+      text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
       color={mod.accentColor}
     />
   </div>
 
   {#if !collapsed && spec}
-    <div style="flex:1 1 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;gap:2px;flex-wrap:wrap">
         {#each spec.buttons as btn (btn.label)}
           <RackBtn
@@ -276,7 +388,7 @@
       onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {:else if !collapsed}
-    <div style="flex:1 1 auto;padding:6px 7px;min-height:0;overflow-y:auto;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;flex-direction:column;gap:3px">
         {#each Object.keys(params).filter((k) => k !== 'mix') as key (key)}
           <div style="display:flex;align-items:center;gap:4px">

@@ -40,11 +40,22 @@ describe('PGM render source ownership', () => {
 
   test('continues to update stable preview canvas bindings', () => {
     const engine = new WebGpuEngine();
-    const preview = { moduleId: 'transition' } as CanvasBinding;
+    const preview = { moduleId: 'transition', color: [0.1, 0.2, 0.3] } as CanvasBinding;
     Object.assign(engine, { bindings: new Map([['top-0', preview]]) });
 
     expect(engine.setCanvasModule('top-0', 'streak')).toBe(true);
     expect(preview.moduleId).toBe('streak');
     expect(engine.setCanvasModule('missing', 'streak')).toBe(false);
+  });
+
+  test('updates preview accent color without reattaching canvas', () => {
+    const engine = new WebGpuEngine();
+    const preview = { moduleId: 'transition', color: [0.1, 0.2, 0.3] } as CanvasBinding;
+    Object.assign(engine, { bindings: new Map([['top-0', preview]]) });
+
+    expect(engine.setCanvasAccent('top-0', [0.9, 0.5, 0.1])).toBe(true);
+    expect(preview.color).toEqual([0.9, 0.5, 0.1]);
+    expect(engine.setCanvasAccent('pgm', [1, 1, 1])).toBe(false);
+    expect(engine.setCanvasAccent('missing', [1, 1, 1])).toBe(false);
   });
 });

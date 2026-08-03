@@ -26,6 +26,7 @@
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
+  import { previewTargetFps } from '$lib/platform/desktopPerformance';
 
   interface Props {
     mod: ModuleDefinition;
@@ -175,7 +176,7 @@
       <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
       <ScreenOverlay />
       <ScreenBadge
-        text={isOnAir ? 'FX PREVIEW · 100% WET' : 'FX PREVIEW · 24 FPS'}
+        text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
         color={mod.accentColor}
       />
       {#if isOnAir && td.beatPhase < 0.08 && td.playing}
@@ -187,7 +188,7 @@
   </div>
 
   {#if !collapsed}
-    <div style="flex:1 1 auto;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;min-height:0">
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;overflow:visible">
       <ModuleControls
         moduleId={mod.id}
         {params}

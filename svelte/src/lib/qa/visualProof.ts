@@ -437,7 +437,10 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
       report.realMedia?.noNetwork?.requests?.some((url) => /\/(?:__api|api)\/analyze\//.test(url))) {
     blockers.push('network analysis/upload traffic occurred during the real-media phase');
   }
-  if (Object.keys(report.realMedia?.assignments ?? {}).length !== 18) blockers.push('real clips were not assigned across all 18 modules');
+  const catalogSize = listCatalog().length;
+  if (Object.keys(report.realMedia?.assignments ?? {}).length !== catalogSize) {
+    blockers.push(`real clips were not assigned across all ${catalogSize} modules`);
+  }
   if (report.realMedia?.maxSimultaneousDecoded !== 1) blockers.push('real-media proof decoded more than one video at a time');
   if (!same(report.manifest.viewport, FIXED_VISUAL_PROOF_VIEWPORT)) {
     blockers.push('proof manifest viewport is not the fixed viewport');
@@ -485,11 +488,17 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   const modules = report.manifest.items.filter((item) => item.kind === 'module');
   const presets = report.manifest.items.filter((item) => item.kind === 'preset');
   const shaders = report.manifest.items.filter((item) => item.kind === 'shader');
-  if (modules.length !== 18 || presets.length !== 54 || shaders.length !== 18) {
-    blockers.push('proof requires exactly 18 modules, 54 presets, and 18 WGSL entries');
+  const expectedPresetCount = listCatalog().reduce(
+    (sum, mod) => sum + (MODULE_PRESETS[mod.id] ?? []).length,
+    0
+  );
+  if (modules.length !== catalogSize || presets.length !== expectedPresetCount || shaders.length !== catalogSize) {
+    blockers.push(
+      `proof requires exactly ${catalogSize} modules, ${expectedPresetCount} presets, and ${catalogSize} WGSL entries`
+    );
   }
-  if (new Set(shaders.map((item) => item.subjectId)).size !== 18) {
-    blockers.push('proof requires 18 unique WGSL entries');
+  if (new Set(shaders.map((item) => item.subjectId)).size !== catalogSize) {
+    blockers.push(`proof requires ${catalogSize} unique WGSL entries`);
   }
 
   const evidenceByItem = new Map<string, VisualProofEvidence>();

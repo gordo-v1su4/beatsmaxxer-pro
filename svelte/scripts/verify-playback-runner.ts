@@ -24,11 +24,14 @@ async function waitForClips(session: CdpSession) {
 await withChrome('verify-playback', 9600, async (s) => {
   await navigateAndReady(s, QA_URL);
   await waitForClips(s);
-  // Free-run module previews advance without transport; skip audio start here.
+
+  await evalPage(
+    s,
+    `window.__BSP_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
+    CLIP_WAIT_MS + 10_000
+  ).catch(() => evalPage(s, 'window.__BSP_QA__?.snapshot?.()', 15_000));
+
   await Bun.sleep(500);
-  // Re-confirm at sample time: the QA autoload finishes by starting the
-  // transport, which can still be settling when the first wait returns. Sampling
-  // mid-settle reported 2/8 loaded even though the rack holds 8/8 once quiet.
   await waitForClips(s);
 
   const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(

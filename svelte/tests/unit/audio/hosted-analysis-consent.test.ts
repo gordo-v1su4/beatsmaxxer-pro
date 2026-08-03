@@ -13,8 +13,9 @@ describe('hosted analysis consent boundary', () => {
     );
 
     expect(fileLoader).toContain('options: AudioFileLoadOptions = {}');
-    expect(fileLoader).toContain('if (options.hostedAnalysis !== true) return;');
-    expect(fileLoader.indexOf('if (options.hostedAnalysis !== true) return;')).toBeLessThan(
+    expect(fileLoader).toContain('if (options.hostedAnalysis !== true) {');
+    expect(fileLoader).toContain('this.analysisRequestId += 1;');
+    expect(fileLoader.indexOf('this.analysisRequestId += 1;')).toBeLessThan(
       fileLoader.indexOf('fetchEssentiaRhythmAnalysis(file)')
     );
   });

@@ -7,6 +7,11 @@ import { videoPool } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { VideoTextureCache } from './VideoTextureCache';
+import { isTauriRuntime } from '$lib/platform/runtime';
+import { previewTargetFps } from '$lib/platform/desktopPerformance';
+import { tauriNativeSource } from '$lib/media/sources/TauriNativeSource';
+import { isNativeFrameSurface } from '$lib/media/NativeFrameSurface';
+import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -68,11 +73,25 @@ interface BindingScheduleState {
   lastFrameIntervalMs: number | null;
 }
 
-const PREVIEW_TARGET_FPS = 24;
-const PREVIEW_INTERVAL_SECONDS = 1 / PREVIEW_TARGET_FPS;
 const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler']);
 
+/** Refresh the last-good-frame copy inside this window on both sides of an
+ * HTMLVideo loop wrap, where the decoder can briefly report no current frame.
+ * The cover frame guarantees the seam shows the clip's last real frame instead
+ * of a black flash or the idle test card. */
+const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
+
+/** WKWebView can accept GPUExternalTexture imports yet present them as black.
+ * Desktop therefore uses an explicit GPUTexture copy for every module; web
+ * keeps the lower-overhead external-texture path except where persistence is
+ * part of the effect contract. */
+export function shouldUsePersistentVideoTexture(moduleId: string, tauri = isTauriRuntime()) {
+  return tauri || PERSISTENT_VIDEO_CACHE_MODULES.has(moduleId);
+}
+
 export class WebGpuEngine {
+  private readonly previewTargetFps = previewTargetFps();
+  private readonly previewIntervalSeconds = 1 / this.previewTargetFps;
   private device: GPUDevice | null = null;
   private format: GPUTextureFormat = 'bgra8unorm';
   private bindings = new Map<string, CanvasBinding>();
@@ -80,6 +99,8 @@ export class WebGpuEngine {
   private renderParams = new Map<string, ModuleRenderParams>();
   private renderParamVersions = new Map<string, number>();
   private bindingSchedule = new Map<string, BindingScheduleState>();
+  /** Pending PGM source change awaiting its first submitted frame, for cut-latency QA. */
+  private pendingPgmCut: { at: number; sourceId: string } | null = null;
   private taskExternalTextures: Map<HTMLVideoElement, GPUExternalTexture> | null = null;
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
@@ -136,6 +157,9 @@ export class WebGpuEngine {
   }
 
   setPgmLiveModule(moduleId: string, sourceId: string) {
+    if (sourceId !== this.pgmLiveSourceId) {
+      this.pendingPgmCut = { at: latencyMarkNow(), sourceId };
+    }
     this.pgmLiveModuleId = moduleId;
     this.pgmLiveSourceId = sourceId;
     const binding = this.bindings.get('pgm');
@@ -176,6 +200,16 @@ export class WebGpuEngine {
     if (!binding) return false;
     binding.effectModuleId = moduleId;
     binding.moduleId = moduleId;
+    this.bindingSchedule.delete(canvasId);
+    return true;
+  }
+
+  /** Hot-swap idle/test-card accent when a rack slot's module changes. */
+  setCanvasAccent(canvasId: string, color: [number, number, number]): boolean {
+    if (canvasId === 'pgm') return false;
+    const binding = this.bindings.get(canvasId);
+    if (!binding) return false;
+    binding.color = color;
     this.bindingSchedule.delete(canvasId);
     return true;
   }
@@ -351,6 +385,15 @@ export class WebGpuEngine {
       this.taskExternalTextures = null;
     }
     this.device.queue.submit([encoder.finish()]);
+    if (this.pendingPgmCut) {
+      const pgmRendered = scheduled.some(
+        ([id, , , sourceId]) => id === 'pgm' && sourceId === this.pendingPgmCut?.sourceId
+      );
+      if (pgmRendered) {
+        recordLatencySince('pgm-cut', this.pendingPgmCut.at);
+        this.pendingPgmCut = null;
+      }
+    }
   }
 
   private bindingChangeKey(
@@ -361,7 +404,7 @@ export class WebGpuEngine {
   ) {
     const video = videoPool.get(sourceId);
     const sourceTime = video && Number.isFinite(video.currentTime)
-      ? Math.floor(video.currentTime * PREVIEW_TARGET_FPS)
+      ? Math.floor(video.currentTime * this.previewTargetFps)
       : -1;
     return [
       moduleId,
@@ -391,17 +434,22 @@ export class WebGpuEngine {
     return 'none';
   }
 
-  private recordRenderedBinding(id: string, moduleId: string, frame: TimelineFrame, changeKey: string) {
+  private recordRenderedBinding(
+    id: string,
+    moduleId: string,
+    frame: TimelineFrame,
+    changeKey: string
+  ) {
     const previous = this.bindingSchedule.get(id);
     const contextTimeSeconds = frame.contextTimeSeconds ?? frame.positionSeconds ?? 0;
     const intervalMs = previous
       ? Math.max(0, (contextTimeSeconds - previous.lastRenderContextTimeSeconds) * 1000)
       : null;
-    let nextRenderContextTimeSeconds = contextTimeSeconds + PREVIEW_INTERVAL_SECONDS;
+    let nextRenderContextTimeSeconds = contextTimeSeconds + this.previewIntervalSeconds;
     if (previous) {
       nextRenderContextTimeSeconds = previous.nextRenderContextTimeSeconds;
       while (nextRenderContextTimeSeconds <= contextTimeSeconds + Number.EPSILON) {
-        nextRenderContextTimeSeconds += PREVIEW_INTERVAL_SECONDS;
+        nextRenderContextTimeSeconds += this.previewIntervalSeconds;
       }
     }
     const state: BindingScheduleState = {
@@ -420,7 +468,7 @@ export class WebGpuEngine {
       bindingId: id,
       renderCount: state.renderCount,
       skippedRenderCount: state.skippedRenderCount,
-      targetFps: id === 'pgm' ? 0 : PREVIEW_TARGET_FPS,
+      targetFps: id === 'pgm' ? 0 : this.previewTargetFps,
       frameIntervalMs: intervalMs,
       lastRenderContextTimeSeconds: contextTimeSeconds,
       renderedThisFrame: true,
@@ -465,7 +513,13 @@ export class WebGpuEngine {
     const shaderKey = def?.shaderKey ?? moduleId;
     const effectMode = SHADER_EFFECT_MODE[shaderKey] ?? 0;
     const video = videoPool.get(sourceId);
-    const hasVideo = video && videoPool.hasReadyFrame(sourceId) ? 1 : 0;
+    const nativeSurface = isTauriRuntime()
+      ? binding.bindingId === 'pgm'
+        ? tauriNativeSource.getProgramSurface(sourceId) ?? tauriNativeSource.getSurface(sourceId)
+        : tauriNativeSource.getSurface(sourceId)
+      : null;
+    const hasNative = isNativeFrameSurface(nativeSurface) ? 1 : 0;
+    const hasVideo = hasNative || (video && videoPool.hasReadyFrame(sourceId) ? 1 : 0);
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
@@ -504,10 +558,16 @@ export class WebGpuEngine {
     let externalTextureBound = false;
     let cachedTextureUploaded = false;
     let cachedTextureBound = false;
-    let cachedVideoView = PERSISTENT_VIDEO_CACHE_MODULES.has(moduleId) && video
-      ? this.videoTextureCache.cachedView(sourceId, video)
-      : null;
-    if (hasVideo && video && PERSISTENT_VIDEO_CACHE_MODULES.has(moduleId)) {
+    const preferPersistentVideoTexture = shouldUsePersistentVideoTexture(moduleId);
+    let cachedVideoView = video ? this.videoTextureCache.cachedView(sourceId, video) : null;
+    const duration = video?.duration ?? 0;
+    const nearLoopSeam =
+      !!video &&
+      Number.isFinite(duration) &&
+      duration > 0 &&
+      (duration - video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS ||
+        video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS);
+    if (hasVideo && video && (preferPersistentVideoTexture || nearLoopSeam || !cachedVideoView)) {
       try {
         cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
         cachedTextureUploaded = true;
@@ -533,7 +593,46 @@ export class WebGpuEngine {
     // one shot instead of a guessing round-trip.
     let bindGroup: GPUBindGroup;
     let pipeline = binding.idlePipeline;
-    if (shaderHasVideo && video) {
+    if (shaderHasVideo && isNativeFrameSurface(nativeSurface)) {
+      try {
+        const textureKey = binding.bindingId === 'pgm' ? 'pgm' : sourceId;
+        const nativeView = this.videoTextureCache.uploadBgra(this.device, textureKey, nativeSurface);
+        bindGroup = createIdleBindGroup(
+          this.device,
+          binding.idleBindGroupLayout,
+          binding.uniformBuffer,
+          nativeView,
+          this.sampler,
+          readView
+        );
+        pipeline = binding.idlePipeline;
+        cachedTextureUploaded = true;
+        cachedTextureBound = true;
+      } catch {
+        bindGroup = createIdleBindGroup(
+          this.device,
+          binding.idleBindGroupLayout,
+          binding.uniformBuffer,
+          binding.placeholderFeedbackView,
+          this.sampler,
+          readView
+        );
+      }
+    } else if (shaderHasVideo && video && preferPersistentVideoTexture) {
+      shaderHasVideo = cachedVideoView ? 1 : 0;
+      data[14] = shaderHasVideo;
+      this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
+      bindGroup = createIdleBindGroup(
+        this.device,
+        binding.idleBindGroupLayout,
+        binding.uniformBuffer,
+        cachedVideoView ?? binding.placeholderFeedbackView,
+        this.sampler,
+        readView
+      );
+      cachedTextureBound = cachedVideoView !== null;
+      pipeline = binding.idlePipeline;
+    } else if (shaderHasVideo && video) {
       try {
         bindGroup = importAndBindExternalVideo(
           this.device,
@@ -600,10 +699,16 @@ export class WebGpuEngine {
       cachedTextureUploaded,
       cachedTextureBound,
       samplePath: externalTextureBound ? 'external-texture' : cachedTextureBound ? 'cached-video-texture' : 'test-card',
-      source: video?.currentSrc || video?.src || null,
-      dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
+      source: isNativeFrameSurface(nativeSurface)
+        ? `native://${sourceId}`
+        : video?.currentSrc || video?.src || null,
+      dimensions: isNativeFrameSurface(nativeSurface)
+        ? `${nativeSurface.width}x${nativeSurface.height}`
+        : video ? `${video.videoWidth}x${video.videoHeight}` : null,
       frameId: timeline?.frameId ?? null,
-      videoSize: video ? `${video.videoWidth}x${video.videoHeight}` : null,
+      videoSize: isNativeFrameSurface(nativeSurface)
+        ? `${nativeSurface.width}x${nativeSurface.height}`
+        : video ? `${video.videoWidth}x${video.videoHeight}` : null,
       feedback: `${binding.feedback.width}x${binding.feedback.height}`,
       mix: data[6],
       timelineFrameId: timeline?.frameId ?? null,

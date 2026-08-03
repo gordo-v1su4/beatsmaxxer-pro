@@ -186,6 +186,7 @@ export class AudioEngine implements IAudioEngine {
         this.uploadedPlaybackValidated = true;
         this._playing = true;
         audioTimeline.play(this.mediaElement.currentTime);
+        audioTimeline.publishFrame();
         this.onsetHistory = [];
         this.prevEnergy = 0;
         this.bassEma = 0.08;
@@ -196,6 +197,7 @@ export class AudioEngine implements IAudioEngine {
 
         this._playing = false;
         audioTimeline.pause();
+        audioTimeline.publishFrame();
         this.mediaElement.pause();
         useUploadedPlayback = false;
       }
@@ -222,6 +224,7 @@ export class AudioEngine implements IAudioEngine {
       this._trackName = this._loadedUploadName ?? "";
       this._playing = true;
       audioTimeline.play(0);
+      audioTimeline.publishFrame();
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.bassEma = 0.08;
@@ -237,6 +240,7 @@ export class AudioEngine implements IAudioEngine {
     this._playing = false;
     this.advanceLiveSchedule(this.sampleTransport(), 0);
     audioTimeline.stop();
+    audioTimeline.publishFrame();
 
     if (this.mediaElement) {
       this.mediaElement.pause();
@@ -273,7 +277,10 @@ export class AudioEngine implements IAudioEngine {
     this.prepareUploadedTrack(file.name, options.hostedAnalysis === true);
     this.uploadedTrackLoadGeneration += 1;
 
-    if (options.hostedAnalysis !== true) return;
+    if (options.hostedAnalysis !== true) {
+      this.analysisRequestId += 1;
+      return;
+    }
 
     const requestId = ++this.analysisRequestId;
 
@@ -638,6 +645,10 @@ export class AudioEngine implements IAudioEngine {
     liveScheduleRuntime.configurePgm(input);
   }
 
+  getPgmPreparation() {
+    return liveScheduleRuntime.getPgmPreparation();
+  }
+
   getLiveScheduleFrame(): LiveScheduleFrame | null {
     const frame = liveScheduleRuntime.getFrame();
     if (!frame) return null;
@@ -907,6 +918,33 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisError =
       error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
+    void this.seedFallbackBpmFromPlayback();
+  }
+
+  /** Kick onset BPM estimation without waiting for the user to press play. */
+  private async seedFallbackBpmFromPlayback() {
+    if (!this.ctx || !this.mediaElement || this._analysisStatus !== "fallback") return;
+    try {
+      await this.mediaElement.play();
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      if (this._analysisStatus !== "fallback" || this.beatGrid.length >= 2) return;
+      if (this._bpm !== DEFAULT_BPM || this._bpmLocked) return;
+      this.onsetHistory = [];
+      this.prevEnergy = 0;
+      this.bassEma = 0.08;
+      for (let i = 0; i < 120; i++) {
+        const timelineFrame = audioTimeline.getLastFrame();
+        if (timelineFrame) this.tick(timelineFrame);
+        await new Promise((resolve) => setTimeout(resolve, 16));
+        if (this.beatGrid.length >= 4 || this._bpm !== DEFAULT_BPM) break;
+      }
+    } catch {
+      // Local-only playback may stay blocked until a user gesture — realtime path still works once playing.
+    } finally {
+      if (this.mediaElement && !this._playing) {
+        this.mediaElement.pause();
+      }
+    }
   }
 }
 

@@ -71,15 +71,11 @@ function presetsFor(id: string): ModulePreset[] {
       ];
     case 'vhs':
       return [
-        { n: '1', title: 'Tracking lite', set: { tracking: 25, bleed: 30, noise: 20, mix: 45 } },
-        { n: '2', title: 'Worn tape', set: { tracking: 55, bleed: 60, noise: 45, mix: 60 } },
-        { n: '3', title: 'Damaged', set: { tracking: 85, bleed: 75, noise: 65, mix: 70 } }
-      ];
-    case 'camcorder':
-      return [
-        { n: '1', title: '90s home', set: { interlace: 35, ccd: 40, datestamp: 0, mix: 55 } },
-        { n: '2', title: 'Date stamp', set: { interlace: 45, ccd: 50, datestamp: 100, mix: 60 } },
-        { n: '3', title: 'Soft CCD', set: { interlace: 55, ccd: 70, datestamp: 0, mix: 65 } }
+        { n: '1', title: 'Clean deck', set: { tracking: 15, chroma: 25, noise: 15, beat: 15, mix: 45 } },
+        { n: '2', title: 'Worn tape', set: { tracking: 50, chroma: 55, noise: 40, beat: 35, mix: 60 } },
+        { n: '3', title: 'CCD cam', set: { tracking: 25, chroma: 65, noise: 55, beat: 25, mix: 65 } },
+        { n: '4', title: 'Beat glitch', set: { tracking: 45, chroma: 60, noise: 35, beat: 80, mix: 80 } },
+        { n: '5', title: 'Wrecked', set: { tracking: 85, chroma: 80, noise: 70, beat: 100, mix: 85 } }
       ];
     case 'bulge':
       return [
@@ -116,6 +112,22 @@ function presetsFor(id: string): ModulePreset[] {
         { n: '1', title: 'Horizontal smear', set: { length: 40, angle: 10, decay: 45, mix: 55, in_: 80, out: 70 } },
         { n: '2', title: 'Diagonal drag', set: { length: 60, angle: 45, decay: 50, mix: 65, in_: 85, out: 75 } },
         { n: '3', title: 'Long exposure', set: { length: 85, angle: 25, decay: 35, mix: 75, in_: 90, out: 80 } }
+      ];
+    case 'mirror':
+      return [
+        { n: '1', title: 'Mirror wall', set: { fold: 0, offset: 50, spin: 50, beat: 20, mix: 100 } },
+        { n: '2', title: 'Twin sky', set: { fold: 25, offset: 45, spin: 50, beat: 20, mix: 100 } },
+        { n: '3', title: 'Quad fold', set: { fold: 50, offset: 50, spin: 50, beat: 30, mix: 100 } },
+        { n: '4', title: 'Kaleido six', set: { fold: 75, offset: 50, spin: 60, beat: 55, mix: 100 } },
+        { n: '5', title: 'Inception', set: { fold: 100, offset: 50, spin: 40, beat: 75, mix: 100 } }
+      ];
+    case 'lens':
+      return [
+        { n: '1', title: 'GoPro wide', set: { amount: 68, zoom: 40, edge: 35, beat: 15, mix: 100 } },
+        { n: '2', title: 'Full fish', set: { amount: 95, zoom: 55, edge: 55, beat: 30, mix: 100 } },
+        { n: '3', title: 'Peephole', set: { amount: 100, zoom: 20, edge: 85, beat: 25, mix: 100 } },
+        { n: '4', title: 'Tele crush', set: { amount: 15, zoom: 65, edge: 30, beat: 20, mix: 100 } },
+        { n: '5', title: 'Beat pump', set: { amount: 70, zoom: 50, edge: 45, beat: 85, mix: 100 } }
       ];
     default:
       return [

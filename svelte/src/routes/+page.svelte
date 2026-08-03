@@ -9,7 +9,7 @@
     midiLayers,
     rackTop,
     rackBottom,
-    RACK_SLOT_IDS,
+    MAX_RACK_SLOTS_PER_ROW,
     randomize,
     clearParams
   } from '$lib/stores/rack';
@@ -33,7 +33,11 @@
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { runDesktopNativeProof } from '$lib/qa/desktopNativeProof';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
+  import { initVideoSourcePort } from '$lib/platform/videoSource';
+  import { startNativeCompositorBridge } from '$lib/platform/nativeCompositor';
+  import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
 
   const ALL_MODULES = listCatalog();
   const rackModules = $derived(
@@ -41,30 +45,54 @@
       .map((id) => ALL_MODULES.find((module) => module.id === id))
       .filter((module) => module !== undefined)
   );
-  const RACK_SLOT_COUNT = 8;
-
   let unsubHold: (() => void) | undefined;
+  let stopNativeCompositorBridge: (() => void) | undefined;
+
+  const activeClipSlotCount = $derived($rackTop.length + $rackBottom.length);
 
   const loadedClipCount = $derived(
-    RACK_SLOT_IDS.filter((id) => $videoLayers[id]).length
+    [
+      ...$rackTop.map((_, index) => `top-${index}`),
+      ...$rackBottom.map((_, index) => `bottom-${index}`)
+    ].filter((id) => $videoLayers[id]).length
   );
 
   onMount(async () => {
-    const cap = await probeWebGpu();
+    const params = new URLSearchParams(window.location.search);
+    const nativeDesktopProof =
+      params.get('desktopProof') === '1' && isDesktopNativeDecodeEnabled();
+    const cap = nativeDesktopProof
+      ? {
+          renderer: 'webgpu_active' as const,
+          webgpu: true,
+          webcodecs: false,
+          reason: null
+        }
+      : await probeWebGpu();
     capabilities.set(cap);
-    if (cap.webgpu) {
+    if (cap.webgpu && !nativeDesktopProof) {
       await webGpuEngine.init();
       webGpuEngine.start();
     }
 
+    await initVideoSourcePort();
+    stopNativeCompositorBridge = startNativeCompositorBridge();
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
     installBspQaHook();
 
+    // Every app load begins unheld. With no song playing, the beat-driven cards
+    // remain static; playback advances them on the authoritative audio timeline.
+    fxHold.set(false);
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
-    const params = new URLSearchParams(window.location.search);
+    if (params.get('desktopProof') === '1') {
+      void runDesktopNativeProof().catch((error) => {
+        console.error('[desktop proof] failed:', error);
+      });
+      return;
+    }
     if (params.has('qa')) {
       try {
         await fetchAndLoadQaMedia();
@@ -79,6 +107,7 @@
 
   onDestroy(() => {
     unsubHold?.();
+    stopNativeCompositorBridge?.();
     stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();
@@ -130,7 +159,7 @@
     onClear={clearParams}
     onLoadClips={loadClips}
     {loadedClipCount}
-    clipSlotCount={RACK_SLOT_COUNT}
+    clipSlotCount={activeClipSlotCount}
   />
 
   <div class="rack-workspace">
@@ -146,10 +175,8 @@
       <MainViewer modules={rackModules} />
 
       <div
-        class="rack-row"
-        style="height:{$topRowCompact
-          ? 'auto'
-          : 'clamp(300px, calc((100vw - 186px) * 9 / 64 + 190px), 350px)'};flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:height 0.2s ease"
+        class="rack-row top-rack-row"
+        style="height:auto;flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:min-height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -165,22 +192,14 @@
             onClearMidi={() => clearModuleMidi(moduleId)}
           />
         {/each}
-        <!-- Placeholder for a future column: keeps the row's rhythm and shows
-             where another module/clip will go. Drop a clip on a real slot for
-             now; this is intentionally inert. -->
-        <div class="rack-slot rack-slot-placeholder">
-          <div class="placeholder-card">
-            <span class="placeholder-plus">+</span>
-            <span class="placeholder-label">ADD CLIP</span>
-          </div>
-        </div>
+        {#each Array(MAX_RACK_SLOTS_PER_ROW - $rackTop.length) as _, offset (`top-empty-${offset}`)}
+          <RackSlot row="top" slotIndex={$rackTop.length + offset} />
+        {/each}
       </div>
 
       <div
-        class="rack-row"
-        style="height:{$bottomRowCompact
-          ? 'auto'
-          : 'clamp(196px, calc((100vw - 186px) * 9 / 64 + 74px), 240px)'};flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '176px'};border-top:2px solid #0d0e0f;transition:height 0.2s ease"
+        class="rack-row bottom-rack-row"
+        style="height:auto;flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '196px'};border-top:2px solid #0d0e0f;transition:min-height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot
@@ -194,15 +213,9 @@
             onClearVideo={() => clearSlotVideo(`bottom-${i}`)}
           />
         {/each}
-        <!-- Placeholder for a future column: keeps the row's rhythm and shows
-             where another module/clip will go. Drop a clip on a real slot for
-             now; this is intentionally inert. -->
-        <div class="rack-slot rack-slot-placeholder">
-          <div class="placeholder-card">
-            <span class="placeholder-plus">+</span>
-            <span class="placeholder-label">ADD CLIP</span>
-          </div>
-        </div>
+        {#each Array(MAX_RACK_SLOTS_PER_ROW - $rackBottom.length) as _, offset (`bottom-empty-${offset}`)}
+          <RackSlot row="bottom" slotIndex={$rackBottom.length + offset} />
+        {/each}
       </div>
 
       <BeatSequencer />

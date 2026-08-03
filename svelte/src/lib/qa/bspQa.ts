@@ -3,7 +3,7 @@ import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { audioEngine } from '$lib/audio';
 import { clipStatus } from '$lib/stores/clipStatus';
-import { rackTop, rackBottom, videoLayers, moduleParams, updateParam, updateParams, clearParams, bypassed, assignModuleToSlot, currentRackSlotForModule, RACK_SLOT_IDS } from '$lib/stores/rack';
+import { rackTop, rackBottom, videoLayers, moduleParams, updateParam, updateParams, clearParams, bypassed, assignModuleToSlot, currentRackSlotForModule, activeRackSlotIds, RACK_SLOT_IDS } from '$lib/stores/rack';
 import { pgmSource, cutImmediate } from '$lib/stores/pgm';
 import { capabilities } from '$lib/stores/capabilities';
 import { listCatalog } from '$lib/modules/catalog';
@@ -14,6 +14,7 @@ import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import { audioTimeline } from '$lib/transport';
 import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
+import { getLatencySamples } from '$lib/qa/performance';
 
 export interface BspQaSnapshot {
   webgpu: boolean;
@@ -217,6 +218,36 @@ export function installBspQaHook() {
 
   const api = {
     snapshot: buildSnapshot,
+    /** Assign a module to a rack slot through the production domain path. */
+    assignModule(row: 'top' | 'bottom', slotIndex: number, moduleId: string) {
+      return assignModuleToSlot(row, slotIndex, moduleId);
+    },
+    /** Load a QA-served clip into a specific rack slot (drives the add-slot flow). */
+    async loadClipIntoSlot(slotId: string, clipName: string) {
+      const url = `/qa-media/${clipName}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`clip fetch failed: ${response.status}`);
+      const blob = await response.blob();
+      const file = new File([blob], clipName, { type: blob.type || 'video/mp4' });
+      const result = await mediaRuntime.registerModuleClip(slotId, clipName, url, file);
+      await videoPool.prewarm(slotId);
+      videoPool.tick(true);
+      return result.status;
+    },
+    /** PGM cut latency (scheduler decision -> first submitted PGM frame), ms. */
+    cutLatency() {
+      const cuts = getLatencySamples().filter((s) => s.label === 'pgm-cut');
+      const sorted = cuts.map((s) => s.ms).sort((a, b) => a - b);
+      const p = (q: number) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : 0);
+      return {
+        count: sorted.length,
+        mean: sorted.length ? sorted.reduce((a, b) => a + b, 0) / sorted.length : 0,
+        p50: p(0.5),
+        p95: p(0.95),
+        max: sorted.length ? sorted[sorted.length - 1] : 0,
+        samples: sorted
+      };
+    },
     async prepareEightVideoBenchmark(timeoutMs = 60_000) {
       const slots = rackSlotEntries();
       if (slots.length !== 8) throw new Error(`Eight-video benchmark requires exactly 8 rack slots; found ${slots.length}`);
@@ -520,13 +551,14 @@ export function installBspQaHook() {
       if (files.length !== 8) throw new Error(`Visual proof requires 8 fixture clips; received ${files.length}`);
       const result = await loadRackClipsFromFiles(files);
       if (result.loaded !== 8) throw new Error(`Fixture assignment loaded ${result.loaded}/8 stable slots`);
+      const slotIds = activeRackSlotIds();
       const deadline = Date.now() + 60_000;
       while (Date.now() < deadline) {
-        const missing = RACK_SLOT_IDS.filter((slotId) => !videoPool.hasReadyFrame(slotId));
+        const missing = slotIds.filter((slotId) => !videoPool.hasReadyFrame(slotId));
         if (missing.length === 0) {
           return {
-            loaded: RACK_SLOT_IDS.length,
-            assignments: Object.fromEntries(RACK_SLOT_IDS.map((slotId) => [slotId, get(videoLayers)[slotId]?.name ?? null]))
+            loaded: slotIds.length,
+            assignments: Object.fromEntries(slotIds.map((slotId) => [slotId, get(videoLayers)[slotId]?.name ?? null]))
           };
         }
         await new Promise((resolve) => setTimeout(resolve, 100));
@@ -587,7 +619,7 @@ export function installBspQaHook() {
         moduleId,
         released: !sourceId || !videoPool.get(sourceId),
         previousSourceUnbound: !previousSource || pgm?.source !== previousSource,
-        decodedCount: RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length
+        decodedCount: activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length
       };
     },
     async releaseAllVisualProofClips() {
@@ -595,10 +627,10 @@ export function installBspQaHook() {
         if (videoPool.get(slotId)) await mediaRuntime.removeModuleClip(slotId);
       }
       visualProofModuleSlots.clear();
-      return { decodedCount: RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length };
+      return { decodedCount: activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length };
     },
     realMediaDecodedCount() {
-      return RACK_SLOT_IDS.filter((slotId) => videoPool.hasReadyFrame(slotId)).length;
+      return activeRackSlotIds().filter((slotId) => videoPool.hasReadyFrame(slotId)).length;
     },
     focusVisualProofModule(moduleId: string) {
       const sourceId = ensureVisualProofModuleSlot(moduleId);

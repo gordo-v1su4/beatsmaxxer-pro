@@ -408,6 +408,102 @@
       </div>
     </Section>
   </div>
+{:else if moduleId === 'leak'}
+  <div style="display:flex;flex-direction:column;flex:1">
+    <Section label="PRESET" {color}>
+      <div style="display:flex;gap:2px;flex-wrap:wrap">
+        {#each [
+          { l: 'WARM', set: { edge: 45, warmth: 55, drift: 30 } },
+          { l: 'FLARE', set: { edge: 75, warmth: 85, drift: 50 } },
+          { l: 'BLEED', set: { edge: 25, warmth: 40, drift: 20 } }
+        ] as p (p.l)}
+          {@const active = Object.entries(p.set).every(
+            ([k, v]) => Math.abs((params[k] ?? -999) - v) <= 9
+          )}
+          <RackBtn
+            label={p.l}
+            {active}
+            {color}
+            width={36}
+            onclick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}
+          />
+        {/each}
+      </div>
+    </Section>
+    <Section label="FX" {color} noBorder>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <HSlider
+          value={params.edge ?? 50}
+          onChange={(v) => onUpdate('edge', v)}
+          {color}
+          label="EDGE"
+          controlId="{moduleId}-edge"
+        />
+        <HSlider
+          value={params.warmth ?? 60}
+          onChange={(v) => onUpdate('warmth', v)}
+          {color}
+          label="WARMTH"
+          controlId="{moduleId}-warmth"
+        />
+        <HSlider
+          value={params.drift ?? 35}
+          onChange={(v) => onUpdate('drift', v)}
+          {color}
+          label="DRIFT"
+          controlId="{moduleId}-drift"
+        />
+      </div>
+    </Section>
+  </div>
+{:else if moduleId === 'streak'}
+  <div style="display:flex;flex-direction:column;flex:1">
+    <Section label="PRESET" {color}>
+      <div style="display:flex;gap:2px;flex-wrap:wrap">
+        {#each [
+          { l: 'H-SMR', set: { length: 40, angle: 10, decay: 45 } },
+          { l: 'DIAG', set: { length: 60, angle: 45, decay: 50 } },
+          { l: 'LONG', set: { length: 85, angle: 25, decay: 35 } }
+        ] as p (p.l)}
+          {@const active = Object.entries(p.set).every(
+            ([k, v]) => Math.abs((params[k] ?? -999) - v) <= 9
+          )}
+          <RackBtn
+            label={p.l}
+            {active}
+            {color}
+            width={36}
+            onclick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}
+          />
+        {/each}
+      </div>
+    </Section>
+    <Section label="FX" {color} noBorder>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <HSlider
+          value={params.length ?? 50}
+          onChange={(v) => onUpdate('length', v)}
+          {color}
+          label="LENGTH"
+          controlId="{moduleId}-length"
+        />
+        <HSlider
+          value={params.angle ?? 35}
+          onChange={(v) => onUpdate('angle', v)}
+          {color}
+          label="ANGLE"
+          controlId="{moduleId}-angle"
+        />
+        <HSlider
+          value={params.decay ?? 45}
+          onChange={(v) => onUpdate('decay', v)}
+          {color}
+          label="DECAY"
+          controlId="{moduleId}-decay"
+        />
+      </div>
+    </Section>
+  </div>
 {:else}
   <div style="display:flex;flex-direction:column;flex:1;padding:6px 7px;gap:6px">
     <Section label="FX" {color} noBorder>

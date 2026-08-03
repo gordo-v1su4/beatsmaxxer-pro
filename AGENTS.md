@@ -67,3 +67,18 @@ Committed VP9/WebM fixtures (`svelte/tests/fixtures/media-src/qa-clip.webm`) wor
 - No live WebGPU shader output inside the cloud VM browser.
 - Physical visual proof (`capture:visual-proof`) requires a native GPU — run on your desktop, not the cloud VM.
 - Chrome is required for `verify:browser` / `test:local`.
+
+## Desktop branch (`cursor/desktop-tauri-e0e8`)
+
+Separate from `main` — do **not** merge desktop into main until promoted.
+
+| Target | Command | Port |
+|--------|---------|------|
+| Web (browser) | `bun run dev` | 5174 |
+| Tauri desktop | `bun run dev:desktop` | Vite 5175 → native shell |
+
+- Tauri 2 shell in `desktop/` embeds `svelte/build`
+- Rust **`bsp-decode`**: MP4 demux + VideoToolbox (macOS) → IPC → WebGPU
+- Platform layer: `svelte/src/lib/platform/` + `VideoSourcePort`
+- UI matches verified `main` layout (no PresetBrowser middle column)
+- See [`desktop/README.md`](./desktop/README.md)

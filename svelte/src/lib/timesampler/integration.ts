@@ -46,6 +46,11 @@ export interface PgmScheduleOutput<T> {
   nextBoundaryBeat: number | null;
 }
 
+export interface PgmPreparation<T> {
+  source: T | null;
+  boundaryBeat: number | null;
+}
+
 export interface LiveScheduleFrame<T> {
   transport: TransportSample;
   timeSampler: TimeSamplerOutput;
@@ -329,6 +334,29 @@ export class LiveScheduleRuntime<T = string> {
 
   getFrame() {
     return this.frame;
+  }
+
+  /** Deterministically expose the source due at the next boundary without
+   * consuming the random state. Native desktop can pre-open that one decoder
+   * while the current PGM lane remains live. */
+  getPgmPreparation(): PgmPreparation<T> {
+    const input = this.pgmInput;
+    if (input === null) return { source: null, boundaryBeat: null };
+    if (input.queued !== null) {
+      return { source: input.queued, boundaryBeat: this.pgmNextBoundary };
+    }
+    if (!input.autoRandom) {
+      return { source: null, boundaryBeat: this.pgmNextBoundary };
+    }
+    const candidates = input.sources.filter((source) => source !== input.active);
+    if (candidates.length === 0) {
+      return { source: null, boundaryBeat: this.pgmNextBoundary };
+    }
+    const random = randomSlice(this.pgmRandomState, candidates.length, -1);
+    return {
+      source: candidates[random.slice] ?? null,
+      boundaryBeat: this.pgmNextBoundary,
+    };
   }
 
   private advancePgm(transport: TransportSample): PgmScheduleOutput<T> {

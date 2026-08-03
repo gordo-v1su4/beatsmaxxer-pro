@@ -12,11 +12,15 @@
     "test": "cd svelte && bun run test",
     "test:local": "cd svelte && bun run test:local",
     "verify:browser": "cd svelte && bun run verify:browser",
+    "verify:cloud-smoke": "cd svelte && bun run verify:cloud-smoke",
+    "verify:desktop-eight-video": "cd svelte && bun run verify:desktop-eight-video",
 		"capture:visual-proof": "cd svelte && bun run capture:visual-proof",
 		"verify:visual-proof": "cd svelte && bun run verify:visual-proof",
     "link-qa": "cd svelte && bash scripts/link-qa-media.sh",
     "demo": "cd svelte && bun run demo",
     "open": "cd svelte && bun run open",
+    "dev:desktop": "bash scripts/dev-desktop.sh",
+    "build:desktop": "cd svelte && TAURI_ENV_PLATFORM=1 bun run build && cd ../desktop && bunx tauri build",
     "qa:secret-scan": "bun run scripts/secret-scan.ts"
   }
 }

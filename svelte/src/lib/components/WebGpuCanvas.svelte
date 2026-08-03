@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { getModuleDef } from '$lib/modules/catalog';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
+  import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 
   interface Props {
     id: string;
@@ -14,6 +16,9 @@
   let canvas: HTMLCanvasElement;
   let ready = $state(false);
   let visibilityObserver: IntersectionObserver | null = null;
+  const effectMode = $derived(
+    SHADER_EFFECT_MODE[getModuleDef(moduleId)?.shaderKey ?? moduleId] ?? 0
+  );
 
   onMount(async () => {
     if (!canvas) return;
@@ -33,13 +38,17 @@
   });
 
   $effect(() => {
-    if (ready && id !== 'pgm') webGpuEngine.setCanvasModule(id, moduleId);
+    if (!ready || id === 'pgm') return;
+    webGpuEngine.setCanvasModule(id, moduleId);
+    webGpuEngine.setCanvasAccent(id, color);
   });
 </script>
 
 <canvas
   bind:this={canvas}
   data-canvas-id={id}
+  data-native-module-id={moduleId}
+  data-native-effect-mode={effectMode}
   class="block w-full h-full {className}"
   width={320}
   height={180}

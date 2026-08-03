@@ -216,6 +216,26 @@ describe("central deterministic PGM schedule", () => {
     expect(run()).toEqual(run());
   });
 
+  test("next random source is knowable before the boundary without consuming it", () => {
+    const runtime = new LiveScheduleRuntime<string>(0x12345678);
+    runtime.configurePgm({
+      active: "a",
+      sources,
+      queued: null,
+      autoRandom: true,
+      intervalBeats: 1,
+      feel: 0,
+    });
+
+    runtime.advance(transport(0), []);
+    const prepared = runtime.getPgmPreparation();
+    const boundary = runtime.advance(transport(1), []);
+
+    expect(prepared.boundaryBeat).toBe(1);
+    expect(prepared.source).not.toBeNull();
+    expect(boundary.pgm.selected).toBe(prepared.source);
+  });
+
   test("discontinuity re-arms the next boundary without an immediate cut", () => {
     const runtime = new LiveScheduleRuntime<string>();
     runtime.configurePgm({

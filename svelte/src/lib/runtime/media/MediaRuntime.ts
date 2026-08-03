@@ -4,6 +4,10 @@ import {
   type VideoCandidate,
   type VideoCommitResult
 } from '$lib/media/VideoPool';
+import { getVideoSourcePort } from '$lib/platform/videoSource';
+import { isTauriRuntime } from '$lib/platform/runtime';
+import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
+import { stageClipForNative } from '$lib/platform/nativeClip';
 import { hotDeckManager, type HotDeckManager } from '$lib/runtime/decks/hotDeck';
 import { setClipLoading, setClipReady, setClipError, clearClipStatus } from '$lib/stores/clipStatus';
 import {
@@ -140,19 +144,22 @@ export class MediaRuntime {
     return operation;
   }
 
-  private async attachAndCommit(
+  private shouldUseNativeDecode(clip: RegisteredClip) {
+    return (
+      isDesktopNativeDecodeEnabled() &&
+      isTauriRuntime() &&
+      Boolean(clip.file) &&
+      !clip.url.startsWith('http')
+    );
+  }
+
+  private async attachViaHtmlVideo(
     moduleId: string,
     generation: number,
     clip: RegisteredClip,
     previous: RegisteredClip | null
   ): Promise<ClipRegistrationResult> {
-    if (!this.isFresh(moduleId, generation)) {
-      this.clipRegistry.rollback(clip);
-      return { status: 'superseded', previous };
-    }
-
     let candidate: VideoCandidate | null = null;
-    this.clipRegistry.retain(clip);
     try {
       candidate = await this.pool.prepare(moduleId, clip.url);
       await this.pool.prewarmCandidate(candidate);
@@ -180,6 +187,52 @@ export class MediaRuntime {
       return { status: 'success', clip, previous: committed.previous };
     } catch (error) {
       if (candidate) await this.pool.discardCandidate(candidate);
+      throw error;
+    }
+  }
+
+  private async attachAndCommit(
+    moduleId: string,
+    generation: number,
+    clip: RegisteredClip,
+    previous: RegisteredClip | null
+  ): Promise<ClipRegistrationResult> {
+    if (!this.isFresh(moduleId, generation)) {
+      this.clipRegistry.rollback(clip);
+      return { status: 'superseded', previous };
+    }
+
+    this.clipRegistry.retain(clip);
+    try {
+      if (this.shouldUseNativeDecode(clip)) {
+        try {
+          const path = await stageClipForNative(moduleId, clip.file!);
+          const port = getVideoSourcePort();
+          await port.attach(moduleId, path);
+          if (!this.isFresh(moduleId, generation)) {
+            await port.release(moduleId);
+            this.clipRegistry.releaseReference(clip);
+            this.clipRegistry.rollback(clip);
+            return { status: 'superseded', previous };
+          }
+          this.pool.markFreeRun(moduleId);
+          const committed = this.clipRegistry.commit(clip);
+          this.poolClips.set(moduleId, clip);
+          this.publish(moduleId, clip);
+          try {
+            this.markDeckReady(moduleId, clip);
+          } catch (error) {
+            console.warn(`[MediaRuntime] hot-deck bookkeeping failed for ${moduleId}:`, error);
+          }
+          setClipReady(moduleId, clip.name);
+          return { status: 'success', clip, previous: committed.previous };
+        } catch (nativeError) {
+          throw new Error(`native-decode-failed:${moduleId}:${String(nativeError)}`);
+        }
+      }
+
+      return await this.attachViaHtmlVideo(moduleId, generation, clip, previous);
+    } catch (error) {
       this.clipRegistry.releaseReference(clip);
       this.clipRegistry.rollback(clip);
       const message = String(error);
@@ -219,12 +272,16 @@ export class MediaRuntime {
   }
 
   async prewarmModule(moduleId: string) {
+    if (getVideoSourcePort().kind === 'tauri-native') return;
     await this.pool.prewarm(this.resolveSourceId(moduleId));
   }
 
   async removeModuleClip(moduleId: string) {
     moduleId = this.resolveSourceId(moduleId);
     this.bumpGeneration(moduleId);
+    if (isTauriRuntime()) {
+      await getVideoSourcePort().release(moduleId).catch(() => {});
+    }
     await this.pool.detach(moduleId);
     const poolClip = this.poolClips.get(moduleId);
     this.poolClips.delete(moduleId);

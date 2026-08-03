@@ -10,7 +10,8 @@ import {
 } from '$lib/modules/catalog';
 import { writable, derived, get } from 'svelte/store';
 import type { VideoLayer } from '$lib/engine/contracts';
-import type { RackRow } from '$lib/stores/drag';
+import type { DragPayload, RackRow } from '$lib/stores/drag';
+import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
 
 export interface MidiLayer {
   name: string;
@@ -30,14 +31,15 @@ function defaultParams(): Record<string, Record<string, number>> {
   return out;
 }
 
-/** Rack slot assignments — 4 top + 4 bottom, same layout as today. */
+/** Four modules start in each row; a fifth stable slot can be added by drop. */
 export const rackTop = writable<string[]>([...DEFAULT_RACK_TOP]);
 export const rackBottom = writable<string[]>([...DEFAULT_RACK_BOTTOM]);
 
-export type RackSlotId = `top-${0 | 1 | 2 | 3}` | `bottom-${0 | 1 | 2 | 3}`;
+export const MAX_RACK_SLOTS_PER_ROW = 5;
+export type RackSlotId = `top-${0 | 1 | 2 | 3 | 4}` | `bottom-${0 | 1 | 2 | 3 | 4}`;
 export const RACK_SLOT_IDS: readonly RackSlotId[] = [
-  'top-0', 'top-1', 'top-2', 'top-3',
-  'bottom-0', 'bottom-1', 'bottom-2', 'bottom-3'
+  'top-0', 'top-1', 'top-2', 'top-3', 'top-4',
+  'bottom-0', 'bottom-1', 'bottom-2', 'bottom-3', 'bottom-4'
 ];
 
 export function isRackSlotId(id: string): id is RackSlotId {
@@ -66,7 +68,7 @@ export function currentRackModuleForSlot(
   top = get(rackTop),
   bottom = get(rackBottom)
 ): string | null {
-  const match = /^(top|bottom)-([0-3])$/.exec(slotId);
+  const match = /^(top|bottom)-([0-4])$/.exec(slotId);
   if (!match) return null;
   const modules = match[1] === 'top' ? top : bottom;
   return modules[Number(match[2])] ?? null;
@@ -80,6 +82,13 @@ export function currentRackAssignments(
     ...top.map((moduleId, index) => ({ slotId: rackSlotId('top', index), moduleId })),
     ...bottom.map((moduleId, index) => ({ slotId: rackSlotId('bottom', index), moduleId }))
   ];
+}
+
+export function activeRackSlotIds(
+  top = get(rackTop),
+  bottom = get(rackBottom)
+): RackSlotId[] {
+  return currentRackAssignments(top, bottom).map(({ slotId }) => slotId);
 }
 
 export const moduleParams = writable(defaultParams());
@@ -315,7 +324,16 @@ export function assignModuleToSlot(row: RackRow, slotIndex: number, moduleId: st
 
   const store = row === 'top' ? rackTop : rackBottom;
   const slots = get(store);
-  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= slots.length) return false;
+  if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex > slots.length) return false;
+  if (slotIndex === slots.length) {
+    if (
+      slots.length >= MAX_RACK_SLOTS_PER_ROW ||
+      get(rackTop).includes(moduleId) ||
+      get(rackBottom).includes(moduleId)
+    ) return false;
+    store.set([...slots, moduleId]);
+    return true;
+  }
   if (slots[slotIndex] === moduleId) return false;
 
   store.update((slots) => {
@@ -329,6 +347,76 @@ export function assignModuleToSlot(row: RackRow, slotIndex: number, moduleId: st
     next[slotIndex] = moduleId;
     return next;
   });
+  return true;
+}
+
+/** Whether a custom module drag can change the requested stable rack slot. */
+export function canDropModuleOnSlot(
+  payload: DragPayload,
+  target: { row: RackRow; index: number },
+  top = get(rackTop),
+  bottom = get(rackBottom)
+): boolean {
+  const targetSlots = target.row === 'top' ? top : bottom;
+  const isAddSlot = target.index === targetSlots.length;
+  if (
+    !Number.isInteger(target.index) ||
+    target.index < 0 ||
+    target.index > targetSlots.length ||
+    (isAddSlot && targetSlots.length >= MAX_RACK_SLOTS_PER_ROW)
+  ) return false;
+
+  const draggedDef = getModuleDef(payload.moduleId);
+  if (!draggedDef || !canPlaceInRow(draggedDef, target.row)) return false;
+
+  if (isAddSlot) {
+    return payload.source === 'palette' && !top.includes(payload.moduleId) && !bottom.includes(payload.moduleId);
+  }
+
+  if (payload.source === 'palette') {
+    return targetSlots[target.index] !== payload.moduleId;
+  }
+
+  if (payload.row === undefined || payload.slotIndex === undefined) return false;
+  const sourceSlots = payload.row === 'top' ? top : bottom;
+  if (
+    !Number.isInteger(payload.slotIndex) ||
+    payload.slotIndex < 0 ||
+    payload.slotIndex >= sourceSlots.length ||
+    (payload.row === target.row && payload.slotIndex === target.index)
+  ) return false;
+
+  const displacedDef = getModuleDef(targetSlots[target.index] ?? '');
+  return !!displacedDef && canPlaceInRow(displacedDef, payload.row);
+}
+
+/** Apply one rack drop without touching the stable slot's media/decode state. */
+export function applyModuleDrop(
+  payload: DragPayload,
+  target: { row: RackRow; index: number }
+): boolean {
+  if (!canDropModuleOnSlot(payload, target)) return false;
+  const liveSlot = currentRackSlotForModule(get(pgmSource));
+  const queued = get(queuedPgmSource);
+  const queuedSlot = queued ? currentRackSlotForModule(queued) : null;
+  const changed = payload.source === 'palette'
+    ? assignModuleToSlot(target.row, target.index, payload.moduleId)
+    : swapRackSlots(
+        { row: payload.row!, index: payload.slotIndex! },
+        target
+      );
+  if (!changed) return false;
+
+  // PGM follows the physical/video slot across an effect replacement. A user
+  // trying another effect on a clip must never jump to a different clip.
+  if (liveSlot) {
+    const moduleId = currentRackModuleForSlot(liveSlot);
+    if (moduleId) pgmSource.set(moduleId as ModuleType);
+  }
+  if (queuedSlot) {
+    const moduleId = currentRackModuleForSlot(queuedSlot);
+    queuedPgmSource.set((moduleId as ModuleType | null) ?? null);
+  }
   return true;
 }
 

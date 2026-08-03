@@ -44,6 +44,23 @@ export async function fetchLegacySyncAnalysis(
   return requestLegacySyncAnalysis(formData, options);
 }
 
+const ANALYSIS_FETCH_TIMEOUT_MS = 20_000;
+
+async function fetchWithTimeout(
+  fetchImpl: typeof globalThis.fetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs = ANALYSIS_FETCH_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function requestLegacySyncAnalysis(
   formData: FormData,
   options: LegacySyncAdapterOptions,
@@ -245,7 +262,7 @@ function postLegacyEndpoint(
   formData: FormData,
 ) {
   const endpoint = options.endpointFor(endpointName);
-  return fetchImpl(endpoint.toString(), { method: "POST", body: formData });
+  return fetchWithTimeout(fetchImpl, endpoint.toString(), { method: "POST", body: formData });
 }
 
 async function readResponsePayload(response: Response) {
