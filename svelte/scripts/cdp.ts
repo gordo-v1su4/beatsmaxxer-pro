@@ -28,7 +28,12 @@ export function chromePath() {
     process.env.PLAYWRIGHT_BROWSERS_PATH
       ? `${process.env.PLAYWRIGHT_BROWSERS_PATH}/chromium`
       : undefined,
-    '/opt/pw-browsers/chromium'
+    '/opt/pw-browsers/chromium',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA
+      ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`
+      : undefined
   ].filter(Boolean) as string[];
   for (const candidate of candidates) {
     if (isExecutable(candidate)) return candidate;

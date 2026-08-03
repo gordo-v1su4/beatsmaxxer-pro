@@ -172,26 +172,15 @@
     },
     vhs: {
       buttons: [
-        { label: 'TRACK', set: { tracking: 25, bleed: 30, noise: 20 } },
-        { label: 'WORN', set: { tracking: 55, bleed: 60, noise: 45 } },
-        { label: 'DAMAGE', set: { tracking: 85, bleed: 75, noise: 65 } }
+        { label: 'CLEAN', set: { tracking: 15, chroma: 25, noise: 15, beat: 15 } },
+        { label: 'WORN', set: { tracking: 50, chroma: 55, noise: 40, beat: 35 } },
+        { label: 'GLITCH', set: { tracking: 45, chroma: 60, noise: 35, beat: 80 } },
+        { label: 'WRECK', set: { tracking: 85, chroma: 80, noise: 70, beat: 100 } }
       ],
       primary: 'tracking',
       sliders: [
-        { param: 'bleed', label: 'BLEED' },
-        { param: 'noise', label: 'NOISE' }
-      ]
-    },
-    camcorder: {
-      buttons: [
-        { label: '90S', set: { interlace: 35, ccd: 40, datestamp: 0 } },
-        { label: 'DATE', set: { interlace: 45, ccd: 50, datestamp: 100 } },
-        { label: 'CCD', set: { interlace: 55, ccd: 70, datestamp: 0 } }
-      ],
-      primary: 'interlace',
-      sliders: [
-        { param: 'ccd', label: 'CCD' },
-        { param: 'datestamp', label: 'DATE' }
+        { param: 'chroma', label: 'CHROMA' },
+        { param: 'beat', label: 'BEAT' }
       ]
     },
     prism: {
@@ -204,6 +193,32 @@
       sliders: [
         { param: 'angle', label: 'ANGLE' },
         { param: 'edge', label: 'EDGE' }
+      ]
+    },
+    mirror: {
+      buttons: [
+        { label: 'MIRROR', set: { fold: 0, offset: 50, spin: 50, beat: 20 } },
+        { label: 'QUAD', set: { fold: 50, offset: 50, spin: 50, beat: 30 } },
+        { label: 'KALEID', set: { fold: 75, offset: 50, spin: 60, beat: 55 } },
+        { label: 'INCEPT', set: { fold: 100, offset: 50, spin: 40, beat: 75 } }
+      ],
+      primary: 'spin',
+      sliders: [
+        { param: 'offset', label: 'OFFSET' },
+        { param: 'beat', label: 'BEAT' }
+      ]
+    },
+    lens: {
+      buttons: [
+        { label: 'FISH', set: { amount: 95, zoom: 55, edge: 55, beat: 30 } },
+        { label: 'PEEP', set: { amount: 100, zoom: 20, edge: 85, beat: 25 } },
+        { label: 'TELE', set: { amount: 15, zoom: 65, edge: 30, beat: 20 } },
+        { label: 'PUMP', set: { amount: 70, zoom: 50, edge: 45, beat: 85 } }
+      ],
+      primary: 'amount',
+      sliders: [
+        { param: 'zoom', label: 'ZOOM' },
+        { param: 'beat', label: 'BEAT' }
       ]
     }
   };

@@ -51,10 +51,11 @@ function nativeEffectParams(moduleId: string) {
       case 'dutch': return [params.mix, params.tilt, params.drift, params.snap, 50];
       case 'halation': return [params.mix, params.threshold, params.spread, params.tint, 50];
       case 'bulge': return [params.mix, params.amount, params.center, params.falloff, 50];
-      case 'vhs': return [params.mix, params.tracking, params.bleed, params.noise, 50];
-      case 'camcorder': return [params.mix, params.interlace, params.ccd, params.datestamp, 50];
+      case 'vhs': return [params.mix, params.tracking, params.chroma, params.noise, params.beat];
       case 'prism': return [params.mix, params.split, params.angle, params.edge, 50];
       case 'streak': return [params.mix, params.length, params.angle, params.decay, 50];
+      case 'mirror': return [params.mix, params.fold, params.offset, params.spin, params.beat];
+      case 'lens': return [params.mix, params.amount, params.zoom, params.edge, params.beat];
       default: return [params.mix, params.amount ?? params.amt, params.feedback ?? params.drift,
         params.tracking ?? params.squeeze, params.noise];
     }

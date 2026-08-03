@@ -43,7 +43,15 @@ export async function loadQaMediaFromManifest(manifest: QaManifest) {
 
   if (manifest.audio) {
     try {
-      await audioEngine.loadAudioUrl(`/qa-media/${manifest.audio}`, manifest.audio);
+      // Load through the real upload path with hosted analysis so QA sessions
+      // exercise the Essentia endpoint and get the song's true BPM instead of
+      // silently running on the 128 default. Falls back to realtime estimation
+      // when the service is unreachable.
+      const response = await fetch(`/qa-media/${manifest.audio}`);
+      if (!response.ok) throw new Error(`audio fetch failed: ${response.status}`);
+      const blob = await response.blob();
+      const file = new File([blob], manifest.audio, { type: blob.type || 'audio/mpeg' });
+      await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`audio: ${msg}`);

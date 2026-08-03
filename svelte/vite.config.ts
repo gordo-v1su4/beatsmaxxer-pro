@@ -29,9 +29,12 @@ export default defineConfig(({ mode, command }) => {
 	// Native decode/composition is the desktop contract. The legacy CPU-frame
 	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
 	// values from the older experimental phase must not silently disable the
-	// compositor UI/layout bridge.
+	// compositor UI/layout bridge. The native compositor only exists on macOS;
+	// other hosts must fall back to htmlVideoSource inside the Tauri webview.
 	const desktopNativeDecode =
-		isTauriBuild && process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
+		isTauriBuild &&
+		process.platform === 'darwin' &&
+		process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
 
 	return {
 		base: './',

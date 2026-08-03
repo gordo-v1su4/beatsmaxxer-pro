@@ -99,13 +99,15 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'bulge':
       return { mix: p.mix, p0: p.amount, p1: p.center, p2: p.falloff };
     case 'vhs':
-      return { mix: p.mix, p0: p.tracking, p1: p.bleed, p2: p.noise };
-    case 'camcorder':
-      return { mix: p.mix, p0: p.interlace, p1: p.ccd, p2: p.datestamp };
+      return { mix: p.mix, p0: p.tracking, p1: p.chroma, p2: p.noise, p3: p.beat };
     case 'prism':
       return { mix: p.mix, p0: p.split, p1: p.angle, p2: p.edge };
     case 'streak':
       return { mix: p.mix, p0: p.length, p1: p.angle, p2: p.decay };
+    case 'mirror':
+      return { mix: p.mix, p0: p.fold, p1: p.offset, p2: p.spin, p3: p.beat };
+    case 'lens':
+      return { mix: p.mix, p0: p.amount, p1: p.zoom, p2: p.edge, p3: p.beat };
     default:
       return {
         mix: p.mix ?? 100,

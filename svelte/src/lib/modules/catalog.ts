@@ -198,27 +198,15 @@ const defs: ModuleDefinition[] = [
   },
   {
     id: 'vhs',
-    name: 'VHS TAPE',
-    shortName: 'VHS',
+    name: 'VHS / CAM',
+    shortName: 'TAPE',
     accentColor: '#a8a29e',
     row: 'bottom',
     category: 'film',
     compact: true,
     shaderKey: 'vhs',
-    description: 'Light tracking + color bleed',
-    params: { tracking: 35, bleed: 45, noise: 30, mix: 55 }
-  },
-  {
-    id: 'camcorder',
-    name: 'CAMCORDER',
-    shortName: 'CAM90',
-    accentColor: '#86efac',
-    row: 'bottom',
-    category: 'film',
-    compact: true,
-    shaderKey: 'camcorder',
-    description: '90s CCD interlace + soft highlight',
-    params: { interlace: 40, ccd: 45, datestamp: 0, mix: 60 }
+    description: 'Tape wave, tracking, chroma + beat glitch',
+    params: { tracking: 35, chroma: 45, noise: 30, beat: 40, mix: 60 }
   },
   {
     id: 'prism',
@@ -242,6 +230,30 @@ const defs: ModuleDefinition[] = [
     shaderKey: 'streak',
     description: 'Directional velocity streaks',
     params: { length: 50, angle: 35, decay: 45, mix: 60, in_: 80, out: 70 }
+  },
+  {
+    id: 'mirror',
+    name: 'INCEPTION',
+    shortName: 'MIRROR',
+    accentColor: '#67e8f9',
+    row: 'bottom',
+    category: 'camera',
+    compact: true,
+    shaderKey: 'mirror',
+    description: 'Mirror, kaleido + recursive fold',
+    params: { fold: 0, offset: 50, spin: 50, beat: 40, mix: 100 }
+  },
+  {
+    id: 'lens',
+    name: 'SPECIALTY LENS',
+    shortName: 'LENS',
+    accentColor: '#f0abfc',
+    row: 'bottom',
+    category: 'camera',
+    compact: true,
+    shaderKey: 'lens',
+    description: 'Fisheye to tele-crush glass + beat pump',
+    params: { amount: 75, zoom: 50, edge: 45, beat: 30, mix: 100 }
   }
 ];
 

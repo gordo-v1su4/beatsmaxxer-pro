@@ -11,6 +11,7 @@ import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
 import { tauriNativeSource } from '$lib/media/sources/TauriNativeSource';
 import { isNativeFrameSurface } from '$lib/media/NativeFrameSurface';
+import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -74,6 +75,12 @@ interface BindingScheduleState {
 
 const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler']);
 
+/** Refresh the last-good-frame copy inside this window on both sides of an
+ * HTMLVideo loop wrap, where the decoder can briefly report no current frame.
+ * The cover frame guarantees the seam shows the clip's last real frame instead
+ * of a black flash or the idle test card. */
+const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
+
 /** WKWebView can accept GPUExternalTexture imports yet present them as black.
  * Desktop therefore uses an explicit GPUTexture copy for every module; web
  * keeps the lower-overhead external-texture path except where persistence is
@@ -92,6 +99,8 @@ export class WebGpuEngine {
   private renderParams = new Map<string, ModuleRenderParams>();
   private renderParamVersions = new Map<string, number>();
   private bindingSchedule = new Map<string, BindingScheduleState>();
+  /** Pending PGM source change awaiting its first submitted frame, for cut-latency QA. */
+  private pendingPgmCut: { at: number; sourceId: string } | null = null;
   private taskExternalTextures: Map<HTMLVideoElement, GPUExternalTexture> | null = null;
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
@@ -148,6 +157,9 @@ export class WebGpuEngine {
   }
 
   setPgmLiveModule(moduleId: string, sourceId: string) {
+    if (sourceId !== this.pgmLiveSourceId) {
+      this.pendingPgmCut = { at: latencyMarkNow(), sourceId };
+    }
     this.pgmLiveModuleId = moduleId;
     this.pgmLiveSourceId = sourceId;
     const binding = this.bindings.get('pgm');
@@ -373,6 +385,15 @@ export class WebGpuEngine {
       this.taskExternalTextures = null;
     }
     this.device.queue.submit([encoder.finish()]);
+    if (this.pendingPgmCut) {
+      const pgmRendered = scheduled.some(
+        ([id, , , sourceId]) => id === 'pgm' && sourceId === this.pendingPgmCut?.sourceId
+      );
+      if (pgmRendered) {
+        recordLatencySince('pgm-cut', this.pendingPgmCut.at);
+        this.pendingPgmCut = null;
+      }
+    }
   }
 
   private bindingChangeKey(
@@ -538,10 +559,15 @@ export class WebGpuEngine {
     let cachedTextureUploaded = false;
     let cachedTextureBound = false;
     const preferPersistentVideoTexture = shouldUsePersistentVideoTexture(moduleId);
-    let cachedVideoView = preferPersistentVideoTexture && video
-      ? this.videoTextureCache.cachedView(sourceId, video)
-      : null;
-    if (hasVideo && video && preferPersistentVideoTexture) {
+    let cachedVideoView = video ? this.videoTextureCache.cachedView(sourceId, video) : null;
+    const duration = video?.duration ?? 0;
+    const nearLoopSeam =
+      !!video &&
+      Number.isFinite(duration) &&
+      duration > 0 &&
+      (duration - video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS ||
+        video.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS);
+    if (hasVideo && video && (preferPersistentVideoTexture || nearLoopSeam || !cachedVideoView)) {
       try {
         cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
         cachedTextureUploaded = true;
