@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { analysisProxyConfigFromEnv, proxyAnalysisRequest } from "./policy";
+// Extension is required: the repo is "type": "module" and Vercel compiles this
+// function with node16 resolution. TypeScript maps ./policy.js to ./policy.ts.
+import { analysisProxyConfigFromEnv, proxyAnalysisRequest } from "./policy.js";
 
 export const config = { api: { bodyParser: false } };
 
