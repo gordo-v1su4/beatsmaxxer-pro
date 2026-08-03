@@ -197,11 +197,25 @@ function syncControlledVideos(
     speedRampSourceState = mapped.state;
     const rate = mapped.rate;
     if (native) {
+      const speedRampProfile = {
+        lengthPercent: sr.len ?? 36,
+        speedMinPercent: sr.spdMin ?? 25,
+        speedMaxPercent: sr.spdMax ?? 75,
+        bezierY0Percent: sr.bzY0 ?? 100,
+        bezierX1Percent: sr.bzX1 ?? 35,
+        bezierY1Percent: sr.bzY1 ?? 0,
+        bezierX2Percent: sr.bzX2 ?? 65,
+        bezierY2Percent: sr.bzY2 ?? 0,
+        bezierY3Percent: sr.bzY3 ?? 100,
+        bypassed: get(bypassed).speedramp === true
+      };
       sourceTimelines.push({
         sourceId: speedRampSlot,
         positionUs: Math.round(mapped.targetSeconds * 1_000_000),
         playbackRate: mapped.rate,
-        revision: frame.generation
+        revision: frame.generation,
+        kind: 'speed-ramp',
+        speedRamp: speedRampProfile
       });
     } else {
       videoPool.syncControlledModule(speedRampSlot, mapped.targetSeconds, mapped.rate, frame);
@@ -278,9 +292,10 @@ export function startAppLoop() {
 
     const assignments = currentRackAssignments(get(rackTop), get(rackBottom));
     const moduleIds = assignments.map(({ moduleId }) => moduleId);
+    const timeSamplerAccent = audioEngine.getLiveScheduleFrame()?.accent;
     lastTimeSamplerAux = timeSamplerAccentUniforms(
       frame,
-      audioEngine.getLiveScheduleFrame()?.accent
+      timeSamplerAccent
     );
     syncVideoModes(assignments);
 
@@ -288,6 +303,13 @@ export function startAppLoop() {
     const livePgmSlot = currentRackSlotForModule(livePgm);
     tauriNativeSource.setProgramSource(livePgmSlot);
     tauriNativeSource.setSourceTimelines(syncControlledVideos(assignments, get(moduleParams), frame));
+    tauriNativeSource.setEffectAudio(
+      state.amplitude,
+      state.bassAmp,
+      sound.keySemitones + sound.pitchSemitones,
+      timeSamplerAccent?.presentationTimeSeconds ?? -1,
+      timeSamplerAccent?.mode ?? 2
+    );
     getVideoSourcePort().tick(frame);
 
     const params = get(moduleParams);

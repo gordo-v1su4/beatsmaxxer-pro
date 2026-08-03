@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::num::NonZeroU64;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -6,7 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use bsp_decode::{NativeDecodeFrame, PREPARED_PROGRAM_FRAME_PREFIX, PROGRAM_FRAME_PREFIX};
+use bsp_decode::{
+    NativeDecodeFrame, SpeedRampProfile, PREPARED_PROGRAM_FRAME_PREFIX, PROGRAM_FRAME_PREFIX,
+};
 use bytemuck::{Pod, Zeroable};
 use tauri::WebviewWindow;
 use wgpu::util::DeviceExt;
@@ -22,6 +25,34 @@ pub struct NativeSurfaceRect {
     pub effect_module_id: String,
     #[serde(default)]
     pub effect_mode: f32,
+    #[serde(default = "default_mix_percent")]
+    pub mix: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p0: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p1: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p2: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p3: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p4: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p5: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p6: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p7: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p8: f32,
+    #[serde(default = "default_effect_percent")]
+    pub p9: f32,
+    #[serde(default)]
+    pub accent_r: f32,
+    #[serde(default)]
+    pub accent_g: f32,
+    #[serde(default)]
+    pub accent_b: f32,
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -32,6 +63,55 @@ pub struct NativeSurfaceRect {
 
 fn default_visible() -> bool {
     true
+}
+
+fn default_effect_percent() -> f32 {
+    50.0
+}
+
+fn default_mix_percent() -> f32 {
+    100.0
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct NativeEffectTransport {
+    pub position_seconds: f32,
+    pub beat_position: f32,
+    pub beat_phase: f32,
+    pub bpm: f32,
+    pub playback_rate: f32,
+    pub playing: bool,
+    pub generation: u64,
+    pub fixed_step_seconds: f32,
+    pub fixed_step_index: u32,
+    pub fixed_step_phase: f32,
+    pub amplitude: f32,
+    pub bass_amp: f32,
+    pub pitch_semitones: f32,
+    pub time_sampler_accent_position_seconds: f32,
+    pub time_sampler_accent_mode: f32,
+}
+
+impl Default for NativeEffectTransport {
+    fn default() -> Self {
+        Self {
+            position_seconds: 0.0,
+            beat_position: 0.0,
+            beat_phase: 0.0,
+            bpm: 128.0,
+            playback_rate: 1.0,
+            playing: false,
+            generation: 0,
+            fixed_step_seconds: 1.0 / 60.0,
+            fixed_step_index: 0,
+            fixed_step_phase: 0.0,
+            amplitude: 0.0,
+            bass_amp: 0.0,
+            pitch_semitones: 0.0,
+            time_sampler_accent_position_seconds: -1.0,
+            time_sampler_accent_mode: 2.0,
+        }
+    }
 }
 
 pub struct NativeCompositorMetrics {
@@ -47,6 +127,8 @@ pub struct NativeCompositorMetrics {
 const MAX_PRESENTATION_INTERVALS: usize = 4_096;
 const PREPARED_SURFACE_PREFIX: &str = "__prepared_surface__:";
 const MAX_IMPORTED_PREVIEW_TEXTURES: usize = 8_192;
+const MAX_NATIVE_SURFACES: usize = 12;
+const EFFECT_UNIFORM_STRIDE: usize = 256;
 
 #[derive(Default)]
 struct NativeCompositorTiming {
@@ -81,10 +163,23 @@ pub struct NativeSurfaceSnapshot {
     pub effect_mode: f32,
     pub effect_requested_frame: u64,
     pub effect_applied_frame: u64,
+    pub effect_mix: f32,
+    pub effect_p0: f32,
+    pub effect_p1: f32,
+    pub effect_p2: f32,
+    pub effect_p3: f32,
+    pub effect_params_requested_frame: u64,
+    pub effect_params_applied_frame: u64,
     pub width: u32,
     pub height: u32,
+    pub display_width: f32,
+    pub display_height: f32,
     pub timestamp_us: i64,
     pub sequence: u64,
+    pub source_frame_changes: u64,
+    pub large_timestamp_jumps: u64,
+    pub timestamp_regressions: u64,
+    pub max_backward_timestamp_us: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -158,6 +253,61 @@ impl NativeCompositorMetrics {
                     })
                     .map(|previous| previous.effect_requested_frame)
                     .unwrap_or(layout_requested_frame);
+                let (effect_mix, effect_p0, effect_p1, effect_p2, effect_p3) = effect
+                    .map(|rect| (rect.mix, rect.p0, rect.p1, rect.p2, rect.p3))
+                    .unwrap_or_default();
+                let params_unchanged = previous_surfaces.get(surface_id).is_some_and(|previous| {
+                    previous.effect_mix == effect_mix
+                        && previous.effect_p0 == effect_p0
+                        && previous.effect_p1 == effect_p1
+                        && previous.effect_p2 == effect_p2
+                        && previous.effect_p3 == effect_p3
+                });
+                let effect_params_applied_frame = previous_surfaces
+                    .get(surface_id)
+                    .filter(|_| params_unchanged)
+                    .map(|previous| previous.effect_params_applied_frame)
+                    .unwrap_or(presented_frame);
+                let effect_params_requested_frame = previous_surfaces
+                    .get(surface_id)
+                    .filter(|_| params_unchanged)
+                    .map(|previous| previous.effect_params_requested_frame)
+                    .unwrap_or(layout_requested_frame);
+                let previous_source = previous_surfaces
+                    .get(surface_id)
+                    .filter(|previous| previous.source_id == frame.source_id);
+                let timestamp_delta = previous_source
+                    .map(|previous| frame.timestamp_us - previous.timestamp_us)
+                    .unwrap_or_default();
+                let source_frame_changes = previous_source
+                    .map(|previous| previous.source_frame_changes)
+                    .unwrap_or_default()
+                    + u64::from(previous_source.is_some() && timestamp_delta != 0);
+                let large_timestamp_jumps = previous_source
+                    .map(|previous| previous.large_timestamp_jumps)
+                    .unwrap_or_default()
+                    + u64::from(previous_source.is_some() && timestamp_delta.abs() > 500_000);
+                // SpeedRamp always advances forward. A large negative delta is
+                // only valid when the short clip loops from its tail to head.
+                // Track smaller regressions as direct evidence of a bad sparse
+                // anchor correction rather than inferring smoothness from FPS.
+                let backward_us = timestamp_delta.saturating_neg().max(0) as u64;
+                let unexpected_speed_ramp_regression = previous_source.is_some()
+                    && (effect_mode - 2.0).abs() < 0.5
+                    && timestamp_delta < -50_000
+                    && timestamp_delta > -5_000_000;
+                let timestamp_regressions = previous_source
+                    .map(|previous| previous.timestamp_regressions)
+                    .unwrap_or_default()
+                    + u64::from(unexpected_speed_ramp_regression);
+                let max_backward_timestamp_us = previous_source
+                    .map(|previous| previous.max_backward_timestamp_us)
+                    .unwrap_or_default()
+                    .max(if unexpected_speed_ramp_regression {
+                        backward_us
+                    } else {
+                        0
+                    });
                 (
                     surface_id.clone(),
                     NativeSurfaceSnapshot {
@@ -167,10 +317,23 @@ impl NativeCompositorMetrics {
                         effect_mode,
                         effect_requested_frame,
                         effect_applied_frame,
+                        effect_mix,
+                        effect_p0,
+                        effect_p1,
+                        effect_p2,
+                        effect_p3,
+                        effect_params_requested_frame,
+                        effect_params_applied_frame,
                         width: frame.width,
                         height: frame.height,
+                        display_width: effect.map(|rect| rect.width).unwrap_or_default(),
+                        display_height: effect.map(|rect| rect.height).unwrap_or_default(),
                         timestamp_us: frame.timestamp_us,
                         sequence: frame.sequence,
+                        source_frame_changes,
+                        large_timestamp_jumps,
+                        timestamp_regressions,
+                        max_backward_timestamp_us,
                     },
                 )
             })
@@ -268,10 +431,20 @@ struct LayoutMailbox {
     rects: Vec<NativeSurfaceRect>,
 }
 
-#[derive(Default)]
 struct NativeControlMailboxes {
     program_source: Mutex<ProgramSourceMailbox>,
     layout: Mutex<LayoutMailbox>,
+    effect_transport: Mutex<(NativeEffectTransport, Instant)>,
+}
+
+impl Default for NativeControlMailboxes {
+    fn default() -> Self {
+        Self {
+            program_source: Mutex::new(ProgramSourceMailbox::default()),
+            layout: Mutex::new(LayoutMailbox::default()),
+            effect_transport: Mutex::new((NativeEffectTransport::default(), Instant::now())),
+        }
+    }
 }
 
 pub struct NativeCompositorState {
@@ -405,6 +578,12 @@ impl NativeCompositorState {
         Ok(())
     }
 
+    pub fn update_effect_transport(&self, transport: NativeEffectTransport) {
+        if let Ok(mut anchor) = self.controls.effect_transport.lock() {
+            *anchor = (transport, Instant::now());
+        }
+    }
+
     pub fn submit_frames(&self, frames: Vec<NativeDecodeFrame>) -> Result<(), String> {
         if frames.is_empty() {
             return Ok(());
@@ -450,7 +629,16 @@ impl NativeCompositorState {
 struct Vertex {
     position: [f32; 2],
     texcoord: [f32; 2],
-    effect_mode: f32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct EffectUniform {
+    clock: [f32; 4],
+    levels: [f32; 4],
+    params: [f32; 4],
+    transport: [f32; 4],
+    accent: [f32; 4],
 }
 
 struct ImportedTexture {
@@ -480,7 +668,6 @@ struct RectGeometryKey {
     viewport_height: u32,
     source_width: u32,
     source_height: u32,
-    effect_mode: u32,
 }
 
 impl RectGeometryKey {
@@ -500,7 +687,6 @@ impl RectGeometryKey {
             viewport_height,
             source_width,
             source_height,
-            effect_mode: rect.effect_mode.to_bits(),
         }
     }
 }
@@ -541,6 +727,20 @@ fn run_renderer(
             },
         ],
     });
+    let effect_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("native effect uniform layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: true,
+                    min_binding_size: NonZeroU64::new(std::mem::size_of::<EffectUniform>() as u64),
+                },
+                count: None,
+            }],
+        });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("native compositor shader"),
         source: wgpu::ShaderSource::Wgsl(
@@ -548,21 +748,26 @@ fn run_renderer(
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
   @location(0) texcoord: vec2<f32>,
-  @location(1) @interpolate(flat) effect_mode: f32,
 }
 @vertex fn vs_main(
   @location(0) position: vec2<f32>,
-  @location(1) texcoord: vec2<f32>,
-  @location(2) effect_mode: f32
+  @location(1) texcoord: vec2<f32>
 ) -> VertexOut {
   var out: VertexOut;
   out.position = vec4<f32>(position, 0.0, 1.0);
   out.texcoord = texcoord;
-  out.effect_mode = effect_mode;
   return out;
 }
 @group(0) @binding(0) var video_texture: texture_2d<f32>;
 @group(0) @binding(1) var video_sampler: sampler;
+struct EffectUniform {
+  clock: vec4<f32>,
+  levels: vec4<f32>,
+  params: vec4<f32>,
+  transport: vec4<f32>,
+  accent: vec4<f32>,
+}
+@group(1) @binding(0) var<uniform> u: EffectUniform;
 
 fn sample_video(uv: vec2<f32>) -> vec3<f32> {
   return textureSample(video_texture, video_sampler, clamp(uv, vec2<f32>(0.0), vec2<f32>(1.0))).rgb;
@@ -575,24 +780,56 @@ fn hash21(p: vec2<f32>) -> f32 {
 @fragment fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
   let uv = in.texcoord;
   let dry = sample_video(uv);
-  let mode = floor(in.effect_mode + 0.5);
+  let mode = floor(u.levels.w + 0.5);
+  let pulse = u.clock.w * exp(-fract(u.clock.x) * (5.0 + u.params.z * 12.0));
+  let motion = u.clock.w * sin(u.clock.x * 6.2831853);
   var wet = dry;
   if (mode == 1.0) {
-    wet.r = sample_video(uv + vec2<f32>(0.006, 0.0)).r;
-    wet.b = sample_video(uv - vec2<f32>(0.006, 0.0)).b;
+    let spread = 0.002 + u.params.x * 0.012 * (0.35 + pulse);
+    wet.r = sample_video(uv + vec2<f32>(spread, 0.0)).r;
+    wet.b = sample_video(uv - vec2<f32>(spread, 0.0)).b;
   } else if (mode == 2.0) {
-    wet = (sample_video(uv - vec2<f32>(0.012, 0.0)) + dry * 2.0 + sample_video(uv + vec2<f32>(0.012, 0.0))) / 4.0;
+    // The source-time curve is integrated by Rust. transport.z is the exact
+    // beat-domain rate at this drawable, so the treatment follows the actual
+    // ramp rather than a generic sine animation.
+    let rate = max(u.transport.z, 0.001);
+    let deviation = clamp(abs(log2(rate)) / 2.0, 0.0, 1.0);
+    let trail = deviation * 0.035;
+    wet = (sample_video(uv - vec2<f32>(trail, 0.0)) + dry * 3.0 + sample_video(uv + vec2<f32>(trail, 0.0))) / 5.0;
+    let split = deviation * 0.012;
+    wet.r = sample_video(uv + vec2<f32>(split, 0.0)).r;
+    wet.b = sample_video(uv - vec2<f32>(split, 0.0)).b;
+    if (rate < 1.0) {
+      wet *= 1.0 + deviation * 0.15;
+    } else {
+      wet *= 1.0 - deviation * 0.05;
+    }
   } else if (mode == 3.0) {
-    wet = max(dry, sample_video(uv + vec2<f32>(0.025, 0.0)) * 0.72);
+    let echo = vec2<f32>((0.008 + u.params.x * 0.035) * (0.5 + 0.5 * motion), 0.0);
+    wet = max(dry, sample_video(uv + echo) * (0.35 + u.params.y * 0.55));
   } else if (mode == 4.0) {
-    let row = floor(uv.y * 8.0);
-    wet = sample_video(uv + vec2<f32>((fract(row * 0.5) - 0.25) * 0.045, 0.0));
+    // Source slicing is performed by the authoritative native timeline. Do
+    // not fabricate horizontal row offsets: they looked like corrupt frames
+    // and were unrelated to the sampler's real FWD/REV/PONG/RND jumps.
+    let rate = 0.25 + u.params.x * 1.75;
+    let wobble = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
+    let shifted = uv + vec2<f32>(sin(uv.y * 60.0 + u.clock.x * 9.0) * wobble * 0.004, 0.0);
+    wet = sample_video(shifted);
+    let hit = clamp(u.accent.w, 0.0, 1.0) * u.clock.w;
+    if (u.transport.w < 0.5) {
+      wet = min(pow(max(wet, vec3<f32>(0.0)), vec3<f32>(1.0 / (1.0 + hit * 0.18))) * (1.0 + hit * 0.22), vec3<f32>(1.0));
+    } else if (u.transport.w < 1.5) {
+      let split = hit * 0.012;
+      wet.r = sample_video(shifted + vec2<f32>(split, 0.0)).r;
+      wet.b = sample_video(shifted - vec2<f32>(split, 0.0)).b;
+    }
   } else if (mode == 5.0) {
-    wet = sample_video((uv - vec2<f32>(0.5)) / 1.075 + vec2<f32>(0.5));
+    wet = sample_video((uv - vec2<f32>(0.5)) / (1.0 + u.params.x * 0.13 * pulse) + vec2<f32>(0.5));
   } else if (mode == 6.0) {
-    wet = sample_video(uv + vec2<f32>(0.006, -0.004));
+    wet = sample_video(uv + vec2<f32>(sin(u.transport.y * 7.1), cos(u.transport.y * 5.3)) * (0.001 + u.params.x * 0.008));
   } else if (mode == 7.0) {
-    wet = sample_video((uv - vec2<f32>(0.5)) / 1.08 + vec2<f32>(0.515, 0.49));
+    let drift = vec2<f32>(sin(u.transport.y * (0.3 + u.params.x)), cos(u.transport.y * 0.37));
+    wet = sample_video((uv - vec2<f32>(0.5)) / (1.02 + u.params.z * 0.08) + vec2<f32>(0.5) + drift * (0.002 + u.params.y * 0.012));
   } else if (mode == 8.0) {
     let radius = length(uv - vec2<f32>(0.5));
     let blur = (sample_video(uv + vec2<f32>(0.008, 0.0)) + sample_video(uv - vec2<f32>(0.008, 0.0)) + dry * 2.0) / 4.0;
@@ -600,9 +837,11 @@ fn hash21(p: vec2<f32>) -> f32 {
   } else if (mode == 9.0) {
     wet = sample_video(vec2<f32>((uv.x - 0.5) * 0.88 + 0.5, uv.y));
   } else if (mode == 10.0) {
-    wet = dry + vec3<f32>((hash21(uv * 913.0) - 0.5) * 0.09);
+    let noiseUv = floor(uv * (240.0 + u.params.x * 900.0)) + vec2<f32>(floor(u.clock.x * 8.0));
+    wet = dry + vec3<f32>((hash21(noiseUv) - 0.5) * u.params.y * 0.16);
   } else if (mode == 11.0) {
-    wet = dry + vec3<f32>(1.0, 0.28, 0.04) * pow(1.0 - uv.x, 4.0) * 0.45;
+    let edge = pow(1.0 - uv.x, 2.0 + u.params.x * 5.0);
+    wet = dry + u.accent.rgb * edge * (0.15 + u.params.y * 0.55) * (0.6 + 0.4 * pulse);
   } else if (mode == 12.0) {
     let p = uv - vec2<f32>(0.5);
     let c = 0.9928;
@@ -614,9 +853,9 @@ fn hash21(p: vec2<f32>) -> f32 {
   } else if (mode == 14.0) {
     let p = uv - vec2<f32>(0.5);
     let r2 = dot(p, p);
-    wet = sample_video(vec2<f32>(0.5) + p * (1.0 - r2 * 0.42));
+    wet = sample_video(vec2<f32>(0.5) + p * (1.0 - r2 * u.params.x * 0.7));
   } else if (mode == 15.0) {
-    let wobble = sin(uv.y * 95.0) * 0.0035;
+    let wobble = sin(uv.y * (60.0 + u.params.x * 90.0) + u.transport.y * 11.0) * (0.001 + u.params.z * 0.006);
     wet = sample_video(uv + vec2<f32>(wobble, 0.0));
     wet *= 0.92 + step(0.5, fract(uv.y * 240.0)) * 0.08;
   } else if (mode == 16.0) {
@@ -628,7 +867,8 @@ fn hash21(p: vec2<f32>) -> f32 {
   } else if (mode == 18.0) {
     wet = (dry * 4.0 + sample_video(uv - vec2<f32>(0.018, 0.0)) * 2.0 + sample_video(uv - vec2<f32>(0.036, 0.0))) / 7.0;
   }
-  return vec4<f32>(clamp(wet, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+  let mixed = mix(dry, wet, clamp(u.levels.z, 0.0, 1.0));
+  return vec4<f32>(clamp(mixed, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
 }
 "#
             .into(),
@@ -636,7 +876,7 @@ fn hash21(p: vec2<f32>) -> f32 {
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("native compositor pipeline layout"),
-        bind_group_layouts: &[&bind_group_layout],
+        bind_group_layouts: &[&bind_group_layout, &effect_bind_group_layout],
         push_constant_ranges: &[],
     });
     let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -649,7 +889,7 @@ fn hash21(p: vec2<f32>) -> f32 {
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<Vertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2],
             }],
         },
         fragment: Some(wgpu::FragmentState {
@@ -668,12 +908,31 @@ fn hash21(p: vec2<f32>) -> f32 {
         multiview: None,
         cache: None,
     });
+    let effect_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("native effect uniform buffer"),
+        size: (MAX_NATIVE_SURFACES * EFFECT_UNIFORM_STRIDE) as u64,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let effect_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("native effect uniform bind group"),
+        layout: &effect_bind_group_layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &effect_uniform_buffer,
+                offset: 0,
+                size: NonZeroU64::new(std::mem::size_of::<EffectUniform>() as u64),
+            }),
+        }],
+    });
 
     let test_bind_groups = make_test_bind_groups(&device, &queue, &bind_group_layout, &sampler);
     let mut rects = Vec::<NativeSurfaceRect>::new();
     let mut frames = HashMap::<String, ImportedFrame>::new();
     let mut imported_preview_textures = HashMap::<usize, Rc<ImportedTexture>>::new();
     let mut rect_geometry = HashMap::<String, (RectGeometryKey, wgpu::Buffer)>::new();
+    let mut effect_uniform_bytes = vec![0_u8; MAX_NATIVE_SURFACES * EFFECT_UNIFORM_STRIDE];
     let mut program_source = None::<String>;
     let mut program_generation = 0_u64;
     let mut layout_generation = 0_u64;
@@ -682,11 +941,11 @@ fn hash21(p: vec2<f32>) -> f32 {
     let mut running = true;
 
     while running {
-        // CAMetalLayer/vsync provides the back-pressure. Waiting a full display
-        // period here as well produced ~20 ms presentation intervals on a
-        // 60 Hz display. A short command wait keeps idle CPU bounded without
-        // adding an extra frame of latency before every present.
-        match receiver.recv_timeout(Duration::from_millis(1)) {
+        // CAMetalLayer/vsync provides active-path back-pressure. Even a 1 ms
+        // command wait consumes 12% of a 120 Hz ProMotion frame, so sample the
+        // mailbox without delaying drawable acquisition. The non-renderable
+        // path below sleeps explicitly to keep idle CPU bounded.
+        match receiver.try_recv() {
             Ok(command) => apply_command(
                 command,
                 &mut running,
@@ -701,8 +960,8 @@ fn hash21(p: vec2<f32>) -> f32 {
                 &mut test_pattern,
                 &metrics,
             ),
-            Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::TryRecvError::Disconnected) => break,
+            Err(mpsc::TryRecvError::Empty) => {}
         }
         while let Ok(command) = receiver.try_recv() {
             apply_command(
@@ -734,6 +993,7 @@ fn hash21(p: vec2<f32>) -> f32 {
             &mut rects,
         );
         if !running || rects.is_empty() || (!test_pattern && frames.is_empty()) {
+            thread::sleep(Duration::from_millis(4));
             continue;
         }
         let output = match surface.get_current_texture() {
@@ -763,6 +1023,31 @@ fn hash21(p: vec2<f32>) -> f32 {
             &mut layout_requested_frame,
             &mut rects,
         );
+        let effect_anchor = controls
+            .effect_transport
+            .lock()
+            .map(|anchor| *anchor)
+            .unwrap_or_else(|_| (NativeEffectTransport::default(), Instant::now()));
+        let mut visible_surface_count = 0_usize;
+        for (index, rect) in rects
+            .iter()
+            .filter(|rect| rect.visible)
+            .take(MAX_NATIVE_SURFACES)
+            .enumerate()
+        {
+            let uniform = effect_uniform(rect, effect_anchor.0, effect_anchor.1);
+            let start = index * EFFECT_UNIFORM_STRIDE;
+            let bytes = bytemuck::bytes_of(&uniform);
+            effect_uniform_bytes[start..start + bytes.len()].copy_from_slice(bytes);
+            visible_surface_count = index + 1;
+        }
+        if visible_surface_count > 0 {
+            queue.write_buffer(
+                &effect_uniform_buffer,
+                0,
+                &effect_uniform_bytes[..visible_surface_count * EFFECT_UNIFORM_STRIDE],
+            );
+        }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("native compositor frame"),
         });
@@ -817,7 +1102,12 @@ fn hash21(p: vec2<f32>) -> f32 {
                 occlusion_query_set: None,
             });
             pass.set_pipeline(&pipeline);
-            for (index, rect) in rects.iter().filter(|rect| rect.visible).enumerate() {
+            for (index, rect) in rects
+                .iter()
+                .filter(|rect| rect.visible)
+                .take(MAX_NATIVE_SURFACES)
+                .enumerate()
+            {
                 let imported = frames.get(&rect.surface_id);
                 let bind_group = imported.map(|frame| &frame.texture.bind_group).or_else(|| {
                     test_pattern.then(|| &test_bind_groups[index % test_bind_groups.len()])
@@ -829,6 +1119,11 @@ fn hash21(p: vec2<f32>) -> f32 {
                     continue;
                 };
                 pass.set_bind_group(0, bind_group, &[]);
+                pass.set_bind_group(
+                    1,
+                    &effect_bind_group,
+                    &[(index * EFFECT_UNIFORM_STRIDE) as u32],
+                );
                 pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 pass.draw(0..6, 0..1);
             }
@@ -1022,6 +1317,86 @@ fn apply_latest_program_source(
     }
 }
 
+fn effect_uniform(
+    rect: &NativeSurfaceRect,
+    anchor: NativeEffectTransport,
+    updated_at: Instant,
+) -> EffectUniform {
+    let elapsed = if anchor.playing {
+        updated_at.elapsed().as_secs_f32()
+    } else {
+        0.0
+    };
+    let position = anchor.position_seconds + elapsed * anchor.playback_rate;
+    let beat_delta = elapsed * anchor.playback_rate * anchor.bpm.max(1.0) / 60.0;
+    let beat = anchor.beat_position + beat_delta;
+    let beat_phase = if anchor.playing {
+        beat.rem_euclid(1.0)
+    } else {
+        anchor.beat_phase
+    };
+    let normalize = |value: f32| (value / 100.0).clamp(0.0, 1.0);
+    let speed_ramp_rate = if (rect.effect_mode - 2.0).abs() < 0.5 {
+        SpeedRampProfile {
+            length_percent: rect.p2 as f64,
+            speed_min_percent: rect.p1 as f64,
+            speed_max_percent: rect.p0 as f64,
+            bezier_y0_percent: rect.p4 as f64,
+            bezier_x1_percent: rect.p5 as f64,
+            bezier_y1_percent: rect.p6 as f64,
+            bezier_x2_percent: rect.p7 as f64,
+            bezier_y2_percent: rect.p8 as f64,
+            bezier_y3_percent: rect.p9 as f64,
+            bypassed: false,
+        }
+        .rate_at_beat(beat as f64) as f32
+    } else {
+        anchor.playback_rate
+    };
+    let accent_age = position - anchor.time_sampler_accent_position_seconds;
+    let time_sampler_hit = if anchor.playing
+        && anchor.time_sampler_accent_mode < 1.5
+        && accent_age >= 0.0
+        && accent_age <= 0.5
+    {
+        (-accent_age * 12.0).exp()
+    } else {
+        0.0
+    };
+    EffectUniform {
+        clock: [
+            beat,
+            beat_phase,
+            anchor.bpm,
+            if anchor.playing { 1.0 } else { 0.0 },
+        ],
+        levels: [
+            anchor.amplitude.clamp(0.0, 2.0),
+            anchor.bass_amp.clamp(0.0, 2.0),
+            normalize(rect.mix),
+            rect.effect_mode,
+        ],
+        params: [
+            normalize(rect.p0),
+            normalize(rect.p1),
+            normalize(rect.p2),
+            normalize(rect.p3),
+        ],
+        transport: [
+            anchor.pitch_semitones,
+            position,
+            speed_ramp_rate,
+            anchor.time_sampler_accent_mode.clamp(0.0, 2.0),
+        ],
+        accent: [
+            rect.accent_r,
+            rect.accent_g,
+            rect.accent_b,
+            time_sampler_hit,
+        ],
+    }
+}
+
 fn rect_vertices(
     rect: &NativeSurfaceRect,
     viewport_width: u32,
@@ -1043,32 +1418,26 @@ fn rect_vertices(
         Vertex {
             position: [left, top],
             texcoord: [u0, v0],
-            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [left, bottom],
             texcoord: [u0, v1],
-            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, bottom],
             texcoord: [u1, v1],
-            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [left, top],
             texcoord: [u0, v0],
-            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, bottom],
             texcoord: [u1, v1],
-            effect_mode: rect.effect_mode,
         },
         Vertex {
             position: [right, top],
             texcoord: [u1, v0],
-            effect_mode: rect.effect_mode,
         },
     ]
 }
@@ -1167,10 +1536,39 @@ fn make_test_bind_groups(
 
 #[cfg(test)]
 mod tests {
-    use super::cover_texcoords;
+    use std::time::{Duration, Instant};
+
+    use super::{cover_texcoords, effect_uniform, NativeEffectTransport, NativeSurfaceRect};
 
     fn close(left: f32, right: f32) {
         assert!((left - right).abs() < 0.0001, "{left} != {right}");
+    }
+
+    fn effect_rect(effect_mode: f32) -> NativeSurfaceRect {
+        NativeSurfaceRect {
+            surface_id: "top-0".into(),
+            effect_module_id: "test".into(),
+            effect_mode,
+            mix: 100.0,
+            p0: 75.0,
+            p1: 25.0,
+            p2: 36.0,
+            p3: 50.0,
+            p4: 100.0,
+            p5: 35.0,
+            p6: 0.0,
+            p7: 65.0,
+            p8: 0.0,
+            p9: 100.0,
+            accent_r: 1.0,
+            accent_g: 0.25,
+            accent_b: 0.5,
+            x: 0.0,
+            y: 0.0,
+            width: 320.0,
+            height: 180.0,
+            visible: true,
+        }
     }
 
     #[test]
@@ -1188,5 +1586,60 @@ mod tests {
         assert!(u0 > 0.0 && u1 < 1.0);
         close(v0, 0.0);
         close(v1, 1.0);
+    }
+
+    #[test]
+    fn effect_uniform_extrapolates_audio_clock_and_normalizes_controls() {
+        let mut rect = effect_rect(5.0);
+        rect.effect_module_id = "punch".into();
+        rect.mix = 75.0;
+        rect.p0 = 80.0;
+        rect.p2 = 50.0;
+        rect.p3 = 100.0;
+        let anchor = NativeEffectTransport {
+            position_seconds: 4.0,
+            beat_position: 8.0,
+            beat_phase: 0.0,
+            bpm: 120.0,
+            playback_rate: 1.0,
+            playing: true,
+            ..NativeEffectTransport::default()
+        };
+        let uniform = effect_uniform(&rect, anchor, Instant::now() - Duration::from_millis(250));
+        assert!((uniform.clock[0] - 8.5).abs() < 0.03);
+        assert!((uniform.clock[1] - 0.5).abs() < 0.03);
+        close(uniform.levels[2], 0.75);
+        close(uniform.levels[3], 5.0);
+        close(uniform.params[0], 0.8);
+        close(uniform.params[1], 0.25);
+        assert!((uniform.transport[1] - 4.25).abs() < 0.03);
+    }
+
+    #[test]
+    fn speed_ramp_uniform_uses_the_live_curve_rate() {
+        let rect = effect_rect(2.0);
+        let anchor = NativeEffectTransport {
+            beat_position: 0.0,
+            playback_rate: 1.0,
+            playing: false,
+            ..NativeEffectTransport::default()
+        };
+        let uniform = effect_uniform(&rect, anchor, Instant::now());
+        close(uniform.transport[2], 2.0);
+    }
+
+    #[test]
+    fn time_sampler_uniform_derives_hit_from_authoritative_event_time() {
+        let rect = effect_rect(4.0);
+        let anchor = NativeEffectTransport {
+            position_seconds: 10.0,
+            playing: true,
+            time_sampler_accent_position_seconds: 9.9,
+            time_sampler_accent_mode: 1.0,
+            ..NativeEffectTransport::default()
+        };
+        let uniform = effect_uniform(&rect, anchor, Instant::now());
+        assert!(uniform.accent[3] > 0.25 && uniform.accent[3] < 0.35);
+        close(uniform.transport[3], 1.0);
     }
 }

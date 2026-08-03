@@ -12,6 +12,7 @@
 	/* Rack modules are fixed design objects. Collapsing side rails reveals empty
 	   black workspace; it never stretches controls or changes button spacing. */
 	--rack-module-width: 272px;
+	--rack-preview-height: 153px;
 	--rack-module-min: var(--rack-module-width);
 	--mix-strip-height: 46px;
 	--fx-lib-width: 128px;
@@ -221,6 +222,9 @@ input[type='range']::-moz-range-thumb {
 	   bottom without scrolling, and keep the program monitor clearly dominant.
 	   Full-width previews pushed the controls out of the rows. */
 	max-width: 100%;
+	height: var(--rack-preview-height);
+	min-height: var(--rack-preview-height);
+	max-height: var(--rack-preview-height);
 	aspect-ratio: 16 / 9;
 	align-self: center;
 	flex-shrink: 0;
@@ -286,6 +290,12 @@ input[type='range']::-moz-range-thumb {
 		flex: 1 1 calc(50% - 1px);
 		min-width: min(100%, var(--rack-module-min));
 		min-height: 280px;
+	}
+
+	.module-preview {
+		height: auto;
+		min-height: 0;
+		max-height: none;
 	}
 
 	.hide-on-mobile {

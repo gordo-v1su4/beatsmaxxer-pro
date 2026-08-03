@@ -9,8 +9,8 @@ mod proof;
 
 #[cfg(target_os = "macos")]
 pub use compositor::{
-    NativeCompositorSnapshot, NativeCompositorState, NativeCutSnapshot, NativeSurfaceRect,
-    NativeSurfaceSnapshot,
+    NativeCompositorSnapshot, NativeCompositorState, NativeCutSnapshot, NativeEffectTransport,
+    NativeSurfaceRect, NativeSurfaceSnapshot,
 };
 #[cfg(target_os = "macos")]
 pub use proof::{run_iosurface_wgpu_proof, IOSurfaceWgpuProof};

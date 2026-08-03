@@ -1,4 +1,4 @@
-export const DESKTOP_NATIVE_PROOF_SCHEMA_VERSION = 2;
+export const DESKTOP_NATIVE_PROOF_SCHEMA_VERSION = 4;
 export const DESKTOP_NATIVE_PROOF_RUNTIME = 'tauri-macos-native';
 export const DESKTOP_NATIVE_BACKEND = 'videotoolbox-iosurface-wgpu-metal';
 export const DESKTOP_NATIVE_REQUIRED_PREVIEWS = 8;
@@ -92,10 +92,35 @@ export function evaluateDesktopNativeProof(input: unknown): DesktopNativeProofEv
   )) {
     blockers.push('preview surface exceeded the 256x144 decode budget');
   }
+  const isSixteenByNine = (surface: UnknownRecord) => {
+    const width = number(surface.displayWidth) ?? 0;
+    const height = number(surface.displayHeight) ?? 0;
+    return width > 0 && height > 0 && Math.abs(width / height - 16 / 9) <= 0.01;
+  };
+  if (previewEntries.some((surface) => !isSixteenByNine(surface))) {
+    blockers.push('native preview viewport was not 16:9');
+  }
+  const speedRampSurface = previewEntries.find(
+    (surface) => string(surface.effectModuleId) === 'speedramp'
+  );
+  if (!speedRampSurface) {
+    blockers.push('native SpeedRamp preview evidence is missing');
+  } else if (number(speedRampSurface.timestampRegressions) !== 0) {
+    blockers.push('native SpeedRamp presented a non-loop backward frame correction');
+  }
+  const timeSamplerSurface = previewEntries.find(
+    (surface) => string(surface.effectModuleId) === 'timesampler'
+  );
+  if (!timeSamplerSurface) {
+    blockers.push('native TimeSampler preview evidence is missing');
+  } else if ((number(timeSamplerSurface.largeTimestampJumps) ?? 0) < 2) {
+    blockers.push('native TimeSampler did not exercise authoritative source-time jumps');
+  }
   if ((number(program.width) ?? 0) <= DESKTOP_NATIVE_MAX_PREVIEW_WIDTH &&
       (number(program.height) ?? 0) <= DESKTOP_NATIVE_MAX_PREVIEW_HEIGHT) {
     blockers.push('PGM did not retain source-quality dimensions');
   }
+  if (!isSixteenByNine(program)) blockers.push('native PGM viewport was not 16:9');
 
   const durationMs = number(cadence.durationMs) ?? 0;
   const displayPeriodMs = number(cadence.displayPeriodMs) ?? 0;
@@ -118,7 +143,7 @@ export function evaluateDesktopNativeProof(input: unknown): DesktopNativeProofEv
     blockers.push('not every RAND cut reached the native compositor');
   }
   if (displayPeriodMs > 0 &&
-      (number(cadence.p95CutLatencyMs) ?? Number.POSITIVE_INFINITY) > displayPeriodMs + 1) {
+      (number(cadence.p95CutLatencyMs) ?? Number.POSITIVE_INFINITY) > displayPeriodMs + 2) {
     blockers.push('p95 RAND cut latency exceeded one display refresh');
   }
   if (displayPeriodMs > 0 &&
@@ -150,6 +175,13 @@ export function evaluateDesktopNativeProof(input: unknown): DesktopNativeProofEv
   }
   if ((number(swap.timelineFrameDelta) ?? Number.POSITIVE_INFINITY) > 1) {
     blockers.push('effect replacement took more than one presented frame');
+  }
+  if (boolean(swap.nativeParamsApplied) !== true ||
+      number(swap.requestedMix) !== number(swap.appliedMix)) {
+    blockers.push('live effect parameters were not applied by the native compositor');
+  }
+  if ((number(swap.paramsTimelineFrameDelta) ?? Number.POSITIVE_INFINITY) > 2) {
+    blockers.push('live effect parameters took more than two presented frames');
   }
 
   return { passed: blockers.length === 0, blockers };

@@ -18,7 +18,7 @@ fn main() {
         .unwrap_or(5);
     let include_program = std::env::args().nth(4).as_deref() == Some("pgm");
     let mut scheduler = DecodeScheduler::default();
-    scheduler.update_transport(0, true, 1.0, 1, Default::default());
+    scheduler.update_transport(0, true, 1.0, 1, 0.0, 60.0 / 128.0, Default::default());
     for lane in 0..preview_lanes {
         scheduler
             .open_clip(format!("preview-{lane}"), path.clone())
@@ -39,6 +39,8 @@ fn main() {
             true,
             1.0,
             1,
+            started.elapsed().as_secs_f64() * 128.0 / 60.0,
+            60.0 / 128.0,
             Default::default(),
         );
         for frame in scheduler.tick_native_frames().expect("decode frames") {

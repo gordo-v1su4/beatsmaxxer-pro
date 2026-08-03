@@ -37,9 +37,18 @@ function validReport() {
     surfaces: {
       previews: Object.fromEntries(Array.from({ length: 8 }, (_, index) => [
         `slot-${index}`,
-        { width: 256, height: 144, sequence: 720 }
+        {
+          width: 256,
+          height: 144,
+          displayWidth: 272,
+          displayHeight: 153,
+          sequence: 720,
+          effectModuleId: index === 1 ? 'speedramp' : index === 3 ? 'timesampler' : `effect-${index}`,
+          timestampRegressions: 0,
+          largeTimestampJumps: index === 3 ? 24 : 0
+        }
       ])),
-      program: { width: 1280, height: 720, sequence: 720 }
+      program: { width: 1280, height: 720, displayWidth: 640, displayHeight: 360, sequence: 720 }
     },
     cadence: {
       durationMs: 30_010,
@@ -74,6 +83,10 @@ function validReport() {
       effectBefore: 'transition',
       effectAfter: 'replacement',
       timelineFrameDelta: 1,
+      nativeParamsApplied: true,
+      requestedMix: 37,
+      appliedMix: 37,
+      paramsTimelineFrameDelta: 1,
       previewOpenCountsBefore: { 'top-0': 1 },
       previewOpenCountsAfter: { 'top-0': 1 }
     }
@@ -120,5 +133,23 @@ describe('desktop native proof release contract', () => {
     expect(blockers).toContain(`schemaVersion must be ${DESKTOP_NATIVE_PROOF_SCHEMA_VERSION}`);
     expect(blockers).toContain(`runtime must be ${DESKTOP_NATIVE_PROOF_RUNTIME}`);
     expect(blockers).toContain('headed proof did not complete successfully');
+  });
+
+  test('rejects SpeedRamp regressions and a TimeSampler that never jumps', () => {
+    const report = validReport();
+    report.surfaces.previews['slot-1'].timestampRegressions = 2;
+    report.surfaces.previews['slot-3'].largeTimestampJumps = 0;
+    const blockers = evaluateDesktopNativeProof(report).blockers;
+    expect(blockers).toContain('native SpeedRamp presented a non-loop backward frame correction');
+    expect(blockers).toContain('native TimeSampler did not exercise authoritative source-time jumps');
+  });
+
+  test('rejects distorted native preview or PGM viewports', () => {
+    const report = validReport();
+    report.surfaces.previews['slot-0'].displayHeight = 120;
+    report.surfaces.program.displayWidth = 700;
+    const blockers = evaluateDesktopNativeProof(report).blockers;
+    expect(blockers).toContain('native preview viewport was not 16:9');
+    expect(blockers).toContain('native PGM viewport was not 16:9');
   });
 });

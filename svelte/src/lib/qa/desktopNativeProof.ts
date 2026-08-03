@@ -17,6 +17,7 @@ import {
   currentRackSlotForModule,
   rackBottom,
   rackTop,
+  updateParam,
   videoLayers
 } from '$lib/stores/rack';
 
@@ -188,8 +189,25 @@ async function verifyOneFrameEffectSwap() {
     beforeNative.nativeCompositor.presentedFrames;
   const afterTimelineFrame = appliedSurface?.effectAppliedFrame ??
     afterNative.nativeCompositor.presentedFrames;
+  const requestedMix = 37;
+  updateParam(replacement.id, 'mix', requestedMix);
+  let paramsNative = afterNative;
+  const paramsDeadline = performance.now() + 500;
+  while (performance.now() < paramsDeadline) {
+    paramsNative = await tauriNativeSource.getDecodeStats();
+    if (paramsNative.nativeCompositor.surfaces['top-0']?.effectMix === requestedMix) break;
+    await wait(1);
+  }
+  const paramsSurface = paramsNative.nativeCompositor.surfaces['top-0'];
+  const nativeParamsApplied = paramsSurface?.effectMix === requestedMix;
+  const paramsTimelineFrame = paramsSurface?.effectParamsAppliedFrame ??
+    paramsNative.nativeCompositor.presentedFrames;
+  const paramsRequestedFrame = paramsSurface?.effectParamsRequestedFrame ?? afterTimelineFrame;
   return {
     nativeEffectApplied,
+    nativeParamsApplied,
+    requestedMix,
+    appliedMix: paramsSurface?.effectMix ?? null,
     replacementModuleId: replacement.id,
     slotId: 'top-0',
     clipNameBefore,
@@ -201,6 +219,7 @@ async function verifyOneFrameEffectSwap() {
     beforeTimelineFrame,
     afterTimelineFrame,
     timelineFrameDelta: afterTimelineFrame - beforeTimelineFrame,
+    paramsTimelineFrameDelta: paramsTimelineFrame - paramsRequestedFrame,
     previewOpenCountsBefore: Object.fromEntries(
       Object.entries(beforeNative.sources)
         .filter(([sourceId]) =>
@@ -210,7 +229,7 @@ async function verifyOneFrameEffectSwap() {
         .map(([sourceId, stats]) => [sourceId, stats.openCount])
     ),
     previewOpenCountsAfter: Object.fromEntries(
-      Object.entries(afterNative.sources)
+      Object.entries(paramsNative.sources)
         .filter(([sourceId]) =>
           !sourceId.startsWith(PROGRAM_FRAME_PREFIX) &&
           !sourceId.startsWith(PREPARED_PROGRAM_FRAME_PREFIX)

@@ -7,7 +7,7 @@ use tauri::{
     AppHandle, Manager, State,
 };
 
-use crate::renderer::{NativeCompositorState, NativeSurfaceRect};
+use crate::renderer::{NativeCompositorState, NativeEffectTransport, NativeSurfaceRect};
 use crate::{DecodeRuntime, DecodeStatsSnapshot};
 
 #[derive(serde::Deserialize)]
@@ -16,6 +16,69 @@ pub struct SourceTimeline {
     source_id: String,
     position_us: i64,
     playback_rate: f64,
+    #[serde(default)]
+    kind: SourceTimelineKind,
+    speed_ramp: Option<SpeedRampProfileUpdate>,
+}
+
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum SourceTimelineKind {
+    #[default]
+    Linear,
+    SpeedRamp,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeedRampProfileUpdate {
+    length_percent: f64,
+    speed_min_percent: f64,
+    speed_max_percent: f64,
+    bezier_y0_percent: f64,
+    bezier_x1_percent: f64,
+    bezier_y1_percent: f64,
+    bezier_x2_percent: f64,
+    bezier_y2_percent: f64,
+    bezier_y3_percent: f64,
+    bypassed: bool,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DecodeTransportUpdate {
+    position_us: i64,
+    playing: bool,
+    playback_rate: f64,
+    generation: u64,
+    beat_position: f32,
+    beat_phase: f32,
+    bpm: f32,
+    #[serde(default = "default_beat_interval_seconds")]
+    beat_interval_seconds: f64,
+    fixed_step_seconds: f32,
+    fixed_step_index: u32,
+    fixed_step_phase: f32,
+    amplitude: f32,
+    bass_amp: f32,
+    pitch_semitones: f32,
+    #[serde(default = "default_accent_position_seconds")]
+    time_sampler_accent_position_seconds: f32,
+    #[serde(default = "default_accent_mode")]
+    time_sampler_accent_mode: f32,
+    source_timelines: Vec<SourceTimeline>,
+}
+
+fn default_beat_interval_seconds() -> f64 {
+    60.0 / 128.0
+}
+
+fn default_accent_position_seconds() -> f32 {
+    -1.0
+}
+
+fn default_accent_mode() -> f32 {
+    2.0
 }
 
 fn clip_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -123,35 +186,72 @@ pub fn release_clip(module_id: String, runtime: State<'_, DecodeRuntime>) -> Res
 
 #[tauri::command]
 pub fn update_decode_transport(
-    position_us: i64,
-    playing: bool,
-    playback_rate: f64,
-    generation: u64,
-    source_timelines: Vec<SourceTimeline>,
+    transport: DecodeTransportUpdate,
     runtime: State<'_, DecodeRuntime>,
+    compositor: State<'_, NativeCompositorState>,
 ) -> Result<(), String> {
     runtime
         .scheduler
         .lock()
         .map_err(|_| "decode scheduler poisoned".to_string())?
         .update_transport(
-            position_us,
-            playing,
-            playback_rate,
-            generation,
-            source_timelines
+            transport.position_us,
+            transport.playing,
+            transport.playback_rate,
+            transport.generation,
+            transport.beat_position as f64,
+            transport.beat_interval_seconds,
+            transport
+                .source_timelines
                 .into_iter()
                 .map(|source| {
+                    let mode = match (source.kind, source.speed_ramp) {
+                        (SourceTimelineKind::SpeedRamp, Some(profile)) => {
+                            bsp_decode::SourceTimelineMode::SpeedRamp(
+                                bsp_decode::SpeedRampProfile {
+                                    length_percent: profile.length_percent,
+                                    speed_min_percent: profile.speed_min_percent,
+                                    speed_max_percent: profile.speed_max_percent,
+                                    bezier_y0_percent: profile.bezier_y0_percent,
+                                    bezier_x1_percent: profile.bezier_x1_percent,
+                                    bezier_y1_percent: profile.bezier_y1_percent,
+                                    bezier_x2_percent: profile.bezier_x2_percent,
+                                    bezier_y2_percent: profile.bezier_y2_percent,
+                                    bezier_y3_percent: profile.bezier_y3_percent,
+                                    bypassed: profile.bypassed,
+                                },
+                            )
+                        }
+                        _ => bsp_decode::SourceTimelineMode::Linear,
+                    };
                     (
                         source.source_id,
-                        (
-                            source.position_us.max(0),
-                            source.playback_rate.clamp(0.01, 4.0),
-                        ),
+                        bsp_decode::SourceTimelineAnchor {
+                            position_us: source.position_us.max(0),
+                            playback_rate: source.playback_rate.clamp(0.01, 4.0),
+                            mode,
+                        },
                     )
                 })
                 .collect(),
         );
+    compositor.update_effect_transport(NativeEffectTransport {
+        position_seconds: transport.position_us.max(0) as f32 / 1_000_000.0,
+        beat_position: transport.beat_position,
+        beat_phase: transport.beat_phase,
+        bpm: transport.bpm,
+        playback_rate: transport.playback_rate.clamp(0.01, 4.0) as f32,
+        playing: transport.playing,
+        generation: transport.generation,
+        fixed_step_seconds: transport.fixed_step_seconds,
+        fixed_step_index: transport.fixed_step_index,
+        fixed_step_phase: transport.fixed_step_phase,
+        amplitude: transport.amplitude,
+        bass_amp: transport.bass_amp,
+        pitch_semitones: transport.pitch_semitones,
+        time_sampler_accent_position_seconds: transport.time_sampler_accent_position_seconds,
+        time_sampler_accent_mode: transport.time_sampler_accent_mode,
+    });
     Ok(())
 }
 

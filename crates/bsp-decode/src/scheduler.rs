@@ -12,6 +12,97 @@ const PREVIEW_MAX_HEIGHT: u32 = 144;
 pub const PROGRAM_FRAME_PREFIX: &str = "__bsp_pgm__:";
 pub const PREPARED_PROGRAM_FRAME_PREFIX: &str = "__bsp_pgm_prepared__:";
 
+#[derive(Debug, Clone)]
+pub struct SourceTimelineAnchor {
+    pub position_us: i64,
+    pub playback_rate: f64,
+    pub mode: SourceTimelineMode,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum SourceTimelineMode {
+    #[default]
+    Linear,
+    SpeedRamp(SpeedRampProfile),
+}
+
+#[derive(Debug, Clone)]
+pub struct SpeedRampProfile {
+    pub length_percent: f64,
+    pub speed_min_percent: f64,
+    pub speed_max_percent: f64,
+    pub bezier_y0_percent: f64,
+    pub bezier_x1_percent: f64,
+    pub bezier_y1_percent: f64,
+    pub bezier_x2_percent: f64,
+    pub bezier_y2_percent: f64,
+    pub bezier_y3_percent: f64,
+    pub bypassed: bool,
+}
+
+impl Default for SpeedRampProfile {
+    fn default() -> Self {
+        Self {
+            length_percent: 36.0,
+            speed_min_percent: 25.0,
+            speed_max_percent: 75.0,
+            bezier_y0_percent: 100.0,
+            bezier_x1_percent: 35.0,
+            bezier_y1_percent: 0.0,
+            bezier_x2_percent: 65.0,
+            bezier_y2_percent: 0.0,
+            bezier_y3_percent: 100.0,
+            bypassed: false,
+        }
+    }
+}
+
+impl SpeedRampProfile {
+    fn cubic_bezier(a: f64, b: f64, c: f64, d: f64, t: f64) -> f64 {
+        let mt = 1.0 - t;
+        mt * mt * mt * a + 3.0 * mt * mt * t * b + 3.0 * mt * t * t * c + t * t * t * d
+    }
+
+    pub fn rate_at_beat(&self, beat: f64) -> f64 {
+        if self.bypassed {
+            return 1.0;
+        }
+        const CYCLE_BEATS: [f64; 7] = [1.0, 2.0, 4.0, 8.0, 16.0, 24.0, 32.0];
+        let length = (self.length_percent / 100.0).clamp(0.0, 1.0);
+        let cycle_index = ((length * 7.0).floor() as usize).min(CYCLE_BEATS.len() - 1);
+        let cycle_beats = CYCLE_BEATS[cycle_index];
+        let phase = beat.rem_euclid(cycle_beats) / cycle_beats;
+        let x1 = (self.bezier_x1_percent / 100.0).clamp(0.0, 1.0);
+        let x2 = (self.bezier_x2_percent / 100.0).clamp(0.0, 1.0);
+        let mut lo = 0.0;
+        let mut hi = 1.0;
+        let mut t = phase;
+        for _ in 0..18 {
+            t = (lo + hi) * 0.5;
+            if Self::cubic_bezier(0.0, x1, x2, 1.0, t) < phase {
+                lo = t;
+            } else {
+                hi = t;
+            }
+        }
+        let y0 = (self.bezier_y0_percent / 100.0).clamp(0.0, 1.0);
+        let y1 = (self.bezier_y1_percent / 100.0).clamp(0.0, 1.0);
+        let y2 = (self.bezier_y2_percent / 100.0).clamp(0.0, 1.0);
+        let y3 = (self.bezier_y3_percent / 100.0).clamp(0.0, 1.0);
+        let curve = Self::cubic_bezier(y0, y1, y2, y3, t).clamp(0.0, 1.0);
+        let to_rate = |percent: f64| 0.25 * 2.0_f64.powf((percent / 100.0) * 4.0);
+        let rate_min = to_rate(self.speed_min_percent.min(self.speed_max_percent));
+        let rate_max = to_rate(self.speed_min_percent.max(self.speed_max_percent));
+        let signed_weight = curve * 2.0 - 1.0;
+        let rate = if signed_weight >= 0.0 {
+            rate_max.powf(signed_weight)
+        } else {
+            rate_min.powf(-signed_weight)
+        };
+        rate.clamp(0.0625, 4.0)
+    }
+}
+
 struct ClipLane {
     path: String,
     source_width: u32,
@@ -468,7 +559,9 @@ struct TransportAnchor {
     playing: bool,
     generation: u64,
     updated_at: Instant,
-    source_timelines: HashMap<String, (i64, f64)>,
+    beat_position: f64,
+    beat_interval_seconds: f64,
+    source_timelines: HashMap<String, SourceTimelineAnchor>,
 }
 
 impl Default for TransportAnchor {
@@ -479,6 +572,8 @@ impl Default for TransportAnchor {
             playing: false,
             generation: 0,
             updated_at: Instant::now(),
+            beat_position: 0.0,
+            beat_interval_seconds: 60.0 / 128.0,
             source_timelines: HashMap::new(),
         }
     }
@@ -495,13 +590,48 @@ impl TransportAnchor {
     }
 
     fn current_source_position_us(&self, source_id: &str) -> i64 {
-        let Some((position_us, rate)) = self.source_timelines.get(source_id) else {
+        let Some(source) = self.source_timelines.get(source_id) else {
             return self.current_position_us();
         };
         if !self.playing {
-            return *position_us;
+            return source.position_us;
         }
-        position_us.saturating_add((self.updated_at.elapsed().as_micros() as f64 * rate) as i64)
+        self.source_position_after_elapsed_us(source, self.updated_at.elapsed().as_micros() as f64)
+    }
+
+    fn source_position_after_elapsed_us(
+        &self,
+        source: &SourceTimelineAnchor,
+        elapsed_wall_us: f64,
+    ) -> i64 {
+        match &source.mode {
+            SourceTimelineMode::Linear => source
+                .position_us
+                .saturating_add((elapsed_wall_us * source.playback_rate.clamp(0.01, 4.0)) as i64),
+            SourceTimelineMode::SpeedRamp(profile) => {
+                let elapsed_transport_seconds =
+                    elapsed_wall_us.max(0.0) / 1_000_000.0 * self.playback_rate;
+                if elapsed_transport_seconds <= 0.0 {
+                    return source.position_us;
+                }
+                // Integrate the same beat-domain bezier used by the browser at
+                // 240 transport steps/second. This is intentionally local to
+                // Rust: a sparse JS anchor never becomes a 250 ms constant-rate
+                // segment followed by a visible correction.
+                let steps = (elapsed_transport_seconds * 240.0).ceil().max(1.0) as usize;
+                let step_seconds = elapsed_transport_seconds / steps as f64;
+                let beat_interval = self.beat_interval_seconds.max(0.001);
+                let mut source_delta_seconds = 0.0;
+                for step in 0..steps {
+                    let midpoint_seconds = (step as f64 + 0.5) * step_seconds;
+                    let beat = self.beat_position + midpoint_seconds / beat_interval;
+                    source_delta_seconds += profile.rate_at_beat(beat) * step_seconds;
+                }
+                source
+                    .position_us
+                    .saturating_add((source_delta_seconds * 1_000_000.0) as i64)
+            }
+        }
     }
 }
 
@@ -629,7 +759,9 @@ impl DecodeScheduler {
         playing: bool,
         playback_rate: f64,
         generation: u64,
-        source_timelines: HashMap<String, (i64, f64)>,
+        beat_position: f64,
+        beat_interval_seconds: f64,
+        source_timelines: HashMap<String, SourceTimelineAnchor>,
     ) {
         self.transport = TransportAnchor {
             position_us: position_us.max(0),
@@ -637,6 +769,8 @@ impl DecodeScheduler {
             playing,
             generation,
             updated_at: Instant::now(),
+            beat_position,
+            beat_interval_seconds: beat_interval_seconds.max(0.001),
             source_timelines,
         };
     }
@@ -863,10 +997,7 @@ impl DecodeScheduler {
             }
             if let Some(frame) = prepared.lane.worker.take_latest() {
                 let mut hidden = frame.retained_for_sequence(frame.sequence);
-                hidden.module_id = format!(
-                    "{PREPARED_PROGRAM_FRAME_PREFIX}{}",
-                    prepared.source_id
-                );
+                hidden.module_id = format!("{PREPARED_PROGRAM_FRAME_PREFIX}{}", prepared.source_id);
                 frames.push(hidden);
                 prepared.ready = Some(frame);
             }
@@ -950,7 +1081,13 @@ pub fn synthetic_frame(
 
 #[cfg(test)]
 mod tests {
-    use super::target_dimensions;
+    use std::collections::HashMap;
+    use std::time::Instant;
+
+    use super::{
+        target_dimensions, SourceTimelineAnchor, SourceTimelineMode, SpeedRampProfile,
+        TransportAnchor,
+    };
 
     #[test]
     fn preview_dimensions_are_bounded_and_aspect_preserving() {
@@ -963,5 +1100,58 @@ mod tests {
     fn program_dimensions_keep_source_quality() {
         assert_eq!(target_dimensions(1920, 1080, true), (1920, 1080));
         assert_eq!(target_dimensions(640, 360, true), (640, 360));
+    }
+
+    #[test]
+    fn speed_ramp_profile_matches_the_browser_rate_curve() {
+        let profile = SpeedRampProfile::default();
+        let fast = profile.rate_at_beat(0.0);
+        let slow = profile.rate_at_beat(2.0);
+        assert!((fast - 2.0).abs() < 0.001);
+        assert!(
+            slow < 1.0,
+            "mid-cycle rate should enter the slow half: {slow}"
+        );
+    }
+
+    #[test]
+    fn speed_ramp_reanchors_without_a_piecewise_constant_jump() {
+        let profile = SpeedRampProfile::default();
+        let source = SourceTimelineAnchor {
+            position_us: 0,
+            playback_rate: profile.rate_at_beat(0.0),
+            mode: SourceTimelineMode::SpeedRamp(profile.clone()),
+        };
+        let anchor = TransportAnchor {
+            position_us: 0,
+            playback_rate: 1.0,
+            playing: true,
+            generation: 1,
+            updated_at: Instant::now(),
+            beat_position: 0.0,
+            beat_interval_seconds: 0.5,
+            source_timelines: HashMap::new(),
+        };
+        let after_250_ms = anchor.source_position_after_elapsed_us(&source, 250_000.0);
+        // A constant 2x extrapolation would land at 500ms. The native curve
+        // must already be bending before the next sparse transport anchor.
+        assert!(after_250_ms > 250_000 && after_250_ms < 500_000);
+
+        let reanchored_source = SourceTimelineAnchor {
+            position_us: after_250_ms,
+            playback_rate: profile.rate_at_beat(0.5),
+            mode: SourceTimelineMode::SpeedRamp(profile),
+        };
+        let uninterrupted = anchor.source_position_after_elapsed_us(&source, 266_667.0);
+        let reanchored = TransportAnchor {
+            beat_position: 0.5,
+            ..anchor
+        };
+        let continued = reanchored.source_position_after_elapsed_us(&reanchored_source, 16_667.0);
+        assert!(
+            (continued - uninterrupted).abs() < 1_000,
+            "sparse re-anchor diverged by {}us",
+            (continued - uninterrupted).abs()
+        );
     }
 }

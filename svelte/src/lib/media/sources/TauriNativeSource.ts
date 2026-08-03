@@ -13,6 +13,19 @@ export interface NativeSourceTimeline {
   positionUs: number;
   playbackRate: number;
   revision?: number;
+  kind?: 'linear' | 'speed-ramp';
+  speedRamp?: {
+    lengthPercent: number;
+    speedMinPercent: number;
+    speedMaxPercent: number;
+    bezierY0Percent: number;
+    bezierX1Percent: number;
+    bezierY1Percent: number;
+    bezierX2Percent: number;
+    bezierY2Percent: number;
+    bezierY3Percent: number;
+    bypassed: boolean;
+  };
 }
 
 export interface NativeDecodeStats {
@@ -43,10 +56,23 @@ export interface NativeDecodeStats {
       effectMode: number;
       effectRequestedFrame: number;
       effectAppliedFrame: number;
+      effectMix: number;
+      effectP0: number;
+      effectP1: number;
+      effectP2: number;
+      effectP3: number;
+      effectParamsRequestedFrame: number;
+      effectParamsAppliedFrame: number;
       width: number;
       height: number;
+      displayWidth: number;
+      displayHeight: number;
       timestampUs: number;
       sequence: number;
+      sourceFrameChanges: number;
+      largeTimestampJumps: number;
+      timestampRegressions: number;
+      maxBackwardTimestampUs: number;
     }>;
     cuts: Array<{
       sourceId: string;
@@ -99,6 +125,13 @@ export class TauriNativeSource implements VideoSourcePort {
   private lastProgramSwitchMs = Number.NEGATIVE_INFINITY;
   private sourceTimelines: NativeSourceTimeline[] = [];
   private lastSourceRevisionKey = '';
+  private effectAudio = {
+    amplitude: 0,
+    bassAmp: 0,
+    pitchSemitones: 0,
+    timeSamplerAccentPositionSeconds: -1,
+    timeSamplerAccentMode: 2
+  };
 
   async attach(moduleId: string, path: string) {
     if (!isTauriRuntime()) throw new Error('TauriNativeSource requires the desktop runtime');
@@ -149,6 +182,24 @@ export class TauriNativeSource implements VideoSourcePort {
 
   setSourceTimelines(sourceTimelines: NativeSourceTimeline[]) {
     this.sourceTimelines = sourceTimelines;
+  }
+
+  /** Sparse audio analysis values ride with the existing 250 ms transport
+   * anchor. Rust extrapolates beat/position locally at display cadence. */
+  setEffectAudio(
+    amplitude: number,
+    bassAmp: number,
+    pitchSemitones: number,
+    timeSamplerAccentPositionSeconds: number,
+    timeSamplerAccentMode: number
+  ) {
+    this.effectAudio = {
+      amplitude,
+      bassAmp,
+      pitchSemitones,
+      timeSamplerAccentPositionSeconds,
+      timeSamplerAccentMode
+    };
   }
 
   getDuration(sourceId: string) {
@@ -234,7 +285,9 @@ export class TauriNativeSource implements VideoSourcePort {
     const transportChanged =
       frame.generation !== this.lastGeneration || frame.playing !== this.lastPlaying;
     const sourceRevisionKey = this.sourceTimelines
-      .map((source) => `${source.sourceId}:${source.revision ?? 0}`)
+      .map((source) => `${source.sourceId}:${source.revision ?? 0}:${source.kind ?? 'linear'}:${
+        source.speedRamp ? JSON.stringify(source.speedRamp) : ''
+      }`)
       .sort()
       .join('|');
     if (
@@ -243,11 +296,26 @@ export class TauriNativeSource implements VideoSourcePort {
       nowMs - this.lastTransportSyncMs >= 250
     ) {
       await invoke('update_decode_transport', {
-        positionUs: Math.round(frame.positionSeconds * 1_000_000),
-        playing: frame.playing,
-        playbackRate: frame.playbackRate,
-        generation: frame.generation,
-        sourceTimelines: this.sourceTimelines
+        transport: {
+          positionUs: Math.round(frame.positionSeconds * 1_000_000),
+          playing: frame.playing,
+          playbackRate: frame.playbackRate,
+          generation: frame.generation,
+          beatPosition: frame.beatPosition,
+          beatPhase: frame.beatPhase,
+          bpm: frame.bpm,
+          beatIntervalSeconds: frame.beatIntervalSeconds,
+          fixedStepSeconds: frame.fixedStepSeconds,
+          fixedStepIndex: frame.fixedStepIndex,
+          fixedStepPhase: frame.fixedStepPhase,
+          amplitude: this.effectAudio.amplitude,
+          bassAmp: this.effectAudio.bassAmp,
+          pitchSemitones: this.effectAudio.pitchSemitones,
+          timeSamplerAccentPositionSeconds:
+            this.effectAudio.timeSamplerAccentPositionSeconds,
+          timeSamplerAccentMode: this.effectAudio.timeSamplerAccentMode,
+          sourceTimelines: this.sourceTimelines
+        }
       });
       this.lastTransportSyncMs = nowMs;
       this.lastGeneration = frame.generation;
