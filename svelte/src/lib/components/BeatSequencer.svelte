@@ -8,8 +8,12 @@
     listCatalog().filter((m) => [...$rackTop, ...$rackBottom].includes(m.id))
   );
 
+  // The running playhead is part of being armed. Left ungated it kept chasing
+  // the beat on an idle sequencer, which is motion with nothing behind it.
   const activeStep = $derived(
-    $transportDisplay.playing ? Math.floor($transportDisplay.beat * 4) % 16 : -1
+    $sequencerArmed && $transportDisplay.playing
+      ? Math.floor($transportDisplay.beat * 4) % 16
+      : -1
   );
 
   let paintModule = $state<string | null>(null);

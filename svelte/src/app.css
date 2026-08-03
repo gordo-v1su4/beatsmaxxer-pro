@@ -123,6 +123,10 @@ input[type='range']::-moz-range-thumb {
 	flex: 1;
 	display: flex;
 	flex-direction: column;
+	/* Centre the fixed-width rack instead of pinning it left. Growing the
+	   modules to fill a wide window would also grow their 16:9 previews, and
+	   two taller rows are what push the controls off the bottom. */
+	align-items: center;
 	min-width: calc(var(--rack-module-width) * 5 + 4px);
 	min-height: 0;
 	overflow: visible;

@@ -75,6 +75,13 @@ fn hash21(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
 }
 
+/** Mirrored repeat that maps 0.5 back to 0.5, so a fold centred on the frame
+    stays centred on the source. Folding with fract(x + 0.5) instead lands the
+    centre of the frame on the corner of the source. */
+fn mirrorRepeat(x: f32) -> f32 {
+  return 1.0 - abs(fract(x * 0.5) * 2.0 - 1.0);
+}
+
 /** Shared idle-card treatment: graphics fade to black toward the top and bottom
     of the lower band so every module's idle reads as one family. */
 fn idleFade(y: f32) -> f32 {
@@ -793,9 +800,12 @@ fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
     p = vec2f(cos(ang), sin(ang)) * r;
     uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
   } else {
+    // Recursive fold. mirrorRepeat keeps the screen centre on the source
+    // centre; folding with fract(p + 0.5) instead lands the centre of the
+    // frame on the corner of the source, which reads as an off-centre smear.
     let z = 1.0 + u.p2 * 2.0 + pulse * 1.5;
-    let p = (uv0 - vec2f(0.5)) * z;
-    uv = abs(fract(p + vec2f(0.5)) * 2.0 - vec2f(1.0));
+    let q = (uv0 - vec2f(0.5)) * z + vec2f(0.5);
+    uv = vec2f(mirrorRepeat(q.x), mirrorRepeat(q.y));
   }
   return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
 }
