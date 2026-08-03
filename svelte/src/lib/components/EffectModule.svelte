@@ -127,6 +127,13 @@
     >
       {mod.name}
     </span>
+    {#if isOnAir}
+      <span
+        style="font-family:var(--font-ui);font-size:6.5px;font-weight:700;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
+      >
+        ON AIR
+      </span>
+    {/if}
     <button
       type="button"
       onclick={() => toggleModuleCollapsed(mod.id)}
