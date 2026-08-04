@@ -23,9 +23,7 @@ export default defineConfig(({ mode, command }) => {
 		env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
 		''
 	).trim();
-	const essentiaEnabled =
-		isAnalysisProxyConfigured(essentiaProxyConfig) &&
-		(command === 'serve' || isTauriBuild);
+	const essentiaEnabled = isAnalysisProxyConfigured(essentiaProxyConfig);
 	// Native decode/composition is the desktop contract. The legacy CPU-frame
 	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
 	// values from the older experimental phase must not silently disable the

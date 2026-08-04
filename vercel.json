@@ -3,6 +3,11 @@
   "installCommand": "cd svelte && bun install",
   "buildCommand": "cd svelte && bun run build",
   "outputDirectory": "svelte/build",
+  "functions": {
+    "api/analyze/[endpoint].ts": {
+      "maxDuration": 20
+    }
+  },
   "rewrites": [
     {
       "source": "/favicon.ico",
