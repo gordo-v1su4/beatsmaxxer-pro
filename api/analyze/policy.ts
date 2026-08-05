@@ -47,6 +47,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_content_type: "Analysis uploads must use multipart/form-data with a valid boundary.",
   upload_too_large: "Analysis upload exceeds the allowed request size.",
   analysis_busy: "Hosted analysis is busy. Try again later or use realtime analysis.",
+  request_body_unavailable: "The analysis upload could not be read by the server. Realtime analysis remains available.",
   upstream_timeout: "Hosted analysis timed out. Realtime analysis remains available.",
   upstream_rejected: "Hosted analysis rejected the upload.",
   upstream_unavailable: "Hosted analysis is unavailable. Realtime analysis remains available.",
@@ -74,7 +75,20 @@ function isTailscaleCgnatHost(hostname: string): boolean {
 }
 
 export function isAnalysisProxyConfigured(config: AnalysisProxyConfig) {
-  if (!config.enabled || !config.apiBaseUrl || !config.apiKey) return false;
+  return isAnalysisUploadPathEnabled(config) && Boolean(config.apiKey);
+}
+
+/**
+ * Build-time gate for the browser upload path. Deliberately does NOT require the
+ * API key: the key is a runtime-only server secret, and on Vercel it may be
+ * scoped so the build step never sees it. Requiring it here compiled ANALYZE off
+ * in the production bundle with no diagnostic, which is what broke hosted
+ * analysis on the web deployment. The function still performs the full
+ * `isAnalysisProxyConfigured` check and answers 503 `analysis_unavailable` when
+ * the credential is genuinely missing, so the client fails loudly, not silently.
+ */
+export function isAnalysisUploadPathEnabled(config: Pick<AnalysisProxyConfig, "enabled" | "apiBaseUrl">) {
+  if (!config.enabled || !config.apiBaseUrl) return false;
   try {
     const url = new URL(config.apiBaseUrl);
     const allowedProtocol = url.protocol === "https:" ||
@@ -162,6 +176,11 @@ export async function proxyAnalysisRequest(
   try {
     const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
     if (controller.signal.aborted) return null;
+    // A declared Content-Length with nothing readable behind it means the host
+    // drained the stream before we got it (a platform body parser). Forwarding
+    // the empty envelope would surface as an opaque upstream rejection, so name
+    // the real cause instead of blaming the upstream service.
+    if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
 
     let upstream: Response;
     try {

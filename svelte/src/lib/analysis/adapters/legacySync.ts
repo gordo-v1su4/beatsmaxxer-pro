@@ -44,7 +44,12 @@ export async function fetchLegacySyncAnalysis(
   return requestLegacySyncAnalysis(formData, options);
 }
 
-const ANALYSIS_FETCH_TIMEOUT_MS = 20_000;
+// Outermost rung of the timeout ladder: upstream 15s < function maxDuration 30s
+// < client 40s. The client must lose last, otherwise it aborts a request the
+// server would have answered with a specific, actionable error code. The upload
+// itself (up to ~3.4 MB) counts against the function budget, so the gaps are
+// sized for a slow connection rather than a warm one.
+const ANALYSIS_FETCH_TIMEOUT_MS = 40_000;
 
 async function fetchWithTimeout(
   fetchImpl: typeof globalThis.fetch,

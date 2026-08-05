@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   analysisProxyConfigFromEnv,
   isAnalysisProxyConfigured,
+  isAnalysisUploadPathEnabled,
   isTrustedSameOriginRequest,
   parseMultipartContentType,
   proxyAnalysisRequest,
@@ -47,6 +48,30 @@ describe("analysis proxy policy", () => {
       apiKey: "server-secret",
       deploymentMode: "development",
     })).toBe(false);
+  });
+
+  it("gates the browser upload path without needing the runtime-only credential", () => {
+    // The key is a server secret that the Vercel build step may never see.
+    // Requiring it here is what compiled ANALYZE off in the production bundle.
+    const keyless = { enabled: true, apiBaseUrl: "https://analysis.invalid", apiKey: "" };
+    expect(isAnalysisUploadPathEnabled(keyless)).toBe(true);
+    expect(isAnalysisProxyConfigured({ ...keyless, deploymentMode: "production" })).toBe(false);
+
+    expect(isAnalysisUploadPathEnabled({ enabled: false, apiBaseUrl: "https://analysis.invalid" })).toBe(false);
+    expect(isAnalysisUploadPathEnabled({ enabled: true, apiBaseUrl: "" })).toBe(false);
+    expect(isAnalysisUploadPathEnabled({ enabled: true, apiBaseUrl: "http://insecure.invalid" })).toBe(false);
+  });
+
+  it("names an unreadable request body instead of blaming the upstream service", async () => {
+    const fetch = vi.fn();
+    const result = await proxyAnalysisRequest(
+      { ...request(), body: stream() },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(500);
+    expect(result?.body).toContain("request_body_unavailable");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("is default-off and ignores client-visible aliases", () => {

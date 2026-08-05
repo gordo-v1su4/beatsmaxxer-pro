@@ -5,6 +5,12 @@
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
+  import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
+  import {
+    readHostedAnalysisPreference,
+    setHostedAnalysisPreference,
+    type HostedAnalysisPreference
+  } from '$lib/audio/hostedAnalysisPreference';
 
   interface Props {
     onRandomize: () => void;
@@ -39,6 +45,13 @@
   let localOnlyButton = $state<HTMLButtonElement>();
   let cancelButton = $state<HTMLButtonElement>();
   let pendingAudioFile = $state<File | null>(null);
+  let rememberChoice = $state(false);
+  let analysisPreference = $state<HostedAnalysisPreference>('ask');
+  const hostedAnalysisAvailable = isHostedAnalysisEnabled();
+
+  $effect(() => {
+    analysisPreference = readHostedAnalysisPreference();
+  });
 
   $effect(() => {
     const td = $transportDisplay;
@@ -160,6 +173,22 @@
     const file = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
+
+    // A choice the operator already made, and asked us to keep, is still an
+    // explicit choice — honour it so the song analyzes the moment it lands
+    // instead of stopping on the same modal every time. Consent is only ever
+    // skipped forward from a remembered "analyze"; never assumed.
+    const remembered = readHostedAnalysisPreference();
+    if (remembered === 'analyze' && hostedAnalysisAvailable) {
+      await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
+      return;
+    }
+    if (remembered === 'local') {
+      await audioEngine.loadAudioFile(file, { hostedAnalysis: false });
+      return;
+    }
+
+    rememberChoice = false;
     pendingAudioFile = file;
     setTimeout(() => localOnlyButton?.focus(), 0);
   }
@@ -171,7 +200,16 @@
       songButton?.focus();
       return;
     }
+    if (rememberChoice) {
+      setHostedAnalysisPreference(choice);
+      analysisPreference = choice;
+    }
     await audioEngine.loadAudioFile(file, { hostedAnalysis: choice === 'analyze' });
+  }
+
+  function resetAnalysisPreference() {
+    setHostedAnalysisPreference('ask');
+    analysisPreference = 'ask';
   }
 
   async function handleClipsUpload(e: Event) {
@@ -207,6 +245,19 @@
     <button bind:this={songButton} type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
       <Upload size={10} /> SONG
     </button>
+
+    {#if analysisPreference !== 'ask'}
+      <button
+        type="button"
+        onclick={resetAnalysisPreference}
+        class="transport-btn consent-memo"
+        title="New songs are loaded {analysisPreference === 'analyze'
+          ? 'with hosted analysis'
+          : 'locally only'} without asking. Click to be asked again."
+      >
+        AUTO·{analysisPreference === 'analyze' ? 'RHY' : 'LOC'}
+      </button>
+    {/if}
 
     {#if onLoadClips}
       <button
@@ -440,6 +491,10 @@
         or ownership terms.
       </p>
       <p class="analysis-consent-file">{pendingAudioFile.name}</p>
+      <label class="analysis-consent-remember">
+        <input type="checkbox" bind:checked={rememberChoice} />
+        <span>Remember this choice and apply it to new songs automatically</span>
+      </label>
       <div class="analysis-consent-actions">
         <button
           bind:this={analyzeButton}
@@ -514,11 +569,33 @@
     white-space: nowrap;
   }
 
+  .analysis-consent-remember {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 14px;
+    color: #8d96a5;
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1.35;
+  }
+
+  .analysis-consent-remember input {
+    flex: none;
+    accent-color: #38bdf8;
+    cursor: pointer;
+  }
+
   .analysis-consent-actions {
     display: flex;
     justify-content: flex-end;
     gap: 7px;
     margin-top: 16px;
+  }
+
+  .consent-memo {
+    color: #38bdf8;
+    letter-spacing: 0.06em;
   }
 
   .consent-btn {
