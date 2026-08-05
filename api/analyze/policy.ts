@@ -18,6 +18,10 @@ export interface AnalysisProxyRequest {
   endpoint?: string;
   contentType?: string;
   contentLength?: string;
+  origin?: string;
+  host?: string;
+  forwardedProto?: string;
+  fetchSite?: string;
   body: AsyncIterable<Uint8Array>;
   signal?: AbortSignal;
 }
@@ -38,8 +42,8 @@ export interface AnalysisProxyOptions {
 
 const ERROR_MESSAGES: Record<string, string> = {
   analysis_disabled: "Hosted analysis is disabled. Local playback and realtime analysis remain available.",
-  production_relay_blocked: "Hosted analysis is unavailable in production. Local playback and realtime analysis remain available.",
   analysis_unavailable: "Hosted analysis is unavailable. Local playback and realtime analysis remain available.",
+  cross_origin_forbidden: "Hosted analysis requests must come from this application.",
   invalid_content_type: "Analysis uploads must use multipart/form-data with a valid boundary.",
   upload_too_large: "Analysis upload exceeds the allowed request size.",
   analysis_busy: "Hosted analysis is busy. Try again later or use realtime analysis.",
@@ -93,6 +97,32 @@ export function parseMultipartContentType(value: string | undefined): string | n
     : null;
 }
 
+export function isTrustedSameOriginRequest(request: Pick<
+  AnalysisProxyRequest,
+  "origin" | "host" | "forwardedProto" | "fetchSite"
+>) {
+  if (!request.origin || !request.host) return false;
+  if (request.fetchSite && request.fetchSite !== "same-origin") return false;
+
+  try {
+    const origin = new URL(request.origin);
+    const forwardedProto = request.forwardedProto?.split(",")[0]?.trim().toLowerCase();
+    const expectedProtocol = forwardedProto ? `${forwardedProto}:` : origin.protocol;
+    const host = request.host.split(",")[0]?.trim().toLowerCase();
+    return (
+      Boolean(host) &&
+      origin.protocol === expectedProtocol &&
+      origin.host.toLowerCase() === host &&
+      !origin.username &&
+      !origin.password &&
+      !origin.search &&
+      !origin.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function proxyAnalysisRequest(
   request: AnalysisProxyRequest,
   config: AnalysisProxyConfig,
@@ -101,9 +131,12 @@ export async function proxyAnalysisRequest(
   const endpoint = request.endpoint;
   if (endpoint !== "fast" && endpoint !== "rhythm") return jsonError(404, "not_found", "Analysis endpoint not found.");
   if (request.method !== "POST") return jsonError(405, "method_not_allowed", "Only POST analysis requests are supported.");
-  // This repository has no request-authentication authority or durable per-client
-  // rate limiter. Never expose its server credential through a production relay.
-  if (config.deploymentMode === "production") return jsonError(503, "production_relay_blocked");
+  // The Vercel production route is additionally protected by an IP-keyed WAF
+  // rate limit. Keep this same-origin check in the function as defense in depth
+  // and reject before reading a user upload or contacting the upstream service.
+  if (config.deploymentMode === "production" && !isTrustedSameOriginRequest(request)) {
+    return jsonError(403, "cross_origin_forbidden");
+  }
   if (!config.enabled) return jsonError(503, "analysis_disabled");
   if (!isAnalysisProxyConfigured(config)) return jsonError(503, "analysis_unavailable");
   if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
