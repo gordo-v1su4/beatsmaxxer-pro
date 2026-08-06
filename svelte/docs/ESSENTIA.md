@@ -13,7 +13,7 @@ The processor asset is copied to `static/soundtouch-processor.js` during prepara
 
 # Hosted rhythm analysis
 
-Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit in development:
+Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit:
 
 ```bash
 ESSENTIA_ANALYSIS_ENABLED=true
@@ -21,15 +21,45 @@ ESSENTIA_API_BASE_URL=https://approved-analysis-service.example
 ESSENTIA_API_KEY=server-only-secret
 ```
 
-The browser always calls the same-origin `/__api/analyze/fast` and `/__api/analyze/rhythm` routes. The Vite development proxy injects the credential on the server; no `VITE_ESSENTIA_API_URL`, `VITE_ESSENTIA_API_BASE_URL`, or `VITE_ESSENTIA_API_KEY` alias is supported. Production builds compile the browser upload path off, and the production function independently rejects relay requests before reading or forwarding their bodies.
+The browser always calls the same-origin `/__api/analyze/fast` and `/__api/analyze/rhythm` routes. The Vite development proxy or Vercel function injects the credential on the server; no `VITE_ESSENTIA_API_URL`, `VITE_ESSENTIA_API_BASE_URL`, or `VITE_ESSENTIA_API_KEY` alias is supported. The key is never compiled into the browser bundle.
+
+### Which variables each stage needs
+
+| Variable | Build (browser bundle) | Runtime (function / Tauri) |
+|---|---|---|
+| `ESSENTIA_ANALYSIS_ENABLED` | required | required |
+| `ESSENTIA_API_BASE_URL` | required | required |
+| `ESSENTIA_API_KEY` | **not read** | required |
+
+The build gate (`isAnalysisUploadPathEnabled`) deliberately ignores the key. The key is a runtime-only secret and a deployment may legitimately withhold it from the build step; when the build demanded it, the production bundle compiled the upload path off and `ANALYZE` failed with no diagnostic. The function still applies the full `isAnalysisProxyConfigured` check and answers `503 analysis_unavailable` when the credential is genuinely missing, so a misconfiguration is visible instead of silent.
+
+On Vercel, set all three in **Project → Settings → Environment Variables** for the Production environment. `ESSENTIA_ANALYSIS_ENABLED` and `ESSENTIA_API_BASE_URL` must be readable by the build; changing either requires a redeploy, because they are compiled into the bundle.
+
+### Timeout ladder
+
+Each layer must outlast the one below it, so the innermost failure is the one reported:
+
+| Layer | Limit | Set in |
+|---|---|---|
+| Upstream Essentia call | 15 s | `ANALYSIS_UPSTREAM_TIMEOUT_MS` |
+| Vercel function | 30 s | `vercel.json` → `functions.maxDuration` |
+| Browser fetch | 40 s | `ANALYSIS_FETCH_TIMEOUT_MS` |
+
+Vercel's default function limit is 10 s, which cut requests off before the upstream timeout could report anything useful; `maxDuration` must stay above the upstream timeout plus upload time. Uploads are capped client-side at 3.4 MB to stay under Vercel's ~4.5 MB request body limit.
 
 When hosted analysis is enabled, the selected audio (or a smaller prepared WAV) leaves the browser and is sent to the configured service. This repository cannot promise the upstream service's retention or deletion behavior. If hosted analysis is disabled or fails, local playback continues and realtime analysis is used as the fallback.
 
 The proxy accepts only `POST` to `fast` or `rhythm`, and only an outer `multipart/form-data` envelope with a valid boundary. It forwards the bounded multipart bytes opaquely; it does **not** parse the inner part or claim file-type validation. Total requests are limited to 3,500,000 bytes, upstream responses to 1,000,000 bytes, upstream time to 15 seconds, and concurrent requests to two per server instance. Errors returned to the browser are stable and sanitized.
 
-## Production block
+## Production safeguards
 
-The production function would otherwise be a public, unauthenticated relay for a credentialed upstream. Size, timeout, concurrency, and origin checks are not authentication or sufficient abuse prevention. Because this repository provides neither request authentication/authorization nor durable per-client rate limiting, the production relay is always disabled even if analysis environment variables are present. A future production path requires an approved design and implementation for those controls, plus service-owner, credential, retention/privacy, consent, and deployment authority.
+The production relay is enabled only when all three server-only variables above are configured — the first two at build, all three at runtime. It rejects requests whose `Origin`, forwarded protocol, host, or Fetch Metadata do not identify the same deployed application. The route accepts only the two named POST endpoints and valid bounded multipart uploads, limits concurrent upstream calls, applies an upstream timeout, sanitizes failures, and never exposes the Essentia credential.
+
+The Vercel project must also publish an IP-keyed WAF rate limit scoped to `POST /__api/analyze/*`. The intended initial limit is 10 analysis requests per 10 minutes per source IP. Do not deploy an enabled public relay without that rule. Vercel's platform DDoS protection remains an additional layer; it does not replace the endpoint-specific rate limit.
+
+The visible `SONG` flow requires an explicit choice between **ANALYZE**, **LOCAL ONLY**, and **CANCEL**. Only **ANALYZE** prepares and uploads a bounded excerpt. Local-only playback never invokes the hosted service.
+
+The prompt offers **Remember this choice**, which persists the answer to `localStorage` so later songs are analyzed the moment they load rather than stopping on the same modal every time. This is a *forward* skip from an explicit informed choice only: an absent, unreadable, or unrecognised stored value always means ask again, and a remembered `analyze` is ignored when the build has no upload path. A remembered choice stays visible next to `SONG` as an `AUTO·RHY` / `AUTO·LOC` button that clears it.
 
 Deterministic tests must inject `fetch` and must never contact the configured service. Physical browser visual proof is a separate required release gate; it does not authorize a live analysis call.
 

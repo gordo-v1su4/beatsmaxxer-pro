@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   analysisProxyConfigFromEnv,
   isAnalysisProxyConfigured,
+  isAnalysisUploadPathEnabled,
+  isTrustedSameOriginRequest,
   parseMultipartContentType,
   proxyAnalysisRequest,
   type AnalysisProxyConfig,
@@ -48,6 +50,30 @@ describe("analysis proxy policy", () => {
     })).toBe(false);
   });
 
+  it("gates the browser upload path without needing the runtime-only credential", () => {
+    // The key is a server secret that the Vercel build step may never see.
+    // Requiring it here is what compiled ANALYZE off in the production bundle.
+    const keyless = { enabled: true, apiBaseUrl: "https://analysis.invalid", apiKey: "" };
+    expect(isAnalysisUploadPathEnabled(keyless)).toBe(true);
+    expect(isAnalysisProxyConfigured({ ...keyless, deploymentMode: "production" })).toBe(false);
+
+    expect(isAnalysisUploadPathEnabled({ enabled: false, apiBaseUrl: "https://analysis.invalid" })).toBe(false);
+    expect(isAnalysisUploadPathEnabled({ enabled: true, apiBaseUrl: "" })).toBe(false);
+    expect(isAnalysisUploadPathEnabled({ enabled: true, apiBaseUrl: "http://insecure.invalid" })).toBe(false);
+  });
+
+  it("names an unreadable request body instead of blaming the upstream service", async () => {
+    const fetch = vi.fn();
+    const result = await proxyAnalysisRequest(
+      { ...request(), body: stream() },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(500);
+    expect(result?.body).toContain("request_body_unavailable");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("is default-off and ignores client-visible aliases", () => {
     expect(analysisProxyConfigFromEnv({
       VITE_ESSENTIA_API_BASE_URL: "https://leak.invalid",
@@ -55,7 +81,7 @@ describe("analysis proxy policy", () => {
     })).toEqual({ enabled: false, apiBaseUrl: "", apiKey: "", deploymentMode: "production" });
   });
 
-  it("blocks production before reading or forwarding even when fully configured and enabled", async () => {
+  it("rejects untrusted production requests before reading or forwarding", async () => {
     const fetch = vi.fn();
     let read = false;
     const body = { async *[Symbol.asyncIterator]() { read = true; yield new Uint8Array([1]); } };
@@ -64,11 +90,43 @@ describe("analysis proxy policy", () => {
       { ...enabledConfig, deploymentMode: "production" },
       { fetch: fetch as typeof globalThis.fetch },
     );
-    expect(result?.status).toBe(503);
-    expect(result?.body).toContain("production_relay_blocked");
+    expect(result?.status).toBe(403);
+    expect(result?.body).toContain("cross_origin_forbidden");
     expect(result?.body).not.toContain("server-secret");
     expect(read).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("accepts configured same-origin production requests", async () => {
+    const fetch = vi.fn(async () => new Response('{"bpm":120}', {
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      {
+        ...request(),
+        origin: "https://beat-surfer-pro.vercel.app",
+        host: "beat-surfer-pro.vercel.app",
+        forwardedProto: "https",
+        fetchSite: "same-origin",
+      },
+      { ...enabledConfig, deploymentMode: "production" },
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result).toEqual({ status: 200, contentType: "application/json", body: '{"bpm":120}' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires an exact same-origin host, protocol, and fetch-site", () => {
+    expect(isTrustedSameOriginRequest({
+      origin: "https://app.example",
+      host: "app.example",
+      forwardedProto: "https",
+      fetchSite: "same-origin",
+    })).toBe(true);
+    expect(isTrustedSameOriginRequest({ origin: "https://evil.example", host: "app.example" })).toBe(false);
+    expect(isTrustedSameOriginRequest({ origin: "http://app.example", host: "app.example", forwardedProto: "https" })).toBe(false);
+    expect(isTrustedSameOriginRequest({ origin: "https://app.example", host: "app.example", fetchSite: "cross-site" })).toBe(false);
+    expect(isTrustedSameOriginRequest({ origin: "not a URL", host: "app.example" })).toBe(false);
   });
 
   it("fails closed before fetch when disabled or missing server configuration", async () => {

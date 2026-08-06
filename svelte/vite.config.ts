@@ -6,7 +6,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
-import { isAnalysisProxyConfigured } from '../api/analyze/policy';
+import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -23,9 +23,9 @@ export default defineConfig(({ mode, command }) => {
 		env.VITE_ESSENTIA_ANALYSIS_ENGINE ||
 		''
 	).trim();
-	const essentiaEnabled =
-		isAnalysisProxyConfigured(essentiaProxyConfig) &&
-		(command === 'serve' || isTauriBuild);
+	// Key-free on purpose — see isAnalysisUploadPathEnabled. The credential is a
+	// runtime server secret and must never gate what the browser bundle can offer.
+	const essentiaEnabled = isAnalysisUploadPathEnabled(essentiaProxyConfig);
 	// Native decode/composition is the desktop contract. The legacy CPU-frame
 	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
 	// values from the older experimental phase must not silently disable the

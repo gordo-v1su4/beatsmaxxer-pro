@@ -1,0 +1,17 @@
+.git/
+.vercel/
+.env
+.env.*
+.claude/
+.codex/
+.tmp/
+.artifacts/
+node_modules/
+svelte/node_modules/
+svelte/.svelte-kit/
+svelte/build/
+desktop/target/
+dist/
+test_media/
+docs/preview.png
+*.log
