@@ -8,6 +8,7 @@
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
   import ModuleControls from '$lib/components/ModuleControls.svelte';
   import Screw from '$lib/components/rack/Screw.svelte';
+  import ModuleGrip from '$lib/components/rack/ModuleGrip.svelte';
   import HeaderBtn from '$lib/components/rack/HeaderBtn.svelte';
   import MediaPatchBay from '$lib/components/rack/MediaPatchBay.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
@@ -106,22 +107,10 @@
     applyVideoFiles([...(e.dataTransfer?.files ?? [])]);
   }}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    data-drag-handle
-    onpointerdown={onHeaderPointerDown}
-    title="Drag to reorder"
-    style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0;cursor:grab"
+    style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0"
   >
-    <Screw />
-    <div style="display:flex;flex-direction:column;gap:1.5px;margin-left:1px">
-      {#each [0, 1, 2] as i (i)}
-        <div style="display:flex;gap:1.5px">
-          <div style="width:2px;height:2px;background:#2a2e34;border-radius:50%"></div>
-          <div style="width:2px;height:2px;background:#2a2e34;border-radius:50%"></div>
-        </div>
-      {/each}
-    </div>
+    <ModuleGrip {onHeaderPointerDown} />
     <span
       style="font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};flex:1;margin-left:3px"
     >
