@@ -26,7 +26,7 @@
     ? `${c}22`
     : '#222428'} {hov && !disabled ? `${c}33` : '#1a1c1e'} {hov && !disabled ? `${c}33` : '#1a1c1e'} {hov && !disabled
     ? `${c}33`
-    : '#1a1c1e'};border-radius:3px;cursor:{disabled ? 'not-allowed' : 'pointer'};color:{hov && !disabled ? c : '#3a4050'};opacity:{disabled ? 0.45 : 1};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.1em;display:flex;align-items:center;gap:4px;transition:all 0.1s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.4)"
+    : '#1a1c1e'};border-radius:3px;cursor:{disabled ? 'not-allowed' : 'pointer'};color:{hov && !disabled ? c : '#3a4050'};opacity:{disabled ? 0.45 : 1};font-family:var(--font-ui);font-weight:500;font-size:9px;letter-spacing:0.1em;display:flex;align-items:center;gap:4px;transition:all 0.1s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.4)"
 >
   {#if icon}{@render icon()}{/if}{label}
 </button>

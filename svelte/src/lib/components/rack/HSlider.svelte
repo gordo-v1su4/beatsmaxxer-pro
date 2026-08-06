@@ -100,7 +100,7 @@
 <style>
   .hslider-label {
     font-size: 7px;
-    font-weight: 700;
+    font-weight: 500;
     color: #3a4050;
     font-family: var(--font-ui);
     letter-spacing: 0.1em;

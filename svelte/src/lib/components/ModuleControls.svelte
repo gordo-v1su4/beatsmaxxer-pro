@@ -216,7 +216,7 @@
       <Section label="STUT" {color}>
         <div style="display:flex;flex-direction:column;gap:3px">
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LEN</span>
+            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LEN</span>
             <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
               {#each [{ l: '1/32', val: 10 }, { l: '1/16', val: 30 }, { l: '1/8T', val: 50 }, { l: '1/8', val: 70 }, { l: '1/4', val: 90 }] as v (v.l)}
                 <RackBtn
@@ -230,7 +230,7 @@
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RPT</span>
+            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RPT</span>
             <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
               {#each [1, 2, 4, 6, 8] as n (n)}
                 {@const currentRepeats = Math.round((params.velCrv ?? 25) / 100 * 8) || 1}
@@ -258,7 +258,7 @@
       </Section>
       <Section label="SCR" {color}>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">MODE</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">MODE</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
             {#each [{ l: 'BEAT', v: 0 }, { l: 'LOOP', v: 1 }, { l: 'PONG', v: 2 }, { l: 'RND', v: 3 }] as o (o.l)}
               <RackBtn
@@ -283,7 +283,7 @@
       </Section>
       <Section label="TRIG" {color} noBorder>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
             <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
           </div>
@@ -294,13 +294,13 @@
       <Section label="TIME" {color}>
         <div style="display:flex;flex-direction:column;gap:3px">
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">TIME</span>
+            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">TIME</span>
             <div style="flex:1">
               <HSlider value={params.time ?? 60} onChange={(v) => onUpdate('time', v)} {color} ariaLabel="TIME" controlId="{moduleId}-time" />
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">FDBK</span>
+            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">FDBK</span>
             <div style="flex:1">
               <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="FEEDBACK" controlId="{moduleId}-feedback" />
             </div>
@@ -309,7 +309,7 @@
       </Section>
       <Section label="TRIG" {color} noBorder>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
             <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
           </div>
@@ -346,7 +346,7 @@
     <Section label="CHOP" {color}>
       <div style="display:flex;flex-direction:column;gap:3px">
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">JMP</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">JMP</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
             {#each [{ l: '1/16', val: 10 }, { l: '1/8', val: 30 }, { l: '1/4', val: 50 }, { l: '1/2', val: 70 }, { l: 'BAR', val: 90 }] as v (v.l)}
               <RackBtn
@@ -360,7 +360,7 @@
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SLIC</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SLIC</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
             {#each [4, 8, 16, 32] as n (n)}
               <RackBtn
@@ -374,7 +374,7 @@
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LOOP</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LOOP</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
             {#each [1, 2, 4, 8] as n (n)}
               <RackBtn
@@ -392,14 +392,14 @@
     <Section label="PLAY" {color} noBorder>
       <div style="display:flex;flex-direction:column;gap:3px">
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RATE</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RATE</span>
           <div style="flex:1">
             <HSlider value={params.rate ?? 43} onChange={(v) => onUpdate('rate', v)} {color} ariaLabel="RATE" controlId="{moduleId}-rate" />
           </div>
           <MiniDisplay value={`${rate.toFixed(2)}×`} width={40} />
         </div>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
+          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
           <div style="flex:1">
             <HSlider value={params.chance ?? 60} onChange={(v) => onUpdate('chance', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-chance" />
           </div>
@@ -510,7 +510,7 @@
       <div style="display:flex;flex-direction:column;gap:4px">
         {#each Object.keys(params).filter((k) => k !== 'mix' && k !== 'in_' && k !== 'out') as key (key)}
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 4)}</span>
+            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 4)}</span>
             <div style="flex:1">
               <HSlider value={params[key] ?? 50} onChange={(v) => onUpdate(key, v)} {color} ariaLabel={key} controlId="{moduleId}-{key}" />
             </div>

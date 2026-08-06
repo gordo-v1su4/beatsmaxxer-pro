@@ -126,7 +126,7 @@ import {
       type="button"
       data-keyboard-drop-target
       aria-disabled={!canAcceptDrop}
-      class="absolute inset-0 z-50 border-2 border-dashed bg-black/70 text-xs font-bold tracking-widest {canAcceptDrop
+      class="absolute inset-0 z-50 border-2 border-dashed bg-black/70 text-xs font-medium tracking-widest {canAcceptDrop
         ? 'border-sky-400 text-sky-300'
         : 'cursor-not-allowed border-red-500/80 text-red-300'}"
       aria-label="Drop {$dragState.payload.moduleId} in {row} rack slot {slotIndex + 1}"

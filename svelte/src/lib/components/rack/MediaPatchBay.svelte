@@ -45,7 +45,7 @@
   let midiInput: HTMLInputElement;
 
   function uploadStyle(active: boolean) {
-    return `height:18px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:700;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'}`;
+    return `height:18px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'}`;
   }
 
   function onVideoChange(e: Event) {
@@ -86,7 +86,7 @@
     {#if statusLabel}
       <span
         title={clipError ?? statusLabel}
-        style="font-family:var(--font-ui);font-size:6px;font-weight:700;letter-spacing:0.08em;color:{statusColor};flex-shrink:0"
+        style="font-family:var(--font-ui);font-size:6px;font-weight:500;letter-spacing:0.08em;color:{statusColor};flex-shrink:0"
       >
         {statusLabel}
       </span>

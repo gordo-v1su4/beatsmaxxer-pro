@@ -40,7 +40,7 @@
     ? color
     : hov
       ? '#5a6070'
-      : '#333840'};font-family:var(--font-ui);font-weight:700;font-size:9px;letter-spacing:0.04em;display:flex;align-items:center;justify-content:center;box-shadow:{active
+      : '#333840'};font-family:var(--font-ui);font-weight:500;font-size:9px;letter-spacing:0.04em;display:flex;align-items:center;justify-content:center;box-shadow:{active
     ? `inset 0 2px 4px rgba(0,0,0,0.6),0 0 6px ${color}22`
     : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.08s;flex-shrink:0"
 >{label}</button>
