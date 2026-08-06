@@ -8,12 +8,15 @@ Beat Surfer Pro for iPhone is a live music-video performance instrument. A creat
 
 The first complete release is a private TestFlight build. It supports performances and exports up to three minutes, uses portrait screens for preparation, and provides both portrait and landscape Live views. Automatic Beatleap-style editing, Android, cloud accounts, and the public App Store release are later phases.
 
+The interface remains unmistakably Beat Surfer: near-black technical racks, compact uppercase and monospaced labels, grid previews, hard rectangular modules, the existing eight effect colors, and narrow rectangular fader/switch/scroll handles. It is a phone re-layout of the current product, not a generic rounded iOS music app.
+
 ## Package index
 
 - [Product specification](./PRODUCT_SPEC.md) — screens, dimensions, states, gestures, and copy.
 - [Architecture](./ARCHITECTURE.md) — native boundaries, media flow, clocks, contracts, persistence, and export.
 - [Backlog](./BACKLOG.md) — ordered epics and bounded implementation stories.
 - [Test plan](./TEST_PLAN.md) — automated, visual, physical-device, and release acceptance gates.
+- [Planning-package verification](./VERIFICATION.md) — browser, layout, interaction, image, link, and scope results.
 - [Decisions](./DECISIONS.md) — locked choices and the reasons behind them.
 - [Mockup prompts](./MOCKUP_PROMPTS.md) — reproducible prompts used for polished visual concepts.
 - [Task-packet template](./task-packets/README.md) — the required handoff format for small implementation tasks.

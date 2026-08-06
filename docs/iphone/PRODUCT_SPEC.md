@@ -44,6 +44,19 @@ The layout is specified against these logical point sizes:
 
 All dimensions exclude device-specific safe-area insets unless explicitly stated. No essential control may be hidden behind the Dynamic Island, home indicator, or rounded corners.
 
+### Product visual identity
+
+The iPhone app is the same Beat Surfer product adapted to a smaller performance surface, not a generic native-iOS redesign. It carries forward the current web/desktop system:
+
+- Near-black rack background (`#0a0b0c`), charcoal modules, hairline dark borders, and technical preview grids.
+- Condensed uppercase UI type with monospaced labels and numeric readouts.
+- Hard-edged modules and controls with 0–2-point corner radii; no floating rounded cards, glass panels, decorative pills, or glossy consumer-music styling.
+- Compact rectangular transport buttons, clip pads, rack slots, state badges, and segmented selectors.
+- Existing effect accent identity: Transition green, Speedramp amber, Tapdelay cyan, Timesampler yellow, Punch Zoom pink, Handheld purple, Drift Cam teal, and Rack Focus warm beige.
+- PGM and effect imagery uses the same oscilloscope/grid language as the desktop app. Phone layouts reduce simultaneous information, but do not replace the visual language.
+
+All interactive faders, sliders, scrollbars, switches, toggles, scrubbers, and fine-adjustment controls use narrow rectangular handles. Circular knobs, round slider thumbs, and round switch handles are prohibited. A status LED may be a tiny square; circular affordances are not part of the app control vocabulary. The iOS home indicator and device corners remain operating-system chrome rather than app controls.
+
 ## 4. Project creation and import
 
 ### New Project
@@ -105,6 +118,8 @@ The adjustment sheet contains tap tempo, numeric BPM, and downbeat-offset contro
 
 Each clip row contains thumbnail, slot number, source duration, trim duration, preparation state, and an overflow menu. The whole row opens the clip editor. Replace and remove live in the overflow menu and require confirmation only when a recorded take references the clip.
 
+An empty row contains two direct choices, **Photos** and **Files**, so adding the seventh or eighth clip does not require returning to the top of the screen. Both actions retain a minimum 44-point hit target.
+
 ## 6. Portrait Live screen
 
 Portrait Live is fully operable without scrolling.
@@ -148,7 +163,7 @@ Eight clip pads form a 4×2 grid. At the baseline width each pad is approximatel
 
 - **Current:** solid on-air border plus `PGM` label.
 - **Queued:** pulsing outline plus target boundary.
-- **Warming:** small progress arc.
+- **Warming:** narrow rectangular progress bar.
 - **Ready:** neutral border.
 - **Processing/failed/empty:** explicit icon and label rather than a thumbnail-only cue.
 
@@ -156,14 +171,14 @@ The app does not decode eight moving pad previews. This is an intentional mobile
 
 ### Effect focus
 
-An eight-item horizontal rack strip sits above the selected effect control. Four Beat effects and four Look effects are separated by labels, not separate pages. The selected effect exposes:
+An eight-item horizontal rack strip sits above the selected effect control. At the 390-point baseline it uses 44-point slots with 2-point gaps, fitting exactly inside the Live content width. Four Beat effects and four Look effects are separated by their order and icons rather than separate pages. The selected effect exposes:
 
 - Name and bypass state.
 - One large primary parameter.
 - Up to two compact secondary values.
 - Reset and preset actions.
 
-The mobile MVP effect set is Transition, Speedramp, Tapdelay, Motion Streak, Punch Zoom, Film Grain, Light Leak, and VHS/CAM.
+The mobile MVP rack mirrors the current default desktop rack: Transition, Speedramp, Tapdelay, Timesampler, Punch Zoom, Handheld, Drift Cam, and Rack Focus.
 
 ## 7. Landscape Live screen
 
@@ -172,7 +187,7 @@ Landscape is the preferred two-handed performance view.
 ### Geometry at 844×390
 
 - Left 62%: PGM, preserving the source aspect ratio inside its region.
-- Right 38%: clip rack in a 4×2 grid above selected-effect control.
+- Right 38%: clip rack in a 4×2 grid above a 4×2 effect-slot grid and the selected-effect values.
 - Bottom 52 points: transport spanning both regions.
 - Top overlays: project/engine health and a compact menu; no bottom navigation.
 

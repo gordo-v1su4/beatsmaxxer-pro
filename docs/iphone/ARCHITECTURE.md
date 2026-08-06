@@ -108,7 +108,7 @@ Pad thumbnails are static. A ready queued cut executes on its scheduled boundary
 
 ## 8. Effect graph
 
-The mobile subset contains Transition, Speedramp, Tapdelay, Motion Streak, Punch Zoom, Film Grain, Light Leak, and VHS/CAM.
+The mobile subset mirrors the current default desktop rack: Transition, Speedramp, Tapdelay, Timesampler, Punch Zoom, Handheld, Drift Cam, and Rack Focus.
 
 Each effect has:
 

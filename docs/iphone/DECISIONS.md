@@ -17,6 +17,10 @@ Decisions are append-only. Changing a locked decision requires a new dated entry
 | IPD-011 | 2026-08-05 | Analysis is local-first; do not embed a hosted-service secret in the app. | Accepted |
 | IPD-012 | 2026-08-05 | Eight mobile effects, each with no more than three exposed parameters. | Accepted |
 | IPD-013 | 2026-08-05 | Planning package precedes all production app scaffolding and includes an interactive wireframe plus three polished images. | Accepted |
+| IPD-014 | 2026-08-05 | Portrait shows eight 44-point effect slots in one row; landscape reflows them to 4×2; empty Prepare slots expose Photos and Files directly. | Accepted |
+| IPD-015 | 2026-08-05 | Mobile preserves the current Beat Surfer rack visual system instead of adopting a generic rounded iOS music-app aesthetic. | Accepted |
+| IPD-016 | 2026-08-05 | All app sliders, faders, scrollbars, switches, and adjustment handles use narrow rectangular geometry; circular control affordances are prohibited. | Accepted |
+| IPD-017 | 2026-08-05 | The first mobile rack uses the current desktop default eight: Transition, Speedramp, Tapdelay, Timesampler, Punch Zoom, Handheld, Drift Cam, and Rack Focus. | Accepted |
 
 ## Decision detail
 
@@ -43,3 +47,7 @@ The current repository has no production mobile relay, and a packaged API key ca
 ### IPD-013 — Planning stop boundary
 
 The first mobile branch milestone contains documents and mockups only. It must not introduce an Xcode project, Swift, Rust engine changes, video/audio behavior, TestFlight configuration, Android work, or web/desktop UI changes.
+
+### IPD-015 and IPD-016 — One product language
+
+Information density is adapted for touch and phone orientation, while color, typography, grids, module hierarchy, and hard-edged control construction remain recognizably Beat Surfer. Apple lifecycle and accessibility conventions are used where they improve behavior, but generic glossy cards, large rounded pills, circular knobs, and circular slider or switch thumbs are not introduced. The iOS home indicator and device outline are operating-system chrome and are not app-control precedents.
