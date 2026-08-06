@@ -73,7 +73,7 @@
     title="FX library — drag modules onto rack slots"
     style="display:flex;align-items:center;justify-content:{$fxLibOpen ? 'space-between' : 'center'};gap:4px;border:none;border-bottom:1px solid #0d0e0f;background:linear-gradient(180deg,#141618,#0f1012);padding:{$fxLibOpen
       ? '6px 8px'
-      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:700;letter-spacing:0.14em"
+      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:500;letter-spacing:0.14em"
   >
     {#if $fxLibOpen}
       <span style="display:flex;align-items:center;gap:4px;color:#556070">
@@ -88,7 +88,7 @@
   {#if $fxLibOpen}
     <div style="flex:1;overflow-y:auto;padding:6px 4px;display:flex;flex-direction:column;gap:4px">
       {#each CATEGORIES as cat (cat.key)}
-        <span style="font-size:7px;font-weight:700;letter-spacing:0.12em;color:#33383f;padding:0 4px;margin-top:{cat.key === 'beat' ? '0' : '6px'}">{cat.label}</span>
+        <span style="font-size:7px;font-weight:500;letter-spacing:0.12em;color:#33383f;padding:0 4px;margin-top:{cat.key === 'beat' ? '0' : '6px'}">{cat.label}</span>
         {#each listByCategory(cat.key) as mod (mod.id)}
           <button
             type="button"
@@ -103,7 +103,7 @@
               }
             }}
           >
-            <span style="font-size:10px;font-weight:700;color:{mod.accentColor}">{mod.shortName}</span>
+            <span style="font-size:10px;font-weight:500;color:{mod.accentColor}">{mod.shortName}</span>
             {#if mod.description}
               <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
             {/if}

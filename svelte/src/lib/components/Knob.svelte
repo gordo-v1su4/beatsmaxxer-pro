@@ -224,7 +224,7 @@
 
   .knob-label {
     font-size: 7px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: #4a5058;

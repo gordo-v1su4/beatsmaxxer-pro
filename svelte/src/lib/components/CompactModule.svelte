@@ -269,13 +269,13 @@
   >
     <ModuleGrip {onHeaderPointerDown} />
     <span
-      style="font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="font-family:var(--font-ui);font-size:10px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {mod.name}
     </span>
     {#if isOnAir}
       <span
-        style="font-family:var(--font-ui);font-size:6.5px;font-weight:700;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
+        style="font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
       >
         ON AIR
       </span>
@@ -296,7 +296,7 @@
       type="button"
       onclick={() => fileInput?.click()}
       title={videoLayer ? videoLayer.name : 'Load clip — select multiple to fill empty slots'}
-      style="height:14px;padding-inline:4px;background:linear-gradient(180deg,#191d22,#121519);border:1px solid {videoLayer ? mod.accentColor + '44' : '#1a1d22'};border-radius:2px;cursor:pointer;color:{videoLayer ? mod.accentColor : '#445060'};display:flex;align-items:center;gap:2px;font-family:var(--font-ui);font-size:6.5px;font-weight:700;letter-spacing:0.08em"
+      style="height:14px;padding-inline:4px;background:linear-gradient(180deg,#191d22,#121519);border:1px solid {videoLayer ? mod.accentColor + '44' : '#1a1d22'};border-radius:2px;cursor:pointer;color:{videoLayer ? mod.accentColor : '#445060'};display:flex;align-items:center;gap:2px;font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.08em"
     >
       <Film size={7} /> CLIP
     </button>
@@ -365,7 +365,7 @@
         {#each spec.sliders as sl (sl.param)}
           <div style="display:flex;align-items:center;gap:4px">
             <span
-              style="width:44px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em"
+              style="width:44px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em"
             >
               {sl.label}
             </span>
@@ -395,7 +395,7 @@
       <div style="display:flex;flex-direction:column;gap:3px">
         {#each Object.keys(params).filter((k) => k !== 'mix') as key (key)}
           <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:700;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 5)}</span>
+            <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 5)}</span>
             <div style="flex:1">
               <HSlider
                 value={params[key] ?? 50}
@@ -424,7 +424,7 @@
       style="position:absolute;inset:3px;z-index:20;pointer-events:none;border:2px dashed {mod.accentColor};border-radius:4px;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;gap:4px"
     >
       <Upload size={14} color={mod.accentColor} />
-      <span style="font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.15em;color:{mod.accentColor}">
+      <span style="font-family:var(--font-ui);font-size:10px;font-weight:500;letter-spacing:0.15em;color:{mod.accentColor}">
         DROP CLIP
       </span>
     </div>

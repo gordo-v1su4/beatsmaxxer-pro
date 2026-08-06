@@ -37,12 +37,16 @@ describe('module drag grip', () => {
 
   test('both rows render the same header height and title type', () => {
     // The rows differ in how much control surface they carry; the title bar is
-    // the same object in both, so these must not drift.
+    // the same object in both, so these must not drift. The specific values are
+    // read from EffectModule rather than hardcoded — this pins the two rows
+    // together without also owning the app's type scale, which is free to move.
     for (const src of [effect, compact]) {
       expect(src).toContain('height:26px');
     }
-    const titleType = 'font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase';
-    expect(effect).toContain(titleType);
-    expect(compact).toContain(titleType);
+    const titleType = effect.match(
+      /font-size:\d+(?:\.\d+)?px;font-weight:\d+;letter-spacing:[\d.]+em;text-transform:uppercase/
+    )?.[0];
+    expect(titleType, 'EffectModule declares a module title style').toBeDefined();
+    expect(compact, 'CompactModule uses the same title type').toContain(titleType);
   });
 });

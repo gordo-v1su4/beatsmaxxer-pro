@@ -112,13 +112,13 @@
   >
     <ModuleGrip {onHeaderPointerDown} />
     <span
-      style="font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};flex:1;margin-left:3px"
+      style="font-family:var(--font-ui);font-size:10px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};flex:1;margin-left:3px"
     >
       {mod.name}
     </span>
     {#if isOnAir}
       <span
-        style="font-family:var(--font-ui);font-size:6.5px;font-weight:700;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
+        style="font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
       >
         ON AIR
       </span>
@@ -200,7 +200,7 @@
       style="position:absolute;inset:3px;z-index:20;pointer-events:none;border:2px dashed {mod.accentColor};border-radius:4px;background:rgba(0,0,0,0.55);backdrop-filter:blur(1px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px"
     >
       <Upload size={18} color={mod.accentColor} />
-      <span style="font-family:var(--font-ui);font-size:11px;font-weight:700;letter-spacing:0.15em;color:{mod.accentColor}">
+      <span style="font-family:var(--font-ui);font-size:11px;font-weight:500;letter-spacing:0.15em;color:{mod.accentColor}">
         DROP CLIP / MIDI
       </span>
     </div>

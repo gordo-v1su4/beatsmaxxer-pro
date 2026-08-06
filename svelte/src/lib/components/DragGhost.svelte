@@ -77,7 +77,7 @@
   .drag-ghost-name {
     font-family: var(--font-ui);
     font-size: 8px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: #7a8090;
@@ -94,7 +94,7 @@
   .drag-ghost-short {
     font-family: var(--font-ui);
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.06em;
     color: var(--accent);
   }

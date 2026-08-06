@@ -81,7 +81,7 @@
     title="PGM source — arm channels for beat-quantized cuts"
     style="display:flex;align-items:center;justify-content:{$pgmRailOpen ? 'space-between' : 'center'};gap:4px;border:none;border-bottom:1px solid #0d0e0f;background:linear-gradient(180deg,#141618,#0f1012);padding:{$pgmRailOpen
       ? '6px 8px'
-      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:700;letter-spacing:0.14em"
+      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:500;letter-spacing:0.14em"
   >
     {#if $pgmRailOpen}
       <span style="color:#556070">PGM SOURCE</span>
@@ -96,7 +96,7 @@
       <div class="flex items-center justify-end">
         <button
           type="button"
-          class="rounded border px-1.5 py-0.5 text-[8px] font-bold tracking-wider transition-colors
+          class="rounded border px-1.5 py-0.5 text-[8px] font-medium tracking-wider transition-colors
             {$autoRandom
             ? 'rand-blink border-red-500/50 bg-red-500/20 text-red-400 shadow-[0_0_8px_#ef444433]'
             : 'border-[#1e2226] bg-gradient-to-b from-[#1a1c1f] to-[#131517] text-[#4a5260]'}"
@@ -116,7 +116,7 @@
           {#each PGM_INTERVALS as option (option.label)}
             <button
               type="button"
-              class="min-w-[26px] rounded border px-1 py-0.5 text-[7.5px] font-bold tracking-wide transition-colors
+              class="min-w-[26px] rounded border px-1 py-0.5 text-[7.5px] font-medium tracking-wide transition-colors
                 {$intervalBeats === option.beats
                 ? 'border-current/30 text-current'
                 : 'border-[#1e2226] bg-gradient-to-b from-[#17191c] to-[#121416] text-[#556070]'}"
@@ -133,7 +133,7 @@
           {#each [{ label: 'STR8', value: 0 as PgmFeel }, { label: 'SWNG', value: 1 as PgmFeel }, { label: 'DOT', value: 2 as PgmFeel }] as opt (opt.label)}
             <button
               type="button"
-              class="flex-1 rounded border py-0.5 text-[7.5px] font-bold tracking-wide transition-colors
+              class="flex-1 rounded border py-0.5 text-[7.5px] font-medium tracking-wide transition-colors
                 {$feel === opt.value
                 ? 'border-current/30 text-current'
                 : 'border-[#1e2226] bg-gradient-to-b from-[#17191c] to-[#121416] text-[#556070]'}"
@@ -167,7 +167,7 @@
             onclick={() => handleSelect(mod.id)}
           >
             <span
-              class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm font-mono text-[9px] font-bold"
+              class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm font-mono text-[9px] font-medium"
               style="background:{isActive ? mod.accentColor : isQueued ? mod.accentColor + '55' : '#1e2226'};
                 color:{isActive || isQueued ? '#0a0b0c' : '#4a5260'};
                 box-shadow:{isActive ? `0 0 8px ${mod.accentColor}66` : undefined}"
@@ -175,7 +175,7 @@
               {i + 1}
             </span>
             <span
-              class="truncate text-[10px] font-bold uppercase tracking-wider"
+              class="truncate text-[10px] font-medium uppercase tracking-wider"
               style="color:{isActive || isQueued ? mod.accentColor : '#4a5260'}"
             >
               {mod.name}

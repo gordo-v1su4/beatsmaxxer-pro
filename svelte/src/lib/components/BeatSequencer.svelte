@@ -28,18 +28,18 @@
 >
   <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
     <div style="display:flex;align-items:center;gap:8px">
-      <span style="font-size:9px;font-weight:700;letter-spacing:0.16em;color:#556070">BEAT SEQ</span>
+      <span style="font-size:9px;font-weight:500;letter-spacing:0.16em;color:#556070">BEAT SEQ</span>
       <button
         type="button"
         onclick={() => sequencerArmed.update((v) => !v)}
-        style="height:18px;padding:0 6px;border-radius:2px;border:1px solid {$sequencerArmed ? '#22c55e55' : '#1e2226'};background:{$sequencerArmed ? '#22c55e18' : '#131517'};color:{$sequencerArmed ? '#4ade80' : '#4a5260'};font-size:7px;font-weight:700;letter-spacing:0.1em;cursor:pointer"
+        style="height:18px;padding:0 6px;border-radius:2px;border:1px solid {$sequencerArmed ? '#22c55e55' : '#1e2226'};background:{$sequencerArmed ? '#22c55e18' : '#131517'};color:{$sequencerArmed ? '#4ade80' : '#4a5260'};font-size:7px;font-weight:500;letter-spacing:0.1em;cursor:pointer"
       >
         {$sequencerArmed ? 'ARMED' : 'OFF'}
       </button>
       <button
         type="button"
         onclick={clearSequencer}
-        style="height:18px;padding:0 6px;border-radius:2px;border:1px solid #1e2226;background:#131517;color:#4a5260;font-size:7px;font-weight:700;cursor:pointer"
+        style="height:18px;padding:0 6px;border-radius:2px;border:1px solid #1e2226;background:#131517;color:#4a5260;font-size:7px;font-weight:500;cursor:pointer"
       >
         CLR
       </button>

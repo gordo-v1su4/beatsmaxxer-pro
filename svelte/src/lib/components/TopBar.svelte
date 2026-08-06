@@ -561,7 +561,7 @@
     margin: 0 0 9px;
     color: #d8e4e2;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.14em;
     text-transform: uppercase;
   }
@@ -662,7 +662,7 @@
     cursor: pointer;
     font-family: var(--font-ui);
     font-size: 9px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     transition:
       border-color 120ms ease,
@@ -758,7 +758,7 @@
   .brand-text {
     font-family: var(--font-brand);
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.14em;
     color: #7a8090;
   }
@@ -771,7 +771,7 @@
   .brand-sub {
     font-family: var(--font-brand);
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.14em;
     color: #556070;
   }
@@ -787,7 +787,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-weight: 700;
+    font-weight: 500;
     font-size: 9px;
     letter-spacing: 0.1em;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -957,7 +957,7 @@
     flex-shrink: 0;
     text-align: left;
     font-size: 7px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.1em;
   }
 
@@ -1015,7 +1015,7 @@
     align-items: center;
     gap: 4px;
     padding-inline: 7px;
-    font-weight: 700;
+    font-weight: 500;
     font-size: 9px;
     letter-spacing: 0.1em;
     white-space: nowrap;
@@ -1033,7 +1033,7 @@
     border-radius: 3px;
     cursor: pointer;
     color: #3a4555;
-    font-weight: 700;
+    font-weight: 500;
     font-size: 9px;
     letter-spacing: 0.1em;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -1126,7 +1126,7 @@
   .slider-label {
     font-size: 7px;
     color: #64748b;
-    font-weight: 700;
+    font-weight: 500;
   }
 
   .vol-block input[type='range'] {
@@ -1154,7 +1154,7 @@
     color: #94a3b8;
     font-family: var(--font-ui);
     font-size: 8px;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.04em;
     cursor: pointer;
     flex-shrink: 0;

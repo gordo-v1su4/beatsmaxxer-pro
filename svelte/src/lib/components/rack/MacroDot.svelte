@@ -120,7 +120,7 @@
 
   .macro-dot-label {
     font-size: 6px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     color: #4a5060;
     font-family: var(--font-ui);

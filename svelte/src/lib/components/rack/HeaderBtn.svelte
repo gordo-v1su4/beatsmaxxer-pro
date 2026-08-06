@@ -26,7 +26,7 @@
     ? activeColor
     : hov
       ? '#7a8090'
-      : '#3a4050'};font-family:var(--font-ui);font-weight:700;font-size:8px;letter-spacing:0.05em;display:flex;align-items:center;justify-content:center;box-shadow:{active
+      : '#3a4050'};font-family:var(--font-ui);font-weight:500;font-size:8px;letter-spacing:0.05em;display:flex;align-items:center;justify-content:center;box-shadow:{active
     ? `inset 0 1px 3px rgba(0,0,0,0.6),0 0 5px ${activeColor}33`
     : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.08s"
 >{label}</button>
