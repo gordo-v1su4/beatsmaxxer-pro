@@ -543,7 +543,8 @@
     width: min(440px, 100%);
     padding: 18px;
     border: 1px solid #1d2b2b;
-    border-radius: 6px;
+    /* The rack is square-cornered throughout — 2px is the house value. */
+    border-radius: 2px;
     background:
       radial-gradient(120% 100% at 50% 0%, rgba(20, 184, 166, 0.07), transparent 70%),
       rgba(10, 12, 13, 0.92);
@@ -554,11 +555,14 @@
     font-family: var(--font-ui);
   }
 
+  /* Rack titles are 10px/0.14em uppercase; 15px/0.08em read as a different
+     app's dialog sitting on top of this one. */
   .analysis-consent-dialog h2 {
-    margin: 0 0 8px;
+    margin: 0 0 9px;
     color: #d8e4e2;
-    font-size: 15px;
-    letter-spacing: 0.08em;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
   }
 
@@ -602,7 +606,7 @@
     height: 13px;
     margin: 0;
     border: 1px solid #37414a;
-    border-radius: 3px;
+    border-radius: 2px;
     background: #0a0c0d;
     appearance: none;
     -webkit-appearance: none;
@@ -652,7 +656,7 @@
     min-height: 30px;
     padding: 0 12px;
     border: 1px solid #2a3138;
-    border-radius: 3px;
+    border-radius: 2px;
     background: #101315;
     color: #8d96a5;
     cursor: pointer;
