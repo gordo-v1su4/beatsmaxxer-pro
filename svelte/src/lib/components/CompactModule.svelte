@@ -5,6 +5,8 @@
   import { parseAccentColor } from '$lib/modules/registry';
   import { presetsForModule } from '$lib/modules/presets';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
+  import Screw from '$lib/components/rack/Screw.svelte';
+  import ModuleGrip from '$lib/components/rack/ModuleGrip.svelte';
   import HeaderBtn from '$lib/components/rack/HeaderBtn.svelte';
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
@@ -259,15 +261,15 @@
     applyVideoFiles([...(e.dataTransfer?.files ?? [])]);
   }}
 >
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- Header matches EffectModule exactly: same height, same grip, same title
+       type. The rows differ in how much control surface they carry, which is
+       what "compact" means; the title bar is the same object in both. -->
   <div
-    data-drag-handle
-    onpointerdown={onHeaderPointerDown}
-    title="Drag to reorder"
-    style="display:flex;align-items:center;padding:0 5px;height:20px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0;cursor:grab"
+    style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0"
   >
+    <ModuleGrip {onHeaderPointerDown} />
     <span
-      style="font-family:var(--font-ui);font-size:9px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="font-family:var(--font-ui);font-size:10px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:{mod.accentColor};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {mod.name}
     </span>
@@ -320,6 +322,7 @@
       </svg>
     </button>
     <HeaderBtn label="B" active={$bypassed[mod.id]} activeColor="#ef4444" onclick={() => toggleBypass(mod.id)} />
+    <Screw />
   </div>
 
   <div class="module-preview">
