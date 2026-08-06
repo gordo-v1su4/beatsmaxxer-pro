@@ -16,8 +16,7 @@ describe('module drag grip', () => {
   });
 
   test('neither header binds pointerdown itself', () => {
-    // Pressing BYPASS/MUTE/COLLAPSE/CLIP used to start a reorder, because the
-    // handler sat on the whole header. The gesture must stay on the grip.
+    // BYPASS/MUTE/COLLAPSE/CLIP used to start a reorder; the gesture stays on the grip.
     for (const [name, src] of [['EffectModule', effect], ['CompactModule', compact]] as const) {
       const header = src.slice(src.indexOf('<ModuleGrip'), src.indexOf('<ModuleGrip') + 40);
       expect(header, `${name} renders the shared grip`).toContain('<ModuleGrip');
@@ -36,10 +35,8 @@ describe('module drag grip', () => {
   });
 
   test('both rows render the same header height and title type', () => {
-    // The rows differ in how much control surface they carry; the title bar is
-    // the same object in both, so these must not drift. The specific values are
-    // read from EffectModule rather than hardcoded — this pins the two rows
-    // together without also owning the app's type scale, which is free to move.
+    // Read from EffectModule rather than hardcoded: pins the rows together
+    // without owning the type scale, which is free to move.
     for (const src of [effect, compact]) {
       expect(src).toContain('height:26px');
     }

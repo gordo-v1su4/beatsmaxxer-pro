@@ -261,9 +261,8 @@
     applyVideoFiles([...(e.dataTransfer?.files ?? [])]);
   }}
 >
-  <!-- Header matches EffectModule exactly: same height, same grip, same title
-       type. The rows differ in how much control surface they carry, which is
-       what "compact" means; the title bar is the same object in both. -->
+  <!-- Header matches EffectModule exactly. "Compact" is about how much control
+       surface the row carries; the title bar is the same object in both. -->
   <div
     style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0"
   >

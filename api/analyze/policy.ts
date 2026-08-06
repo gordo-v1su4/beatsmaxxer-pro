@@ -79,13 +79,11 @@ export function isAnalysisProxyConfigured(config: AnalysisProxyConfig) {
 }
 
 /**
- * Build-time gate for the browser upload path. Deliberately does NOT require the
- * API key: the key is a runtime-only server secret, and on Vercel it may be
- * scoped so the build step never sees it. Requiring it here compiled ANALYZE off
- * in the production bundle with no diagnostic, which is what broke hosted
- * analysis on the web deployment. The function still performs the full
- * `isAnalysisProxyConfigured` check and answers 503 `analysis_unavailable` when
- * the credential is genuinely missing, so the client fails loudly, not silently.
+ * Build-time gate for the browser upload path. Deliberately key-free: the key is
+ * a runtime-only secret the Vercel build step may never see, and requiring it
+ * here compiled ANALYZE off in the production bundle with no diagnostic. The
+ * function still applies the full check and answers 503 analysis_unavailable, so
+ * a missing credential fails loudly rather than silently.
  */
 export function isAnalysisUploadPathEnabled(config: Pick<AnalysisProxyConfig, "enabled" | "apiBaseUrl">) {
   if (!config.enabled || !config.apiBaseUrl) return false;
@@ -176,10 +174,9 @@ export async function proxyAnalysisRequest(
   try {
     const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
     if (controller.signal.aborted) return null;
-    // A declared Content-Length with nothing readable behind it means the host
-    // drained the stream before we got it (a platform body parser). Forwarding
-    // the empty envelope would surface as an opaque upstream rejection, so name
-    // the real cause instead of blaming the upstream service.
+    // Nothing readable behind a declared Content-Length means the host drained
+    // the stream first. Name that rather than forwarding an empty envelope and
+    // surfacing it as an opaque upstream rejection.
     if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
 
     let upstream: Response;

@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
-  clearHostedAnalysisPreference,
   readHostedAnalysisPreference,
   setHostedAnalysisPreference
 } from '../../../src/lib/audio/hostedAnalysisPreference';
@@ -39,7 +38,7 @@ describe('hosted analysis preference', () => {
 
   test('clearing restores the prompt', () => {
     setHostedAnalysisPreference('analyze');
-    clearHostedAnalysisPreference();
+    setHostedAnalysisPreference('ask');
     expect(readHostedAnalysisPreference()).toBe('ask');
     expect(globalThis.localStorage.getItem('bsp.hostedAnalysis.consent')).toBeNull();
   });
