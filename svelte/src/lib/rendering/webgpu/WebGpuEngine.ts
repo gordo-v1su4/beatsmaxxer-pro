@@ -96,6 +96,26 @@ const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
  * alternative is a full black frame, which is not. */
 const LOOP_SEAM_CUT_COVER_SECONDS = 1;
 
+/** Frames of cover granted at a detected loop wrap, independent of any cut.
+ *
+ * The cut cover above handles a cut that lands on a just-wrapped source, but the
+ * same empty external texture is presented at the end of *every* clip whether or
+ * not a cut happens — that is the black frame at the end of a clip. Nothing in
+ * the import path can catch it: `importExternalTexture` succeeds, returns an
+ * empty texture, and the element still reports HAVE_ENOUGH_DATA, so there is no
+ * throw to fall back from.
+ *
+ * Counted in rendered frames rather than wall time. A time window cannot work
+ * here: the cut cover can afford a generous one second only because the
+ * pending-cut marker clears after a single frame, whereas a wrap has no such
+ * marker and a one-second hold would freeze the clip's first second on its last
+ * frame. Frames also keep every binding sharing a source on the same decision. */
+const LOOP_WRAP_COVER_FRAMES = 2;
+
+/** Backward jump in currentTime that counts as a wrap rather than float jitter.
+ * A backward seek trips this too, which is correct — it opens the same window. */
+const LOOP_WRAP_DETECT_EPSILON_SECONDS = 0.01;
+
 /** WKWebView can accept GPUExternalTexture imports yet present them as black.
  * Desktop therefore uses an explicit GPUTexture copy for every module; web
  * keeps the lower-overhead external-texture path except where persistence is
@@ -116,6 +136,11 @@ export class WebGpuEngine {
   private bindingSchedule = new Map<string, BindingScheduleState>();
   /** Pending PGM source change awaiting its first submitted frame, for cut-latency QA. */
   private pendingPgmCut: { at: number; sourceId: string } | null = null;
+  /** Monotonic count of frames that actually encoded work, used to bound seam cover. */
+  private frameIndex = 0;
+  /** Per-source loop-wrap state: last observed time, and the frame index through
+   * which this source's seam still renders from the cached last-good frame. */
+  private loopWrapCover = new Map<string, { lastTime: number; coverUntilFrame: number }>();
   private taskExternalTextures: Map<HTMLVideoElement, GPUExternalTexture> | null = null;
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
@@ -387,6 +412,8 @@ export class WebGpuEngine {
     }
 
     if (scheduled.length === 0) return;
+    this.frameIndex += 1;
+    this.markLoopWraps(scheduled);
     const encoder = this.device.createCommandEncoder();
     this.taskExternalTextures = new Map<HTMLVideoElement, GPUExternalTexture>();
     this.videoTextureCache.beginFrame();
@@ -409,6 +436,40 @@ export class WebGpuEngine {
         this.pendingPgmCut = null;
       }
     }
+  }
+
+  /**
+   * Detect loop wraps once per frame per source, before any binding is encoded.
+   * Doing it here rather than inside encodeBinding matters when PGM and a module
+   * preview share a source in the same frame: both must make the same cover
+   * decision, and the budget must be spent once, not once per canvas.
+   */
+  private markLoopWraps(scheduled: Array<[string, CanvasBinding, string, string, string]>) {
+    const seen = new Set<string>();
+    for (const [, , , sourceId] of scheduled) {
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      const video = videoPool.get(sourceId);
+      if (!video || !Number.isFinite(video.duration) || video.duration <= 0) continue;
+      const current = video.currentTime;
+      const state = this.loopWrapCover.get(sourceId);
+      if (!state) {
+        // First sight of a source is not a wrap.
+        this.loopWrapCover.set(sourceId, { lastTime: current, coverUntilFrame: 0 });
+        continue;
+      }
+      if (current < state.lastTime - LOOP_WRAP_DETECT_EPSILON_SECONDS) {
+        state.coverUntilFrame = this.frameIndex + LOOP_WRAP_COVER_FRAMES;
+      }
+      state.lastTime = current;
+    }
+  }
+
+  /** True while this source is inside its post-wrap cover budget. Exclusive bound,
+   * so a wrap detected on frame N covers exactly N .. N+LOOP_WRAP_COVER_FRAMES-1. */
+  private isCoveringLoopWrap(sourceId: string) {
+    const state = this.loopWrapCover.get(sourceId);
+    return !!state && this.frameIndex < state.coverUntilFrame;
   }
 
   private bindingChangeKey(
@@ -604,6 +665,9 @@ export class WebGpuEngine {
       this.pendingPgmCut?.sourceId === sourceId &&
       justWrapped &&
       !!cachedVideoView;
+    // The wrap itself, cut or no cut, on PGM and previews alike — this is the
+    // black frame seen at the end of a clip.
+    const coverLoopWrap = this.isCoveringLoopWrap(sourceId) && !!cachedVideoView;
     data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
 
@@ -646,7 +710,11 @@ export class WebGpuEngine {
           readView
         );
       }
-    } else if (shaderHasVideo && video && (preferPersistentVideoTexture || coverCutSeam)) {
+    } else if (
+      shaderHasVideo &&
+      video &&
+      (preferPersistentVideoTexture || coverCutSeam || coverLoopWrap)
+    ) {
       shaderHasVideo = cachedVideoView ? 1 : 0;
       data[14] = shaderHasVideo;
       this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
@@ -726,6 +794,7 @@ export class WebGpuEngine {
       externalTextureBound,
       cachedTextureUploaded,
       cachedTextureBound,
+      coveredLoopWrap: coverLoopWrap && cachedTextureBound,
       samplePath: externalTextureBound ? 'external-texture' : cachedTextureBound ? 'cached-video-texture' : 'test-card',
       source: isNativeFrameSurface(nativeSurface)
         ? `native://${sourceId}`
@@ -819,6 +888,7 @@ export class WebGpuEngine {
     this.initPromise = null;
     this.bindingSchedule.clear();
     this.renderDiag.clear();
+    this.loopWrapCover.clear();
     this.videoTextureCache.dispose();
   }
 }
