@@ -524,6 +524,8 @@
     display: none;
   }
 
+  /* Rhythm analysis is BEAT FX work, so the prompt borrows that family's teal
+     (see modules/palette.ts) instead of a generic UI blue. */
   .analysis-consent-backdrop {
     position: fixed;
     inset: 0;
@@ -532,23 +534,29 @@
     align-items: center;
     justify-content: center;
     padding: 20px;
-    background: rgba(0, 0, 0, 0.78);
+    background: rgba(6, 8, 9, 0.62);
+    backdrop-filter: blur(10px) saturate(0.7);
+    -webkit-backdrop-filter: blur(10px) saturate(0.7);
   }
 
   .analysis-consent-dialog {
     width: min(440px, 100%);
     padding: 18px;
-    border: 1px solid #303640;
-    border-radius: 5px;
-    background: linear-gradient(180deg, #1b1e22, #111316);
-    box-shadow: 0 20px 70px #000;
-    color: #aab2c0;
+    border: 1px solid #1d2b2b;
+    border-radius: 6px;
+    background:
+      radial-gradient(120% 100% at 50% 0%, rgba(20, 184, 166, 0.07), transparent 70%),
+      rgba(10, 12, 13, 0.92);
+    box-shadow:
+      0 24px 80px rgba(0, 0, 0, 0.9),
+      inset 0 1px 0 rgba(153, 246, 228, 0.07);
+    color: #8f9aa6;
     font-family: var(--font-ui);
   }
 
   .analysis-consent-dialog h2 {
     margin: 0 0 8px;
-    color: #d5dae2;
+    color: #d8e4e2;
     font-size: 15px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -563,7 +571,7 @@
   .analysis-consent-file {
     margin-top: 10px !important;
     overflow: hidden;
-    color: #38bdf8;
+    color: #99f6e4;
     font-family: var(--font-mono);
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -572,18 +580,60 @@
   .analysis-consent-remember {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 8px;
     margin-top: 14px;
-    color: #8d96a5;
+    color: #79838f;
     cursor: pointer;
     font-size: 10px;
     line-height: 1.35;
   }
 
+  .analysis-consent-remember:hover {
+    color: #9aa5b1;
+  }
+
+  /* The platform checkbox is a white box with a blue tick and cannot be tinted
+     to the rack's palette, so it is drawn here instead. */
   .analysis-consent-remember input {
     flex: none;
-    accent-color: #38bdf8;
+    display: grid;
+    place-content: center;
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    border: 1px solid #37414a;
+    border-radius: 3px;
+    background: #0a0c0d;
+    appearance: none;
+    -webkit-appearance: none;
     cursor: pointer;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease;
+  }
+
+  .analysis-consent-remember input::after {
+    content: '';
+    width: 8px;
+    height: 8px;
+    background: #14b8a6;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+    transform: scale(0);
+    transition: transform 120ms ease;
+  }
+
+  .analysis-consent-remember input:checked {
+    border-color: #14b8a6;
+    background: #06201d;
+  }
+
+  .analysis-consent-remember input:checked::after {
+    transform: scale(1);
+  }
+
+  .analysis-consent-remember input:focus-visible {
+    outline: 2px solid #14b8a6;
+    outline-offset: 2px;
   }
 
   .analysis-consent-actions {
@@ -594,35 +644,56 @@
   }
 
   .consent-memo {
-    color: #38bdf8;
+    color: #99f6e4;
     letter-spacing: 0.06em;
   }
 
   .consent-btn {
     min-height: 30px;
-    padding: 0 11px;
-    border: 1px solid #303640;
+    padding: 0 12px;
+    border: 1px solid #2a3138;
     border-radius: 3px;
-    background: #171a1e;
+    background: #101315;
     color: #8d96a5;
     cursor: pointer;
     font-family: var(--font-ui);
     font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.08em;
+    transition:
+      border-color 120ms ease,
+      background 120ms ease,
+      color 120ms ease;
+  }
+
+  .consent-btn:hover {
+    border-color: #3a434c;
+    color: #c2cad4;
   }
 
   .consent-btn:focus-visible {
-    outline: 2px solid #38bdf8;
+    outline: 2px solid #14b8a6;
     outline-offset: 2px;
   }
 
+  /* Primary action: the only one that sends audio anywhere. */
   .consent-btn-analyze {
-    border-color: #38bdf866;
-    color: #38bdf8;
+    border-color: #14b8a6;
+    background: linear-gradient(180deg, #0d2b28, #08201d);
+    color: #99f6e4;
+    box-shadow: inset 0 1px 0 rgba(153, 246, 228, 0.12);
+  }
+
+  .consent-btn-analyze:hover {
+    border-color: #2dd4bf;
+    color: #ccfbf1;
   }
 
   .consent-btn-cancel {
+    color: #a15f5f;
+  }
+
+  .consent-btn-cancel:hover {
     color: #c46b6b;
   }
 
