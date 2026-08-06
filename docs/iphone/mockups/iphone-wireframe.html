@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Beat Surfer Pro iPhone Wireframe</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #090b0e; color: #f2f5f7; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #70f2ff; outline-offset: 2px; }
+    .prototype-bar { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: #11151a; border-bottom: 1px solid #2b333c; }
+    .prototype-bar label { display: flex; align-items: center; gap: 7px; color: #aeb8c2; font-size: 13px; }
+    .prototype-bar select, .prototype-bar button { min-height: 44px; border: 1px solid #37424d; border-radius: 9px; background: #1a2027; color: #f2f5f7; padding: 0 12px; }
+    .prototype-bar button { font-weight: 600; }
+    .prototype-bar button[data-active="true"] { background: #d5fbff; color: #071113; border-color: #d5fbff; }
+    .prototype-note { width: 100%; text-align: center; color: #7f8c98; font-size: 12px; }
+    .stage { min-height: calc(100vh - 64px); padding: 22px; display: grid; place-items: start center; overflow: auto; }
+    .device-scale { transform-origin: top center; }
+    .device { position: relative; width: 390px; height: 844px; overflow: hidden; border: 1px solid #3a4652; border-radius: 34px; background: #0c0f13; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+    .device.landscape { width: 844px; height: 390px; border-radius: 26px; }
+    .safe-top { height: 24px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; color: #8d99a5; font-size: 11px; }
+    .device.landscape .safe-top { position: absolute; z-index: 8; top: 0; left: 0; right: 0; pointer-events: none; color: #d8e0e6; text-shadow: 0 1px 4px #000; }
+    .app-screen { display: none; height: calc(100% - 24px); overflow: hidden; background: #0c0f13; }
+    .device.landscape .app-screen { height: 100%; }
+    .app-screen.active { display: flex; flex-direction: column; }
+    .app-header { height: 48px; flex: 0 0 48px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 14px; border-bottom: 1px solid #252c33; background: #101419; }
+    .app-header h1 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .app-header .eyebrow { color: #85919c; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+    .header-actions { display: flex; align-items: center; gap: 7px; }
+    .status-pill { min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; border: 1px solid #33404a; border-radius: 999px; color: #b9c5cd; background: #171d23; font-size: 11px; white-space: nowrap; }
+    .status-pill.ready { color: #8ff6ff; border-color: #2c6870; background: #10272a; }
+    .status-pill.recording { color: #ffb4b4; border-color: #7c3438; background: #311719; }
+    .icon-button { min-width: 44px; min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: #dce3e8; font-size: 18px; }
+    .primary-button, .secondary-button { min-height: 48px; border-radius: 12px; padding: 0 16px; font-weight: 700; }
+    .primary-button { border: 1px solid #c7faff; background: #c7faff; color: #061214; }
+    .secondary-button { border: 1px solid #3b4651; background: #171d23; color: #e6ebef; }
+    .text-button { min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: #8ff6ff; font-weight: 650; }
+    .screen-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
+    .screen-body.no-scroll { overflow: hidden; }
+    .section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0 8px; }
+    .section-title:first-child { margin-top: 0; }
+    .section-title h2 { margin: 0; color: #bdc7cf; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .section-title span { color: #71808c; font-size: 11px; }
+    .surface { border: 1px solid #29323b; border-radius: 14px; background: #13181e; }
+    .empty-hero { min-height: 360px; display: grid; align-content: center; justify-items: center; gap: 16px; padding: 30px; text-align: center; }
+    .mark { width: 72px; height: 72px; border-radius: 22px; display: grid; place-items: center; background: #173338; border: 1px solid #34737b; color: #9af7ff; font-size: 32px; font-weight: 800; }
+    .empty-hero h2 { margin: 0; font-size: 25px; }
+    .empty-hero p { margin: 0; max-width: 280px; color: #8f9ba6; font-size: 14px; line-height: 1.45; }
+    .recent-row { min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #232b32; }
+    .recent-row:last-child { border-bottom: 0; }
+    .recent-thumb { width: 72px; height: 44px; border-radius: 8px; background: linear-gradient(135deg,#2d1751,#11798a); }
+    .recent-copy { flex: 1; min-width: 0; }
+    .recent-copy strong, .recent-copy span { display: block; }
+    .recent-copy strong { font-size: 14px; }
+    .recent-copy span { margin-top: 4px; color: #7f8c97; font-size: 11px; }
+    .import-step { padding: 14px; margin-bottom: 10px; }
+    .import-step-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .import-step h2 { margin: 0; font-size: 15px; }
+    .import-step p { margin: 7px 0 13px; color: #84919c; font-size: 12px; line-height: 1.4; }
+    .choice-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .progress-track { height: 5px; overflow: hidden; border-radius: 99px; background: #263039; }
+    .progress-fill { height: 100%; width: 68%; background: #73edf7; border-radius: inherit; transition: width .25s ease; }
+    .analysis-card { padding: 12px; }
+    .analysis-head { display: flex; align-items: center; gap: 10px; }
+    .album { width: 52px; height: 52px; flex: 0 0 52px; border-radius: 10px; display: grid; place-items: center; background: radial-gradient(circle at 70% 30%,#35c1c7,#492454 55%,#111318); font-size: 20px; }
+    .analysis-copy { flex: 1; min-width: 0; }
+    .analysis-copy strong, .analysis-copy span { display: block; }
+    .analysis-copy strong { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .analysis-copy span { margin-top: 4px; color: #8996a1; font-size: 11px; }
+    .analysis-number { color: #8ff6ff; font-size: 17px; font-weight: 750; }
+    .analysis-card .progress-track { margin-top: 11px; }
+    .clip-list { display: grid; gap: 7px; }
+    .clip-row { min-height: 67px; display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid #28313a; border-radius: 11px; background: #12171c; }
+    .clip-number { width: 24px; color: #788691; font-size: 11px; text-align: center; }
+    .clip-thumb { width: 72px; height: 45px; flex: 0 0 72px; border-radius: 7px; border: 1px solid #35414b; background: linear-gradient(140deg,#101c31,#315585 45%,#e35c72); position: relative; overflow: hidden; }
+    .clip-thumb.alt1 { background: linear-gradient(140deg,#092923,#168b72 45%,#e0a93c); }
+    .clip-thumb.alt2 { background: linear-gradient(140deg,#321725,#af355b 45%,#5536a8); }
+    .clip-thumb.alt3 { background: linear-gradient(140deg,#171d38,#4268d8 45%,#75d9dc); }
+    .clip-thumb.empty { display: grid; place-items: center; background: #171d23; color: #7f8b96; font-size: 18px; }
+    .clip-meta { flex: 1; min-width: 0; }
+    .clip-meta strong, .clip-meta span { display: block; }
+    .clip-meta strong { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .clip-meta span { margin-top: 4px; color: #7e8b96; font-size: 10px; }
+    .clip-state { min-width: 74px; text-align: right; color: #93a0aa; font-size: 10px; }
+    .clip-state.ready { color: #7be9f2; }
+    .mini-progress { width: 64px; height: 4px; margin: 5px 0 0 auto; overflow: hidden; border-radius: 9px; background: #27313a; }
+    .mini-progress span { display: block; width: 72%; height: 100%; background: #73edf7; }
+    .rack-summary { min-height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; margin-top: 12px; }
+    .rack-summary strong { font-size: 11px; letter-spacing: .1em; }
+    .rack-summary span { color: #7f8c97; font-size: 11px; }
+    .bottom-tabs { height: 58px; flex: 0 0 58px; display: grid; grid-template-columns: repeat(4,1fr); border-top: 1px solid #273039; background: #101419; }
+    .bottom-tabs button { min-height: 56px; border: 0; background: transparent; color: #75838f; font-size: 10px; font-weight: 650; }
+    .bottom-tabs button.active { color: #9bf8ff; }
+    .bottom-tabs button span { display: block; margin-bottom: 3px; font-size: 17px; }
+    .live-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 12px 0; }
+    .pgm { height: 198px; flex: 0 0 198px; position: relative; overflow: hidden; border: 1px solid #36414b; border-radius: 12px; background: radial-gradient(circle at 50% 44%,#ff5575 0 6%,transparent 7%), linear-gradient(125deg,#0b1223,#4a225d 48%,#0b888c); }
+    .pgm::before, .pgm::after { content: ""; position: absolute; background: rgba(115,237,247,.22); transform: rotate(20deg); }
+    .pgm::before { width: 34%; height: 130%; top: -15%; left: 16%; }
+    .pgm::after { width: 16%; height: 110%; top: -5%; right: 16%; background: rgba(255,79,107,.2); transform: rotate(-18deg); }
+    .pgm-label, .pgm-next, .pgm-rec { position: absolute; z-index: 2; top: 9px; min-height: 25px; display: flex; align-items: center; padding: 0 7px; border-radius: 6px; background: rgba(5,8,11,.76); font-size: 10px; letter-spacing: .08em; }
+    .pgm-label { left: 9px; }
+    .pgm-next { right: 9px; color: #8ff6ff; }
+    .pgm-rec { left: 9px; top: auto; bottom: 12px; color: #ff9fa6; display: none; }
+    .pgm-rec.show { display: flex; }
+    .beat-line { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 4px; background: #25323a; }
+    .beat-line span { display: block; width: 44%; height: 100%; background: #80f4ff; transition: width .2s linear; }
+    .transport { height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: 7px; border-bottom: 1px solid #252e36; }
+    .play-button, .record-button { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; font-weight: 800; }
+    .play-button { border: 1px solid #9cf6ff; background: #17373b; color: #a8f9ff; }
+    .record-button { border: 1px solid #854047; background: #321a1d; color: #ff9ca5; }
+    .record-button.on { background: #ff6671; color: #160607; }
+    .time-copy { flex: 1; min-width: 76px; color: #c9d1d7; font-size: 11px; font-variant-numeric: tabular-nums; }
+    .quantize { min-width: 72px; height: 36px; border: 1px solid #37434d; border-radius: 9px; background: #171d23; color: #a9f8ff; font-size: 10px; font-weight: 700; }
+    .pad-grid { height: 106px; flex: 0 0 106px; display: grid; grid-template-columns: repeat(4,1fr); grid-template-rows: repeat(2,48px); gap: 6px; padding-top: 5px; }
+    .clip-pad { position: relative; min-width: 0; min-height: 48px; overflow: hidden; border: 1px solid #3b4650; border-radius: 8px; background: linear-gradient(145deg,#101a2d,#2b4f72 55%,#9b3c5d); color: #f4f7f9; text-align: left; padding: 5px; font-weight: 800; text-shadow: 0 1px 3px #000; }
+    .clip-pad:nth-child(2n) { background: linear-gradient(145deg,#0e2524,#1f7b6a 55%,#ae6c2e); }
+    .clip-pad:nth-child(3n) { background: linear-gradient(145deg,#2c1728,#803767 55%,#315fa1); }
+    .clip-pad small { position: absolute; right: 5px; bottom: 4px; font-size: 8px; font-weight: 650; }
+    .clip-pad.current { border: 3px solid #e6fdff; box-shadow: inset 0 0 0 1px #0b7079; }
+    .clip-pad.queued { border: 3px solid #7cf2ff; }
+    .clip-pad.queued::after { content: "NEXT"; position: absolute; right: 4px; top: 4px; color: #071012; background: #a5f8ff; padding: 2px 3px; border-radius: 3px; font-size: 7px; text-shadow: none; }
+    .effect-panel { flex: 1; min-height: 124px; padding-top: 7px; overflow: hidden; }
+    .effect-strip { display: grid; grid-template-columns: repeat(8,minmax(0,1fr)); gap: 2px; }
+    .effect-chip { min-width: 0; height: 44px; overflow: hidden; border: 1px solid #303b45; border-radius: 7px; background: #161c22; color: #7f8c97; padding: 0 2px; font-size: 7px; font-weight: 700; text-overflow: ellipsis; }
+    .effect-chip.selected { border-color: #83f4ff; background: #193438; color: #b9fbff; }
+    .effect-control { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 2px 0; }
+    .effect-name { font-size: 13px; font-weight: 750; }
+    .effect-values { display: flex; gap: 10px; color: #8895a0; font-size: 9px; }
+    .effect-control input[type="range"] { grid-column: 1 / -1; width: 100%; height: 44px; accent-color: #72edf7; }
+    .live-landscape { position: relative; height: 100%; display: grid; grid-template-columns: 62% 38%; grid-template-rows: 1fr 52px; background: #0c0f13; padding: 24px 18px 0; gap: 8px 10px; }
+    .live-landscape .pgm { width: 100%; height: 100%; min-height: 0; flex: none; border-radius: 9px; }
+    .land-controls { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+    .land-controls .pad-grid { width: 100%; height: 102px; flex-basis: 102px; padding-top: 0; }
+    .land-controls .effect-panel { padding: 8px; border: 1px solid #2a343d; border-radius: 10px; background: #12171c; }
+    .land-controls .effect-strip { grid-template-columns: repeat(4,minmax(0,1fr)); grid-template-rows: repeat(2,44px); }
+    .live-landscape .transport { grid-column: 1 / -1; height: 52px; border: 0; }
+    .land-title { display: flex; justify-content: space-between; align-items: center; height: 26px; }
+    .land-title strong { font-size: 11px; }
+    .land-title span { color: #89f5ff; font-size: 9px; }
+    .take-row { min-height: 74px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid #252e36; }
+    .take-row:last-child { border-bottom: 0; }
+    .take-play { width: 44px; height: 44px; border: 1px solid #3c4853; border-radius: 50%; background: #192027; color: #9df7ff; }
+    .take-copy { flex: 1; }
+    .take-copy strong, .take-copy span { display: block; }
+    .take-copy strong { font-size: 13px; }
+    .take-copy span { margin-top: 5px; color: #7f8c97; font-size: 10px; }
+    .take-tag { padding: 5px 7px; border-radius: 6px; background: #183438; color: #8ff6ff; font-size: 9px; }
+    .export-preview { height: 190px; position: relative; border-radius: 13px; overflow: hidden; background: linear-gradient(125deg,#101527,#40215c,#127a80); }
+    .export-preview::after { content: "TAKE 03"; position: absolute; left: 10px; bottom: 10px; padding: 5px 7px; border-radius: 5px; background: rgba(0,0,0,.66); font-size: 9px; }
+    .export-setting { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border-bottom: 1px solid #252e36; }
+    .export-setting:last-child { border-bottom: 0; }
+    .export-setting span { color: #7f8d98; font-size: 11px; }
+    .export-setting strong { font-size: 12px; }
+    .export-progress { display: none; margin-top: 12px; padding: 14px; }
+    .export-progress.show { display: block; }
+    .export-progress-head { display: flex; justify-content: space-between; margin-bottom: 9px; font-size: 12px; }
+    .completion-actions { display: none; grid-template-columns: repeat(3,1fr); gap: 7px; margin-top: 10px; }
+    .completion-actions.show { display: grid; }
+    .completion-actions button { min-height: 44px; border: 1px solid #3a4650; border-radius: 9px; background: #171d23; color: #e8edf0; font-size: 10px; }
+    .home-indicator { position: absolute; z-index: 20; left: 50%; bottom: 6px; width: 120px; height: 4px; border-radius: 99px; background: #d5d9dc; transform: translateX(-50%); opacity: .72; pointer-events: none; }
+    .device.landscape .home-indicator { width: 4px; height: 120px; left: auto; right: 6px; top: 50%; bottom: auto; transform: translateY(-50%); }
+    .toast { position: absolute; z-index: 30; left: 50%; bottom: 72px; transform: translateX(-50%) translateY(20px); opacity: 0; pointer-events: none; padding: 8px 11px; border: 1px solid #3c4852; border-radius: 9px; background: #1b2229; color: #e5ecef; font-size: 11px; transition: .2s ease; white-space: nowrap; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    @media (max-width: 600px) {
+      .prototype-bar { justify-content: flex-start; }
+      .prototype-note { text-align: left; }
+      .stage { padding: 12px 4px 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="prototype-bar" aria-label="Wireframe controls">
+    <label>Screen
+      <select id="screen-picker">
+        <option value="projects">Projects</option>
+        <option value="import">Create and import</option>
+        <option value="prepare">Prepare</option>
+        <option value="live-portrait" selected>Portrait Live</option>
+        <option value="live-landscape">Landscape Live</option>
+        <option value="takes">Takes</option>
+        <option value="export">Export</option>
+      </select>
+    </label>
+    <label>Phone
+      <select id="device-picker">
+        <option value="390x844" selected>390 × 844</option>
+        <option value="393x852">393 × 852</option>
+        <option value="430x932">430 × 932</option>
+      </select>
+    </label>
+    <button id="reset-button" type="button">Reset state</button>
+    <span class="prototype-note">Tap clip pads, transport, effects, record, analysis, tabs, and export to inspect the state model.</span>
+  </nav>
+
+  <main class="stage" id="stage">
+    <div class="device-scale" id="device-scale">
+      <section class="device" id="device" aria-label="Beat Surfer Pro iPhone wireframe">
+        <div class="safe-top" id="safe-top"><span>9:41</span><span>● ● ●</span></div>
+
+        <section class="app-screen" data-screen="projects" aria-label="Projects screen">
+          <header class="app-header"><div><div class="eyebrow">Beat Surfer Pro</div><h1>Projects</h1></div><button class="icon-button" type="button" aria-label="Settings">⋯</button></header>
+          <div class="screen-body">
+            <div class="empty-hero surface">
+              <div class="mark" aria-hidden="true">B</div>
+              <h2>Perform the edit</h2>
+              <p>Build a video set, perform it to the beat, then export the take.</p>
+              <button class="primary-button" type="button" data-go="import">New Project</button>
+            </div>
+            <div class="section-title"><h2>Recent</h2><span>1 project</span></div>
+            <div class="surface">
+              <button class="recent-row" type="button" data-go="prepare" style="width:100%; color:inherit; text-align:left; background:transparent; border-left:0; border-right:0; border-top:0;">
+                <span class="recent-thumb"></span><span class="recent-copy"><strong>NEON RUN</strong><span>8 clips · 3 takes · Today</span></span><span aria-hidden="true">›</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="app-screen" data-screen="import" aria-label="Create and import screen">
+          <header class="app-header"><button class="icon-button" type="button" data-go="projects" aria-label="Back to projects">‹</button><h1>New Project</h1><button class="text-button" type="button" data-go="prepare">Prepare</button></header>
+          <div class="screen-body">
+            <div class="import-step surface">
+              <div class="import-step-head"><h2>1 · Choose song</h2><span class="status-pill" id="song-state">Required</span></div>
+              <p>The song drives the beat grid. Clip audio is not used in this version.</p>
+              <div class="choice-row"><button class="primary-button" id="choose-song" type="button">Choose Song</button><button class="secondary-button" type="button">Files</button></div>
+            </div>
+            <div class="import-step surface">
+              <div class="import-step-head"><h2>2 · Add clips</h2><span class="status-pill" id="import-count">0 / 8</span></div>
+              <p>Add up to eight videos now, or fill the remaining slots later.</p>
+              <div class="choice-row"><button class="primary-button" id="add-clips" type="button">Add from Photos</button><button class="secondary-button" type="button">Files</button></div>
+            </div>
+            <div class="section-title"><h2>Clip slots</h2><span>Ordered performance pads</span></div>
+            <div class="clip-list" id="import-slot-list">
+              <div class="clip-row"><span class="clip-number">01</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">02</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">03</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">04</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">05</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">06</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">07</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+              <div class="clip-row"><span class="clip-number">08</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Empty slot</span></span><span class="clip-state">Empty</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="app-screen" data-screen="prepare" aria-label="Prepare screen">
+          <header class="app-header"><div><div class="eyebrow">Project</div><h1>NEON RUN</h1></div><div class="header-actions"><span class="status-pill ready">Ready</span><button class="icon-button" type="button" aria-label="Project menu">⋯</button></div></header>
+          <div class="screen-body">
+            <div class="analysis-card surface">
+              <div class="analysis-head"><div class="album" aria-hidden="true">♫</div><div class="analysis-copy"><strong>MIDNIGHT CIRCUIT</strong><span id="analysis-status">Finding beats · 68%</span></div><div><div class="analysis-number" id="analysis-bpm">124</div><button class="text-button" id="analysis-button" type="button">Advance</button></div></div>
+              <div class="progress-track"><div class="progress-fill" id="analysis-progress"></div></div>
+            </div>
+            <div class="section-title"><h2>8 Clips</h2><span>5 ready · 2 open</span></div>
+            <div class="clip-list">
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">01</span><span class="clip-thumb"></span><span class="clip-meta"><strong>Night Drive</strong><span>Trim 00:03–00:18</span></span><span class="clip-state ready">Ready</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">02</span><span class="clip-thumb alt1"></span><span class="clip-meta"><strong>Green Room</strong><span>Trim 00:11–00:24</span></span><span class="clip-state ready">Ready</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">03</span><span class="clip-thumb alt2"></span><span class="clip-meta"><strong>Neon Dancer</strong><span>Trim 00:04–00:21</span></span><span class="clip-state ready">Ready</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">04</span><span class="clip-thumb alt3"></span><span class="clip-meta"><strong>Light Tunnel</strong><span>Performance proxy</span></span><span class="clip-state">Creating proxy<div class="mini-progress"><span></span></div></span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">05</span><span class="clip-thumb"></span><span class="clip-meta"><strong>City Blur</strong><span>Reading media</span></span><span class="clip-state">Inspecting</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">06</span><span class="clip-thumb alt1"></span><span class="clip-meta"><strong>Final Pose</strong><span>Trim 00:01–00:16</span></span><span class="clip-state ready">Ready</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">07</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Photos or Files</span></span><span class="clip-state">Empty</span></button>
+              <button class="clip-row" type="button" style="color:inherit; text-align:left;"><span class="clip-number">08</span><span class="clip-thumb empty">+</span><span class="clip-meta"><strong>Add clip</strong><span>Photos or Files</span></span><span class="clip-state">Empty</span></button>
+            </div>
+            <button class="rack-summary surface" type="button" style="width:100%; color:inherit;"><strong>EFFECT RACK · 8 SLOTS</strong><span>Review ›</span></button>
+          </div>
+          <nav class="bottom-tabs" aria-label="Project"><button class="active" data-go="prepare"><span>▦</span>Prepare</button><button data-go="live-portrait"><span>▶</span>Live</button><button data-go="takes"><span>●</span>Takes</button><button data-go="export"><span>⇧</span>Export</button></nav>
+        </section>
+
+        <section class="app-screen" data-screen="live-portrait" aria-label="Portrait Live screen">
+          <header class="app-header"><div><div class="eyebrow">Live</div><h1>NEON RUN</h1></div><div class="header-actions"><span class="status-pill ready">124 BPM</span><button class="icon-button" type="button" aria-label="Live menu">⋯</button></div></header>
+          <div class="live-body">
+            <div class="pgm"><span class="pgm-label">PGM · <b class="current-number">03</b></span><span class="pgm-next">NEXT <b class="queued-number">06</b> · <span class="quant-label">1 BEAT</span></span><span class="pgm-rec">REC</span><div class="beat-line"><span></span></div></div>
+            <div class="transport"><button class="play-button" type="button" aria-label="Play or pause">▶</button><span class="time-copy">01:18 / 03:00</span><button class="quantize" type="button">1 BEAT</button><button class="record-button" type="button" aria-label="Record take">●</button></div>
+            <div class="pad-grid" aria-label="Clip rack">
+              <button class="clip-pad" data-clip="01" type="button">01<small>READY</small></button><button class="clip-pad" data-clip="02" type="button">02<small>READY</small></button><button class="clip-pad current" data-clip="03" type="button">03<small>PGM</small></button><button class="clip-pad" data-clip="04" type="button">04<small>READY</small></button>
+              <button class="clip-pad" data-clip="05" type="button">05<small>READY</small></button><button class="clip-pad queued" data-clip="06" type="button">06<small>1 BEAT</small></button><button class="clip-pad" data-clip="07" type="button">07<small>READY</small></button><button class="clip-pad" data-clip="08" type="button">08<small>READY</small></button>
+            </div>
+            <div class="effect-panel">
+              <div class="effect-strip" aria-label="Effect rack"><button class="effect-chip" type="button">TRANS</button><button class="effect-chip" type="button">SPEED</button><button class="effect-chip selected" type="button">DELAY</button><button class="effect-chip" type="button">STREAK</button><button class="effect-chip" type="button">PUNCH</button><button class="effect-chip" type="button">GRAIN</button><button class="effect-chip" type="button">LEAK</button><button class="effect-chip" type="button">VHS</button></div>
+              <div class="effect-control"><div><div class="effect-name">TAPDELAY</div><div class="effect-values"><span>FEEDBACK 28</span><span>TIME 1/4</span></div></div><span class="status-pill ready">ON</span><input class="effect-range" type="range" min="0" max="100" value="42" aria-label="Tapdelay mix"><span class="sr-only"></span></div>
+            </div>
+          </div>
+          <nav class="bottom-tabs" aria-label="Project"><button data-go="prepare"><span>▦</span>Prepare</button><button class="active" data-go="live-portrait"><span>▶</span>Live</button><button data-go="takes"><span>●</span>Takes</button><button data-go="export"><span>⇧</span>Export</button></nav>
+        </section>
+
+        <section class="app-screen" data-screen="live-landscape" aria-label="Landscape Live screen">
+          <div class="live-landscape">
+            <div class="pgm"><span class="pgm-label">PGM · <b class="current-number">03</b></span><span class="pgm-next">NEXT <b class="queued-number">06</b> · <span class="quant-label">1 BEAT</span></span><span class="pgm-rec">REC</span><div class="beat-line"><span></span></div></div>
+            <div class="land-controls">
+              <div class="land-title"><strong>NEON RUN</strong><span>124 BPM · READY</span></div>
+              <div class="pad-grid" aria-label="Clip rack">
+                <button class="clip-pad" data-clip="01" type="button">01<small>READY</small></button><button class="clip-pad" data-clip="02" type="button">02<small>READY</small></button><button class="clip-pad current" data-clip="03" type="button">03<small>PGM</small></button><button class="clip-pad" data-clip="04" type="button">04<small>READY</small></button>
+                <button class="clip-pad" data-clip="05" type="button">05<small>READY</small></button><button class="clip-pad queued" data-clip="06" type="button">06<small>1 BEAT</small></button><button class="clip-pad" data-clip="07" type="button">07<small>READY</small></button><button class="clip-pad" data-clip="08" type="button">08<small>READY</small></button>
+              </div>
+              <div class="effect-panel"><div class="effect-strip"><button class="effect-chip" type="button">TR</button><button class="effect-chip" type="button">SP</button><button class="effect-chip selected" type="button">DL</button><button class="effect-chip" type="button">ST</button><button class="effect-chip" type="button">PZ</button><button class="effect-chip" type="button">FG</button><button class="effect-chip" type="button">LL</button><button class="effect-chip" type="button">VHS</button></div><div class="effect-control"><div><div class="effect-name">TAPDELAY</div><div class="effect-values"><span>FEEDBACK 28</span><span>TIME 1/4</span></div></div><span class="status-pill ready">MIX 42%</span><input class="effect-range" type="range" min="0" max="100" value="42" aria-label="Tapdelay mix"></div></div>
+            </div>
+            <div class="transport"><button class="play-button" type="button" aria-label="Play or pause">▶</button><span class="time-copy">01:18 / 03:00 · 124 BPM</span><button class="quantize" type="button">1 BEAT</button><button class="record-button" type="button" aria-label="Record take">●</button></div>
+          </div>
+        </section>
+
+        <section class="app-screen" data-screen="takes" aria-label="Takes screen">
+          <header class="app-header"><div><div class="eyebrow">NEON RUN</div><h1>Takes</h1></div><button class="icon-button" type="button" aria-label="Takes menu">⋯</button></header>
+          <div class="screen-body">
+            <div class="section-title"><h2>Performances</h2><span>3 takes</span></div>
+            <div class="surface">
+              <div class="take-row"><button class="take-play" type="button" aria-label="Play Take 03">▶</button><div class="take-copy"><strong>Take 03 · Neon pass</strong><span>02:47 · Today, 9:42 PM</span></div><span class="take-tag">READY</span></div>
+              <div class="take-row"><button class="take-play" type="button" aria-label="Play Take 02">▶</button><div class="take-copy"><strong>Take 02</strong><span>02:55 · Today, 9:31 PM</span></div><span class="take-tag">EXPORTED</span></div>
+              <div class="take-row"><button class="take-play" type="button" aria-label="Play recovered Take 01">▶</button><div class="take-copy"><strong>Take 01</strong><span>01:16 · interruption recovered</span></div><span class="take-tag" style="color:#ffc0a6; background:#3a241a;">RECOVERED</span></div>
+            </div>
+            <div class="section-title"><h2>Selected</h2><span>Take 03</span></div>
+            <div class="choice-row"><button class="primary-button" type="button" data-go="export">Export Take</button><button class="secondary-button" type="button">Rename</button></div>
+          </div>
+          <nav class="bottom-tabs" aria-label="Project"><button data-go="prepare"><span>▦</span>Prepare</button><button data-go="live-portrait"><span>▶</span>Live</button><button class="active" data-go="takes"><span>●</span>Takes</button><button data-go="export"><span>⇧</span>Export</button></nav>
+        </section>
+
+        <section class="app-screen" data-screen="export" aria-label="Export screen">
+          <header class="app-header"><div><div class="eyebrow">NEON RUN</div><h1>Export Take 03</h1></div><button class="icon-button" type="button" aria-label="Export menu">⋯</button></header>
+          <div class="screen-body">
+            <div class="export-preview"></div>
+            <div class="section-title"><h2>Output</h2><span>Estimated 286 MB</span></div>
+            <div class="surface"><div class="export-setting"><span>Format</span><strong>1080p · 30 fps · SDR</strong></div><div class="export-setting"><span>Video</span><strong>H.264</strong></div><div class="export-setting"><span>Audio</span><strong>AAC Stereo</strong></div><div class="export-setting"><span>Duration</span><strong>02:47</strong></div></div>
+            <button class="primary-button" id="start-export" type="button" style="width:100%; margin-top:12px;">Render Video</button>
+            <div class="export-progress surface" id="export-progress"><div class="export-progress-head"><strong id="export-stage">Rendering effects</strong><span id="export-percent">0%</span></div><div class="progress-track"><div class="progress-fill" id="export-fill" style="width:0;"></div></div></div>
+            <div class="completion-actions" id="completion-actions"><button type="button">Photos</button><button type="button">Files</button><button type="button">Share</button></div>
+          </div>
+          <nav class="bottom-tabs" aria-label="Project"><button data-go="prepare"><span>▦</span>Prepare</button><button data-go="live-portrait"><span>▶</span>Live</button><button data-go="takes"><span>●</span>Takes</button><button class="active" data-go="export"><span>⇧</span>Export</button></nav>
+        </section>
+
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        <div class="home-indicator" aria-hidden="true"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      const screenPicker = document.getElementById('screen-picker');
+      const devicePicker = document.getElementById('device-picker');
+      const device = document.getElementById('device');
+      const safeTop = document.getElementById('safe-top');
+      const scaleBox = document.getElementById('device-scale');
+      const stage = document.getElementById('stage');
+      const toast = document.getElementById('toast');
+      const defaultState = { screen: 'live-portrait', current: '03', queued: '06', quantIndex: 2, playing: false, recording: false, analysis: 68, imported: false, exportProgress: 0 };
+      let state = Object.assign({}, defaultState);
+      const quantizations = ['¼ BEAT', '½ BEAT', '1 BEAT', '2 BEATS'];
+      let exportTimer;
+
+      function announce(message) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(announce.timer);
+        announce.timer = setTimeout(function () { toast.classList.remove('show'); }, 1400);
+      }
+
+      function setScreen(name) {
+        state.screen = name;
+        screenPicker.value = name;
+        const landscape = name === 'live-landscape';
+        device.classList.toggle('landscape', landscape);
+        safeTop.style.display = landscape ? 'flex' : 'flex';
+        document.querySelectorAll('.app-screen').forEach(function (screen) { screen.classList.toggle('active', screen.dataset.screen === name); });
+        applyDeviceSize();
+        renderLiveState();
+      }
+
+      function applyDeviceSize() {
+        const parts = devicePicker.value.split('x').map(Number);
+        const landscape = state.screen === 'live-landscape';
+        const width = landscape ? parts[1] : parts[0];
+        const height = landscape ? parts[0] : parts[1];
+        device.style.width = width + 'px';
+        device.style.height = height + 'px';
+        const maxWidth = Math.max(320, stage.clientWidth - 16);
+        const availableHeight = Math.max(390, window.innerHeight - 116);
+        const scale = Math.min(1, maxWidth / width, availableHeight / height);
+        scaleBox.style.width = (width * scale) + 'px';
+        scaleBox.style.height = (height * scale) + 'px';
+        device.style.transformOrigin = 'top left';
+        device.style.transform = 'scale(' + scale + ')';
+      }
+
+      function renderLiveState() {
+        document.querySelectorAll('.current-number').forEach(function (node) { node.textContent = state.current; });
+        document.querySelectorAll('.queued-number').forEach(function (node) { node.textContent = state.queued || '—'; });
+        document.querySelectorAll('.quant-label').forEach(function (node) { node.textContent = quantizations[state.quantIndex]; });
+        document.querySelectorAll('.quantize').forEach(function (button) { button.textContent = quantizations[state.quantIndex]; });
+        document.querySelectorAll('.clip-pad').forEach(function (pad) {
+          pad.classList.toggle('current', pad.dataset.clip === state.current);
+          pad.classList.toggle('queued', pad.dataset.clip === state.queued);
+          const small = pad.querySelector('small');
+          if (pad.dataset.clip === state.current) small.textContent = 'PGM';
+          else if (pad.dataset.clip === state.queued) small.textContent = quantizations[state.quantIndex];
+          else small.textContent = 'READY';
+        });
+        document.querySelectorAll('.play-button').forEach(function (button) { button.textContent = state.playing ? 'Ⅱ' : '▶'; });
+        document.querySelectorAll('.record-button').forEach(function (button) { button.classList.toggle('on', state.recording); });
+        document.querySelectorAll('.pgm-rec').forEach(function (label) { label.classList.toggle('show', state.recording); });
+      }
+
+      function resetState() {
+        clearInterval(exportTimer);
+        state = Object.assign({}, defaultState);
+        document.getElementById('song-state').textContent = 'Required';
+        document.getElementById('song-state').className = 'status-pill';
+        document.getElementById('import-count').textContent = '0 / 8';
+        document.getElementById('analysis-status').textContent = 'Finding beats · 68%';
+        document.getElementById('analysis-progress').style.width = '68%';
+        document.getElementById('export-progress').classList.remove('show');
+        document.getElementById('completion-actions').classList.remove('show');
+        document.getElementById('start-export').style.display = 'block';
+        document.getElementById('export-fill').style.width = '0%';
+        document.getElementById('export-percent').textContent = '0%';
+        setScreen(defaultState.screen);
+        announce('Prototype reset');
+      }
+
+      screenPicker.addEventListener('change', function () { setScreen(screenPicker.value); });
+      devicePicker.addEventListener('change', applyDeviceSize);
+      document.getElementById('reset-button').addEventListener('click', resetState);
+      window.addEventListener('resize', applyDeviceSize);
+
+      document.addEventListener('click', function (event) {
+        const go = event.target.closest('[data-go]');
+        if (go) { setScreen(go.dataset.go); return; }
+        const pad = event.target.closest('.clip-pad');
+        if (pad) {
+          const clip = pad.dataset.clip;
+          if (clip === state.queued) { state.queued = ''; announce('Queue cancelled'); }
+          else if (clip === state.current) { announce('Clip ' + clip + ' is on air'); }
+          else { state.queued = clip; announce('Clip ' + clip + ' queued for ' + quantizations[state.quantIndex]); }
+          renderLiveState();
+          return;
+        }
+        const play = event.target.closest('.play-button');
+        if (play) {
+          state.playing = !state.playing;
+          if (state.playing && state.queued) {
+            setTimeout(function () { if (state.playing && state.queued) { state.current = state.queued; state.queued = ''; renderLiveState(); announce('Cut executed on beat'); } }, 900);
+          }
+          renderLiveState();
+          return;
+        }
+        const quantize = event.target.closest('.quantize');
+        if (quantize) { state.quantIndex = (state.quantIndex + 1) % quantizations.length; renderLiveState(); announce('Quantize ' + quantizations[state.quantIndex]); return; }
+        const record = event.target.closest('.record-button');
+        if (record) { state.recording = !state.recording; renderLiveState(); announce(state.recording ? 'Recording Take 04' : 'Take 04 saved'); return; }
+        const effect = event.target.closest('.effect-chip');
+        if (effect) {
+          const group = effect.parentElement;
+          group.querySelectorAll('.effect-chip').forEach(function (chip) { chip.classList.remove('selected'); });
+          effect.classList.add('selected');
+          announce('Effect slot selected');
+        }
+      });
+
+      document.querySelectorAll('.effect-range').forEach(function (range) { range.addEventListener('input', function () { announce('Effect mix ' + range.value + '%'); }); });
+      document.getElementById('choose-song').addEventListener('click', function () { state.imported = true; const pill = document.getElementById('song-state'); pill.textContent = 'Analyzing'; pill.className = 'status-pill ready'; announce('Song selected'); });
+      document.getElementById('add-clips').addEventListener('click', function () { document.getElementById('import-count').textContent = '6 / 8'; announce('Six clips added'); });
+      document.getElementById('analysis-button').addEventListener('click', function () { state.analysis = state.analysis >= 100 ? 24 : Math.min(100, state.analysis + 16); document.getElementById('analysis-progress').style.width = state.analysis + '%'; document.getElementById('analysis-status').textContent = state.analysis === 100 ? 'Ready · 124 BPM' : 'Finding beats · ' + state.analysis + '%'; announce(state.analysis === 100 ? 'Song analysis ready' : 'Analysis advanced'); });
+      document.getElementById('start-export').addEventListener('click', function () {
+        clearInterval(exportTimer);
+        state.exportProgress = 0;
+        document.getElementById('export-progress').classList.add('show');
+        document.getElementById('completion-actions').classList.remove('show');
+        document.getElementById('start-export').style.display = 'none';
+        exportTimer = setInterval(function () {
+          state.exportProgress = Math.min(100, state.exportProgress + 8);
+          document.getElementById('export-fill').style.width = state.exportProgress + '%';
+          document.getElementById('export-percent').textContent = state.exportProgress + '%';
+          document.getElementById('export-stage').textContent = state.exportProgress < 78 ? 'Rendering effects' : state.exportProgress < 100 ? 'Writing video' : 'Export complete';
+          if (state.exportProgress === 100) { clearInterval(exportTimer); document.getElementById('completion-actions').classList.add('show'); announce('Video ready to save'); }
+        }, 180);
+      });
+
+      setScreen(defaultState.screen);
+    }());
+  </script>
+</body>
+</html>
