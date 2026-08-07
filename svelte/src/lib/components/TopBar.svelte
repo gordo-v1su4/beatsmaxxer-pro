@@ -228,7 +228,7 @@
         class="status-dot"
         style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
       ></div>
-      <span class="brand-text">BEATSURFING</span>
+      <span class="brand-text">BEATSMAXXING</span>
       <span class="brand-x">×</span>
       <span class="brand-sub">CHE</span>
     </div>

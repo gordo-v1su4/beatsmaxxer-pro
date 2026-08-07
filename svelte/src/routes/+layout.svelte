@@ -6,7 +6,7 @@
 </script>
 
 <svelte:head>
-  <title>Beat Surfer Pro</title>
+  <title>BEATSMAXXING</title>
   <link rel="icon" href={favicon} type="image/svg+xml" />
   <link rel="shortcut icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href={favicon} />

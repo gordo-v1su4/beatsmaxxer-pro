@@ -241,7 +241,7 @@ const defs: ModuleDefinition[] = [
     category: 'camera',
     compact: true,
     shaderKey: 'mirror',
-    description: 'Mirror, kaleido + recursive fold',
+    description: 'Reflection folds: mirror planes, slabs, boxes',
     params: { fold: 0, offset: 50, spin: 50, beat: 40, mix: 100 }
   },
   {
@@ -263,8 +263,12 @@ export const MODULE_CATALOG = new Map<string, ModuleDefinition>(
   defs.map((d) => [d.id, d])
 );
 
-export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler'];
-export const DEFAULT_RACK_BOTTOM = ['punch', 'shake', 'orbit', 'focus'];
+// Both rows ship full at MAX_RACK_SLOTS_PER_ROW. The top row is exactly the
+// BEAT FX family, which has five members; the bottom takes the four camera
+// moves plus INCEPTION. Leaving two slots empty by default hid two working
+// modules behind a drag nobody knew to perform.
+export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'streak'];
+export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'focus'];
 
 export function getModuleDef(id: string): ModuleDefinition | undefined {
   return MODULE_CATALOG.get(id);

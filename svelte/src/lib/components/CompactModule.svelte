@@ -197,16 +197,26 @@
         { param: 'edge', label: 'EDGE' }
       ]
     },
+    // Twelve folds, matching SPEEDRAMP's shape density. `fold` steps in
+    // 100/11 so each button lands exactly on one shader branch.
     mirror: {
       buttons: [
-        { label: 'MIRROR', set: { fold: 0, offset: 50, spin: 50, beat: 20 } },
-        { label: 'QUAD', set: { fold: 50, offset: 50, spin: 50, beat: 30 } },
-        { label: 'KALEID', set: { fold: 75, offset: 50, spin: 60, beat: 55 } },
-        { label: 'INCEPT', set: { fold: 100, offset: 50, spin: 40, beat: 75 } }
+        { label: 'MIR L', set: { fold: 0, offset: 50, spin: 50, beat: 20 } },
+        { label: 'MIR R', set: { fold: 9, offset: 50, spin: 50, beat: 20 } },
+        { label: 'MIR D', set: { fold: 18, offset: 50, spin: 50, beat: 25 } },
+        { label: 'MIR U', set: { fold: 27, offset: 50, spin: 50, beat: 25 } },
+        { label: 'QUAD', set: { fold: 36, offset: 50, spin: 50, beat: 30 } },
+        { label: 'SLB V', set: { fold: 45, offset: 38, spin: 50, beat: 35 } },
+        { label: 'SLB H', set: { fold: 55, offset: 38, spin: 50, beat: 35 } },
+        { label: 'BOX', set: { fold: 64, offset: 34, spin: 50, beat: 40 } },
+        { label: 'COR A', set: { fold: 73, offset: 50, spin: 50, beat: 30 } },
+        { label: 'COR B', set: { fold: 82, offset: 50, spin: 50, beat: 30 } },
+        { label: 'TUNL', set: { fold: 91, offset: 30, spin: 45, beat: 70 } },
+        { label: 'SPIN', set: { fold: 100, offset: 42, spin: 62, beat: 55 } }
       ],
-      primary: 'spin',
+      primary: 'fold',
       sliders: [
-        { param: 'offset', label: 'OFFSET' },
+        { param: 'offset', label: 'FOLD POS' },
         { param: 'beat', label: 'BEAT' }
       ]
     },
@@ -226,6 +236,19 @@
   };
 
   const spec = $derived(COMPACT_CONTROLS[mod.id]);
+
+  /** Half the closest gap between this module's own preset values. A fixed
+   * tolerance lit up neighbouring buttons once a module had enough presets to
+   * space them under 18 apart — INCEPTION's twelve folds sit 9.09 apart. */
+  const activeTolerance = $derived.by(() => {
+    const values = (spec?.buttons ?? [])
+      .map((btn) => btn.set[spec!.primary])
+      .filter((value): value is number => typeof value === 'number')
+      .sort((a, b) => a - b);
+    let gap = Infinity;
+    for (let i = 1; i < values.length; i++) gap = Math.min(gap, values[i]! - values[i - 1]!);
+    return Number.isFinite(gap) ? Math.max(1, gap / 2) : 9;
+  });
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter(isVideoFile);
@@ -339,7 +362,7 @@
         {#each spec.buttons as btn (btn.label)}
           <RackBtn
             label={btn.label}
-            active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= 9}
+            active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= activeTolerance}
             color={mod.accentColor}
             width={36}
             height={16}

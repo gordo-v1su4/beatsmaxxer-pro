@@ -39,6 +39,8 @@ describe('rack row placement', () => {
   });
 
   test('adds one compatible fifth module and keeps the row capped at five', () => {
+    const four = DEFAULT_RACK_TOP.filter((id) => id !== 'streak');
+    rackTop.set([...four]);
     expect(canDropModuleOnSlot(
       { moduleId: 'streak', source: 'palette' },
       { row: 'top', index: 4 }
@@ -47,7 +49,7 @@ describe('rack row placement', () => {
       { moduleId: 'streak', source: 'palette' },
       { row: 'top', index: 4 }
     )).toBe(true);
-    expect(get(rackTop)).toEqual([...DEFAULT_RACK_TOP, 'streak']);
+    expect(get(rackTop)).toEqual([...four, 'streak']);
     expect(get(videoLayers)['top-4']).toBeNull();
 
     expect(assignModuleToSlot('top', 5, 'leak')).toBe(false);
@@ -55,6 +57,8 @@ describe('rack row placement', () => {
   });
 
   test('the fifth slot rejects incompatible and already-racked effects', () => {
+    const four = DEFAULT_RACK_TOP.filter((id) => id !== 'streak');
+    rackTop.set([...four]);
     expect(canDropModuleOnSlot(
       { moduleId: 'shake', source: 'palette' },
       { row: 'top', index: 4 }
@@ -63,7 +67,7 @@ describe('rack row placement', () => {
       { moduleId: 'transition', source: 'palette' },
       { row: 'top', index: 4 }
     )).toBe(false);
-    expect(get(rackTop)).toEqual(DEFAULT_RACK_TOP);
+    expect(get(rackTop)).toEqual(four);
   });
 
   test('treats a library drop as an exact effect swap, even when the effect is already in the rack', () => {
@@ -71,7 +75,7 @@ describe('rack row placement', () => {
       { moduleId: 'timesampler', source: 'palette' },
       { row: 'top', index: 0 }
     )).toBe(true);
-    expect(get(rackTop)).toEqual(['timesampler', 'speedramp', 'tapdelay', 'transition']);
+    expect(get(rackTop)).toEqual(['timesampler', 'speedramp', 'tapdelay', 'transition', 'streak']);
   });
 
   test('keeps stable slot video ownership unchanged when replacing its effect', () => {
