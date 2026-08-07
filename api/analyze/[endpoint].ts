@@ -29,6 +29,7 @@ export default async function handler(req: RouteRequest, res: ServerResponse) {
         host: firstHeader(req.headers.host) ?? firstHeader(req.headers["x-forwarded-host"]),
         forwardedProto: firstHeader(req.headers["x-forwarded-proto"]),
         fetchSite: firstHeader(req.headers["sec-fetch-site"]),
+        cookieHeader: firstHeader(req.headers.cookie),
         body: req,
         signal: clientAbort.signal,
       },

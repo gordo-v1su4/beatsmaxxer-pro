@@ -55,6 +55,16 @@ The proxy accepts only `POST` to `fast` or `rhythm`, and only an outer `multipar
 
 The production relay is enabled only when all three server-only variables above are configured — the first two at build, all three at runtime. It rejects requests whose `Origin`, forwarded protocol, host, or Fetch Metadata do not identify the same deployed application. The route accepts only the two named POST endpoints and valid bounded multipart uploads, limits concurrent upstream calls, applies an upstream timeout, sanitizes failures, and never exposes the Essentia credential.
 
+### Access gate
+
+Set `APP_ACCESS_PIN` (server-only) to require a code before the app renders or hosted analysis runs. Leave it empty and there is no gate.
+
+The gate is enforced on the server, not in the bundle: `/__api/gate` verifies the PIN and issues an HttpOnly, SameSite=Strict, 30-day session cookie, and `/__api/analyze/*` returns `401 access_locked` without it — before reading the upload or spending the credential. The browser only asks whether to draw the lock screen; it cannot unlock anything itself. Changing the PIN takes effect on the next request and ends every existing session, because the signing key is derived from it.
+
+Failed attempts are counted per server instance (10 per 10 minutes) and answered with `429`. Serverless scales out, so that bounds one instance rather than the deployment — it raises the cost of guessing without being a durable rate limiter.
+
+The gate deliberately fails **open** on missing configuration. A half-configured gate that rejects everyone is indistinguishable from an outage, and locking the operator out of their own deployment is worse than the exposure they already accepted.
+
 The Vercel project must also publish an IP-keyed WAF rate limit scoped to `POST /__api/analyze/*`. The intended initial limit is 10 analysis requests per 10 minutes per source IP. Do not deploy an enabled public relay without that rule. Vercel's platform DDoS protection remains an additional layer; it does not replace the endpoint-specific rate limit.
 
 The visible `SONG` flow requires an explicit choice between **ANALYZE**, **LOCAL ONLY**, and **CANCEL**. Only **ANALYZE** prepares and uploads a bounded excerpt. Local-only playback never invokes the hosted service.

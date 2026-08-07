@@ -15,6 +15,7 @@
   } from '$lib/stores/rack';
   import { listCatalog } from '$lib/modules/catalog';
   import TopBar from '$lib/components/TopBar.svelte';
+  import AccessGate from '$lib/components/AccessGate.svelte';
   import PgmRail from '$lib/components/PgmRail.svelte';
   import MainViewer from '$lib/components/MainViewer.svelte';
   import RackSlot from '$lib/components/RackSlot.svelte';
@@ -150,6 +151,7 @@
 </script>
 
 <div class="app-viewport">
+<AccessGate />
 <DragGhost />
 <CapabilityGate state={$capabilities} />
 

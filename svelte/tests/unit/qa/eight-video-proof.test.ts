@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { EIGHT_VIDEO_OBSERVATION_MS, EIGHT_VIDEO_WARMUP_MS, evaluateCatalogHotSwapStress, evaluateEightVideoProof, type EightVideoProofReport } from '$lib/qa/eightVideoProof';
+import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
 
 function report(): EightVideoProofReport {
   const slots = Array.from({ length: 8 }, (_, index) => ({
@@ -8,7 +9,7 @@ function report(): EightVideoProofReport {
     videoWidth: 1920, videoHeight: 1080, duration: 10, totalVideoFrames: 30, droppedVideoFrames: 0,
     render: { source: `blob:video-${index}`, externalTextureImported: true, externalTextureBound: true,
       cachedTextureUploaded: false, cachedTextureBound: false, samplePath: 'external-texture', frameId: 1,
-      renderCount: 100, skippedRenderCount: 0, targetFps: 24, frameIntervalMs: 42 }
+      renderCount: 100, skippedRenderCount: 0, targetFps: WEB_PREVIEW_TARGET_FPS, frameIntervalMs: 42 }
   }));
   const baselineSlots = slots.map((slot, index) => ({
     canvasId: index < 4 ? `top-${index}` : `bottom-${index - 4}`,

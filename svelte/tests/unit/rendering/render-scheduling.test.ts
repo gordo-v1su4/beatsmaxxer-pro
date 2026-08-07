@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import { WebGpuEngine, type CanvasBinding } from '$lib/rendering/webgpu/WebGpuEngine';
 import type { TimelineFrame } from '$lib/transport';
+import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
 
 function frame(contextTimeSeconds: number, fixedStepIndex: number, generation = 1): TimelineFrame {
   return {
@@ -46,44 +47,35 @@ function scheduledEngine(active = true) {
 }
 
 describe('bounded WebGPU render scheduling', () => {
-  test('keeps PGM at display cadence while capping eight changing previews at 24 fps', () => {
-    const { engine, encodeBinding, submit } = scheduledEngine();
+  test('keeps PGM at display cadence while capping previews at the web budget', () => {
+    const { engine, encodeBinding } = scheduledEngine();
 
-    engine.renderAll(frame(0, 0));
-    expect(encodeBinding).toHaveBeenCalledTimes(9);
+    // Drive one second of 60fps display frames. PGM is exempt from the cadence
+    // cap and must render on every one; each preview must land on exactly the
+    // web budget. Counting over a second rather than asserting a frame pattern
+    // keeps this honest if the budget changes.
+    const DISPLAY_FPS = 60;
+    for (let i = 0; i < DISPLAY_FPS; i++) engine.renderAll(frame(i / DISPLAY_FPS, i));
 
-    encodeBinding.mockClear();
-    engine.renderAll(frame(1 / 60, 1));
-    expect(encodeBinding).toHaveBeenCalledTimes(1);
-    expect(encodeBinding.mock.calls[0]?.[3]).toBe('transition');
-
-    encodeBinding.mockClear();
-    engine.renderAll(frame(2 / 60, 2));
-    expect(encodeBinding).toHaveBeenCalledTimes(1);
-
-    encodeBinding.mockClear();
-    engine.renderAll(frame(3 / 60, 3));
-    expect(encodeBinding).toHaveBeenCalledTimes(9);
-    expect(submit).toHaveBeenCalledTimes(4);
-
-    encodeBinding.mockClear();
-    engine.renderAll(frame(4 / 60, 4));
-    expect(encodeBinding).toHaveBeenCalledTimes(1);
-
-    encodeBinding.mockClear();
-    engine.renderAll(frame(5 / 60, 5));
-    expect(encodeBinding).toHaveBeenCalledTimes(9);
+    const rendered = encodeBinding.mock.calls.map((call) => call[3] as string);
+    expect(rendered.filter((id) => id === 'transition')).toHaveLength(DISPLAY_FPS);
+    for (let slot = 0; slot < 8; slot++) {
+      expect(rendered.filter((id) => id === `module-${slot}`)).toHaveLength(
+        WEB_PREVIEW_TARGET_FPS
+      );
+    }
 
     const cadence = engine.getRenderDiagnostics()['slot-0'];
-    expect(cadence).toMatchObject({
-      bindingId: 'slot-0',
-      targetFps: 24,
-      renderCount: 3,
-      skippedRenderCount: 3,
-      renderedThisFrame: true,
-      skipReason: 'none'
-    });
-    expect(cadence?.frameIntervalMs).toBeCloseTo(1000 / 30);
+    expect(cadence).toMatchObject({ bindingId: 'slot-0', targetFps: WEB_PREVIEW_TARGET_FPS });
+    expect(cadence?.renderCount).toBe(WEB_PREVIEW_TARGET_FPS);
+    expect(cadence?.frameIntervalMs).toBeCloseTo(1000 / WEB_PREVIEW_TARGET_FPS, 0);
+  });
+
+  test('the first frame renders every binding', () => {
+    const { engine, encodeBinding, submit } = scheduledEngine();
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding).toHaveBeenCalledTimes(9);
+    expect(submit).toHaveBeenCalledTimes(1);
   });
 
   test('renders sparse previews only after logical input changes', () => {
