@@ -2,6 +2,7 @@
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
+  import { screenFxViewer } from '$lib/stores/screenFx';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
   import { parseAccentColor } from '$lib/modules/registry';
@@ -42,7 +43,7 @@
       style="position:relative;aspect-ratio:16/9;width:min(100%, calc(100cqh * 16 / 9));background:#000;border:1px solid #1a1c1e;border-radius:2px;overflow:hidden"
     >
       <WebGpuCanvas id="pgm" moduleId={live.id} color={liveColor} class="absolute inset-0 w-full h-full" />
-      <ScreenOverlay />
+      {#if $screenFxViewer}<ScreenOverlay variant="viewer" />{/if}
       <ScreenBadge
         text={isBypassed
           ? `PGM · ${live.name} · BYPASSED`

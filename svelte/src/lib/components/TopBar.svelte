@@ -2,6 +2,7 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, redoRackParams, undoRackParams } from '$lib/stores/rack';
+  import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
@@ -421,6 +422,24 @@
     <TopBtn label="CLEAR" onclick={onClear} danger>
       {#snippet icon()}<X size={10} />{/snippet}
     </TopBtn>
+
+    <div class="crt-group" role="group" aria-label="CRT screen treatment">
+      <span class="crt-label">CRT</span>
+      <button
+        type="button"
+        class="crt-btn"
+        data-active={$screenFxViewer}
+        onclick={() => screenFxViewer.update((v) => !v)}
+        title="CRT glass on the PGM monitor"
+      >PGM</button>
+      <button
+        type="button"
+        class="crt-btn"
+        data-active={$screenFxModules}
+        onclick={() => screenFxModules.update((v) => !v)}
+        title="CRT glass on the rack previews — off by default; it costs image at preview size"
+      >RACK</button>
+    </div>
 
     <button
       type="button"
@@ -1180,5 +1199,45 @@
     border-color: #ef444466;
     color: #ef4444;
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .crt-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .crt-label {
+    font-family: var(--font-ui);
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: #33383f;
+    padding-right: 1px;
+  }
+
+  .crt-btn {
+    height: 26px;
+    padding: 0 5px;
+    flex-shrink: 0;
+    background: linear-gradient(180deg, #191b1d, #131517);
+    border: 1px solid #222428;
+    border-radius: 3px;
+    cursor: pointer;
+    color: #3a4050;
+    font-family: var(--font-ui);
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    transition: all 0.1s;
+  }
+
+  .crt-btn[data-active='true'] {
+    background: linear-gradient(180deg, #16221c, #101a15);
+    border-color: #35e08a55;
+    color: #35e08a;
+    box-shadow: 0 0 8px rgba(53, 224, 138, 0.18);
   }
 </style>

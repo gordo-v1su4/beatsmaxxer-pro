@@ -12,6 +12,7 @@
   import HSlider from '$lib/components/rack/HSlider.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
+  import { screenFxModules } from '$lib/stores/screenFx';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
@@ -349,7 +350,7 @@
 
   <div class="module-preview">
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
-    <ScreenOverlay />
+    {#if $screenFxModules}<ScreenOverlay variant="module" />{/if}
     <ScreenBadge
       text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
       color={mod.accentColor}

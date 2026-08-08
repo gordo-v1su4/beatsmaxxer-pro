@@ -12,6 +12,7 @@
   import HeaderBtn from '$lib/components/rack/HeaderBtn.svelte';
   import MediaPatchBay from '$lib/components/rack/MediaPatchBay.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
+  import { screenFxModules } from '$lib/stores/screenFx';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
@@ -163,7 +164,7 @@
     {/if}
     <div class="module-preview">
       <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
-      <ScreenOverlay />
+      {#if $screenFxModules}<ScreenOverlay variant="module" />{/if}
       <ScreenBadge
         text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
         color={mod.accentColor}
