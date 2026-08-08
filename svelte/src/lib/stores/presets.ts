@@ -33,7 +33,9 @@ export const RACK_MACRO_DEFS: Record<
   punch: { param: 'amt', min: 15, max: 95, color: '#fb7185', short: 'PZ' },
   shake: { param: 'impact', min: 10, max: 100, color: '#a78bfa', short: 'HH' },
   orbit: { param: 'drift', min: 15, max: 85, color: '#2dd4bf', short: 'DC' },
-  focus: { param: 'amt', min: 10, max: 90, color: '#e2c08d', short: 'RF' }
+  focus: { param: 'amt', min: 10, max: 90, color: '#e2c08d', short: 'RF' },
+  streak: { param: 'length', min: 15, max: 90, color: '#06b6d4', short: 'ST' },
+  mirror: { param: 'offset', min: 20, max: 80, color: '#f0abfc', short: 'IN' }
 };
 
 export type MacroState = Record<RackMacroId, number>;
@@ -46,10 +48,14 @@ const DEFAULT_MACROS: MacroState = {
   punch: 60,
   shake: 55,
   orbit: 50,
-  focus: 45
+  focus: 45,
+  streak: 45,
+  mirror: 50
 };
 
-export const PRESET_MACRO_MAP: Record<PresetName, MacroState> = {
+/** Presets name only the macros they care about; the rest fall back to
+ *  DEFAULT_MACROS, so racking a new module does not mean editing 16 literals. */
+export const PRESET_MACRO_MAP: Record<PresetName, Partial<MacroState>> = {
   'Cascade Combo': { transition: 72, speedramp: 55, tapdelay: 48, timesampler: 65, punch: 60, shake: 55, orbit: 50, focus: 45 },
   'Big Head Mode': { transition: 88, speedramp: 35, tapdelay: 62, timesampler: 50, punch: 85, shake: 40, orbit: 35, focus: 55 },
   'Fog of War': { transition: 40, speedramp: 70, tapdelay: 55, timesampler: 45, punch: 35, shake: 65, orbit: 60, focus: 70 },
@@ -68,9 +74,16 @@ export const macros = writable<MacroState>({ ...DEFAULT_MACROS });
 
 export function selectPreset(name: PresetName) {
   selectedPreset.set(name);
-  const m = PRESET_MACRO_MAP[name];
-  if (m) {
-    macros.set({ ...m });
+  const preset = PRESET_MACRO_MAP[name];
+  if (preset) {
+    // Spreading a Partial widens every value to number|undefined; copy the keys
+    // the preset actually names instead so the result stays a full MacroState.
+    const m: MacroState = { ...DEFAULT_MACROS };
+    for (const id of RACK_MACRO_MODULES) {
+      const value = preset[id];
+      if (typeof value === 'number') m[id] = value;
+    }
+    macros.set(m);
     applyMacrosToParams(m);
   }
 }
@@ -89,12 +102,13 @@ function lerp(min: number, max: number, t: number) {
 
 function applyOneMacro(moduleId: RackMacroId, val: number) {
   const def = RACK_MACRO_DEFS[moduleId];
+  if (!def) return;
   updateParam(moduleId, def.param, Math.round(lerp(def.min, def.max, val)));
 }
 
 export function applyMacrosToParams(m: MacroState) {
   runRackParamTransaction(() => {
-    for (const id of RACK_MACRO_MODULES) applyOneMacro(id, m[id]);
+    for (const id of RACK_MACRO_MODULES) applyOneMacro(id, m[id] ?? DEFAULT_MACROS[id]);
   });
 }
 

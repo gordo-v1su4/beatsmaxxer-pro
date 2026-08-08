@@ -8,17 +8,9 @@
   let { onHeaderPointerDown }: Props = $props();
 </script>
 
-<!--
-  The only place a module can be picked up from.
-
-  The drag used to live on the whole header, so pressing BYPASS, MUTE, COLLAPSE
-  or CLIP started a reorder before the button's own click landed — the ghost
-  would appear every time you tried to work the controls. Confining the gesture
-  to this grip also gives the affordance one fixed home: the dotted patch in the
-  top-left, which is where a drag handle sits everywhere else.
-
-  Shared by both rack rows so the two can never drift apart again.
--->
+<!-- The only place a module can be picked up from. The drag used to live on the
+  whole header, so BYPASS/MUTE/COLLAPSE/CLIP each started a reorder before their
+  own click landed. Shared by both rack rows so they cannot drift apart. -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   data-drag-handle

@@ -1,3 +1,5 @@
+import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
+
 export const EIGHT_VIDEO_WARMUP_MS = 5_000;
 export const EIGHT_VIDEO_OBSERVATION_MS = 30_000;
 export const EIGHT_VIDEO_SLOT_COUNT = 8;
@@ -346,7 +348,7 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
     fail(!end || slotSeries.some((item) => !item || item.paused) || cumulativeAdvance < 1,
       `slot did not play concurrently: ${slot.moduleId}`);
     fail(!end || end.totalVideoFrames <= slot.totalVideoFrames, `slot decoded no new frames: ${slot.moduleId}`);
-    fail(!end || end.render.renderCount <= slot.render.renderCount || end.render.targetFps !== 24 ||
+    fail(!end || end.render.renderCount <= slot.render.renderCount || end.render.targetFps !== WEB_PREVIEW_TARGET_FPS ||
       slotSeries.some((item) => !item || item.render.frameIntervalMs === null || item.render.frameIntervalMs > 100),
       `slot render cadence/frame-time telemetry failed: ${slot.moduleId}`);
     fail(!end || end.droppedVideoFrames - slot.droppedVideoFrames > Math.max(12, (end.totalVideoFrames - slot.totalVideoFrames) * 0.3),

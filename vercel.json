@@ -16,6 +16,10 @@
     {
       "source": "/__api/analyze/:endpoint",
       "destination": "/api/analyze/:endpoint"
+    },
+    {
+      "source": "/__api/gate",
+      "destination": "/api/gate"
     }
   ]
 }

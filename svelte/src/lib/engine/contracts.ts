@@ -163,9 +163,8 @@ export interface WebGpuRenderDiagnostics {
   externalTextureBound: boolean;
   cachedTextureUploaded?: boolean;
   cachedTextureBound?: boolean;
-  /** This frame rendered from cache to cover a loop wrap. Without it the seam is
-   * indistinguishable from a healthy frame in diagnostics: the external import
-   * succeeds and reports hasVideo, it just hands back an empty texture. */
+  /** Rendered from cache to cover a loop wrap. Otherwise indistinguishable from
+   * a healthy frame: the import succeeds and reports hasVideo, just empty. */
   coveredLoopWrap?: boolean;
   samplePath: WebGpuVideoSamplePath;
   source: string | null;

@@ -174,10 +174,8 @@
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
 
-    // A choice the operator already made, and asked us to keep, is still an
-    // explicit choice — honour it so the song analyzes the moment it lands
-    // instead of stopping on the same modal every time. Consent is only ever
-    // skipped forward from a remembered "analyze"; never assumed.
+    // A remembered choice is still an explicit one, so honour it rather than
+    // re-prompting. Only ever skips forward from a stored answer; never assumed.
     const remembered = readHostedAnalysisPreference();
     if (remembered === 'analyze' && hostedAnalysisAvailable) {
       await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
@@ -230,7 +228,7 @@
         class="status-dot"
         style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
       ></div>
-      <span class="brand-text">BEATSURFING</span>
+      <span class="brand-text">BEATSMAXXING</span>
       <span class="brand-x">×</span>
       <span class="brand-sub">CHE</span>
     </div>

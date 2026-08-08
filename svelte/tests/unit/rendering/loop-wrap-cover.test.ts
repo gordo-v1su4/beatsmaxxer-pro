@@ -17,11 +17,7 @@ type Engine = InstanceType<typeof WebGpuEngine>;
 import type { CanvasBinding } from '$lib/rendering/webgpu/WebGpuEngine';
 import type { TimelineFrame } from '$lib/transport';
 
-/**
- * The wrap cover is invisible to ordinary render diagnostics by design — the
- * external import succeeds and reports hasVideo even when it hands back an empty
- * texture — so these assertions read the cover decision directly.
- */
+/** The cover is invisible to render diagnostics, so read the decision directly. */
 function coveringWrap(engine: Engine, sourceId: string): boolean {
   return (engine as unknown as { isCoveringLoopWrap(id: string): boolean }).isCoveringLoopWrap(
     sourceId

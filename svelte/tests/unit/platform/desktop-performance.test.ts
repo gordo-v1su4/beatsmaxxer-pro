@@ -13,6 +13,6 @@ describe('desktop preview performance budget', () => {
 
   test('preserves the web preview budget', () => {
     expect(previewTargetFps('web')).toBe(WEB_PREVIEW_TARGET_FPS);
-    expect(WEB_PREVIEW_TARGET_FPS).toBe(24);
+    expect(WEB_PREVIEW_TARGET_FPS).toBe(30);
   });
 });

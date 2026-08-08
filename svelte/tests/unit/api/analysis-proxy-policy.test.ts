@@ -8,6 +8,7 @@ import {
   proxyAnalysisRequest,
   type AnalysisProxyConfig,
 } from "../../../../api/analyze/policy";
+import { ACCESS_COOKIE_NAME, mintSessionToken } from "../../../../api/gate/policy";
 
 const enabledConfig: AnalysisProxyConfig = {
   enabled: true,
@@ -33,6 +34,54 @@ function request(body = new Uint8Array([1, 2, 3])) {
     body: stream(body),
   };
 }
+
+describe("analysis proxy access gate", () => {
+  const locked = { pin: "4821" };
+
+  it("refuses hosted analysis without a session when a PIN is configured", async () => {
+    const fetch = vi.fn();
+    let read = false;
+    const body = { async *[Symbol.asyncIterator]() { read = true; yield new Uint8Array([1]); } };
+    const result = await proxyAnalysisRequest(
+      { ...request(), body },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+      locked,
+    );
+    expect(result?.status).toBe(401);
+    expect(result?.body).toContain("access_locked");
+    // Rejected before the upload is read or the credential is spent.
+    expect(read).toBe(false);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("allows hosted analysis once the session cookie is present", async () => {
+    const fetch = vi.fn(async () => new Response('{"bpm":120}', {
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      { ...request(), cookieHeader: `${ACCESS_COOKIE_NAME}=${mintSessionToken(locked)}` },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+      locked,
+    );
+    expect(result?.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op when no PIN is configured", async () => {
+    const fetch = vi.fn(async () => new Response('{"bpm":120}', {
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      request(),
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+      { pin: "" },
+    );
+    expect(result?.status).toBe(200);
+  });
+});
 
 describe("analysis proxy policy", () => {
   it("accepts Tailscale CGNAT http bases for the development proxy", () => {

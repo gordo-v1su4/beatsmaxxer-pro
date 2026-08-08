@@ -1,3 +1,12 @@
+import {
+  ACCESS_COOKIE_NAME,
+  accessGateConfigFromEnv,
+  isAccessGateEnabled,
+  isValidSessionToken,
+  parseCookie,
+  type AccessGateConfig,
+} from "../gate/policy.js";
+
 export const ANALYSIS_PROXY_ENABLE_ENV = "ESSENTIA_ANALYSIS_ENABLED";
 export const ANALYSIS_MAX_REQUEST_BYTES = 3_500_000;
 export const ANALYSIS_MAX_RESPONSE_BYTES = 1_000_000;
@@ -22,6 +31,7 @@ export interface AnalysisProxyRequest {
   host?: string;
   forwardedProto?: string;
   fetchSite?: string;
+  cookieHeader?: string;
   body: AsyncIterable<Uint8Array>;
   signal?: AbortSignal;
 }
@@ -41,6 +51,7 @@ export interface AnalysisProxyOptions {
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
+  access_locked: "This deployment is locked. Enter the access code to use hosted analysis.",
   analysis_disabled: "Hosted analysis is disabled. Local playback and realtime analysis remain available.",
   analysis_unavailable: "Hosted analysis is unavailable. Local playback and realtime analysis remain available.",
   cross_origin_forbidden: "Hosted analysis requests must come from this application.",
@@ -79,13 +90,11 @@ export function isAnalysisProxyConfigured(config: AnalysisProxyConfig) {
 }
 
 /**
- * Build-time gate for the browser upload path. Deliberately does NOT require the
- * API key: the key is a runtime-only server secret, and on Vercel it may be
- * scoped so the build step never sees it. Requiring it here compiled ANALYZE off
- * in the production bundle with no diagnostic, which is what broke hosted
- * analysis on the web deployment. The function still performs the full
- * `isAnalysisProxyConfigured` check and answers 503 `analysis_unavailable` when
- * the credential is genuinely missing, so the client fails loudly, not silently.
+ * Build-time gate for the browser upload path. Deliberately key-free: the key is
+ * a runtime-only secret the Vercel build step may never see, and requiring it
+ * here compiled ANALYZE off in the production bundle with no diagnostic. The
+ * function still applies the full check and answers 503 analysis_unavailable, so
+ * a missing credential fails loudly rather than silently.
  */
 export function isAnalysisUploadPathEnabled(config: Pick<AnalysisProxyConfig, "enabled" | "apiBaseUrl">) {
   if (!config.enabled || !config.apiBaseUrl) return false;
@@ -137,10 +146,16 @@ export function isTrustedSameOriginRequest(request: Pick<
   }
 }
 
+function isRequestUnlocked(request: AnalysisProxyRequest, gate: AccessGateConfig) {
+  if (!isAccessGateEnabled(gate)) return true;
+  return isValidSessionToken(parseCookie(request.cookieHeader, ACCESS_COOKIE_NAME), gate);
+}
+
 export async function proxyAnalysisRequest(
   request: AnalysisProxyRequest,
   config: AnalysisProxyConfig,
   options: AnalysisProxyOptions = {},
+  accessGate: AccessGateConfig = accessGateConfigFromEnv(process.env),
 ): Promise<AnalysisProxyResponse | null> {
   const endpoint = request.endpoint;
   if (endpoint !== "fast" && endpoint !== "rhythm") return jsonError(404, "not_found", "Analysis endpoint not found.");
@@ -151,6 +166,11 @@ export async function proxyAnalysisRequest(
   if (config.deploymentMode === "production" && !isTrustedSameOriginRequest(request)) {
     return jsonError(403, "cross_origin_forbidden");
   }
+  // The access gate is the only control here that a request cannot simply assert
+  // its way past: Origin and Sec-Fetch-Site are attacker-controlled outside a
+  // browser, whereas this cookie requires having entered the PIN. When no PIN is
+  // configured the gate is disabled and this is a no-op.
+  if (!isRequestUnlocked(request, accessGate)) return jsonError(401, "access_locked");
   if (!config.enabled) return jsonError(503, "analysis_disabled");
   if (!isAnalysisProxyConfigured(config)) return jsonError(503, "analysis_unavailable");
   if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
@@ -176,10 +196,9 @@ export async function proxyAnalysisRequest(
   try {
     const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
     if (controller.signal.aborted) return null;
-    // A declared Content-Length with nothing readable behind it means the host
-    // drained the stream before we got it (a platform body parser). Forwarding
-    // the empty envelope would surface as an opaque upstream rejection, so name
-    // the real cause instead of blaming the upstream service.
+    // Nothing readable behind a declared Content-Length means the host drained
+    // the stream first. Name that rather than forwarding an empty envelope and
+    // surfacing it as an opaque upstream rejection.
     if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
 
     let upstream: Response;

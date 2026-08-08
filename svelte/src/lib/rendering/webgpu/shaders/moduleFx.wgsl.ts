@@ -82,6 +82,24 @@ fn mirrorRepeat(x: f32) -> f32 {
   return 1.0 - abs(fract(x * 0.5) * 2.0 - 1.0);
 }
 
+/** Fold x back into the band [c-h, c+h] by repeated reflection. Identity inside
+    the band; outside it the source repeats mirrored, which is what draws the
+    combed walls and picture-frame recursion the fold family is built on. */
+fn foldBand(x: f32, c: f32, h: f32) -> f32 {
+  let hh = max(h, 0.0008);
+  let period = 4.0 * hh;
+  let t = x - c + hh;
+  let m = t - period * floor(t / period);
+  return c + hh - abs(m - 2.0 * hh);
+}
+
+/** Reflect everything past a single plane back across it. Unlike foldBand this
+    keeps one side of the frame verbatim — a plain mirror, not a tunnel. */
+fn foldHalf(x: f32, pivot: f32, keepLow: f32) -> f32 {
+  let d = abs(x - pivot);
+  return pivot + select(d, -d, keepLow > 0.5);
+}
+
 /** Shared idle-card treatment: graphics fade to black toward the top and bottom
     of the lower band so every module's idle reads as one family. */
 fn idleFade(y: f32) -> f32 {
@@ -877,40 +895,60 @@ fn effectStreak(col: vec3f, uv: vec2f) -> vec3f {
   return wet / max(weight, 0.0001);
 }
 
-/** INCEPTION — the mirror family. p0 selects the fold (mirror X, mirror Y,
-    quad, kaleido-6, recursive inception tiles), p1 shifts the fold pivot,
-    p2 spins, p3 = beat reaction (kaleido spin snap / inception zoom pump). */
-fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
-  let kind = floor(u.p0 * 4.0 + 0.5);
-  let asp = max(u.aspect, 0.0001);
-  let pivot = 0.25 + u.p1 * 0.5;
-  let pulse = beatPulse(5.0) * u.p3;
-  var uv = uv0;
+/** INCEPTION — reflection folds in the Nception idiom: straight mirror planes,
+    bands and boxes rather than radial kaleidoscope wedges. The look comes from
+    where the fold sits and how far the source repeats past it, not from pie
+    slices, so verticals stay vertical and architecture stays readable.
 
-  if (kind < 0.5) {
-    uv.x = pivot - abs(uv0.x - pivot);
-  } else if (kind < 1.5) {
-    uv.y = pivot - abs(uv0.y - pivot);
-  } else if (kind < 2.5) {
-    uv.x = pivot - abs(uv0.x - pivot);
-    uv.y = 0.5 - abs(uv0.y - 0.5);
-  } else if (kind < 3.5) {
-    var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
-    let seg = 6.2831853 / 6.0;
-    let base = (u.p2 - 0.5) * 2.0 + u.beat * 0.15 * u.p3 + pulse * 0.35;
-    var ang = atan2(p.y, p.x) + base;
-    ang = abs(fract(ang / seg) - 0.5) * seg;
-    let r = length(p);
-    p = vec2f(cos(ang), sin(ang)) * r;
-    uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
-  } else {
-    // Recursive fold. mirrorRepeat keeps the screen centre on the source
-    // centre; folding with fract(p + 0.5) instead lands the centre of the
-    // frame on the corner of the source, which reads as an off-centre smear.
-    let z = 1.0 + u.p2 * 2.0 + pulse * 1.5;
-    let q = (uv0 - vec2f(0.5)) * z + vec2f(0.5);
-    uv = vec2f(mirrorRepeat(q.x), mirrorRepeat(q.y));
+    p0 selects one of twelve folds, p1 walks the fold across the frame, p2 spins
+    the fold axis, p3 = beat reaction. Folding happens in aspect-corrected space
+    so a diagonal is a true 45 degrees rather than a stretched one. */
+fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
+  let kind = floor(clamp(u.p0, 0.0, 1.0) * 11.0 + 0.5);
+  let asp = max(u.aspect, 0.0001);
+  let pulse = beatPulse(5.0) * u.p3;
+  // p1 walks the fold; 0.5 leaves it centred. Bands narrow as it moves out,
+  // which is what tightens the tunnel rather than just sliding it.
+  let shift = (u.p1 - 0.5) * 0.7;
+  let band = mix(0.42, 0.07, abs(u.p1 - 0.5) * 2.0) * (1.0 - pulse * 0.35);
+  let spin = (u.p2 - 0.5) * 3.14159265 + pulse * 0.5;
+
+  var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
+
+  if (kind < 0.5) {                        // MIR-L: keep the left, mirror right
+    p.x = foldHalf(p.x, shift, 1.0);
+  } else if (kind < 1.5) {                 // MIR-R
+    p.x = foldHalf(p.x, shift, 0.0);
+  } else if (kind < 2.5) {                 // MIR-D: the water-reflection look
+    p.y = foldHalf(p.y, shift, 1.0);
+  } else if (kind < 3.5) {                 // MIR-U
+    p.y = foldHalf(p.y, shift, 0.0);
+  } else if (kind < 4.5) {                 // QUAD: both planes at once
+    p.x = foldHalf(p.x, shift, 1.0);
+    p.y = foldHalf(p.y, shift, 1.0);
+  } else if (kind < 5.5) {                 // SLAB-V: centre strip, combed walls
+    p.x = foldBand(p.x, shift, band);
+  } else if (kind < 6.5) {                 // SLAB-H
+    p.y = foldBand(p.y, shift, band);
+  } else if (kind < 7.5) {                 // BOX: the picture-frame recursion
+    p.x = foldBand(p.x, 0.0, band * asp);
+    p.y = foldBand(p.y, 0.0, band);
+  } else if (kind < 8.5) {                 // COR-A: 45-degree corner fold
+    let r = rot2(p, 0.7853982);
+    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), -0.7853982);
+  } else if (kind < 9.5) {                 // COR-B: the other diagonal
+    let r = rot2(p, -0.7853982);
+    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), 0.7853982);
+  } else if (kind < 10.5) {                // TUNNEL: box driven deeper by beat
+    let z = 1.0 + u.p2 * 2.5 + pulse * 1.6;
+    let q = p * z;
+    p = vec2f(foldBand(q.x, 0.0, band * asp), foldBand(q.y, 0.0, band));
+  } else {                                 // SPIN: the fold axis rotates
+    let r = rot2(p, spin);
+    p = rot2(vec2f(foldBand(r.x, shift, band), r.y), -spin);
   }
+
+  let uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
   return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
 }
 
