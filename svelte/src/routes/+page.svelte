@@ -22,6 +22,7 @@
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
   import ModulePalette from '$lib/components/ModulePalette.svelte';
+  import ClipTray from '$lib/components/ClipTray.svelte';
   import BeatSequencer from '$lib/components/BeatSequencer.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
@@ -36,6 +37,7 @@
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { runDesktopNativeProof } from '$lib/qa/desktopNativeProof';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
+  import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
   import { startNativeCompositorBridge } from '$lib/platform/nativeCompositor';
   import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
@@ -142,7 +144,15 @@
   }
 
   async function loadClips(files: File[]) {
+    // The picker fills the rack as it always has; the bank keeps the same files
+    // so a clip can be re-assigned later without reopening the picker.
     await loadRackClipsFromFiles(files);
+    void addClipsToLibrary(files);
+  }
+
+  /** Drop from the clip bank — swaps that slot's media, leaving its effect alone. */
+  async function assignLibraryClip(clip: LibraryClip, row: 'top' | 'bottom', slotIndex: number) {
+    await loadRackClipsFromFiles([clip.file], `${row}-${slotIndex}`);
   }
 
   async function loadClipsFromModule(startId: string, files: File[]) {
@@ -175,6 +185,8 @@
 
     <div class="rack-main">
       <MainViewer modules={rackModules} />
+
+      <ClipTray onAssignClip={assignLibraryClip} />
 
       <div
         class="rack-row top-rack-row"

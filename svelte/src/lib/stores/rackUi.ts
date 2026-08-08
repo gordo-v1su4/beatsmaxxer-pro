@@ -18,6 +18,12 @@ export const fxLibOpen = writable(true);
 /** PGM source rail — can retract later for extra rack rows. */
 export const pgmRailOpen = writable(true);
 
+/**
+ * Clip bank drawer. Starts closed: loading clips is a setup activity, and the
+ * rack should own the full width during a performance.
+ */
+export const clipLibraryOpen = writable(false);
+
 export const topRowCompact = derived([rackTop, moduleCollapsed], ([top, collapsed]) => {
   if (top.length === 0) return false;
   return top.every((id) => collapsed[id] === true);

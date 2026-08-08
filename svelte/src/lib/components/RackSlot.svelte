@@ -19,6 +19,7 @@ import {
   import EffectModule from '$lib/components/EffectModule.svelte';
   import CompactModule from '$lib/components/CompactModule.svelte';
   import { pgmSource } from '$lib/stores/pgm';
+  import { clipDragState } from '$lib/stores/clipDrag';
   import { get } from 'svelte/store';
 
   interface Props {
@@ -65,6 +66,12 @@ import {
       $dragState.payload?.source === 'rack' &&
       $dragState.payload?.row === row &&
       $dragState.payload?.slotIndex === slotIndex
+  );
+  /** A clip is hovering this slot — media swap, effect untouched. */
+  const isClipHover = $derived(
+    $clipDragState.active &&
+      $clipDragState.hoverTarget?.row === row &&
+      $clipDragState.hoverTarget?.slotIndex === slotIndex
   );
 
   function onHeaderPointerDown(e: PointerEvent) {
@@ -119,7 +126,8 @@ import {
   data-row={row}
   data-index={slotIndex}
   data-drop-valid={canAcceptDrop}
-  class="rack-slot {isHover ? 'z-20' : 'z-0'} {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
+  data-has-module={!!mod}
+  class="rack-slot {isHover || isClipHover ? 'z-20' : 'z-0'} {isDragging ? 'opacity-25 scale-[0.97] blur-[0.5px]' : ''}"
 >
   {#if $dragState.active && $dragState.input === 'keyboard' && $dragState.payload}
     <button
@@ -142,6 +150,12 @@ import {
     >
       DROP HERE
     </button>
+  {/if}
+  {#if isClipHover}
+    <div
+      class="pointer-events-none absolute -inset-1 z-30 border-2 border-dashed border-emerald-400/90"
+      style="box-shadow: 0 8px 32px #35e08a44, inset 0 0 20px #35e08a22"
+    ></div>
   {/if}
   {#if isHover && $dragState.active}
     <div
