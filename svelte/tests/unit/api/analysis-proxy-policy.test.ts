@@ -153,8 +153,8 @@ describe("analysis proxy policy", () => {
     const result = await proxyAnalysisRequest(
       {
         ...request(),
-        origin: "https://beat-surfer-pro.vercel.app",
-        host: "beat-surfer-pro.vercel.app",
+        origin: "https://beatsmaxxer-pro.vercel.app",
+        host: "beatsmaxxer-pro.vercel.app",
         forwardedProto: "https",
         fetchSite: "same-origin",
       },

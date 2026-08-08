@@ -477,7 +477,7 @@ pub fn run() {
             essentia::analyze_rhythm
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Beat Surfer Pro desktop");
+        .expect("error while running Beatsmaxxer Pro desktop");
 }
 
 pub fn decode_runtime(app: &AppHandle) -> State<'_, DecodeRuntime> {

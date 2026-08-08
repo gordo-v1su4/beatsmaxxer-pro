@@ -18,11 +18,11 @@ define_class!(
     #[unsafe(super = NSView)]
     #[thread_kind = MainThreadOnly]
     #[ivars = ()]
-    struct BeatSurferCompositorView;
+    struct BeatsmaxxerCompositorView;
 
-    unsafe impl NSObjectProtocol for BeatSurferCompositorView {}
+    unsafe impl NSObjectProtocol for BeatsmaxxerCompositorView {}
 
-    impl BeatSurferCompositorView {
+    impl BeatsmaxxerCompositorView {
         #[unsafe(method(isFlipped))]
         fn is_flipped(&self) -> bool {
             true
@@ -35,7 +35,7 @@ define_class!(
     }
 );
 
-impl BeatSurferCompositorView {
+impl BeatsmaxxerCompositorView {
     fn new(marker: objc2::MainThreadMarker, frame: NSRect) -> Retained<Self> {
         let allocated = Self::alloc(marker).set_ivars(());
         unsafe { msg_send![super(allocated), initWithFrame: frame] }
@@ -74,7 +74,7 @@ pub fn attach_overlay(content_view: *mut c_void) -> Result<CompositorViewHandle,
             .as_ref()
             .ok_or_else(|| "Tauri content view is null".to_string())?
     };
-    let overlay = BeatSurferCompositorView::new(marker, content.bounds());
+    let overlay = BeatsmaxxerCompositorView::new(marker, content.bounds());
     overlay.setAutoresizingMask(
         NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewHeightSizable,
     );

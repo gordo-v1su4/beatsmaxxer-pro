@@ -1,5 +1,5 @@
 /**
- * Engine contracts — shared interfaces for the Svelte rewrite of beat-surfer-pro.
+ * Engine contracts — shared interfaces for the Svelte rewrite of beatsmaxxer-pro.
  * All subagents MUST implement against these interfaces.
  */
 

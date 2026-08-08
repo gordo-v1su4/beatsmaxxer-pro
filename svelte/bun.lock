@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "beat-surfer-pro-svelte",
+      "name": "beatsmaxxer-pro-svelte",
       "dependencies": {
         "@lucide/svelte": "^1.27.0",
         "@soundtouchjs/audio-worklet": "^2.1.0",

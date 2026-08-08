@@ -1,5 +1,5 @@
 ---
-name: Beat Surfer Ship Gate
+name: Beatsmaxxer Ship Gate
 overview: The Svelte rewrite is not production-ready. Videos, shaders, and audio have not been proven in a real browser. This plan prioritizes a working video+audio pipeline with automated acceptance proof, then shader parity, UI cleanup, SoundTouch controls, and Vercel cutover only after gates pass.
 todos:
   - id: p0-video-pipeline
@@ -26,7 +26,7 @@ todos:
 isProject: false
 ---
 
-# Beat Surfer Pro — Honest Ship Plan
+# Beatsmaxxer Pro — Honest Ship Plan
 
 ## What is actually true today
 
@@ -60,8 +60,8 @@ Hand off to implementing agent:
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | SoundTouch studio            | `[/Users/robertspaniolo/Documents/audio-ui-curves/soundtouch-envelope-studio](/Users/robertspaniolo/Documents/audio-ui-curves/soundtouch-envelope-studio)`                 | **dist-only** in repo (no `src/`). May need to recover source from git history or rebuild from spec. |
 | Original envelope timeline   | `[/Users/robertspaniolo/Documents/audio-ui-curves/custom-sound-envelope-timeline (1)](/Users/robertspaniolo/Documents/audio-ui-curves/custom-sound-envelope-timeline (1)`) | Has envelope curve UI (`App.tsx`); not the 4-knob transport UI.                                      |
-| Integration architecture doc | `docs/BEATSURFER_SOUNDTOUCH_INTEGRATION.md`                                                                                                                                | **Not found** in `audio-ui-curves` — must be written or supplied before integration.                 |
-| UI layout spec               | `docs/BEATSURFER_SOUNDTOUCH_UI_LAYOUT.md`                                                                                                                                  | **Not found** — same.                                                                                |
+| Integration architecture doc | `docs/BEATSMAXXER_SOUNDTOUCH_INTEGRATION.md`                                                                                                                                | **Not found** in `audio-ui-curves` — must be written or supplied before integration.                 |
+| UI layout spec               | `docs/BEATSMAXXER_SOUNDTOUCH_UI_LAYOUT.md`                                                                                                                                  | **Not found** — same.                                                                                |
 
 
 **User intent for SoundTouch:** only **4 instant-reactive controls** (pitch, tempo, key, volume) in the **top bar** near BPM — Suno-style key stepper, not the full envelope studio UI. These must also drive **video** (`playbackRate`, pitch via shader or processing chain). **Remove** the left `[PresetBrowser](svelte/src/lib/components/PresetBrowser.svelte)` panel (too crowded); relocate 8 module-colored macro dots elsewhere later.

@@ -1,6 +1,6 @@
 # Cursor Cloud Runtime Secrets inventory
 
-Add these in **Cursor → Cloud Agents → Environments → Secrets** for the `beat-surfer-pro` environment.
+Add these in **Cursor → Cloud Agents → Environments → Secrets** for the `beatsmaxxer-pro` environment.
 
 ## Required for Tailnet access
 

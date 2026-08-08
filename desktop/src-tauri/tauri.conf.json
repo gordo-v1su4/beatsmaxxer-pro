@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Beat Surfer Pro",
+  "productName": "Beatsmaxxer Pro",
   "version": "0.1.0",
-  "identifier": "dev.beatsurfer.pro.desktop",
+  "identifier": "dev.beatsmaxxer.pro.desktop",
   "build": {
     "frontendDist": "../../svelte/build",
     "devUrl": "http://127.0.0.1:5175",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Beat Surfer Pro",
+        "title": "Beatsmaxxer Pro",
         "width": 1440,
         "height": 900,
         "minWidth": 1100,

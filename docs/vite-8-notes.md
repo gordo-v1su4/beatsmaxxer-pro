@@ -43,4 +43,4 @@ Last verified: 2026-03-24
 
 - If we want early warning on upcoming Vite 9 changes, consider selectively enabling `future` warnings in `vite.config.ts`.
 - If we keep seeing build-time deprecation warnings, trace them through the active plugin stack before changing app code.
-- If package metadata cleanup matters, rename the package from `react-vite-tailwind` to `beat-surfer-pro` in `package.json`.
+- If package metadata cleanup matters, rename the package from `react-vite-tailwind` to `beatsmaxxer-pro` in `package.json`.

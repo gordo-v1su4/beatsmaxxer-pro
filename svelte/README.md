@@ -1,7 +1,7 @@
-# Beat Surfer Pro — Svelte + WebGPU
+# Beatsmaxxer Pro — Svelte + WebGPU
 
 <p align="center">
-  <img src="../docs/beat-surfer-pro.webp" alt="Beat Surfer Pro UI with live clips and beat-synced PGM" width="100%" />
+  <img src="../docs/beatsmaxxer-pro.webp" alt="Beatsmaxxer Pro UI with live clips and beat-synced PGM" width="100%" />
 </p>
 
 Browser-native audio-reactive video FX rack built with **SvelteKit 5** and **WebGPU/WGSL only**. The app has no WebGL or Three.js fallback.

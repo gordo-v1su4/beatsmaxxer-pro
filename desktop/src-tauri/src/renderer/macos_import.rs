@@ -68,7 +68,7 @@ pub unsafe fn import_bgra_iosurface(
     };
 
     let descriptor = wgpu::TextureDescriptor {
-        label: Some("Beat Surfer VideoToolbox IOSurface"),
+        label: Some("Beatsmaxxer VideoToolbox IOSurface"),
         size: wgpu::Extent3d {
             width,
             height,

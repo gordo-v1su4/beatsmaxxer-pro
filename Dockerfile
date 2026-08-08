@@ -1,4 +1,4 @@
-# Beat Surfer Pro — GPU sandbox image for the app-vm deployment.
+# Beatsmaxxer Pro — GPU sandbox image for the app-vm deployment.
 #
 # Mirrors the Cursor Cloud environment (`.cursor/environment.json`) as a
 # permanent Docker sandbox on the Tailnet GPU VM:

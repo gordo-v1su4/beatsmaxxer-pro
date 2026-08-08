@@ -1,4 +1,4 @@
-# Beat Surfer Pro — Cursor Cloud + Tailscale GPU setup
+# Beatsmaxxer Pro — Cursor Cloud + Tailscale GPU setup
 
 This runbook wires the repo for **cloud-agent development** with **WebGPU on your Tailnet GPU desktop**.
 
@@ -82,4 +82,4 @@ cd svelte && bun run test:local    # full suite + browser gates (needs Chrome + 
 
 ## Differences from `project-stack-structure`
 
-That repo offloads **AI generation** to SwarmUI on the desktop. Beat Surfer Pro offloads **WebGPU rendering** to whichever browser runs on your GPU machine — there is no server-side render farm.
+That repo offloads **AI generation** to SwarmUI on the desktop. Beatsmaxxer Pro offloads **WebGPU rendering** to whichever browser runs on your GPU machine — there is no server-side render farm.

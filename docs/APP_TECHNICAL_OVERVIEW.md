@@ -1,8 +1,8 @@
-# Beat Surfer Pro: Technical Overview
+# Beatsmaxxer Pro: Technical Overview
 
 ## What the application does
 
-Beat Surfer Pro is a browser-based live video performance tool. A user can load up to eight video clips and a music track, apply real-time effects, and switch a final **program output (PGM)** in time with the music. The interface resembles a broadcast effects rack: every clip has a preview and one selected result appears in the larger PGM monitor.
+Beatsmaxxer Pro is a browser-based live video performance tool. A user can load up to eight video clips and a music track, apply real-time effects, and switch a final **program output (PGM)** in time with the music. The interface resembles a broadcast effects rack: every clip has a preview and one selected result appears in the larger PGM monitor.
 
 It is designed for live VJ-style playback and beat-synchronized visuals without rendering a finished video first. The app analyzes the music, keeps every clip on one transport clock, and uses the GPU to process each visible frame.
 

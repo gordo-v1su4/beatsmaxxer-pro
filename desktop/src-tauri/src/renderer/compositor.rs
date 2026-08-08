@@ -492,7 +492,7 @@ impl NativeCompositorState {
         .ok_or_else(|| "no Metal adapter supports the native compositor surface".to_string())?;
         let (device, queue) = pollster::block_on(adapter.request_device(
             &wgpu::DeviceDescriptor {
-                label: Some("Beat Surfer native compositor"),
+                label: Some("Beatsmaxxer native compositor"),
                 required_features: wgpu::Features::empty(),
                 required_limits: wgpu::Limits::default(),
                 memory_hints: wgpu::MemoryHints::Performance,

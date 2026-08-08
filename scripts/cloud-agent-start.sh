@@ -4,8 +4,8 @@ set -euo pipefail
 export PATH="$HOME/.bun/bin:$PATH"
 TAILSCALED_PID=""
 APP_PGID=""
-TAILSCALE_SOCKET="/tmp/tailscaled-beat-surfer.sock"
-TAILSCALE_STATE="/tmp/tailscaled-beat-surfer.state"
+TAILSCALE_SOCKET="/tmp/tailscaled-beatsmaxxer.sock"
+TAILSCALE_STATE="/tmp/tailscaled-beatsmaxxer.state"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 cleanup() {
@@ -62,7 +62,7 @@ start_tailscale() {
 
   sudo "$tailscale_bin" --socket="$TAILSCALE_SOCKET" up \
     --auth-key="$TS_AUTHKEY" \
-    --hostname=beat-surfer-pro \
+    --hostname=beatsmaxxer-pro \
     --accept-dns=true
   unset TS_AUTHKEY
 
@@ -77,7 +77,7 @@ start_app() {
   local status=0
   cd "$REPO_ROOT"
   bun install --frozen-lockfile
-  echo "[cloud-agent] Starting Beat Surfer Pro dev server on 0.0.0.0:5174."
+  echo "[cloud-agent] Starting Beatsmaxxer Pro dev server on 0.0.0.0:5174."
   echo "[cloud-agent] WebGPU renders in the browser on your GPU desktop — open this port from Chrome on a Tailnet machine with a GPU." >&2
   setsid env DEV_HOST=0.0.0.0 bun run dev -- --host 0.0.0.0 &
   APP_PGID=$!

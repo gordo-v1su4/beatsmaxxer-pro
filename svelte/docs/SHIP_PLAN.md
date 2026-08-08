@@ -2,7 +2,7 @@
 
 **Release status: BLOCKED.** The current code contains the WebGPU render path, shared audio timeline, media lifecycle, effect catalog, browser gates, and physical-proof harness. The repository does not contain the required `.artifacts/visual-proof/report.json` and PNG evidence, so none of those implementation claims constitute release proof.
 
-This plan supersedes the stale status in [`../../docs/beat_surfer_ship_gate_1b8af462.plan.md`](../../docs/beat_surfer_ship_gate_1b8af462.plan.md). See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime design and [LOCAL_TESTING.md](LOCAL_TESTING.md) for test commands.
+This plan supersedes the stale status in [`../../docs/beatsmaxxer_ship_gate_1b8af462.plan.md`](../../docs/beatsmaxxer_ship_gate_1b8af462.plan.md). See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime design and [LOCAL_TESTING.md](LOCAL_TESTING.md) for test commands.
 
 ## Current implementation
 

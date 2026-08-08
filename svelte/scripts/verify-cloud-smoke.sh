@@ -13,7 +13,7 @@ source "$ROOT/scripts/lib/common.sh"
 trap cleanup_dev_server EXIT
 
 echo "══════════════════════════════════════════"
-echo " Beat Surfer Pro — cloud smoke gate"
+echo " Beatsmaxxer Pro — cloud smoke gate"
 echo "══════════════════════════════════════════"
 
 ensure_qa_media

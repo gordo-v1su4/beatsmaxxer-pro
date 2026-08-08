@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Open Beat Surfer Pro in the system default browser (native window, not headless CDP).
+# Open Beatsmaxxer Pro in the system default browser (native window, not headless CDP).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 URL="${1:-http://127.0.0.1:5174/?qa=1&qaAutoplay=1}"

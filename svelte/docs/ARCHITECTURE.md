@@ -1,6 +1,6 @@
 # Architecture
 
-Beat Surfer Pro is a browser-native SvelteKit application with one rendering backend: **WebGPU**. It does not ship a WebGL, Three.js, or alternate renderer fallback.
+Beatsmaxxer Pro is a browser-native SvelteKit application with one rendering backend: **WebGPU**. It does not ship a WebGL, Three.js, or alternate renderer fallback.
 
 This document describes the current runtime under `svelte/src/`. See [SHIP_PLAN.md](SHIP_PLAN.md) for release status and [LOCAL_TESTING.md](LOCAL_TESTING.md) for test commands.
 
