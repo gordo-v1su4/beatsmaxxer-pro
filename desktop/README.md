@@ -1,6 +1,6 @@
-# Beat Surfer Pro — Desktop (Tauri)
+# Beatsmaxxer Pro — Desktop (Tauri)
 
-macOS-first desktop shell for Beat Surfer Pro. It shares the Svelte controls and
+macOS-first desktop shell for Beatsmaxxer Pro. It shares the Svelte controls and
 rack model with the web app while the desktop branch moves video presentation to
 a Rust-owned native wgpu compositor.
 
@@ -14,8 +14,8 @@ Architecture and measured release gates:
 Desktop work lives on **`cursor/desktop-tauri-e0e8`** (not `main`). `.env` is gitignored — copy secrets manually to each machine.
 
 ```bash
-git clone https://github.com/gordo-v1su4/beat-surfer-pro.git
-cd beat-surfer-pro
+git clone https://github.com/gordo-v1su4/beatsmaxxer-pro.git
+cd beatsmaxxer-pro
 git checkout cursor/desktop-tauri-e0e8
 git pull origin cursor/desktop-tauri-e0e8
 
@@ -51,7 +51,7 @@ Set before `bun run dev:desktop` (or in `.env`):
 
 `ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.
 
-**`.env` location:** repo root (`beat-surfer-pro/.env`), not `svelte/.env`. Restart after edits.
+**`.env` location:** repo root (`beatsmaxxer-pro/.env`), not `svelte/.env`. Restart after edits.
 
 **Verify at startup:** `bun run dev:desktop` should print `[desktop] Essentia env loaded (https://…)`. The Tauri terminal also logs `[desktop] Essentia: configured (…)` when Rust sees both vars.
 

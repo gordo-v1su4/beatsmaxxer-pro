@@ -1,19 +1,19 @@
 # Desktop video player research
 
 Date: 2026-08-02
-Target: Beat Surfer Pro desktop (`cursor/desktop-tauri-e0e8`)
+Target: Beatsmaxxer Pro desktop (`cursor/desktop-tauri-e0e8`)
 Scope: Orbit Video Player, Lumina Video, and egui-video
 
 ## Decision
 
 Lumina Video is the only project in this audit that demonstrates the macOS
-decoder-to-wgpu bridge Beat Surfer needs: AVFoundation/VideoToolbox produces an
+decoder-to-wgpu bridge Beatsmaxxer needs: AVFoundation/VideoToolbox produces an
 IOSurface-backed `CVPixelBuffer`, the owning pixel buffer stays retained, Metal
 creates a texture over the IOSurface, and wgpu wraps the Metal texture through
 its HAL without copying frame pixels through CPU memory.
 
 Lumina should be treated as an implementation reference, not adopted wholesale.
-It is young and explicitly experimental, does not provide Beat Surfer's shared
+It is young and explicitly experimental, does not provide Beatsmaxxer's shared
 musical clock or beat-quantized source switching, and does not demonstrate an
 eight-preview plus one-program workload. Its renderer also imports a new
 IOSurface texture on the render thread for each frame and notes that this may
@@ -24,7 +24,7 @@ textures, but its decoder path is CPU-copy based. egui-video is not suitable for
 the native playback core: it performs software conversion to RGB, copies frames
 into egui images, and uploads them as ordinary textures.
 
-The recommended Beat Surfer architecture is therefore:
+The recommended Beatsmaxxer architecture is therefore:
 
 1. Keep Rust as the owner of transport scheduling, clip lanes, and the single
    authoritative audio clock.
@@ -42,10 +42,10 @@ The recommended Beat Surfer architecture is therefore:
 
 ## Claim matrix
 
-| Project | Rust UI/GPU stack | Decode path | GPU transfer | Multi-video evidence | Effects | Beat Surfer verdict |
+| Project | Rust UI/GPU stack | Decode path | GPU transfer | Multi-video evidence | Effects | Beatsmaxxer verdict |
 | --- | --- | --- | --- | --- | --- | --- |
 | Orbit Video Player | iced + wgpu | FFmpeg software decode and software YUV conversion | CPU `Vec` copies followed by `queue.write_texture` | GPU manager has multiple IDs, shipped app owns one player | Real WGSL effect chain and side-by-side comparison | Effect-system reference only |
-| Lumina Video | egui/eframe + wgpu | AVPlayer/VideoToolbox on macOS; platform-specific elsewhere | Real IOSurface-to-Metal-to-wgpu path on supported macOS frames, with CPU fallback | Isolated player state exists; no 8+1 benchmark or grid scheduler | Primarily playback SDK, not Beat Surfer-style shader rack | Best decoder/GPU interop reference |
+| Lumina Video | egui/eframe + wgpu | AVPlayer/VideoToolbox on macOS; platform-specific elsewhere | Real IOSurface-to-Metal-to-wgpu path on supported macOS frames, with CPU fallback | Isolated player state exists; no 8+1 benchmark or grid scheduler | Primarily playback SDK, not Beatsmaxxer-style shader rack | Best decoder/GPU interop reference |
 | egui-video | egui + FFmpeg + SDL2 | FFmpeg decode and software RGB24 conversion | CPU `ColorImage` copy and normal egui texture upload | Independent players are structurally possible; scalability unproven | No public shader/effect pipeline | Do not use for playback core |
 
 ## Lumina Video
@@ -73,7 +73,7 @@ labels the SDK experimental and lists Windows as untested.
 - The player core owns per-player scheduling, frame queues, and decode state:
   [player.rs](https://github.com/lumina-video/lumina-video/blob/cb0d54356e1c2a4c7e1f72e304879610ad670aa8/crates/lumina-video-core/src/player.rs#L55-L80).
 - Its A/V drift controller is a useful reference for bounded correction and
-  hysteresis, although it is per-player rather than Beat Surfer's shared musical
+  hysteresis, although it is per-player rather than Beatsmaxxer's shared musical
   transport:
   [frame_queue.rs](https://github.com/lumina-video/lumina-video/blob/cb0d54356e1c2a4c7e1f72e304879610ad670aa8/crates/lumina-video-core/src/frame_queue.rs#L1681-L1795).
 
@@ -99,12 +99,12 @@ labels the SDK experimental and lists Windows as untested.
 ### What to reuse
 
 Reuse or adapt the retained-pixel-buffer lifetime model and the macOS
-IOSurface-to-wgpu HAL import. Do not replace Beat Surfer's clock, rack state,
+IOSurface-to-wgpu HAL import. Do not replace Beatsmaxxer's clock, rack state,
 program/preview ownership, or switching scheduler with Lumina's per-player
 transport.
 
 Because Lumina is Apache-2.0, copied code must retain the applicable license and
-notices. Prefer adapting the design behind a Beat Surfer-owned platform boundary
+notices. Prefer adapting the design behind a Beatsmaxxer-owned platform boundary
 over importing the full SDK.
 
 ## Orbit Video Player
@@ -179,11 +179,11 @@ Snapshot: MIT, 144 stars, 58 forks, no releases, latest commit 2024-10-27.
 
 egui-video is a straightforward embedded player, not a low-copy multi-video
 compositor. Its path repeats the same CPU-copy/upload pattern that is currently
-freezing Beat Surfer and should not be adopted.
+freezing Beatsmaxxer and should not be adopted.
 
-## Implications for the current Beat Surfer branch
+## Implications for the current Beatsmaxxer branch
 
-Beat Surfer already reaches AVFoundation/VideoToolbox, but then locks the
+Beatsmaxxer already reaches AVFoundation/VideoToolbox, but then locks the
 `CVPixelBuffer`, copies BGRA rows into a Rust vector, serializes those bytes into
 Tauri IPC, parses them in JavaScript, and uploads them into WebGPU. The relevant
 copy starts in
@@ -209,7 +209,7 @@ source is not sufficient evidence.
 ## Research boundaries
 
 - Repository claims were checked against the source at the pinned commits above.
-- No project demonstrated Beat Surfer's exact eight-preview plus one-program,
+- No project demonstrated Beatsmaxxer's exact eight-preview plus one-program,
   shared-clock, beat-quantized workload.
 - No performance figure from these repositories should be treated as a Beat
   Surfer guarantee until the same local media is tested on the target Mac.

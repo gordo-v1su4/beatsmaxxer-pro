@@ -1,3 +1,3 @@
 fn main() {
-    beat_surfer_pro_desktop_lib::run();
+    beatsmaxxer_pro_desktop_lib::run();
 }

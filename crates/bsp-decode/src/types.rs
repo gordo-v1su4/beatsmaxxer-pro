@@ -70,7 +70,7 @@ impl NativeDecodeFrame {
 
 // Core Video objects are thread-safe to retain and release. Each frame is
 // otherwise consumed by exactly one decode/compositor worker; the pixel buffer
-// is never mutated by Beat Surfer.
+// is never mutated by Beatsmaxxer.
 unsafe impl Send for NativeDecodeFrame {}
 
 #[cfg(not(target_os = "macos"))]

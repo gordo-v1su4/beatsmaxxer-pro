@@ -39,7 +39,7 @@ pub fn run_iosurface_wgpu_proof(path: &str) -> Result<IOSurfaceWgpuProof, String
     let adapter_info = adapter.get_info();
     let (device, queue) = pollster::block_on(adapter.request_device(
         &wgpu::DeviceDescriptor {
-            label: Some("Beat Surfer IOSurface proof"),
+            label: Some("Beatsmaxxer IOSurface proof"),
             required_features: wgpu::Features::empty(),
             required_limits: wgpu::Limits::default(),
             memory_hints: wgpu::MemoryHints::Performance,

@@ -2,7 +2,7 @@
 name = "bsp-decode"
 version = "0.1.0"
 edition = "2021"
-description = "Beat Surfer Pro native decode — MP4 demux + VideoToolbox (macOS)"
+description = "Beatsmaxxer Pro native decode — MP4 demux + VideoToolbox (macOS)"
 
 [features]
 default = []

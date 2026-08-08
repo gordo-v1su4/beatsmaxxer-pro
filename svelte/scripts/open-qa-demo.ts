@@ -6,7 +6,7 @@ const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1';
 const port = pickDebugPort(9200);
 const userDataDir = '/tmp/bsp-demo-live';
 
-console.log('[demo] Opening Beat Surfer Pro with QA media...');
+console.log('[demo] Opening Beatsmaxxer Pro with QA media...');
 console.log('[demo]', QA_URL);
 console.log('[demo] Chrome debug port', port);
 

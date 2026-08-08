@@ -1,14 +1,14 @@
-# Beat Surfer Pro — app-vm GPU sandbox (Cursor Cloud-style container).
+# Beatsmaxxer Pro — app-vm GPU sandbox (Cursor Cloud-style container).
 #
 # Deploy layout on app-vm (matches the /opt/<service> convention):
-#   /opt/beat-surfer-pro/          this repo checkout
-#   /opt/beat-surfer-pro/.env      secrets (gitignored) — see .env.example
+#   /opt/beatsmaxxer-pro/          this repo checkout
+#   /opt/beatsmaxxer-pro/.env      secrets (gitignored) — see .env.example
 #
 # Bring up:   docker compose up -d --build
 # Dev server: http://<app-vm-tailscale-ip>:5174  (e.g. http://100.118.78.13:5174)
 #
 # GPU is reserved so browser gates run on the RTX 4090 inside the container:
-#   docker compose exec beat-surfer-pro \
+#   docker compose exec beatsmaxxer-pro \
 #     xvfb-run -a bun run test:local
 #
 # Essentia analysis proxy (dev only) uses the public endpoint:
@@ -17,10 +17,10 @@
 #   ESSENTIA_API_KEY=<from the essentia-endpoint deployment; stored in BWS>
 
 services:
-  beat-surfer-pro:
+  beatsmaxxer-pro:
     build: .
-    image: beat-surfer-pro:local
-    container_name: beat-surfer-pro
+    image: beatsmaxxer-pro:local
+    container_name: beatsmaxxer-pro
     restart: unless-stopped
     ports:
       - "5174:5174"

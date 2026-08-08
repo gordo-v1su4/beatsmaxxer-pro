@@ -3,7 +3,7 @@
   "start": "bash scripts/cloud-agent-start.sh",
   "ports": [
     {
-      "name": "Beat Surfer Pro",
+      "name": "Beatsmaxxer Pro",
       "port": 5174
     }
   ]

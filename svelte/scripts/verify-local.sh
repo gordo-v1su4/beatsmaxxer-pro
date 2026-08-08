@@ -16,7 +16,7 @@ source "$ROOT/scripts/lib/common.sh"
 trap cleanup_dev_server EXIT
 
 echo "══════════════════════════════════════════"
-echo " Beat Surfer Pro — local test suite"
+echo " Beatsmaxxer Pro — local test suite"
 echo "══════════════════════════════════════════"
 
 require_chrome

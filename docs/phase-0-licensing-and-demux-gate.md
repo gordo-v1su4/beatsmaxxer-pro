@@ -102,7 +102,7 @@ Upstream evidence:
   MPL-2.0 licensing, browser operation, direct WebCodecs integration, streaming
   I/O, MP4/MOV/WebM/MKV support, and tree-shakable usage.
 - Upstream describes best-case bundles as small as 5 kB gzipped. That is not a
-  measurement of Beat Surfer's required MP4 + WebM import surface.
+  measurement of Beatsmaxxer's required MP4 + WebM import surface.
 - The npm registry reported `1.51.0` as latest, published 2026-07-22, when this
   gate was captured.
 

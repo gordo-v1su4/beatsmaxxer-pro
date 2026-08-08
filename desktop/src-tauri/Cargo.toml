@@ -1,12 +1,12 @@
 [package]
-name = "beat-surfer-pro-desktop"
+name = "beatsmaxxer-pro-desktop"
 version = "0.1.0"
-description = "Beat Surfer Pro — Tauri desktop shell"
-authors = ["Beat Surfer Pro"]
+description = "Beatsmaxxer Pro — Tauri desktop shell"
+authors = ["Beatsmaxxer Pro"]
 edition = "2021"
 
 [lib]
-name = "beat_surfer_pro_desktop_lib"
+name = "beatsmaxxer_pro_desktop_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

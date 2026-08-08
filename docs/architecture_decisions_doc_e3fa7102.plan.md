@@ -3,7 +3,7 @@ name: Architecture decisions doc
 overview: 'Clarify what the Svelte rewrite deliberately does NOT use (Three.js/WebGL/canvas remount) vs what it does use (WebGPU HTML canvases), and commit the ship plan to git so it is visible outside Cursor Plans UI.'
 todos:
   - id: copy-ship-plan
-    content: Copy .cursor/plans/beat_surfer_ship_gate_1b8af462.plan.md to svelte/docs/SHIP_PLAN.md; refresh stale status; link from svelte/README.md
+    content: Copy .cursor/plans/beatsmaxxer_ship_gate_1b8af462.plan.md to svelte/docs/SHIP_PLAN.md; refresh stale status; link from svelte/README.md
     status: pending
   - id: write-architecture-doc
     content: Add svelte/docs/ARCHITECTURE.md with use/don't-use table and slot-stable canvas lifecycle
@@ -55,7 +55,7 @@ So: **not Three.js canvas; yes native WebGPU canvas.**
 
 The ship plan exists only as a Cursor artifact:
 
-- [`.cursor/plans/beat_surfer_ship_gate_1b8af462.plan.md`](.cursor/plans/beat_surfer_ship_gate_1b8af462.plan.md)
+- [`.cursor/plans/beatsmaxxer_ship_gate_1b8af462.plan.md`](.cursor/plans/beatsmaxxer_ship_gate_1b8af462.plan.md)
 - Never committed to git (`.cursor/` was untracked during cloud work)
 - Cursor Plans panel in IDE often does not show cloud-agent plans
 - Cloud copy lived at `/opt/cursor/artifacts/plans/` (not on your Mac)
@@ -68,7 +68,7 @@ Related docs that **are** in repo today:
 ## Proposed doc commits (after you approve)
 
 1. **Copy plan → [`svelte/docs/SHIP_PLAN.md`](svelte/docs/SHIP_PLAN.md)**
-   - Full content from `.cursor/plans/beat_surfer_ship_gate_1b8af462.plan.md`
+   - Full content from `.cursor/plans/beatsmaxxer_ship_gate_1b8af462.plan.md`
    - Update stale bits (branch now `feat/svelte-rewrite` @ `918e18f`, PresetBrowser restored, local testing added)
    - Link from [`svelte/README.md`](svelte/README.md) Docs section
 

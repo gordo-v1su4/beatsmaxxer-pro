@@ -1,7 +1,7 @@
-# Beat Surfer Pro
+# Beatsmaxxer Pro
 
 <p align="center">
-  <img src="docs/beat-surfer-pro.webp" alt="Beat Surfer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
+  <img src="docs/beatsmaxxer-pro.webp" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
 </p>
 
 Browser-native **audio-reactive video FX rack** with a broadcast-style program monitor. Load clips into eight modules, cut on the beat, and drive shader effects from live rhythm analysis — **SvelteKit 5 + WebGPU only** (no React, no Three.js fallback).
