@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import type { AnalysisStatus } from '$lib/engine/contracts';
 import { transportBpm, transportBpmLocked, transportPlaying } from '$lib/stores/capabilities';
+import { syncAnalysisTriggers } from '$lib/stores/triggerLane';
 import { audioTimeline } from '$lib/transport';
 
 export interface TransportDisplay {
@@ -63,6 +64,7 @@ export function startTransportPoll() {
     transportBpm.set(s.bpm);
     transportBpmLocked.set(s.bpmLocked);
     transportPlaying.set(s.playing);
+    syncAnalysisTriggers(s.analysisOnsetGeneration);
   }, 100);
 }
 

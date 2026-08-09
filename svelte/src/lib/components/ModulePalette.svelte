@@ -1,12 +1,11 @@
 <script lang="ts">
   import { dragState, endDrag, moveDrag, setHoverTarget, startDrag } from '$lib/stores/drag';
-  import { listByCategory, type ModuleCategory } from '$lib/modules/catalog';
+  import { getModuleDef, listByCategory, type ModuleCategory } from '$lib/modules/catalog';
   import { rackTop, rackBottom, applyModuleDrop } from '$lib/stores/rack';
-  import { fxLibOpen } from '$lib/stores/rackUi';
+  import { activeSection, applySectionBank } from '$lib/stores/arrangement';
   import type { RackRow } from '$lib/stores/drag';
   import { get } from 'svelte/store';
   import { tick } from 'svelte';
-  import { ChevronLeft, ChevronRight, GripVertical } from '@lucide/svelte';
 
   const CATEGORIES: { key: ModuleCategory; label: string }[] = [
     { key: 'beat', label: 'BEAT FX' },
@@ -15,6 +14,25 @@
   ];
 
   const inRack = $derived(new Set([...$rackTop, ...$rackBottom]));
+
+  /**
+   * The ten effects this section wants, top row then bottom. The bank has always
+   * existed in the data and never had a surface, which is what made AUTO-BANK
+   * unreadable: the rack rearranged itself on a section change and nothing had
+   * said what it was rearranging into.
+   */
+  const bankChips = $derived(
+    [...($activeSection?.bank.top ?? []), ...($activeSection?.bank.bottom ?? [])].map((id, i) => {
+      const def = getModuleDef(id);
+      return {
+        key: `${i}-${id}`,
+        slot: i < 5 ? `A${i + 1}` : `B${i - 4}`,
+        name: def?.shortName ?? id.toUpperCase(),
+        color: def?.accentColor ?? '#4a5260',
+        loaded: inRack.has(id)
+      };
+    })
+  );
 
   function beginDrag(moduleId: string, e: PointerEvent) {
     // The library is an effect picker even when that effect is already in the
@@ -61,64 +79,153 @@
   }
 </script>
 
-<aside
-  class="side-panel-fx"
-  style="flex-shrink:0;display:flex;flex-direction:column;background:linear-gradient(180deg,#0c0d0f,#08090b);border-right:1px solid #0d0e0f;overflow:hidden;transition:width 0.2s ease;width:{$fxLibOpen
-    ? 'var(--fx-lib-width)'
-    : 'var(--fx-lib-collapsed)'}"
->
-  <button
-    type="button"
-    onclick={() => fxLibOpen.update((v) => !v)}
-    title="FX library — drag modules onto rack slots"
-    style="display:flex;align-items:center;justify-content:{$fxLibOpen ? 'space-between' : 'center'};gap:4px;border:none;border-bottom:1px solid #0d0e0f;background:linear-gradient(180deg,#141618,#0f1012);padding:{$fxLibOpen
-      ? '6px 8px'
-      : '8px 2px'};cursor:pointer;color:#4a5260;font-family:var(--font-ui);font-size:8px;font-weight:500;letter-spacing:0.14em"
-  >
-    {#if $fxLibOpen}
-      <span style="display:flex;align-items:center;gap:4px;color:#556070">
-        <GripVertical size={10} /> FX LIB
-      </span>
-      <ChevronLeft size={12} />
-    {:else}
-      <ChevronRight size={12} />
-    {/if}
-  </button>
-
-  {#if $fxLibOpen}
-    <div style="flex:1;overflow-y:auto;padding:6px 4px;display:flex;flex-direction:column;gap:4px">
-      {#each CATEGORIES as cat (cat.key)}
-        <span class="palette-category" style="margin-top:{cat.key === 'beat' ? '0' : '8px'}">{cat.label}</span>
-        {#each listByCategory(cat.key) as mod (mod.id)}
-          <button
-            type="button"
-            class="palette-card"
-            aria-label="Grab {mod.name} to move to a rack slot"
-            title={mod.description ? `${mod.name} — ${mod.description}` : mod.name}
-            style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
-            onpointerdown={(e) => beginDrag(mod.id, e)}
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                void beginKeyboardDrag(mod.id);
-              }
-            }}
-          >
-            <span style="font-size:10px;font-weight:500;color:{mod.accentColor}">{mod.shortName}</span>
-            {#if mod.description}
-              <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
-            {/if}
-          </button>
+<!-- Body only: the rail that hosts this owns the header, the tabs and the width,
+     because CLIPS shares all three. -->
+<div class="palette-body">
+  {#if $activeSection}
+    <section class="bank" style="--bank-hue:{$activeSection.hue}">
+      <div class="bank-head">
+        <span class="bank-title">BANK FOR SECTION</span>
+        <span class="bank-section" style="color:{$activeSection.hue}">{$activeSection.name}</span>
+      </div>
+      <div class="bank-chips">
+        {#each bankChips as chip (chip.key)}
+          <span
+            class="bank-chip"
+            class:is-loaded={chip.loaded}
+            style="background:{chip.color}1c;color:{chip.color}"
+            title="Slot {chip.slot} · {chip.name}{chip.loaded ? ' — already in the rack' : ''}"
+          >{chip.name}</span>
         {/each}
-      {/each}
-      <p style="margin-top:8px;padding:4px;font-size:7px;line-height:1.35;color:#33383f">
-        Drag onto a rack slot to swap. Collapse modules ↑ or retract PGM for more room.
-      </p>
-    </div>
+      </div>
+      <button
+        type="button"
+        class="bank-recall"
+        onclick={() => $activeSection && applySectionBank($activeSection)}
+        title="Load these ten effects into the rack now"
+      >⤓ RECALL BANK TO RACK</button>
+    </section>
   {/if}
-</aside>
+
+  {#each CATEGORIES as cat (cat.key)}
+    <span class="palette-category" style="margin-top:{cat.key === 'beat' ? '0' : '8px'}">{cat.label}</span>
+    {#each listByCategory(cat.key) as mod (mod.id)}
+      <button
+        type="button"
+        class="palette-card"
+        aria-label="Grab {mod.name} to move to a rack slot"
+        title={mod.description ? `${mod.name} — ${mod.description}` : mod.name}
+        style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
+        onpointerdown={(e) => beginDrag(mod.id, e)}
+        onkeydown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            void beginKeyboardDrag(mod.id);
+          }
+        }}
+      >
+        <span style="font-size:10px;font-weight:500;color:{mod.accentColor}">{mod.shortName}</span>
+        {#if mod.description}
+          <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
+        {/if}
+      </button>
+    {/each}
+  {/each}
+  <p class="palette-hint">
+    Drag onto a rack slot to swap. MIN ALL collapses the rack and opens the arrangement.
+  </p>
+</div>
 
 <style>
+  .palette-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Pinned above the library and outside its scroll: it describes the section
+     you are in, not an item you are browsing. */
+  .bank {
+    flex-shrink: 0;
+    margin: -2px -2px 6px;
+    padding: 6px;
+    border: 1px solid #16181b;
+    border-radius: 3px;
+    background: #0c0e10;
+  }
+  .bank-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px;
+    margin-bottom: 5px;
+  }
+  .bank-title {
+    font-size: 6.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: #3f4653;
+    white-space: nowrap;
+  }
+  .bank-section {
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+  }
+
+  /* Five across, two rows — the shape of the rack it fills. */
+  .bank-chips {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    margin-bottom: 6px;
+  }
+  .bank-chip {
+    display: grid;
+    place-items: center;
+    height: 15px;
+    border-radius: 2px;
+    font-size: 6px;
+    letter-spacing: 0.04em;
+    overflow: hidden;
+    opacity: 0.55;
+  }
+  /* Already in the rack, so recalling would not move it. */
+  .bank-chip.is-loaded {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+
+  .bank-recall {
+    width: 100%;
+    height: 18px;
+    border: 1px solid color-mix(in srgb, var(--bank-hue) 40%, transparent);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--bank-hue) 10%, transparent);
+    color: var(--bank-hue);
+    font-family: var(--font-ui);
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    transition: background 0.12s;
+  }
+  .bank-recall:hover {
+    background: color-mix(in srgb, var(--bank-hue) 22%, transparent);
+  }
+
+  .palette-hint {
+    margin-top: 8px;
+    padding: 4px;
+    font-size: 7px;
+    line-height: 1.35;
+    color: #33383f;
+  }
+
   /* Three groups in one scrolling column need a visible seam, or CAMERA reads as
      the last item of BEAT FX. The rule runs to the card edge so it separates
      without adding another element to the flow. */

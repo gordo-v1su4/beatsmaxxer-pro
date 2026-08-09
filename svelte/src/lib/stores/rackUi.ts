@@ -33,6 +33,23 @@ export function setAllModulesCollapsed(ids: string[], collapsed: boolean) {
   });
 }
 
+/**
+ * Arrangement dock expanded. A store rather than component state because MIN ALL
+ * drives it: the height the rack gives up is the height the timeline takes.
+ */
+export const sequencerOpen = writable(false);
+
+/**
+ * The one gesture behind MIN ALL. Collapsing the rack is never the goal on its
+ * own — the goal is to stop looking at ten previews and start looking at the
+ * arrangement, and those are the same 440px of window. Doing them separately
+ * meant collapsing the rack, seeing black, and only then finding the dock.
+ */
+export function setArrangeFocus(ids: string[], on: boolean) {
+  setAllModulesCollapsed(ids, on);
+  sequencerOpen.set(on);
+}
+
 /** Left browser rail — retracts to a thin strip. */
 export const fxLibOpen = writable(true);
 
@@ -44,14 +61,14 @@ export const fxLibOpen = writable(true);
 export type SideRailTab = 'fx' | 'clips';
 export const sideRailTab = writable<SideRailTab>('fx');
 
+/** Open the rail on a given tab — used when a drop needs its target visible. */
+export function showSideRailTab(tab: SideRailTab) {
+  sideRailTab.set(tab);
+  fxLibOpen.set(true);
+}
+
 /** PGM source rail — can retract later for extra rack rows. */
 export const pgmRailOpen = writable(true);
-
-/**
- * Clip bank drawer. Starts closed: loading clips is a setup activity, and the
- * rack should own the full width during a performance.
- */
-export const clipLibraryOpen = writable(false);
 
 export const topRowCompact = derived([rackTop, moduleCollapsed], ([top, collapsed]) => {
   if (top.length === 0) return false;

@@ -52,7 +52,7 @@
 {#if access === 'locked'}
   <div class="gate-backdrop">
     <form class="gate-panel" onsubmit={unlock}>
-      <h1>BEATSMAXXING</h1>
+      <h1>BEATSMAXXER PRO</h1>
       <p>This deployment is private. Enter the access code to continue.</p>
       <input
         bind:this={pinInput}

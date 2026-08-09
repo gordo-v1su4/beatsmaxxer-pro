@@ -2,7 +2,7 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { allModulesCollapsed, setAllModulesCollapsed } from '$lib/stores/rackUi';
+  import { allModulesCollapsed, setArrangeFocus } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
@@ -230,7 +230,7 @@
         class="status-dot"
         style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
       ></div>
-      <span class="brand-text">BEATSMAXXING</span>
+      <span class="brand-text">BEATSMAXXER PRO</span>
       <span class="brand-x">×</span>
       <span class="brand-sub">CHE</span>
     </div>
@@ -425,11 +425,17 @@
     </TopBtn>
 
     <!-- Collapsing ten modules one chevron at a time is ten clicks for what is
-         almost always a single intent: clear the lower half of the window. -->
+         almost always a single intent: stop looking at previews and start
+         looking at the arrangement. The button says where it takes you, and
+         lights while you are there, because the destination is a mode. -->
     <TopBtn
-      label={$allModulesCollapsed ? 'EXPAND ALL' : 'MIN ALL'}
-      onclick={() =>
-        setAllModulesCollapsed([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+      label={$allModulesCollapsed ? 'BACK TO RACK' : 'MIN ALL · ARRANGE'}
+      accent
+      active={$allModulesCollapsed}
+      onclick={() => setArrangeFocus([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+      title={$allModulesCollapsed
+        ? 'Expand the rack modules and close the arrangement dock'
+        : 'Collapse the rack to previews and open the arrangement timeline'}
     >
       {#snippet icon()}
         {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}

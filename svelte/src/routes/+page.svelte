@@ -21,8 +21,7 @@
   import RackSlot from '$lib/components/RackSlot.svelte';
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
-  import ModulePalette from '$lib/components/ModulePalette.svelte';
-  import ClipTray from '$lib/components/ClipTray.svelte';
+  import SideRail from '$lib/components/SideRail.svelte';
   import BeatSequencer from '$lib/components/BeatSequencer.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
@@ -176,7 +175,7 @@
 
   <div class="rack-workspace">
     <div class="side-panels" style="display:flex;flex-shrink:0">
-      <ModulePalette />
+      <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={rackModules} />
     </div>
@@ -185,8 +184,6 @@
 
     <div class="rack-main">
       <MainViewer modules={rackModules} />
-
-      <ClipTray onAssignClip={assignLibraryClip} />
 
       <div
         class="rack-row top-rack-row"

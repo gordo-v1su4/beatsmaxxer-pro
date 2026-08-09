@@ -36,6 +36,7 @@ import {
   barInSection,
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
+import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
 import { getModuleDef } from '$lib/modules/catalog';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
@@ -307,7 +308,16 @@ function configureTimeSampler() {
   const params = get(moduleParams);
   const tsParams = params.timesampler ?? {};
   const timeSamplerSlot = currentRackSlotForModule('timesampler');
-  const tsMidi = get(midiLayers).timesampler;
+  /**
+   * Which part drives the triggers. A MIDI layer used to win simply by existing,
+   * which made loading one an irreversible decision — there was no way back to
+   * onset triggering short of clearing the file. The source is now chosen, and
+   * the chosen channel can be any module's part, not just TIMESAMPLER's own.
+   */
+  const tsMidi =
+    get(triggerSource) === 'midi'
+      ? get(midiLayers)[get(triggerMidiModule) ?? 'timesampler'] ?? null
+      : null;
   const tsDuration = timeSamplerSlot
     ? tauriNativeSource.getDuration(timeSamplerSlot) || videoPool.getDuration(timeSamplerSlot) || 120
     : 120;
