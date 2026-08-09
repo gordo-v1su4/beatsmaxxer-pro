@@ -162,16 +162,20 @@
         { param: 'tint', label: 'TINT' }
       ]
     },
+    // amount is signed around 50: PINCH sits below it, BULGE and FISH above.
+    // PUMP leaves the warp strong but hands it to the beat gate.
     bulge: {
       buttons: [
-        { label: 'BARREL', set: { amount: 25, center: 50, falloff: 55 } },
-        { label: 'FISH', set: { amount: 65, center: 50, falloff: 40 } },
-        { label: 'POP', set: { amount: 45, center: 50, falloff: 70 } }
+        { label: 'PINCH', set: { amount: 22, center: 50, falloff: 55, beat: 0 } },
+        { label: 'BULGE', set: { amount: 68, center: 50, falloff: 55, beat: 0 } },
+        { label: 'FISH', set: { amount: 92, center: 50, falloff: 40, beat: 0 } },
+        { label: 'PUMP', set: { amount: 85, center: 50, falloff: 60, beat: 85 } }
       ],
       primary: 'amount',
       sliders: [
         { param: 'center', label: 'CENTER' },
-        { param: 'falloff', label: 'FALL' }
+        { param: 'falloff', label: 'FALL' },
+        { param: 'beat', label: 'BEAT' }
       ]
     },
     vhs: {

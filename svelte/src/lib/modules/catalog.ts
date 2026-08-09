@@ -49,18 +49,24 @@ const defs: ModuleDefinition[] = [
     }
   },
   {
+    // The id stays 'tapdelay' because it keys the shader registry, the param
+    // table and every saved preset; only the label was ever wrong. The module
+    // holds a frame on the division -- it is the LOOP half of the pair, with
+    // TIMESAMPLER as the SLICE half.
     id: 'tapdelay',
-    name: 'TAPDELAY',
-    shortName: 'DELAY',
+    name: 'STUTTER',
+    shortName: 'STUT',
     accentColor: ACCENTS.tapdelay,
     row: 'top',
     category: 'beat',
     shaderKey: 'tapdelay',
-    description: 'Stutter / scratch delay',
+    description: 'Holds a frame on the beat division',
     params: {
-      type: 1, velCrv: 55, end: 60, start: 25, filterSlider: 60,
-      time: 60, feedback: 50, feel: 0,
-      scratchMode: 0, scratchDepth: 45,
+      // time = LEN, feedback = HOLD, feel = grid, gate = how much of the
+      // division the freeze occupies. The old type/velCrv/end/start/
+      // filterSlider/scratch* keys are gone: nothing outside the UI and the
+      // preset table ever read them.
+      time: 60, feedback: 50, feel: 0, gate: 70, sens: 40,
       mix: 55, in_: 80, out: 65
     }
   },
@@ -74,7 +80,10 @@ const defs: ModuleDefinition[] = [
     shaderKey: 'timesampler',
     description: 'Slice sampler jumps',
     params: {
-      mode: 0, size: 50, slices: 8, loops: 2, accent: 0, chance: 60, rate: 43,
+      // loops was 2, so every slice retriggered twice before advancing — which
+      // is a stutter, and made the sampler read as the same effect as TAPDELAY.
+      // At 1 the module does its own job: jump to a slice, play it, move on.
+      mode: 0, size: 50, slices: 8, loops: 1, accent: 0, chance: 60, rate: 43,
       mix: 60, in_: 80, out: 60
     }
   },
@@ -187,15 +196,17 @@ const defs: ModuleDefinition[] = [
   },
   {
     id: 'bulge',
-    name: 'LENS BULGE',
-    shortName: 'BULGE',
+    name: 'BARREL',
+    shortName: 'BARREL',
     accentColor: ACCENTS.bulge,
     row: 'bottom',
     category: 'camera',
     compact: true,
     shaderKey: 'bulge',
-    description: 'Subtle barrel / fisheye bulge',
-    params: { amount: 40, center: 50, falloff: 55, mix: 75 }
+    description: 'Pinch to bulge, on or off the beat',
+    // amount is signed around 50 now: below pinches, above bulges. 50 is
+    // neutral, so the default sits slightly bulged rather than at one extreme.
+    params: { amount: 65, center: 50, falloff: 55, beat: 0, mix: 75 }
   },
   {
     id: 'vhs',

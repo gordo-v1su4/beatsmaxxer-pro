@@ -76,7 +76,9 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
         aux1: lastSpeedRampAux.aux1, aux2: lastSpeedRampAux.aux2
       };
     case 'tapdelay':
-      return { mix: p.mix, p0: p.time, p1: p.feedback, p2: p.feel };
+      // accent carries SENS here — the slot is otherwise unused by this module,
+      // and every p-slot is already spoken for by LEN/HOLD/FEEL/GATE.
+      return { mix: p.mix, p0: p.time, p1: p.feedback, p2: p.feel, p3: p.gate, accent: p.sens };
     case 'timesampler':
       return {
         mix: p.mix,
@@ -106,7 +108,7 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'halation':
       return { mix: p.mix, p0: p.threshold, p1: p.spread, p2: p.tint };
     case 'bulge':
-      return { mix: p.mix, p0: p.amount, p1: p.center, p2: p.falloff };
+      return { mix: p.mix, p0: p.amount, p1: p.center, p2: p.falloff, p3: p.beat };
     case 'vhs':
       return { mix: p.mix, p0: p.tracking, p1: p.chroma, p2: p.noise, p3: p.beat };
     case 'prism':

@@ -4,6 +4,8 @@
   import RackBtn from './rack/RackBtn.svelte';
   import HSlider from './rack/HSlider.svelte';
   import MiniDisplay from './rack/MiniDisplay.svelte';
+  import { computeSpeedRampRate } from '$lib/runtime/speedramp';
+  import FeelGlyph from './rack/FeelGlyph.svelte';
 
   interface Props {
     moduleId: string;
@@ -41,6 +43,30 @@
   const stutterMode = $derived(Math.round(params.type ?? 0) === 1);
   const rate = $derived(0.25 + ((params.rate ?? 43) / 100) * 1.75);
   const loops = $derived(Math.max(1, Math.round(params.loops ?? 2)));
+
+  /**
+   * What the ramp actually reaches, not what the endpoints say.
+   *
+   * The MIN/MAX knobs set the ends of the rate range, and the readouts used to
+   * print those ends directly — so the card claimed 0.50x while the default
+   * curve bottoms out at 0.71x. A cubic bezier does not pass through its control
+   * points: with bzY1 and bzY2 at 0 the curve only dips to 0.25, so the low end
+   * of the range is never demanded. Sampling the real curve is the only honest
+   * way to say what the module will do.
+   */
+  const CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32];
+  const achievedRange = $derived.by(() => {
+    if (moduleId !== 'speedramp') return { min: 1, max: 1 };
+    const cycle = CYCLE_BEATS[Math.min(6, Math.floor(((params.len ?? 36) / 100) * 7))];
+    let min = Infinity;
+    let max = 0;
+    for (let i = 0; i <= 48; i++) {
+      const r = computeSpeedRampRate((i / 48) * cycle, params, false);
+      if (r < min) min = r;
+      if (r > max) max = r;
+    }
+    return { min, max };
+  });
 
   const activeRampKey = $derived.by(() => {
     let best = '';
@@ -188,11 +214,11 @@
       <div style="display:flex;align-items:center;justify-content:space-around;gap:6px">
         <div style="display:flex;align-items:center;gap:5px">
           <Knob knobId="{moduleId}-spdMin" label="MIN" value={params.spdMin ?? 25} onChange={(v) => onUpdate('spdMin', v)} size="xs" {color} />
-          <MiniDisplay value={`${rampSpeed(params.spdMin ?? 25)}x`} width={42} />
+          <MiniDisplay value={`${achievedRange.min.toFixed(2)}x`} width={42} />
         </div>
         <div style="display:flex;align-items:center;gap:5px">
           <Knob knobId="{moduleId}-spdMax" label="MAX" value={params.spdMax ?? 75} onChange={(v) => onUpdate('spdMax', v)} size="xs" {color} />
-          <MiniDisplay value={`${rampSpeed(params.spdMax ?? 75)}x`} width={42} />
+          <MiniDisplay value={`${achievedRange.max.toFixed(2)}x`} width={42} />
         </div>
       </div>
     </Section>
@@ -221,22 +247,49 @@
       </div>
     </Section>
     <Section label="FEEL" {color}>
-      <div style="display:flex;gap:2px;align-items:center;min-width:0">
+      <div style="display:flex;gap:3px;align-items:center;min-width:0">
         {#each [{ l: 'STR8', v: 0 }, { l: 'SWNG', v: 1 }, { l: 'DOT', v: 2 }] as o (o.l)}
-          <RackBtn
-            label={o.l}
-            active={Math.round(params.feel ?? 0) === o.v}
-            {color}
-            width={34}
+          {@const on = Math.round(params.feel ?? 0) === o.v}
+          <button
+            type="button"
+            class="feel-btn"
+            title={o.l}
+            aria-pressed={on}
+            style="border-color:{on ? color + '66' : '#0e1012'};background:{on
+              ? `linear-gradient(180deg,${color}22,${color}11)`
+              : '#191b1d'};color:{on ? color : '#3a4050'}"
             onclick={() => onUpdate('feel', o.v)}
-          />
+          >
+            <FeelGlyph kind={o.l} {color} dim={!on} />
+            <span class="feel-btn-label">{o.l}</span>
+          </button>
         {/each}
       </div>
     </Section>
-    <Section label="FDBK" {color} noBorder>
+    <Section label="GATE" {color}>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="width:30px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LEN</span>
+          <div style="flex:1">
+            <HSlider value={params.gate ?? 70} onChange={(v) => onUpdate('gate', v)} {color} ariaLabel="GATE LENGTH" controlId="{moduleId}-gate" />
+          </div>
+          <MiniDisplay value={`${Math.round(params.gate ?? 70)}%`} width={34} />
+        </div>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="width:30px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
+          <div style="flex:1">
+            <HSlider value={params.sens ?? 40} onChange={(v) => onUpdate('sens', v)} {color} ariaLabel="ENERGY SENSITIVITY" controlId="{moduleId}-sens" />
+          </div>
+          <MiniDisplay value={`${Math.round(params.sens ?? 40)}%`} width={34} />
+        </div>
+      </div>
+    </Section>
+    <!-- The param key stays `feedback` so presets keep working; the label is
+         HOLD because the module freezes a frame rather than feeding one back. -->
+    <Section label="HOLD" {color} noBorder>
       <div style="display:flex;align-items:center;gap:4px">
         <div style="flex:1">
-          <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="FEEDBACK" controlId="{moduleId}-feedback" />
+          <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="HOLD" controlId="{moduleId}-feedback" />
         </div>
         <MiniDisplay value={`${Math.round(params.feedback ?? 50)}%`} width={34} />
       </div>
@@ -444,3 +497,35 @@
     </Section>
   </div>
 {/if}
+
+<style>
+  /* Taller than the 16px control tier because it carries a rhythm diagram as
+     well as a label -- the same trade INCEPTION's fold buttons make. */
+  .feel-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    flex: 1;
+    min-width: 0;
+    height: 26px;
+    padding: 0 2px;
+    border-style: solid;
+    border-width: 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .feel-btn:hover {
+    background: #1e2022 !important;
+  }
+  .feel-btn-label {
+    font-family: var(--font-ui);
+    font-size: 5.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    line-height: 1;
+  }
+</style>

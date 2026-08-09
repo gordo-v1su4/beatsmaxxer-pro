@@ -61,6 +61,27 @@ fn beatPulse(sharpness: f32) -> f32 {
   return u.playing * exp(-u.beatPhase * sharpness);
 }
 
+/** How much of an effect is on right now, given its BEAT control.
+ *
+ * The rack had two different ideas of what a BEAT knob does: some modules used
+ * it to scale a small extra wobble on top of an always-on effect, others had no
+ * beat term at all and simply sat there. Neither is what the control implies.
+ * Here it is one rule, everywhere: at 0 the effect runs flat out and constant,
+ * and as BEAT rises the effect is increasingly shaped by the beat envelope, so
+ * it snaps in on the hit and falls away between hits.
+ *
+ * bass folds in the low end, so a kick drives the gate harder than a hi-hat.
+ * With the transport stopped u.playing is 0, which collapses this to 1 and
+ * leaves the effect fully on rather than stuck off.
+ *
+ * Declared after beatPulse deliberately: WGSL requires a function to be defined
+ * before it is called.
+ */
+fn beatGate(amount: f32, sharpness: f32, bass: f32) -> f32 {
+  let env = clamp(beatPulse(sharpness) + u.bassAmp * bass, 0.0, 1.0);
+  return mix(1.0, env, clamp(amount, 0.0, 1.0) * u.playing);
+}
+
 fn accentRgb() -> vec3f {
   return vec3f(u.colorR, u.colorG, u.colorB);
 }
@@ -183,26 +204,39 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += acc * tick * (0.2 + 0.55 * smoothstep(0.4, 0.0, abs(p.y - 0.5))) * fade;
     col += vec3f(0.35) * smoothstep(0.004, 0.0, abs(p.x - 0.5)) * 0.5;
   } else if (mode == 3.0) {
-    // TAPDELAY — echo trails that RE-FIRE ON THE DIVISION, then decay.
-    // These taps used to sweep continuously off the wall clock, running free while
-    // the effect itself is quantised to u.beat via stutterLenBeats — the preview
-    // was an audio delay-line diagram rather than the beat-locked video stutter
-    // the module performs, and nothing in it landed on the beat.
-    // p0 = LEN, p1 = feedback.
-    let seg = stutterLenBeats(u.p0);
-    let prog = clamp((u.beat - floor(u.beat / seg) * seg) / seg, 0.0, 1.0);
-    let taps = 3.0 + floor(clamp(u.p1, 0.0, 1.0) * 5.0);
-    for (var i = 0; i < 8; i = i + 1) {
-      let fi = f32(i);
-      if (fi >= taps) { continue; }
-      // Each repeat sits further back in the frame and fades by FEEDBACK.
-      let tx = fract(0.18 + prog * 0.62 - fi * (0.62 / max(taps, 1.0)));
-      let line = smoothstep(0.012, 0.0, abs(p.x - tx));
-      let decay = pow(clamp(u.p1, 0.0, 1.0), fi * 0.7);
-      col += acc * line * decay * (0.35 + 0.65 * smoothstep(0.45, 0.0, abs(p.y - 0.5))) * fade;
+    // STUTTER — a playhead that runs, then LOCKS for the rest of the division.
+    // Previously this drew delay taps sweeping across the frame, which described
+    // an echo the module no longer performs. What it does now is hold a frame:
+    // so the card runs a marker forward for a sliver at the top of each division
+    // and freezes it in place until the next one, which is the gesture itself.
+    // p0 = LEN, p1 = HOLD, p2 = FEEL.
+    var seg3 = stutterLenBeats(u.p0);
+    let feel3 = floor(clamp(u.p2, 0.0, 1.0) * 100.0 + 0.5);
+    if (feel3 > 1.5) {
+      seg3 = seg3 * 1.5;
+    } else if (feel3 > 0.5) {
+      let pair3 = floor(u.beat / (seg3 * 2.0));
+      let inPair3 = u.beat - pair3 * seg3 * 2.0;
+      if (inPair3 < seg3 * 1.34) { seg3 = seg3 * 1.34; } else { seg3 = seg3 * 0.66; }
     }
-    // The division itself — the moment the echo re-triggers.
-    col += acc * exp(-prog * 8.0) * 0.22 * fade;
+    let prog3 = clamp((u.beat - floor(u.beat / seg3) * seg3) / seg3, 0.0, 1.0);
+    let holdAmt = clamp(u.p1, 0.0, 1.0);
+
+    // Ghost of the free-running playhead, so the freeze is legible as a freeze.
+    let free = fract(u.beat / max(seg3, 0.0001));
+    col += acc * smoothstep(0.010, 0.0, abs(p.x - free)) * 0.18 * fade;
+
+    // The held position: advances only during the capture window.
+    let heldX = min(prog3, 0.10) / 0.10 * mix(1.0, 0.12, holdAmt);
+    col += acc * smoothstep(0.014, 0.0, abs(p.x - heldX))
+         * (0.45 + 0.55 * smoothstep(0.45, 0.0, abs(p.y - 0.5))) * fade;
+
+    // Division ticks, so the grid FEEL produces is visible without a clip.
+    for (var i = 0; i < 8; i = i + 1) {
+      let tx = f32(i) / 8.0;
+      col += acc * smoothstep(0.004, 0.0, abs(p.x - tx)) * 0.10 * fade;
+    }
+    col += acc * exp(-prog3 * 9.0) * 0.20 * holdAmt * fade;
   } else if (mode == 4.0) {
     // TIMESAMPLER — a piano roll that SCRUBS AND TELEPORTS, because that is what
     // the module does: the picture jumps to another slice and plays on from
@@ -354,16 +388,27 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += vec3f(0.28, 0.48, 1.0) * smoothstep(0.018, 0.0, abs(p.x - 0.5 - spread)) * 0.6 * fade;
     col += acc * smoothstep(0.30, 0.0, abs(p.x - 0.5)) * 0.10 * fade;
   } else if (mode == 18.0) {
-    // MOTION STREAK — comet heads dragging trails along the move axis
+    // MOTION STREAK — comet heads dragging trails along the move axis.
+    // Read no params and ran on the wall clock, so LENGTH, ANGLE and DECAY did
+    // nothing to it and the drift never landed on a beat. All three now drive
+    // it, and the heads advance on u.beat like the effect's own pulse term.
+    let ang18 = (u.p1 - 0.5) * 3.14159265;
+    let dir18 = vec2f(cos(ang18), sin(ang18));
+    let len18 = 0.10 + clamp(u.p0, 0.0, 1.0) * 0.55;
+    let decay18 = 1.0 + clamp(u.p2, 0.0, 1.0) * 5.0;
+    let march = u.beat * 0.25 + t * 0.05;
     for (var i = 0; i < 4; i = i + 1) {
       let fi = f32(i);
-      let y = 0.24 + fi * 0.17;
-      let head = fract(t * 0.32 + fi * 0.29);
-      let d = p.x - head;
-      let trail = smoothstep(0.34, 0.0, -d) * step(d, 0.0);
-      let lane = smoothstep(0.030, 0.0, abs(p.y - y));
-      col += acc * trail * lane * 0.85 * fade;
-      col += vec3f(0.95) * smoothstep(0.014, 0.0, length(vec2f(d * asp, p.y - y))) * 0.8 * fade;
+      let lane0 = vec2f(0.5, 0.24 + fi * 0.17) - vec2f(0.5);
+      let headT = fract(march + fi * 0.29) - 0.5;
+      let head = vec2f(0.5) + lane0 + dir18 * headT;
+      let rel = (p - head) * vec2f(asp, 1.0);
+      let along = dot(rel, dir18);
+      let across = abs(dot(rel, vec2f(-dir18.y, dir18.x)));
+      let trail = exp(along * decay18 / max(len18, 0.02)) * step(along, 0.0)
+                * smoothstep(len18, 0.0, -along);
+      col += acc * trail * smoothstep(0.030, 0.0, across) * 0.85 * fade;
+      col += vec3f(0.95) * smoothstep(0.014, 0.0, length(rel)) * 0.8 * fade;
     }
   } else if (mode == 19.0) {
     // INCEPTION — the real fold, run over a deliberately lopsided scene.
@@ -590,49 +635,65 @@ fn stutterLenBeats(p: f32) -> f32 {
   return 1.0;
 }
 
-/** Real feedback echo: each frame drags the PREVIOUS output through a small
-    offset/zoom so trails accumulate over time (ping-pong buffer), with a
-    beat-quantized stutter that re-fires on every LEN division. FEEL reshapes
-    the repeat grid: 0 straight, 1 swing (long/short), 2 dotted (1.5x).
-    p0 = LEN, p1 = feedback, p2 = feel. */
+/** STUTTER — grab one frame on the division and hold it until the next one.
+
+    This module was a feedback echo: it dragged the previous output through a
+    zoom and a drift so trails smeared over time. That is neither of the two
+    things the rack needs. A smear has no edge, so nothing landed on the beat,
+    and it occupied the same ground as TIMESAMPLER without doing that job either.
+    In Looperator terms the rack wants a LOOP and a SLICE: repeat a chunk in
+    place, or jump between chunks. This is the LOOP half -- TIMESAMPLER, which
+    genuinely seeks between slices upstream, is the SLICE half.
+
+    The freeze is the ping-pong buffer used as a hold rather than as a trail:
+    live source passes through for a sliver at the top of each division, and for
+    the rest of it the previous output is fed straight back, so the picture locks
+    to the exact frame that landed on the beat. HOLD at 0 is a clean bypass.
+
+    p0 = LEN, p1 = HOLD, p2 = FEEL (0 straight, 1 swing, 2 dotted). */
 fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
-  let fb = clamp(u.p1, 0.0, 1.0);
+  let hold = clamp(u.p1, 0.0, 1.0);
   var seg = stutterLenBeats(u.p0);
   let feel = floor(clamp(u.p2, 0.0, 1.0) * 100.0 + 0.5);
 
-  // FEEL reshapes the repeat grid on top of whatever LEN is set
+  // FEEL reshapes the repeat grid on top of whatever LEN is set. This is real
+  // subdivision, not a wobble: swing genuinely lengthens the first half of each
+  // pair and shortens the second, so the retrigger lands where the ear expects.
   if (feel > 1.5) {
     seg = seg * 1.5;                                   // dotted
   } else if (feel > 0.5) {
-    // swing: long first half of each pair, short second half
     let pair = floor(u.beat / (seg * 2.0));
     let inPair = u.beat - pair * seg * 2.0;
     if (inPair < seg * 1.34) { seg = seg * 1.34; } else { seg = seg * 0.66; }
   }
   let prog = clamp((u.beat - floor(u.beat / seg) * seg) / seg, 0.0, 1.0);
 
-  // trails: pull the previous frame in with a slight zoom + drift so echoes
-  // smear along the move instead of sitting perfectly on top of each other
-  let drift = vec2f(0.006 + fb * 0.010, 0.0);
-  let zoom = 1.0 - (0.004 + fb * 0.010);
-  var fbUv = (uv - vec2f(0.5)) * zoom + vec2f(0.5) + drift * (0.5 - prog);
-  let prev = sampleFeedback(clamp(fbUv, vec2f(0.0), vec2f(1.0)));
+  // Capture window: wide enough to survive a dropped frame at any sane division,
+  // narrow enough that the held frame is the one on the beat and not a later one.
+  let capturing = step(prog, 0.08);
+  let frozen = sampleFeedback(uv);
 
-  // ceiling below 1.0 keeps the feedback loop from blowing out to white
-  let decay = clamp(fb * 0.94, 0.0, 0.94);
-  var wet = max(col, prev * decay);
+  // GATE is how much of the division the freeze occupies. Short gates read as a
+  // stab -- lock on the beat, release back to live before the next one -- while
+  // a full gate holds the whole division. Without it the freeze always ran edge
+  // to edge, which is one gesture at one length.
+  let gate = clamp(u.p3, 0.0, 1.0);
 
-  // The per-repeat accent used to be a chroma split plus an exposure pump of up
-  // to 1.7x (0.20 + bassAmp * 0.5) fired on every division. Between them the
-  // module read as flashing and colour-fringed rather than as a delay, and
-  // neither was reachable from the UI. The repeat is already audible in the
-  // timing of the trails, so the accent is gone entirely — no tinting, no
-  // blowout. The trails above and the scrub smear below are the actual effect.
+  // SENS ties the length of the freeze to how hard the track is hitting, so the
+  // module plays the song instead of running a metronome over it: quiet bars
+  // barely catch, loud ones lock for the full gate. Energy scales the gate
+  // rather than arming a hard threshold on purpose -- a threshold evaluated per
+  // frame would flicker mid-division, since nothing here holds state between
+  // frames. At SENS 0 the gate is constant and this term disappears.
+  let sens = clamp(u.accent, 0.0, 1.0);
+  let energy = clamp(u.bassAmp * 1.5 + u.amplitude * 0.5, 0.0, 1.0);
+  let drive = mix(1.0, energy, sens);
+  let released = step(0.08 + gate * 0.92 * drive, prog);
 
-  // scrub tap: within a repeat the frame slides, reading as a time smear
-  let smear = (0.5 - prog) * fb * 0.05;
-  let tap = sampleSource(clamp(uv + vec2f(smear, 0.0), vec2f(0.0), vec2f(1.0)));
-  return mix(wet, max(wet, tap), fb * 0.35);
+  // Off the division the previous output feeds straight back with no offset and
+  // no decay, which is what makes it a hold instead of a trail.
+  let stutter = mix(frozen, col, max(capturing, released));
+  return mix(col, stutter, hold * u.playing);
 }
 
 /** Simpler-style slice sampler: the actual slice jump is a real video seek done
@@ -844,8 +905,18 @@ fn effectHalation(col: vec3f, uv: vec2f) -> vec3f {
   return col + bloom * tint * (0.7 + u.p1 * 1.5);
 }
 
-/** Radial barrel/fisheye warp. p0 = bulge amount, p1 = vertical
-    center, p2 = radial falloff. */
+/** BARREL — radial lens warp that goes both ways.
+
+    AMOUNT is signed around its midpoint now: below centre the frame pinches
+    (pincushion), above it bulges (barrel). It used to run one direction only,
+    so half the knob's travel did nothing but approach neutral.
+
+    It also had no beat term at all — no u.beat, no beatPulse — so a control
+    named for the bass could not react to it. BEAT now drives beatGate: at 0 the
+    warp is constant, and as it rises the warp snaps in on the hit and releases
+    between hits, with the low end weighted so a kick pushes it hardest.
+
+    p0 = amount (0.5 neutral), p1 = vertical centre, p2 = falloff, p3 = beat. */
 fn effectBulge(col: vec3f, uv: vec2f) -> vec3f {
   let center = vec2f(0.5, mix(0.28, 0.72, u.p1));
   var d = uv - center;
@@ -853,7 +924,11 @@ fn effectBulge(col: vec3f, uv: vec2f) -> vec3f {
   let r2 = dot(d, d);
   let reach = mix(1.8, 0.45, u.p2);
   let influence = exp(-r2 / max(reach * reach, 0.001));
-  let warp = 1.0 - u.p0 * 0.65 * influence;
+
+  let signed = (u.p0 - 0.5) * 2.0;
+  let gate = beatGate(u.p3, 5.0, 0.6);
+  let warp = 1.0 - signed * 0.65 * influence * gate;
+
   d *= max(warp, 0.2);
   d.x /= max(u.aspect, 0.0001);
   return sampleSource(clamp(center + d, vec2f(0.0), vec2f(1.0)));
@@ -952,7 +1027,11 @@ fn effectStreak(col: vec3f, uv: vec2f) -> vec3f {
   let a = (u.p1 - 0.5) * 3.14159265;
   let dir = vec2f(cos(a), sin(a));
   let pulse = 0.35 + 0.65 * beatPulse(4.0);
-  let span = u.p0 * 0.12 * pulse;
+  // 0.12 put the smear at 2-6% of the frame at the default LENGTH of 50, which
+  // is below the threshold where a directional blur reads as anything at all --
+  // the module looked broken rather than subtle. 0.30 makes LENGTH cover a real
+  // range: still gentle at the bottom, an actual streak at the top.
+  let span = u.p0 * 0.30 * pulse;
   var wet = vec3f(0.0);
   var weight = 0.0;
   for (var i = 0; i < 8; i = i + 1) {
@@ -995,13 +1074,17 @@ fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
     on every beat). */
 fn effectLens(col: vec3f, uv0: vec2f) -> vec3f {
   let asp = max(u.aspect, 0.0001);
-  let glass = (u.p0 - 0.5) * 2.0;
-  let pump = 1.0 - beatPulse(5.0) * u.p3 * 0.12;
+  // BEAT used to be a 12% zoom breath layered on top of an always-on lens, so
+  // turning it up added a wobble rather than making the lens hit. It now gates
+  // the glass itself through beatGate: down, the lens sits on constantly; up,
+  // it snaps in on the beat and falls away between.
+  let gate = beatGate(u.p3, 5.0, 0.5);
+  let glass = (u.p0 - 0.5) * 2.0 * gate;
   var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
   let r = length(p);
   let bend = 1.0 + glass * r * r * 2.2;
   p = p * bend / (1.0 + glass * 0.55);
-  p = p * mix(1.0, 0.62, u.p1) * pump;
+  p = p * mix(1.0, 0.62, u.p1 * gate);
   let uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
   let edge = smoothstep(0.15, 0.75, r) * u.p2;
   let split = edge * 0.012;
