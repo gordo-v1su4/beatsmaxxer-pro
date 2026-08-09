@@ -33,6 +33,29 @@ export function setAllModulesCollapsed(ids: string[], collapsed: boolean) {
   });
 }
 
+/**
+ * Which screen is up.
+ *
+ * The arrangement used to be a dock at the bottom of the performance view, and
+ * it never fit: programming wants ten slot lanes across the length of a song,
+ * performing wants the picture and nothing else. Stacked in one window they
+ * each made the other worse. They are two activities, so they are two screens.
+ */
+export type ViewMode = 'perform' | 'arrange';
+export const viewMode = writable<ViewMode>('perform');
+
+/**
+ * Strip the performance view back to the picture: rack modules to previews and
+ * both side rails retracted. The rails are browsers — things you use while
+ * building a set, not while playing one — so leaving them out of MIN ALL meant
+ * the gesture never actually got you to a clean screen.
+ */
+export function setMinimalPerformView(ids: string[], on: boolean) {
+  setAllModulesCollapsed(ids, on);
+  fxLibOpen.set(!on);
+  pgmRailOpen.set(!on);
+}
+
 /** Left browser rail — retracts to a thin strip. */
 export const fxLibOpen = writable(true);
 
@@ -44,14 +67,14 @@ export const fxLibOpen = writable(true);
 export type SideRailTab = 'fx' | 'clips';
 export const sideRailTab = writable<SideRailTab>('fx');
 
+/** Open the rail on a given tab — used when a drop needs its target visible. */
+export function showSideRailTab(tab: SideRailTab) {
+  sideRailTab.set(tab);
+  fxLibOpen.set(true);
+}
+
 /** PGM source rail — can retract later for extra rack rows. */
 export const pgmRailOpen = writable(true);
-
-/**
- * Clip bank drawer. Starts closed: loading clips is a setup activity, and the
- * rack should own the full width during a performance.
- */
-export const clipLibraryOpen = writable(false);
 
 export const topRowCompact = derived([rackTop, moduleCollapsed], ([top, collapsed]) => {
   if (top.length === 0) return false;

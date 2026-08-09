@@ -21,9 +21,8 @@
   import RackSlot from '$lib/components/RackSlot.svelte';
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
-  import ModulePalette from '$lib/components/ModulePalette.svelte';
-  import ClipTray from '$lib/components/ClipTray.svelte';
-  import BeatSequencer from '$lib/components/BeatSequencer.svelte';
+  import SideRail from '$lib/components/SideRail.svelte';
+  import ArrangeView from '$lib/components/ArrangeView.svelte';
   import CapabilityGate from '$lib/components/CapabilityGate.svelte';
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
   import { pgmDirector } from '$lib/runtime/pgm/PgmDirector';
@@ -31,7 +30,7 @@
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
   import { installBspQaHook } from '$lib/qa/bspQa';
   import { fxHold } from '$lib/stores/rack';
-  import { topRowCompact, bottomRowCompact } from '$lib/stores/rackUi';
+  import { topRowCompact, bottomRowCompact, viewMode } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
@@ -174,9 +173,13 @@
     clipSlotCount={activeClipSlotCount}
   />
 
-  <div class="rack-workspace">
+  <!-- Two screens, not two panes. Programming wants ten lanes across a whole
+       song; performing wants the picture. Stacked in one window each made the
+       other worse, so ARRANGE replaces the workspace rather than docking under
+       it. The engine keeps running underneath either way. -->
+  <div class="rack-workspace" style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
     <div class="side-panels" style="display:flex;flex-shrink:0">
-      <ModulePalette />
+      <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={rackModules} />
     </div>
@@ -185,8 +188,6 @@
 
     <div class="rack-main">
       <MainViewer modules={rackModules} />
-
-      <ClipTray onAssignClip={assignLibraryClip} />
 
       <div
         class="rack-row top-rack-row"
@@ -232,10 +233,13 @@
         {/each}
       </div>
 
-      <BeatSequencer />
     </div>
 
     <ScrewRail side="right" class="hide-on-mobile" />
   </div>
+
+  {#if $viewMode === 'arrange'}
+    <ArrangeView />
+  {/if}
 </div>
 </div>

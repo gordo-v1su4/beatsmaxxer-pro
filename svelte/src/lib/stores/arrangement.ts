@@ -130,6 +130,85 @@ export const arrangement = writable<ArrangementSection[]>(
   DEFAULT_ARRANGEMENT.map((s) => ({ ...s, pattern: [...s.pattern] }))
 );
 
+/**
+ * A cut placed in the song, not in a repeating bar.
+ *
+ * `step` is an absolute sixteenth from the top of the arrangement, so bar 34
+ * beat 3 is a different cut from bar 2 beat 3 and can be edited on its own. The
+ * pattern model could not express that: a section held one bar and replayed it
+ * for all sixteen of its bars, so the only thing you could say about bar 34 was
+ * whatever you had already said about every other bar in the chorus.
+ */
+export interface Cut {
+  step: number;
+  /** Rack slot 0-9. */
+  slotIndex: number;
+}
+
+/** Bar index each section starts on, and the arrangement's length in steps. */
+export const sectionStarts = derived(arrangement, (sections) => {
+  const starts: number[] = [];
+  let bar = 0;
+  for (const section of sections) {
+    starts.push(bar);
+    bar += section.bars;
+  }
+  return starts;
+});
+
+export const arrangementTotalSteps = derived(
+  arrangement,
+  (sections) => sections.reduce((total, s) => total + s.bars, 0) * ARRANGEMENT_STEPS
+);
+
+/**
+ * Unroll the section patterns across the whole song.
+ *
+ * This is what the pattern model was already doing on playback — a 16-bar verse
+ * fired its four marks sixteen times over — it just had no way to show it. The
+ * timeline starts from the same cuts you were already hearing rather than from
+ * an empty grid, so nothing changes underfoot on the first load; the difference
+ * is that every one of them is now an object you can move or delete.
+ */
+function unrollDefaultCuts(sections: ArrangementSection[]): Cut[] {
+  const cuts: Cut[] = [];
+  let bar = 0;
+  for (const section of sections) {
+    for (let b = 0; b < section.bars; b++) {
+      section.pattern.forEach((slotIndex, step) => {
+        if (slotIndex == null) return;
+        cuts.push({ step: (bar + b) * ARRANGEMENT_STEPS + step, slotIndex });
+      });
+    }
+    bar += section.bars;
+  }
+  return cuts;
+}
+
+export const cuts = writable<Cut[]>(unrollDefaultCuts(DEFAULT_ARRANGEMENT));
+
+/** Slot to cut to at an absolute step, or null to hold. */
+export function cutAtStep(list: readonly Cut[], step: number): number | null {
+  for (const cut of list) if (cut.step === step) return cut.slotIndex;
+  return null;
+}
+
+/** Place or remove a cut. A step holds at most one slot — PGM is one output. */
+export function toggleCut(step: number, slotIndex: number) {
+  cuts.update((list) => {
+    const existing = list.find((c) => c.step === step);
+    if (existing?.slotIndex === slotIndex) return list.filter((c) => c !== existing);
+    return [...list.filter((c) => c.step !== step), { step, slotIndex }].sort(
+      (a, b) => a.step - b.step
+    );
+  });
+}
+
+/** Drop every cut inside a bar range — the timeline's erase gesture. */
+export function clearCutsBetween(startStep: number, endStep: number) {
+  cuts.update((list) => list.filter((c) => c.step < startStep || c.step >= endStep));
+}
+
 /** Index into `arrangement` of the section currently playing. */
 export const activeSectionIndex = writable(0);
 

@@ -9,20 +9,34 @@ export const sequencerSteps = writable<(string | null)[]>(Array.from({ length: 1
 export const sequencerArmed = writable(false);
 export const sequencerLastStep = writable(-1);
 
+/**
+ * Every sixteenth crossed since the last publication.
+ *
+ * `steps` are bar-relative (0-15). `absoluteSteps` are counted from the top of
+ * the transport and are what an arrangement addresses: a cut placed at bar 34
+ * has to be distinguishable from the same position in bar 2, which the folded
+ * value cannot express.
+ */
 export function crossedSequencerSteps(
   previousAbsoluteStep: number | null,
   beatPosition: number
 ) {
   const currentAbsoluteStep = Math.max(0, Math.floor(beatPosition * 4));
   if (previousAbsoluteStep === null || currentAbsoluteStep <= previousAbsoluteStep) {
-    return { currentAbsoluteStep, steps: [currentAbsoluteStep % 16] };
+    return {
+      currentAbsoluteStep,
+      steps: [currentAbsoluteStep % 16],
+      absoluteSteps: [currentAbsoluteStep]
+    };
   }
+  const absoluteSteps = Array.from(
+    { length: currentAbsoluteStep - previousAbsoluteStep },
+    (_, index) => previousAbsoluteStep + index + 1
+  );
   return {
     currentAbsoluteStep,
-    steps: Array.from(
-      { length: currentAbsoluteStep - previousAbsoluteStep },
-      (_, index) => (previousAbsoluteStep + index + 1) % 16
-    )
+    steps: absoluteSteps.map((step) => step % 16),
+    absoluteSteps
   };
 }
 

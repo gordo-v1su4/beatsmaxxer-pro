@@ -38,6 +38,12 @@ export interface AudioEngineState {
   analysisStatus: AnalysisStatus;
   analysisConfidence: number | null;
   analysisError: string | null;
+  /**
+   * Bumped whenever a new onset list lands. The list itself is thousands of
+   * numbers and the state is read every frame, so consumers watch this counter
+   * and pull the array with getAnalysisOnsets() only when it changes.
+   */
+  analysisOnsetGeneration: number;
 }
 
 export interface IAudioEngine {

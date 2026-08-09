@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
+  import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { allModulesCollapsed, setAllModulesCollapsed } from '$lib/stores/rackUi';
+  import { allModulesCollapsed, setMinimalPerformView, viewMode } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
@@ -230,7 +230,7 @@
         class="status-dot"
         style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
       ></div>
-      <span class="brand-text">BEATSMAXXING</span>
+      <span class="brand-text">BEATSMAXXER PRO</span>
       <span class="brand-x">×</span>
       <span class="brand-sub">CHE</span>
     </div>
@@ -424,16 +424,36 @@
       {#snippet icon()}<X size={10} />{/snippet}
     </TopBtn>
 
-    <!-- Collapsing ten modules one chevron at a time is ten clicks for what is
-         almost always a single intent: clear the lower half of the window. -->
+    <!-- Strip the performance view to the picture: ten modules to previews and
+         both browser rails away. The rails were left out before, so the gesture
+         cleared the bottom of the window and left two columns of list beside a
+         monitor that was meant to be the only thing on screen. -->
     <TopBtn
-      label={$allModulesCollapsed ? 'EXPAND ALL' : 'MIN ALL'}
-      onclick={() =>
-        setAllModulesCollapsed([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+      label={$allModulesCollapsed ? 'SHOW ALL' : 'MIN ALL'}
+      accent
+      active={$allModulesCollapsed}
+      onclick={() => setMinimalPerformView([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+      title={$allModulesCollapsed
+        ? 'Bring back the module controls and the side rails'
+        : 'Collapse the modules to previews and retract both side rails'}
     >
       {#snippet icon()}
         {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}
       {/snippet}
+    </TopBtn>
+
+    <!-- Programming and performing are separate screens, so this is a switch
+         between them, not a panel that opens. -->
+    <TopBtn
+      label={$viewMode === 'arrange' ? 'PERFORM' : 'ARRANGE'}
+      accent
+      active={$viewMode === 'arrange'}
+      onclick={() => viewMode.set($viewMode === 'arrange' ? 'perform' : 'arrange')}
+      title={$viewMode === 'arrange'
+        ? 'Back to the rack and the program monitor'
+        : 'Open the arrangement — cuts and trigger channels across the whole song'}
+    >
+      {#snippet icon()}<ListMusic size={10} />{/snippet}
     </TopBtn>
 
     <div class="crt-group" role="group" aria-label="CRT screen treatment">

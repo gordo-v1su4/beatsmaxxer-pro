@@ -124,6 +124,13 @@ export class AudioEngine implements IAudioEngine {
   ] as const;
 
   private beatGrid: number[] = [];
+  /**
+   * Onset times from hosted analysis, in transport seconds. Separate from the
+   * beat grid: beats are the metronome, onsets are where the track actually hits,
+   * and the arrangement lane needs the second one to show what would fire.
+   */
+  private analysisOnsets: number[] = [];
+  private _analysisOnsetGeneration = 0;
   private onsetHistory: number[] = [];
   private prevEnergy = 0;
   private bassEma = 0.08;
@@ -317,6 +324,7 @@ export class AudioEngine implements IAudioEngine {
     this._bpm = DEFAULT_BPM;
     this._analysisBpm = DEFAULT_BPM;
     this.beatGrid = [];
+    this.setAnalysisOnsets([]);
     this._bpmLocked = false;
     this.applyTempoRate(1);
     this.transportClock.setBeatGrid([], this._bpm, 0);
@@ -567,7 +575,18 @@ export class AudioEngine implements IAudioEngine {
       analysisStatus: this._analysisStatus,
       analysisConfidence: this._analysisConfidence,
       analysisError: this._analysisError,
+      analysisOnsetGeneration: this._analysisOnsetGeneration,
     };
+  }
+
+  /** Onset times in transport seconds. Empty unless hosted analysis succeeded. */
+  getAnalysisOnsets(): readonly number[] {
+    return this.analysisOnsets;
+  }
+
+  /** Hosted beat times in transport seconds. Empty on the realtime fallback. */
+  getBeatGrid(): readonly number[] {
+    return this.beatGrid;
   }
 
   getUploadedTrackLoadGeneration() {
@@ -895,6 +914,7 @@ export class AudioEngine implements IAudioEngine {
     this.beatGrid = analysis.beats
       .filter((beat) => beat >= 0)
       .sort((a, b) => a - b);
+    this.setAnalysisOnsets(analysis.onsets);
     this.transportClock.setBeatGrid(
       this.beatGrid,
       bpm,
@@ -910,8 +930,16 @@ export class AudioEngine implements IAudioEngine {
     this.syncSoundTouch();
   }
 
+  private setAnalysisOnsets(onsets: readonly number[] | undefined) {
+    this.analysisOnsets = (onsets ?? [])
+      .filter((time) => Number.isFinite(time) && time >= 0)
+      .sort((a, b) => a - b);
+    this._analysisOnsetGeneration += 1;
+  }
+
   private applyRealtimeFallback(error: unknown) {
     this.beatGrid = [];
+    this.setAnalysisOnsets([]);
     this.transportClock.setBeatGrid([], this._bpm, this.getTransportTime());
     audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
     this._analysisStatus = "fallback";
