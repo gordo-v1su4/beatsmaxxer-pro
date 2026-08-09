@@ -29,14 +29,19 @@ import {
   sequencerLastStep
 } from '$lib/stores/sequencer';
 import {
+  ARRANGEMENT_STEPS,
   activeSectionIndex,
   applySectionBank,
   arrangement,
+  arrangementTotalSteps,
   autoBank,
   barInSection,
+  cutAtStep,
+  cuts,
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
 import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
+import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
@@ -203,15 +208,19 @@ function runSequencer(frame: TimelineFrame) {
   runArrangement(frame, generationChanged);
 
   const sections = get(arrangement);
-  const section = sections[get(activeSectionIndex)] ?? sections[0];
-  if (!section) return;
+  if (sections.length === 0) return;
 
+  const cutList = get(cuts);
+  const totalSteps = get(arrangementTotalSteps);
   const top = get(rackTop);
   const bottom = get(rackBottom);
   let selected = get(queuedPgmSource) ?? get(pgmSource);
-  for (const step of crossed.steps) {
-    sequencerLastStep.set(step);
-    const slotIndex = section.pattern[step];
+  for (const step of crossed.absoluteSteps) {
+    sequencerLastStep.set(step % ARRANGEMENT_STEPS);
+    // Cuts are placed against the song, so the lookup wraps on the arrangement's
+    // length rather than on the bar — bar 34 is its own step, not a repeat of 2.
+    const songStep = totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step;
+    const slotIndex = cutAtStep(cutList, songStep);
     if (slotIndex == null) continue;
     const target = moduleForSlotIndex(top, bottom, slotIndex);
     const targetSlot = target ? currentRackSlotForModule(target) : null;
@@ -311,13 +320,27 @@ function configureTimeSampler() {
   /**
    * Which part drives the triggers. A MIDI layer used to win simply by existing,
    * which made loading one an irreversible decision — there was no way back to
-   * onset triggering short of clearing the file. The source is now chosen, and
-   * the chosen channel can be any module's part, not just TIMESAMPLER's own.
+   * onset triggering short of clearing the file. The source is now chosen.
+   *
+   * A stem channel wins over the per-module layer when one is selected: picking
+   * DRUMS in the arrangement is a statement about what fires the rack, and it
+   * would be a lie if the module's own attached file quietly kept priority.
    */
-  const tsMidi =
-    get(triggerSource) === 'midi'
-      ? get(midiLayers)[get(triggerMidiModule) ?? 'timesampler'] ?? null
-      : null;
+  const tsMidi = (() => {
+    if (get(triggerSource) !== 'midi') return null;
+    const channel = get(activeChannel);
+    if (channel) {
+      return {
+        name: channel.name,
+        // Onsets, not notes: the reducer only reads `time`, and the collapsed
+        // list is what the arrangement lane is drawing. Pitch is irrelevant to
+        // a trigger, so a constant carries no meaning either way.
+        notes: channel.onsets.map((time) => ({ time, note: 60, velocity: 100 })),
+        duration: channel.duration
+      };
+    }
+    return get(midiLayers)[get(triggerMidiModule) ?? 'timesampler'] ?? null;
+  })();
   const tsDuration = timeSamplerSlot
     ? tauriNativeSource.getDuration(timeSamplerSlot) || videoPool.getDuration(timeSamplerSlot) || 120
     : 120;

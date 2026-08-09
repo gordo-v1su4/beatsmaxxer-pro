@@ -20,19 +20,26 @@
    * existed in the data and never had a surface, which is what made AUTO-BANK
    * unreadable: the rack rearranged itself on a section change and nothing had
    * said what it was rearranging into.
+   *
+   * `pending` — this slot currently holds something else, so recall would move
+   * it. That is the only question the block has to answer, so it is the only
+   * thing given emphasis. Marking the already-loaded ones instead lit eight
+   * chips out of ten and drew the eye to the parts where nothing happens.
    */
   const bankChips = $derived(
     [...($activeSection?.bank.top ?? []), ...($activeSection?.bank.bottom ?? [])].map((id, i) => {
       const def = getModuleDef(id);
+      const live = i < 5 ? $rackTop[i] : $rackBottom[i - 5];
       return {
         key: `${i}-${id}`,
         slot: i < 5 ? `A${i + 1}` : `B${i - 4}`,
         name: def?.shortName ?? id.toUpperCase(),
-        color: def?.accentColor ?? '#4a5260',
-        loaded: inRack.has(id)
+        pending: live !== id
       };
     })
   );
+
+  const pendingCount = $derived(bankChips.filter((c) => c.pending).length);
 
   function beginDrag(moduleId: string, e: PointerEvent) {
     // The library is an effect picker even when that effect is already in the
@@ -83,27 +90,31 @@
      because CLIPS shares all three. -->
 <div class="palette-body">
   {#if $activeSection}
-    <section class="bank" style="--bank-hue:{$activeSection.hue}">
+    <section class="bank">
       <div class="bank-head">
-        <span class="bank-title">BANK FOR SECTION</span>
+        <span class="bank-title">BANK</span>
         <span class="bank-section" style="color:{$activeSection.hue}">{$activeSection.name}</span>
       </div>
       <div class="bank-chips">
         {#each bankChips as chip (chip.key)}
           <span
             class="bank-chip"
-            class:is-loaded={chip.loaded}
-            style="background:{chip.color}1c;color:{chip.color}"
-            title="Slot {chip.slot} · {chip.name}{chip.loaded ? ' — already in the rack' : ''}"
+            class:is-pending={chip.pending}
+            title="Slot {chip.slot} · {chip.name}{chip.pending ? ' — not loaded' : ' — in rack'}"
           >{chip.name}</span>
         {/each}
       </div>
       <button
         type="button"
         class="bank-recall"
+        disabled={pendingCount === 0}
         onclick={() => $activeSection && applySectionBank($activeSection)}
-        title="Load these ten effects into the rack now"
-      >⤓ RECALL BANK TO RACK</button>
+        title={pendingCount === 0
+          ? 'The rack already matches this bank'
+          : `Load this bank into the rack — ${pendingCount} slot${pendingCount === 1 ? '' : 's'} would change`}
+      >
+        {pendingCount === 0 ? 'RACK MATCHES BANK' : `↓ RECALL · ${pendingCount}`}
+      </button>
     </section>
   {/if}
 
@@ -147,8 +158,16 @@
     gap: 4px;
   }
 
-  /* Pinned above the library and outside its scroll: it describes the section
-     you are in, not an item you are browsing. */
+  /*
+   * Pinned above the library and outside its scroll: it describes the section
+   * you are in, not an item you are browsing.
+   *
+   * Deliberately monochrome. Ten effect accents rendered as ten filled chips
+   * turned the rail into a patchwork and left the eye nowhere to land — the
+   * effect colours already do their job on the library cards below and on the
+   * rack itself. Here the only coloured thing is the section name, because the
+   * section is the one fact this block is about.
+   */
   .bank {
     flex-shrink: 0;
     margin: -2px -2px 6px;
@@ -190,32 +209,43 @@
     place-items: center;
     height: 15px;
     border-radius: 2px;
+    background: #101214;
+    color: #3f4653;
     font-size: 6px;
     letter-spacing: 0.04em;
     overflow: hidden;
-    opacity: 0.55;
   }
-  /* Already in the rack, so recalling would not move it. */
-  .bank-chip.is-loaded {
-    opacity: 1;
-    box-shadow: inset 0 0 0 1px currentColor;
+  /* The slot holds something else, so recall would move it. The only emphasis
+     in the block, because it is the only thing that would change. */
+  .bank-chip.is-pending {
+    background: #14181a;
+    color: #8ba0a6;
+    box-shadow: inset 0 0 0 1px #23292d;
   }
 
   .bank-recall {
     width: 100%;
     height: 18px;
-    border: 1px solid color-mix(in srgb, var(--bank-hue) 40%, transparent);
+    border: 1px solid #23292d;
     border-radius: 2px;
-    background: color-mix(in srgb, var(--bank-hue) 10%, transparent);
-    color: var(--bank-hue);
+    background: #131517;
+    color: #8ba0a6;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.12em;
-    transition: background 0.12s;
+    transition: background 0.12s, color 0.12s;
   }
-  .bank-recall:hover {
-    background: color-mix(in srgb, var(--bank-hue) 22%, transparent);
+  .bank-recall:hover:not(:disabled) {
+    background: #1a1f22;
+    color: #cfe0e2;
+  }
+  /* Nothing to do — say so and stop soliciting the click. */
+  .bank-recall:disabled {
+    border-color: #16181b;
+    background: transparent;
+    color: #2f363a;
+    cursor: default;
   }
 
   .palette-hint {

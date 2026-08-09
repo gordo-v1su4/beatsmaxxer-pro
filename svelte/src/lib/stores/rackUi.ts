@@ -34,20 +34,26 @@ export function setAllModulesCollapsed(ids: string[], collapsed: boolean) {
 }
 
 /**
- * Arrangement dock expanded. A store rather than component state because MIN ALL
- * drives it: the height the rack gives up is the height the timeline takes.
+ * Which screen is up.
+ *
+ * The arrangement used to be a dock at the bottom of the performance view, and
+ * it never fit: programming wants ten slot lanes across the length of a song,
+ * performing wants the picture and nothing else. Stacked in one window they
+ * each made the other worse. They are two activities, so they are two screens.
  */
-export const sequencerOpen = writable(false);
+export type ViewMode = 'perform' | 'arrange';
+export const viewMode = writable<ViewMode>('perform');
 
 /**
- * The one gesture behind MIN ALL. Collapsing the rack is never the goal on its
- * own — the goal is to stop looking at ten previews and start looking at the
- * arrangement, and those are the same 440px of window. Doing them separately
- * meant collapsing the rack, seeing black, and only then finding the dock.
+ * Strip the performance view back to the picture: rack modules to previews and
+ * both side rails retracted. The rails are browsers — things you use while
+ * building a set, not while playing one — so leaving them out of MIN ALL meant
+ * the gesture never actually got you to a clean screen.
  */
-export function setArrangeFocus(ids: string[], on: boolean) {
+export function setMinimalPerformView(ids: string[], on: boolean) {
   setAllModulesCollapsed(ids, on);
-  sequencerOpen.set(on);
+  fxLibOpen.set(!on);
+  pgmRailOpen.set(!on);
 }
 
 /** Left browser rail — retracts to a thin strip. */
