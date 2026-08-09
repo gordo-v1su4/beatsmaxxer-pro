@@ -11,6 +11,7 @@
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
+  import FoldGlyph from '$lib/components/rack/FoldGlyph.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import { screenFxModules } from '$lib/stores/screenFx';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
@@ -338,7 +339,7 @@
       onclick={() => toggleModuleCollapsed(mod.id)}
       title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
       aria-label={collapsed ? `Expand ${mod.name} controls` : `Collapse ${mod.name} controls`}
-      style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0;flex-shrink:0"
+      style="width:14px;height:14px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0;flex-shrink:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
         <path d="M0 0 L3.5 4 L7 0" fill="none" stroke={collapsed ? mod.accentColor : '#3a4050'} stroke-width="1.2" />
@@ -359,16 +360,40 @@
 
   {#if !collapsed && spec}
     <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
-      <div style="display:flex;gap:2px;flex-wrap:wrap">
+      <div
+        style={mod.id === 'mirror'
+          ? 'display:grid;grid-template-columns:repeat(6,1fr);gap:2px'
+          : 'display:flex;gap:2px;flex-wrap:wrap'}
+      >
         {#each spec.buttons as btn (btn.label)}
-          <RackBtn
-            label={btn.label}
-            active={Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= activeTolerance}
-            color={mod.accentColor}
-            width={36}
-            height={16}
-            onclick={() => updateParams(mod.id, btn.set)}
-          />
+          {@const isActive =
+            Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= activeTolerance}
+          {#if mod.id === 'mirror'}
+            <!-- Twelve folds named MIR L / SLB V / COR A read as codes, not as
+                 shapes. The glyph carries the geometry; the label stays under it
+                 so the name is still learnable. -->
+            <button
+              type="button"
+              class="fold-btn"
+              title={btn.label}
+              aria-pressed={isActive}
+              style="border-color:{isActive ? mod.accentColor + '66' : '#0e1012'};background:{isActive
+                ? `linear-gradient(180deg,${mod.accentColor}22,${mod.accentColor}11)`
+                : '#191b1d'};color:{isActive ? mod.accentColor : '#3a4050'}"
+              onclick={() => updateParams(mod.id, btn.set)}
+            >
+              <FoldGlyph kind={btn.label} color={mod.accentColor} dim={!isActive} />
+              <span class="fold-btn-label">{btn.label}</span>
+            </button>
+          {:else}
+            <RackBtn
+              label={btn.label}
+              active={isActive}
+              color={mod.accentColor}
+              width={36}
+              onclick={() => updateParams(mod.id, btn.set)}
+            />
+          {/if}
         {/each}
         {#if spec.toggle}
           <RackBtn
@@ -376,7 +401,6 @@
             active={(params[spec.toggle.param] ?? 0) > 50}
             color={mod.accentColor}
             width={36}
-            height={16}
             onclick={() => {
               const tp = spec.toggle!.param;
               updateParam(mod.id, tp, (params[tp] ?? 0) > 50 ? 0 : 100);
@@ -455,6 +479,34 @@
 </div>
 
 <style>
+  /* Taller than the 16px rack control tier because it carries a diagram as well
+     as a label — the one place the extra height buys comprehension. */
+  .fold-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    height: 28px;
+    padding: 0;
+    border-style: solid;
+    border-width: 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .fold-btn:hover {
+    background: #1e2022 !important;
+  }
+  .fold-btn-label {
+    font-family: var(--font-ui);
+    font-size: 5.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    line-height: 1;
+  }
+
   .hidden {
     display: none;
   }

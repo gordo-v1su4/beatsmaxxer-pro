@@ -199,124 +199,48 @@
   </div>
 {:else if moduleId === 'tapdelay'}
   <div style="display:flex;flex-direction:column;flex:1">
-    <Section label="TYPE" {color}>
-      <div style="display:flex;gap:2px">
-        {#each ['Pan', 'Stutter', 'Filter'] as t, i (t)}
+    <!--
+      Only three of TAPDELAY's ten params reach anything: time, feedback and
+      feel. TYPE (Pan/Stutter/Filter) is never mapped in paramsForGpu, and
+      velCrv (RPT), scratchMode + scratchDepth (SCR) and end (SENS) have zero
+      references outside this file and the preset table — they wrote to a store
+      nobody read. Six sections of controls, three of them inert, on the tallest
+      card in the rack. What is left is what the module actually does.
+    -->
+    <Section label="LEN" {color}>
+      <div style="display:flex;gap:2px;align-items:center;min-width:0">
+        {#each [{ l: '1/32', val: 10 }, { l: '1/16', val: 30 }, { l: '1/8T', val: 50 }, { l: '1/8', val: 70 }, { l: '1/4', val: 90 }] as v (v.l)}
           <RackBtn
-            label={t}
-            active={Math.round(params.type ?? 0) === i}
+            label={v.l}
+            active={Math.abs((params.time ?? 60) - v.val) <= 10}
             {color}
-            width={i === 1 ? 44 : 34}
-            onclick={() => onUpdate('type', i)}
+            width={30}
+            onclick={() => onUpdate('time', v.val)}
           />
         {/each}
       </div>
     </Section>
-    {#if stutterMode}
-      <Section label="STUT" {color}>
-        <div style="display:flex;flex-direction:column;gap:3px">
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">LEN</span>
-            <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
-              {#each [{ l: '1/32', val: 10 }, { l: '1/16', val: 30 }, { l: '1/8T', val: 50 }, { l: '1/8', val: 70 }, { l: '1/4', val: 90 }] as v (v.l)}
-                <RackBtn
-                  label={v.l}
-                  active={Math.abs((params.time ?? 60) - v.val) <= 10}
-                  {color}
-                  width={28}
-                  onclick={() => onUpdate('time', v.val)}
-                />
-              {/each}
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">RPT</span>
-            <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
-              {#each [1, 2, 4, 6, 8] as n (n)}
-                {@const currentRepeats = Math.round((params.velCrv ?? 25) / 100 * 8) || 1}
-                <RackBtn
-                  label={`${n}×`}
-                  active={currentRepeats === n}
-                  {color}
-                  width={28}
-                  onclick={() => onUpdate('velCrv', (n / 8) * 100)}
-                />
-              {/each}
-              <div style="width:4px"></div>
-              {#each [{ l: 'STR8', v: 0 }, { l: 'SWNG', v: 1 }, { l: 'DOT', v: 2 }] as o (o.l)}
-                <RackBtn
-                  label={o.l}
-                  active={Math.round(params.feel ?? 0) === o.v}
-                  {color}
-                  width={28}
-                  onclick={() => onUpdate('feel', o.v)}
-                />
-              {/each}
-            </div>
-          </div>
+    <Section label="FEEL" {color}>
+      <div style="display:flex;gap:2px;align-items:center;min-width:0">
+        {#each [{ l: 'STR8', v: 0 }, { l: 'SWNG', v: 1 }, { l: 'DOT', v: 2 }] as o (o.l)}
+          <RackBtn
+            label={o.l}
+            active={Math.round(params.feel ?? 0) === o.v}
+            {color}
+            width={34}
+            onclick={() => onUpdate('feel', o.v)}
+          />
+        {/each}
+      </div>
+    </Section>
+    <Section label="FDBK" {color} noBorder>
+      <div style="display:flex;align-items:center;gap:4px">
+        <div style="flex:1">
+          <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="FEEDBACK" controlId="{moduleId}-feedback" />
         </div>
-      </Section>
-      <Section label="SCR" {color}>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">MODE</span>
-          <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
-            {#each [{ l: 'BEAT', v: 0 }, { l: 'LOOP', v: 1 }, { l: 'PONG', v: 2 }, { l: 'RND', v: 3 }] as o (o.l)}
-              <RackBtn
-                label={o.l}
-                active={Math.round(params.scratchMode ?? 0) === o.v}
-                {color}
-                width={30}
-                onclick={() => onUpdate('scratchMode', o.v)}
-              />
-            {/each}
-            <div style="flex:1;min-width:36px">
-              <HSlider
-                value={params.scratchDepth ?? 45}
-                onChange={(v) => onUpdate('scratchDepth', v)}
-                {color}
-                ariaLabel="SCRATCH DEPTH"
-                controlId="{moduleId}-scratchDepth"
-              />
-            </div>
-          </div>
-        </div>
-      </Section>
-      <Section label="TRIG" {color} noBorder>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
-          <div style="flex:1">
-            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
-          </div>
-          <MiniDisplay value={`${Math.round(params.end ?? 60)}%`} width={34} />
-        </div>
-      </Section>
-    {:else}
-      <Section label="TIME" {color}>
-        <div style="display:flex;flex-direction:column;gap:3px">
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">TIME</span>
-            <div style="flex:1">
-              <HSlider value={params.time ?? 60} onChange={(v) => onUpdate('time', v)} {color} ariaLabel="TIME" controlId="{moduleId}-time" />
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:4px">
-            <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">FDBK</span>
-            <div style="flex:1">
-              <HSlider value={params.feedback ?? 50} onChange={(v) => onUpdate('feedback', v)} {color} ariaLabel="FEEDBACK" controlId="{moduleId}-feedback" />
-            </div>
-          </div>
-        </div>
-      </Section>
-      <Section label="TRIG" {color} noBorder>
-        <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
-          <div style="flex:1">
-            <HSlider value={params.end ?? 60} onChange={(v) => onUpdate('end', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-end" />
-          </div>
-          <MiniDisplay value={`${Math.round(params.end ?? 60)}%`} width={34} />
-        </div>
-      </Section>
-    {/if}
+        <MiniDisplay value={`${Math.round(params.feedback ?? 50)}%`} width={34} />
+      </div>
+    </Section>
   </div>
 {:else if moduleId === 'timesampler'}
   <div style="display:flex;flex-direction:column;flex:1">

@@ -268,7 +268,7 @@ export const MODULE_CATALOG = new Map<string, ModuleDefinition>(
 // moves plus INCEPTION. Leaving two slots empty by default hid two working
 // modules behind a drag nobody knew to perform.
 export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'streak'];
-export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'focus'];
+export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'prism'];
 
 export function getModuleDef(id: string): ModuleDefinition | undefined {
   return MODULE_CATALOG.get(id);

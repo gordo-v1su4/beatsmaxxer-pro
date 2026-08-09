@@ -100,6 +100,52 @@ fn foldHalf(x: f32, pivot: f32, keepLow: f32) -> f32 {
   return pivot + select(d, -d, keepLow > 0.5);
 }
 
+/** The INCEPTION fold itself, in aspect-corrected centred space.
+    Shared by the live effect and its idle card: the card used to draw a radial
+    kaleidoscope, which is the one thing this effect explicitly is not, so the
+    preview advertised a look the module could not produce. Running the real
+    fold in both places means they cannot describe different effects again.
+    kind selects one of twelve folds, shift walks it, band sets slab width,
+    spin rotates the axis, pulse is the beat reaction. */
+fn mirrorFoldPoint(
+  p0: vec2f, kind: f32, shift: f32, band: f32, spin: f32, asp: f32, pulse: f32
+) -> vec2f {
+  var p = p0;
+  if (kind < 0.5) {                        // MIR-L: keep the left, mirror right
+    p.x = foldHalf(p.x, shift, 1.0);
+  } else if (kind < 1.5) {                 // MIR-R
+    p.x = foldHalf(p.x, shift, 0.0);
+  } else if (kind < 2.5) {                 // MIR-D: the water-reflection look
+    p.y = foldHalf(p.y, shift, 1.0);
+  } else if (kind < 3.5) {                 // MIR-U
+    p.y = foldHalf(p.y, shift, 0.0);
+  } else if (kind < 4.5) {                 // QUAD: both planes at once
+    p.x = foldHalf(p.x, shift, 1.0);
+    p.y = foldHalf(p.y, shift, 1.0);
+  } else if (kind < 5.5) {                 // SLAB-V: centre strip, combed walls
+    p.x = foldBand(p.x, shift, band);
+  } else if (kind < 6.5) {                 // SLAB-H
+    p.y = foldBand(p.y, shift, band);
+  } else if (kind < 7.5) {                 // BOX: the picture-frame recursion
+    p.x = foldBand(p.x, 0.0, band * asp);
+    p.y = foldBand(p.y, 0.0, band);
+  } else if (kind < 8.5) {                 // COR-A: 45-degree corner fold
+    let r = rot2(p, 0.7853982);
+    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), -0.7853982);
+  } else if (kind < 9.5) {                 // COR-B: the other diagonal
+    let r = rot2(p, -0.7853982);
+    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), 0.7853982);
+  } else if (kind < 10.5) {                // TUNNEL: box driven deeper by beat
+    let z = 1.0 + u.p2 * 2.5 + pulse * 1.6;
+    let q = p * z;
+    p = vec2f(foldBand(q.x, 0.0, band * asp), foldBand(q.y, 0.0, band));
+  } else {                                 // SPIN: the fold axis rotates
+    let r = rot2(p, spin);
+    p = rot2(vec2f(foldBand(r.x, shift, band), r.y), -spin);
+  }
+  return p;
+}
+
 /** Shared idle-card treatment: graphics fade to black toward the top and bottom
     of the lower band so every module's idle reads as one family. */
 fn idleFade(y: f32) -> f32 {
@@ -137,19 +183,41 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += acc * tick * (0.2 + 0.55 * smoothstep(0.4, 0.0, abs(p.y - 0.5))) * fade;
     col += vec3f(0.35) * smoothstep(0.004, 0.0, abs(p.x - 0.5)) * 0.5;
   } else if (mode == 3.0) {
-    // TAPDELAY — the classic tap lines: echo taps sweep with LEN, fade with FEEDBACK
-    let taps = 3.0 + floor(u.p1 * 5.0);
+    // TAPDELAY — echo trails that RE-FIRE ON THE DIVISION, then decay.
+    // These taps used to sweep continuously off the wall clock, running free while
+    // the effect itself is quantised to u.beat via stutterLenBeats — the preview
+    // was an audio delay-line diagram rather than the beat-locked video stutter
+    // the module performs, and nothing in it landed on the beat.
+    // p0 = LEN, p1 = feedback.
+    let seg = stutterLenBeats(u.p0);
+    let prog = clamp((u.beat - floor(u.beat / seg) * seg) / seg, 0.0, 1.0);
+    let taps = 3.0 + floor(clamp(u.p1, 0.0, 1.0) * 5.0);
     for (var i = 0; i < 8; i = i + 1) {
       let fi = f32(i);
       if (fi >= taps) { continue; }
-      let tx = fract(t * (0.35 + u.p0 * 0.5) - fi / max(taps, 1.0));
+      // Each repeat sits further back in the frame and fades by FEEDBACK.
+      let tx = fract(0.18 + prog * 0.62 - fi * (0.62 / max(taps, 1.0)));
       let line = smoothstep(0.012, 0.0, abs(p.x - tx));
       let decay = pow(clamp(u.p1, 0.0, 1.0), fi * 0.7);
       col += acc * line * decay * (0.35 + 0.65 * smoothstep(0.45, 0.0, abs(p.y - 0.5))) * fade;
     }
+    // The division itself — the moment the echo re-triggers.
+    col += acc * exp(-prog * 8.0) * 0.22 * fade;
   } else if (mode == 4.0) {
-    // TIMESAMPLER — MIDI piano roll climbing an arpeggio staircase, so FWD/REV read
-    let gx = p.x * asp * 3.2 + t * 1.8;
+    // TIMESAMPLER — a piano roll that SCRUBS AND TELEPORTS, because that is what
+    // the module does: the picture jumps to another slice and plays on from
+    // there. The roll used to advance as a plain linear ramp, which is the
+    // one thing a sampler never does — it read as a metronome, so nothing in the
+    // card told you a jump had happened.
+    // p0 = rate, p1 = slices. jumpIdx changes on every slice division; the roll
+    // snaps to a new offset there and scrubs on until the next one.
+    let slices = 4.0 + floor(clamp(u.p1, 0.0, 1.0) * 12.0);
+    let rate = 0.5 + clamp(u.p0, 0.0, 1.0) * 2.2;
+    let playhead = t * rate;
+    let jumpIdx = floor(playhead);
+    let slot = floor(hash21(vec2f(jumpIdx, 3.7)) * slices);
+    let jump = slot / max(slices, 1.0) * 5.0;
+    let gx = p.x * asp * 3.2 + fract(playhead) * 1.6 + jump;
     let gy = p.y * 6.0;
     let ci = floor(gx);
     let fx = fract(gx);
@@ -164,6 +232,9 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     let note = inLane * laneBody * body;
     col += acc * note * (0.55 + 0.35 * hash21(vec2f(ci, 5.3))) * 0.6 * fade;
     col += vec3f(0.9) * smoothstep(0.006, 0.0, abs(p.x - 0.5)) * 0.45;
+    // The landing needs to be legible or the teleport just looks like a stutter:
+    // brief wash right after each jump, decaying over the first part of the slice.
+    col += acc * exp(-fract(playhead) * 9.0) * 0.30 * fade;
   } else if (mode == 5.0) {
     // PUNCH ZOOM — feathered bullseye target the crash zoom reads against
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
@@ -295,23 +366,32 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
       col += vec3f(0.95) * smoothstep(0.014, 0.0, length(vec2f(d * asp, p.y - y))) * 0.8 * fade;
     }
   } else if (mode == 19.0) {
-    // INCEPTION — a marker folded around the centre into kaleidoscope wedges
-    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
-    let seg = 6.2831853 / 6.0;
-    let r = length(c);
-    var ang = atan2(c.y, c.x) + t * 0.22;
-    ang = abs(fract(ang / seg) - 0.5) * seg;
-    let q = vec2f(cos(ang), sin(ang)) * r;
-    col += acc * smoothstep(0.012, 0.0, abs(q.y - 0.11))
-         * smoothstep(0.40, 0.04, r) * 0.95 * fade;
-    col += acc * smoothstep(0.012, 0.0, abs(r - 0.26)) * 0.3 * fade;
-    for (var i = 0; i < 6; i = i + 1) {
-      let a = f32(i) * seg + t * 0.22;
-      let dir = vec2f(cos(a), sin(a));
-      col += acc * smoothstep(0.005, 0.0, abs(dot(c, vec2f(-dir.y, dir.x))))
-           * step(r, 0.44) * 0.20 * fade;
-    }
-    col += vec3f(0.9) * smoothstep(0.02, 0.0, r) * 0.35;
+    // INCEPTION — the real fold, run over a deliberately lopsided scene.
+    // A symmetric figure looks identical before and after mirroring, so the
+    // card has to be asymmetric in both axes for MIR-L, MIR-D, QUAD and the
+    // slabs to read as different from each other at all.
+    let kind = floor(clamp(u.p0, 0.0, 1.0) * 11.0 + 0.5);
+    let pulse = beatPulse(5.0) * u.p3;
+    let shift = (u.p1 - 0.5) * 0.7;
+    let band = mix(0.42, 0.07, abs(u.p1 - 0.5) * 2.0) * (1.0 - pulse * 0.35);
+    let spin = (u.p2 - 0.5) * 3.14159265 + pulse * 0.5;
+
+    let src = mirrorFoldPoint(
+      vec2f((p.x - 0.5) * asp, p.y - 0.5), kind, shift, band, spin, asp, pulse
+    );
+    let g = vec2f(src.x / asp + 0.5, src.y + 0.5);
+
+    // Lopsided scene: a tall pillar left of centre, a low horizon, and a disc
+    // up and to the right. Drifts slowly so folds stay legible while static.
+    let drift = sin(t * 0.35) * 0.04;
+    var s = 0.0;
+    s += smoothstep(0.022, 0.0, abs(g.x - (0.30 + drift))) * smoothstep(0.78, 0.74, g.y);
+    s += smoothstep(0.014, 0.0, abs(g.y - 0.76)) * 0.85;
+    s += smoothstep(0.075, 0.045, length((g - vec2f(0.70, 0.34)) * vec2f(asp, 1.0)));
+    col += acc * clamp(s, 0.0, 1.4) * 0.85 * fade;
+
+    // Seam marker: where the fold plane actually sits, so walking p1 is visible.
+    col += vec3f(0.85) * smoothstep(0.004, 0.0, abs(src.x - shift)) * 0.20 * fade;
   } else if (mode == 20.0) {
     // SPECIALTY LENS — a grid bent through a fisheye element
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
@@ -486,30 +566,19 @@ fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
   return wet * (1.0 + sin(p * 3.14159265) * amount * 0.25);
 }
 
-/** The time remap itself happens upstream (video.playbackRate from the bezier
-    solve in JS, handed here as aux1). This adds the LOOK of speed: horizontal
-    motion streaking and chroma pull that scale with how far the rate sits from
-    1x, slow-mo glow, and fast-motion contrast crunch. */
+/** SPEEDRAMP is the time remap and nothing else. The remap happens upstream
+    (video.playbackRate from the bezier solve in JS), so the shader's job here is
+    to stay out of the way and pass the frame through untouched.
+
+    This used to add a "look of speed" on top: a 5-tap horizontal blur, a chroma
+    split, and a rate-driven gain shift, all scaled by distance from 1x. None of
+    it was exposed as a parameter, so there was no way to turn it off — the ramp
+    softened and fringed the picture on every curve and the operator had no
+    control that explained why. The split also assigned wet.r/wet.b from sharp
+    source samples while wet.g kept the blurred value, so the three channels
+    disagreed about both position and sharpness at once. */
 fn effectSpeedRamp(col: vec3f, uv: vec2f) -> vec3f {
-  let rate = max(u.aux1, 0.001);
-  // 0 at 1x, 1 at 4x or 0.25x — log-symmetric so slow and fast read equally
-  let dev = clamp(abs(log2(rate)) / 2.0, 0.0, 1.0);
-
-  var wet = vec3f(0.0);
-  let span = dev * 0.035;
-  for (var i = 0; i < 5; i = i + 1) {
-    let o = (f32(i) / 4.0 - 0.5) * span;
-    wet += sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
-  }
-  wet /= 5.0;
-
-  let split = dev * 0.012;
-  wet.r = sampleSource(clamp(uv + vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).r;
-  wet.b = sampleSource(clamp(uv - vec2f(split, 0.0), vec2f(0.0), vec2f(1.0))).b;
-
-  var gain = 1.0 - dev * 0.05;
-  if (rate < 1.0) { gain = 1.0 + dev * 0.15; }
-  return wet * (gain + beatPulse(6.0) * 0.05);
+  return col;
 }
 
 /** Stutter length in beats from the LEN zones the UI exposes (1/32 .. 1/4). */
@@ -553,12 +622,12 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   let decay = clamp(fb * 0.94, 0.0, 0.94);
   var wet = max(col, prev * decay);
 
-  // per-repeat accent: a flash + chroma split right at each stutter division
-  let hit = exp(-prog * 7.0) * u.playing;
-  let sp = hit * fb * 0.03;
-  wet.r = mix(wet.r, sampleSource(clamp(uv + vec2f(sp, 0.0), vec2f(0.0), vec2f(1.0))).r, hit);
-  wet.b = mix(wet.b, sampleSource(clamp(uv - vec2f(sp, 0.0), vec2f(0.0), vec2f(1.0))).b, hit);
-  wet *= 1.0 + hit * (0.20 + u.bassAmp * 0.5);
+  // The per-repeat accent used to be a chroma split plus an exposure pump of up
+  // to 1.7x (0.20 + bassAmp * 0.5) fired on every division. Between them the
+  // module read as flashing and colour-fringed rather than as a delay, and
+  // neither was reachable from the UI. The repeat is already audible in the
+  // timing of the trails, so the accent is gone entirely — no tinting, no
+  // blowout. The trails above and the scrub smear below are the actual effect.
 
   // scrub tap: within a repeat the frame slides, reading as a time smear
   let smear = (0.5 - prog) * fb * 0.05;
@@ -913,40 +982,8 @@ fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
   let band = mix(0.42, 0.07, abs(u.p1 - 0.5) * 2.0) * (1.0 - pulse * 0.35);
   let spin = (u.p2 - 0.5) * 3.14159265 + pulse * 0.5;
 
-  var p = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
-
-  if (kind < 0.5) {                        // MIR-L: keep the left, mirror right
-    p.x = foldHalf(p.x, shift, 1.0);
-  } else if (kind < 1.5) {                 // MIR-R
-    p.x = foldHalf(p.x, shift, 0.0);
-  } else if (kind < 2.5) {                 // MIR-D: the water-reflection look
-    p.y = foldHalf(p.y, shift, 1.0);
-  } else if (kind < 3.5) {                 // MIR-U
-    p.y = foldHalf(p.y, shift, 0.0);
-  } else if (kind < 4.5) {                 // QUAD: both planes at once
-    p.x = foldHalf(p.x, shift, 1.0);
-    p.y = foldHalf(p.y, shift, 1.0);
-  } else if (kind < 5.5) {                 // SLAB-V: centre strip, combed walls
-    p.x = foldBand(p.x, shift, band);
-  } else if (kind < 6.5) {                 // SLAB-H
-    p.y = foldBand(p.y, shift, band);
-  } else if (kind < 7.5) {                 // BOX: the picture-frame recursion
-    p.x = foldBand(p.x, 0.0, band * asp);
-    p.y = foldBand(p.y, 0.0, band);
-  } else if (kind < 8.5) {                 // COR-A: 45-degree corner fold
-    let r = rot2(p, 0.7853982);
-    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), -0.7853982);
-  } else if (kind < 9.5) {                 // COR-B: the other diagonal
-    let r = rot2(p, -0.7853982);
-    p = rot2(vec2f(foldHalf(r.x, shift, 1.0), r.y), 0.7853982);
-  } else if (kind < 10.5) {                // TUNNEL: box driven deeper by beat
-    let z = 1.0 + u.p2 * 2.5 + pulse * 1.6;
-    let q = p * z;
-    p = vec2f(foldBand(q.x, 0.0, band * asp), foldBand(q.y, 0.0, band));
-  } else {                                 // SPIN: the fold axis rotates
-    let r = rot2(p, spin);
-    p = rot2(vec2f(foldBand(r.x, shift, band), r.y), -spin);
-  }
+  let p0 = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
+  let p = mirrorFoldPoint(p0, kind, shift, band, spin, asp, pulse);
 
   let uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
   return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
