@@ -29,6 +29,28 @@
   let query = $state('');
   let importing = $state(false);
   let fileInput = $state<HTMLInputElement>();
+  /** Depth counter, not a boolean: dragging over a child fires dragleave on the
+      parent, which would flicker the highlight off mid-drag. */
+  let dragDepth = $state(0);
+  const dropActive = $derived(dragDepth > 0);
+
+  function videoFilesFrom(transfer: DataTransfer | null) {
+    if (!transfer) return [];
+    return Array.from(transfer.files).filter(
+      (file) => file.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|mkv)$/i.test(file.name)
+    );
+  }
+
+  function onDrop(event: DragEvent) {
+    event.preventDefault();
+    dragDepth = 0;
+    const files = videoFilesFrom(event.dataTransfer);
+    if (files.length === 0) return;
+    // Dropping video is an import gesture — open the tray so the tiles landing
+    // are visible rather than silently filling a closed drawer.
+    clipLibraryOpen.set(true);
+    void importFiles(files);
+  }
 
   const clips = $derived(
     $clipLibrary.filter((clip) => clip.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -97,7 +119,24 @@
   }
 </script>
 
-<section class="clip-tray">
+<section
+  class="clip-tray"
+  class:is-drop-target={dropActive}
+  aria-label="Clip bank — drop video files here to import"
+  ondragenter={(e) => {
+    if (e.dataTransfer?.types.includes('Files')) dragDepth += 1;
+  }}
+  ondragover={(e) => {
+    if (e.dataTransfer?.types.includes('Files')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }}
+  ondragleave={() => {
+    dragDepth = Math.max(0, dragDepth - 1);
+  }}
+  ondrop={onDrop}
+>
   <div class="clip-tray-head">
     <button
       type="button"
@@ -144,7 +183,7 @@
     <div class="clip-strip">
       {#if $clipLibrary.length === 0}
         <p class="clip-empty">
-          No clips yet — IMPORT a folder of video, then drag them onto rack slots.
+          No clips yet — drop video files here, or IMPORT a folder. Then drag a tile onto a rack slot.
         </p>
       {:else if clips.length === 0}
         <p class="clip-empty">No clip matches “{query}”.</p>
@@ -157,6 +196,7 @@
             onpointerdown={(e) => beginDrag(clip, e)}
             role="button"
             tabindex="0"
+            title="{clip.name}{isMounted(clip) ? ' — in rack' : ''}"
             aria-label="Drag {clip.name} onto a rack slot"
             onkeydown={(e) => {
               if (e.key === 'Delete' || e.key === 'Backspace') removeClipFromLibrary(clip.id);
@@ -174,6 +214,7 @@
                 type="button"
                 class="clip-remove"
                 title="Remove from bank"
+                aria-label="Remove {clip.name} from the clip bank"
                 onpointerdown={(e) => e.stopPropagation()}
                 onclick={() => removeClipFromLibrary(clip.id)}
               >
@@ -207,6 +248,12 @@
     flex-direction: column;
     background: linear-gradient(180deg, #0c0d0f, #08090b);
     border-bottom: 2px solid #0d0e0f;
+  }
+  /* Inset rather than a border: the tray is 25px tall when closed, and a border
+     there would shift the rack below it by 2px on every dragenter. */
+  .clip-tray.is-drop-target {
+    box-shadow: inset 0 0 0 1px #35e08a99;
+    background: linear-gradient(180deg, #0e1512, #0a0f0c);
   }
 
   .clip-tray-head {
@@ -321,8 +368,12 @@
     cursor: grabbing;
     transform: scale(0.97);
   }
+  .clip-tile:focus-visible {
+    outline: 1px solid #35e08a;
+    outline-offset: 1px;
+  }
   .clip-tile.is-mounted {
-    border-color: #2f4a3a;
+    border-color: #35e08a44;
   }
   .clip-tile.is-dragging {
     opacity: 0.35;
@@ -373,11 +424,13 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Hidden with opacity rather than display:none — a display:none button is not
+     tabbable, so keyboard users had no way to reach remove at all. */
   .clip-remove {
     position: absolute;
     top: 2px;
     right: 2px;
-    display: none;
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 12px;
@@ -388,9 +441,13 @@
     background: rgba(0, 0, 0, 0.72);
     color: #9db1b6;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.12s;
   }
-  .clip-tile:hover .clip-remove {
-    display: flex;
+  .clip-tile:hover .clip-remove,
+  .clip-tile:focus-within .clip-remove,
+  .clip-remove:focus-visible {
+    opacity: 1;
   }
   .clip-remove:hover {
     background: #7a2222;

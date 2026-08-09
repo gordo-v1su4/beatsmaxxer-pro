@@ -45,7 +45,7 @@
   let midiInput: HTMLInputElement;
 
   function uploadStyle(active: boolean) {
-    return `height:18px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'}`;
+    return `height:16px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'}`;
   }
 
   function onVideoChange(e: Event) {
@@ -72,7 +72,7 @@
   </button>
 
   <div
-    style="flex:1;min-width:0;height:18px;background:#0a0b0c;border-style:solid;border-width:1px;border-color:#101214 #171a1d #171a1d #171a1d;border-radius:2px;display:flex;align-items:center;gap:4px;padding-inline:5px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.75)"
+    style="flex:1;min-width:0;height:16px;background:#0a0b0c;border-style:solid;border-width:1px;border-color:#101214 #171a1d #171a1d #171a1d;border-radius:2px;display:flex;align-items:center;gap:4px;padding-inline:5px;box-shadow:inset 0 2px 5px rgba(0,0,0,0.75)"
   >
     <Film size={8} color={videoLayer ? color : '#3a4050'} />
     <span
@@ -96,7 +96,7 @@
     <button
       type="button"
       onclick={() => onSetVideo(null)}
-      style="width:18px;height:18px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center"
+      style="width:16px;height:16px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center"
     >
       <X size={8} />
     </button>
@@ -118,7 +118,7 @@
     <button
       type="button"
       onclick={() => onSetMidi?.(null)}
-      style="width:18px;height:18px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center"
+      style="width:16px;height:16px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center"
     >
       <X size={8} />
     </button>

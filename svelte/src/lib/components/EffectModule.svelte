@@ -129,7 +129,7 @@
       onclick={() => toggleModuleCollapsed(mod.id)}
       title={collapsed ? 'Expand controls' : 'Collapse to preview strip'}
       aria-label={collapsed ? `Expand ${mod.name} controls` : `Collapse ${mod.name} controls`}
-      style="width:12px;height:12px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0"
+      style="width:14px;height:14px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0"
     >
       <svg width="7" height="4" viewBox="0 0 7 4" style="transform:{collapsed ? 'rotate(180deg)' : 'none'};transition:transform 0.15s">
         <path d="M0 0 L3.5 4 L7 0" fill="none" stroke={collapsed ? mod.accentColor : '#3a4050'} stroke-width="1.2" />

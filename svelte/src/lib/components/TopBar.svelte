@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle } from '@lucide/svelte';
+  import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
-  import { canRedo, canUndo, fxHold, redoRackParams, undoRackParams } from '$lib/stores/rack';
+  import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
+  import { allModulesCollapsed, setAllModulesCollapsed } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
@@ -421,6 +422,18 @@
     </TopBtn>
     <TopBtn label="CLEAR" onclick={onClear} danger>
       {#snippet icon()}<X size={10} />{/snippet}
+    </TopBtn>
+
+    <!-- Collapsing ten modules one chevron at a time is ten clicks for what is
+         almost always a single intent: clear the lower half of the window. -->
+    <TopBtn
+      label={$allModulesCollapsed ? 'EXPAND ALL' : 'MIN ALL'}
+      onclick={() =>
+        setAllModulesCollapsed([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+    >
+      {#snippet icon()}
+        {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}
+      {/snippet}
     </TopBtn>
 
     <div class="crt-group" role="group" aria-label="CRT screen treatment">

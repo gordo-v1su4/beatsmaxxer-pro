@@ -88,12 +88,13 @@
   {#if $fxLibOpen}
     <div style="flex:1;overflow-y:auto;padding:6px 4px;display:flex;flex-direction:column;gap:4px">
       {#each CATEGORIES as cat (cat.key)}
-        <span style="font-size:7px;font-weight:500;letter-spacing:0.12em;color:#33383f;padding:0 4px;margin-top:{cat.key === 'beat' ? '0' : '6px'}">{cat.label}</span>
+        <span class="palette-category" style="margin-top:{cat.key === 'beat' ? '0' : '8px'}">{cat.label}</span>
         {#each listByCategory(cat.key) as mod (mod.id)}
           <button
             type="button"
             class="palette-card"
             aria-label="Grab {mod.name} to move to a rack slot"
+            title={mod.description ? `${mod.name} — ${mod.description}` : mod.name}
             style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
             onpointerdown={(e) => beginDrag(mod.id, e)}
             onkeydown={(e) => {
@@ -118,6 +119,27 @@
 </aside>
 
 <style>
+  /* Three groups in one scrolling column need a visible seam, or CAMERA reads as
+     the last item of BEAT FX. The rule runs to the card edge so it separates
+     without adding another element to the flow. */
+  .palette-category {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 4px;
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: #3f4653;
+    white-space: nowrap;
+  }
+  .palette-category::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #16181b;
+  }
+
   .palette-card {
     display: flex;
     flex-direction: column;

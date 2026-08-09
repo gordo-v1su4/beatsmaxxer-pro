@@ -14,7 +14,10 @@
     color = '#666',
     onclick,
     width = 28,
-    height = 18,
+    // 16 is the rack-wide control height. The top row used to default to 18 and
+    // the bottom row passed 16 explicitly, which read as the top modules being
+    // subtly chunkier — and cost 2px on every button row of the tallest cards.
+    height = 16,
     title
   }: Props = $props();
   let hov = $state(false);

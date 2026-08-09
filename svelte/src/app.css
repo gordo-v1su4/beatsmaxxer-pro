@@ -13,13 +13,22 @@
 	   black workspace; it never stretches controls or changes button spacing. */
 	--rack-module-width: 272px;
 	/* Ceiling on module growth. The preview is 16:9, so every pixel of extra
-	   width is 0.5625 of extra row height; 320 keeps two rows plus controls
-	   inside a 1080p window while still filling a wide screen. */
-	--rack-module-max: 320px;
+	   width is 0.5625 of extra row height.
+	   This was 320, which a 1666px rack overshot by 62px — and because the row
+	   centres its tracks, that surplus landed as a 31px black strip down each
+	   end of both rows. Those strips read as a missing module rather than as
+	   margin. 420 is above the per-column share of any ordinary window, so the
+	   tracks divide the width exactly and the strips do not appear; the ceiling
+	   still catches genuinely wide displays, where 5x420 stops the 16:9 previews
+	   growing tall enough to push the controls off the bottom. */
+	--rack-module-max: 420px;
 	--rack-preview-height: 153px;
 	--rack-module-min: var(--rack-module-width);
 	--mix-strip-height: 46px;
-	--fx-lib-width: 128px;
+	/* 160 is the narrowest width at which every module description in the library
+	   sits on one line. Below it MIRROR, LENS and TAPE wrap, so three cards stand
+	   9px taller than the other sixteen and the column loses its rhythm. */
+	--fx-lib-width: 160px;
 	--fx-lib-collapsed: 22px;
 	--pgm-rail-width: 190px;
 	--pgm-rail-collapsed: 22px;

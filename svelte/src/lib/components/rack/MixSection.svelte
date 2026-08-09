@@ -36,7 +36,6 @@
             {active}
             {color}
             width={18}
-            height={16}
             onclick={() => {
               if (onApplyPreset) onApplyPreset(p.set);
               else Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v));
