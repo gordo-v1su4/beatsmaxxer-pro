@@ -25,10 +25,17 @@ import {
 import { pgmSource, queuedPgmSource, selectPgmSource } from '$lib/stores/pgm';
 import {
   crossedSequencerSteps,
-  sequencerSteps,
   sequencerArmed,
   sequencerLastStep
 } from '$lib/stores/sequencer';
+import {
+  activeSectionIndex,
+  applySectionBank,
+  arrangement,
+  autoBank,
+  barInSection,
+  moduleForSlotIndex
+} from '$lib/stores/arrangement';
 import { getModuleDef } from '$lib/modules/catalog';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
@@ -47,6 +54,8 @@ let lastTimeSamplerAux = { aux1: 0, aux2: 2 };
 let speedRampSourceState: SpeedRampSourceState | null = null;
 let sequencerGeneration = -1;
 let sequencerAbsoluteStep: number | null = null;
+/** Absolute bar the active section started on, so its length can be measured. */
+let sectionStartBar = 0;
 
 function syncVideoModes(assignments: Array<{ slotId: string; moduleId: string }>) {
   for (const { slotId, moduleId } of assignments) {
@@ -132,6 +141,50 @@ export function timeSamplerAccentUniforms(
   return { aux1: Math.exp(-ageSeconds * 12), aux2: mode };
 }
 
+/**
+ * Walk the arrangement. A section owns a bar count, so the playhead leaving its
+ * last bar hands over to the next one — and, when auto-bank is on, rebuilds the
+ * rack from that section's bank so the chorus plays through different effects
+ * than the verse.
+ *
+ * Bars are derived from the authoritative beat position rather than counted on
+ * step crossings: a dropped frame would otherwise lose a bar and drift the
+ * arrangement out of sync with the song permanently.
+ */
+function runArrangement(frame: TimelineFrame, generationChanged: boolean) {
+  const sections = get(arrangement);
+  if (sections.length === 0) return;
+
+  const bar = Math.max(0, Math.floor(frame.beatPosition / 4));
+
+  if (generationChanged) {
+    sectionStartBar = bar;
+    activeSectionIndex.set(0);
+    barInSection.set(0);
+    if (get(autoBank)) applySectionBank(sections[0]);
+    return;
+  }
+
+  let index = get(activeSectionIndex);
+  if (index >= sections.length) index = 0;
+
+  // `while`, not `if`: a seek can jump past several short sections at once.
+  let elapsed = bar - sectionStartBar;
+  let advanced = false;
+  while (elapsed >= sections[index].bars) {
+    sectionStartBar += sections[index].bars;
+    elapsed = bar - sectionStartBar;
+    index = (index + 1) % sections.length;
+    advanced = true;
+  }
+
+  if (advanced) {
+    activeSectionIndex.set(index);
+    if (get(autoBank)) applySectionBank(sections[index]);
+  }
+  barInSection.set(Math.max(0, elapsed));
+}
+
 function runSequencer(frame: TimelineFrame) {
   const generationChanged = frame.generation !== sequencerGeneration;
   const previous = generationChanged ? null : sequencerAbsoluteStep;
@@ -144,11 +197,20 @@ function runSequencer(frame: TimelineFrame) {
     return;
   }
 
-  const configuredSteps = get(sequencerSteps);
+  runArrangement(frame, generationChanged);
+
+  const sections = get(arrangement);
+  const section = sections[get(activeSectionIndex)] ?? sections[0];
+  if (!section) return;
+
+  const top = get(rackTop);
+  const bottom = get(rackBottom);
   let selected = get(queuedPgmSource) ?? get(pgmSource);
   for (const step of crossed.steps) {
     sequencerLastStep.set(step);
-    const target = configuredSteps[step];
+    const slotIndex = section.pattern[step];
+    if (slotIndex == null) continue;
+    const target = moduleForSlotIndex(top, bottom, slotIndex);
     const targetSlot = target ? currentRackSlotForModule(target) : null;
     if (target && targetSlot && target !== selected) {
       selected = target;

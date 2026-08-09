@@ -18,7 +18,10 @@
   }
   let { kind, color, dim }: Props = $props();
 
-  const stroke = $derived(dim ? '#3a4050' : color);
+  // #5a6270 is SPEEDRAMP's inactive curve stroke. These diagrams are the same
+  // kind of mark — a thin line read at a glance — and #3a4050 sat dark enough
+  // that the fold geometry disappeared until the button was selected.
+  const stroke = $derived(dim ? '#5a6270' : color);
 </script>
 
 <svg viewBox="0 0 14 10" width="14" height="10" aria-hidden="true" style="display:block">
