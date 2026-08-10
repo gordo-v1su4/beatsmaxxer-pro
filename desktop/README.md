@@ -1,40 +1,39 @@
 # Beatsmaxxer Pro — Desktop (Tauri)
 
-macOS-first desktop shell for Beatsmaxxer Pro. It shares the Svelte controls and
-rack model with the web app while the desktop branch moves video presentation to
-a Rust-owned native wgpu compositor.
+Windows-first desktop shell for Beatsmaxxer Pro. It is the same Svelte app the
+web target ships, running in a Tauri window instead of a browser tab: identical
+controls, rack model, and HTMLVideo → WebGPU playback path.
 
-Architecture and measured release gates:
+The shell adds two things the browser cannot do — reading `.env` from disk and
+calling the Essentia analysis host directly from Rust, bypassing CORS.
 
-- [`../docs/desktop-native-video-architecture.md`](../docs/desktop-native-video-architecture.md)
-- [`../docs/desktop-video-player-research.md`](../docs/desktop-video-player-research.md)
+## Fresh machine setup (Windows)
 
-## Fresh machine setup (macOS)
-
-Desktop work lives on **`cursor/desktop-tauri-e0e8`** (not `main`). `.env` is gitignored — copy secrets manually to each machine.
+`.env` is gitignored — copy secrets manually to each machine.
 
 ```bash
 git clone https://github.com/gordo-v1su4/beatsmaxxer-pro.git
 cd beatsmaxxer-pro
-git checkout cursor/desktop-tauri-e0e8
-git pull origin cursor/desktop-tauri-e0e8
-
 cp .env.example .env
-# Edit .env — ESSENTIA_API_BASE_URL + ESSENTIA_API_KEY (for SONG → ANALYZE)
-
 bun install
 bun run build
 bun run dev:desktop
 ```
 
-Optional release build: `bun run build:desktop`
+Release build: `bun run build:desktop` — output lands in
+`desktop/src-tauri/target/release/bundle/`.
 
 ## Prerequisites
 
-- macOS (VideoToolbox decode — Phase 2)
-- Xcode command-line tools
+- Windows 10/11
+- Visual Studio Build Tools with the **Desktop development with C++** workload
+  (supplies the MSVC linker)
+- WebView2 runtime — preinstalled on Windows 11
 - Rust **1.88+** (`rust-toolchain.toml` at repo root)
-- Bun (for Svelte frontend build)
+- Bun (for the Svelte frontend build)
+
+NSIS is downloaded automatically on the first `tauri build`, so the first
+release build is slower than later ones.
 
 ### Runtime secrets (desktop dev)
 
@@ -55,7 +54,7 @@ Set before `bun run dev:desktop` (or in `.env`):
 
 **Verify at startup:** `bun run dev:desktop` should print `[desktop] Essentia env loaded (https://…)`. The Tauri terminal also logs `[desktop] Essentia: configured (…)` when Rust sees both vars.
 
-**Verify in the app:** open WebView inspector (`Cmd+Option+I`) → Console:
+**Verify in the app:** open the WebView inspector (`F12`) → Console:
 
 ```js
 await window.__TAURI__.core.invoke('essentia_configured')
@@ -63,14 +62,6 @@ await window.__TAURI__.core.invoke('essentia_configured')
 ```
 
 If `true` but ANALYZE still fails, hover the **RHY** pill in the top bar — the tooltip shows the Rust error (network, 401, timeout, etc.).
-
-Uploaded clips are staged to the app cache via `stage_clip_file`. The current
-native path decodes with `bsp-decode`/VideoToolbox, retains IOSurface-backed Core
-Video frames, imports them into Metal/wgpu, and submits them directly to the
-native compositor. The legacy `bsp://frame` CPU/IPC bridge is diagnostic-only and
-must not be enabled for performance qualification.
-
-> **Linux / cloud VMs:** `crates/bsp-decode` unit tests run cross-platform; full `cargo tauri build` requires macOS (VideoToolbox + WKWebView). On Linux, `cargo check` in `desktop/src-tauri` needs GTK dev packages and is not a CI target.
 
 ## Commands
 
@@ -83,14 +74,6 @@ bun run dev:desktop    # Tauri dev — Vite on :5175 + native shell
 
 **Ports:** web dev uses **5174** (`bun run dev`); desktop Tauri dev uses **5175** so both can run side-by-side.
 
-**UI:** matches verified `main` layout — FX LIB + PGM rail only (PresetBrowser middle column removed).
-
-**Video clips:** web and desktop intentionally use different platform playback
-implementations. The browser target retains its HTMLVideo/WebGPU path. Desktop
-normal playback uses VideoToolbox → IOSurface → Metal/wgpu and does not send
-decoded frame pixels through the webview. `BSP_DESKTOP_CPU_FRAME_BRIDGE=1`
-enables the old CPU/IPC bridge for diagnostics only.
-
 From `desktop/`:
 
 ```bash
@@ -102,31 +85,35 @@ bunx tauri build
 ## Architecture
 
 ```text
-svelte/build/          shared controls, layout, rack state, and shader semantics
-desktop/src-tauri/     Tauri shell + native wgpu compositor + sparse control IPC
-crates/bsp-decode/     MP4 demux + retained VideoToolbox frame handles (macOS)
+svelte/build/          the built web app — controls, layout, rack, shaders, playback
+desktop/src-tauri/     Tauri shell: window setup, .env loading, Essentia proxy
 ```
+
+`tauri.conf.json` points `frontendDist` at `../../svelte/build`, so the desktop
+app is always whatever the web build produced. There is no desktop-only
+rendering path to keep in sync.
 
 ### IPC commands
 
 | Command | Purpose |
 |---------|---------|
-| `open_clip_path` | Register a module clip path |
-| `release_clip` | Release one module |
-| `stop_decode` | Stop all native decode lanes |
-| `probe_clip` | MP4 probe via `bsp-decode` |
-| `decode_backend_name` | Diagnostics |
-| `update_native_compositor_layout` | Update native preview/PGM rectangles |
-| `set_native_compositor_test_pattern` | Native surface alignment proof |
-
-Transport anchors, source assignments, layout rectangles, and compact control
-changes cross IPC. Normal playback frames do not.
+| `essentia_configured` | Report whether both Essentia env vars are set |
+| `analyze_rhythm` | Upload audio to the Essentia host from Rust (no CORS) |
 
 ## Web vs desktop
 
-| Target | Branch | Decode |
-|--------|--------|--------|
-| Web / Vercel | `main` | HTMLVideo → browser WebGPU |
-| Desktop | `cursor/desktop-tauri-e0e8` | VideoToolbox → IOSurface → Metal/native wgpu |
+| Target | Distribution | Playback |
+|--------|--------------|----------|
+| Web / Vercel | visit the URL | HTMLVideo → WebGPU |
+| Desktop | download an installer per OS | HTMLVideo → WebGPU (same code) |
+
+Tauri does not cross-compile: a Windows installer must be built on Windows, a
+macOS one on a Mac. The release workflow
+([`.github/workflows/release.yml`](../.github/workflows/release.yml)) builds
+Windows on a GitHub runner when a `v*` tag is pushed.
+
+macOS is not a current target. An earlier VideoToolbox/Metal native compositor
+was removed in favour of shipping the web path everywhere; if a Mac build is
+ever wanted, it should reuse this same webview path rather than reviving that.
 
 Cloud agents run the **web** app only — see [`docs/cursor-cloud-setup.md`](../docs/cursor-cloud-setup.md).

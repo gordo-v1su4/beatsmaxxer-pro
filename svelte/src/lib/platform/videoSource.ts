@@ -1,8 +1,5 @@
-import { isTauriRuntime } from '$lib/platform/runtime';
-import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
 import type { VideoSourcePort } from '$lib/media/VideoSourcePort';
 import { htmlVideoSource } from '$lib/media/sources/HtmlVideoSource';
-import { tauriNativeSource } from '$lib/media/sources/TauriNativeSource';
 
 let active: VideoSourcePort = htmlVideoSource;
 
@@ -12,12 +9,7 @@ export function getVideoSourcePort(): VideoSourcePort {
 }
 
 export async function initVideoSourcePort() {
-  if (isTauriRuntime() && isDesktopNativeDecodeEnabled()) {
-    await tauriNativeSource.listen();
-    active = tauriNativeSource;
-  } else {
-    active = htmlVideoSource;
-  }
+  active = htmlVideoSource;
   return active;
 }
 

@@ -34,12 +34,9 @@
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
-  import { runDesktopNativeProof } from '$lib/qa/desktopNativeProof';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
-  import { startNativeCompositorBridge } from '$lib/platform/nativeCompositor';
-  import { isDesktopNativeDecodeEnabled } from '$lib/platform/desktopDecode';
 
   const ALL_MODULES = listCatalog();
   const rackModules = $derived(
@@ -48,7 +45,6 @@
       .filter((module) => module !== undefined)
   );
   let unsubHold: (() => void) | undefined;
-  let stopNativeCompositorBridge: (() => void) | undefined;
 
   const activeClipSlotCount = $derived($rackTop.length + $rackBottom.length);
 
@@ -61,24 +57,14 @@
 
   onMount(async () => {
     const params = new URLSearchParams(window.location.search);
-    const nativeDesktopProof =
-      params.get('desktopProof') === '1' && isDesktopNativeDecodeEnabled();
-    const cap = nativeDesktopProof
-      ? {
-          renderer: 'webgpu_active' as const,
-          webgpu: true,
-          webcodecs: false,
-          reason: null
-        }
-      : await probeWebGpu();
+    const cap = await probeWebGpu();
     capabilities.set(cap);
-    if (cap.webgpu && !nativeDesktopProof) {
+    if (cap.webgpu) {
       await webGpuEngine.init();
       webGpuEngine.start();
     }
 
     await initVideoSourcePort();
-    stopNativeCompositorBridge = startNativeCompositorBridge();
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
@@ -89,12 +75,6 @@
     fxHold.set(false);
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
 
-    if (params.get('desktopProof') === '1') {
-      void runDesktopNativeProof().catch((error) => {
-        console.error('[desktop proof] failed:', error);
-      });
-      return;
-    }
     if (params.has('qa')) {
       try {
         await fetchAndLoadQaMedia();
@@ -109,7 +89,6 @@
 
   onDestroy(() => {
     unsubHold?.();
-    stopNativeCompositorBridge?.();
     stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();

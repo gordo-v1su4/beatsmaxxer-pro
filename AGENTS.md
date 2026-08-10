@@ -77,8 +77,9 @@ Separate from `main` — do **not** merge desktop into main until promoted.
 | Web (browser) | `bun run dev` | 5174 |
 | Tauri desktop | `bun run dev:desktop` | Vite 5175 → native shell |
 
-- Tauri 2 shell in `desktop/` embeds `svelte/build`
-- Rust **`bsp-decode`**: MP4 demux + VideoToolbox (macOS) → IPC → WebGPU
+- Tauri 2 shell in `desktop/` embeds `svelte/build` — Windows-first, same
+  HTMLVideo → WebGPU path as the web app, no desktop-only rendering
+- Rust side is only window setup, `.env` loading, and the Essentia proxy
 - Platform layer: `svelte/src/lib/platform/` + `VideoSourcePort`
 - UI matches verified `main` layout (no PresetBrowser middle column)
 - See [`desktop/README.md`](./desktop/README.md)

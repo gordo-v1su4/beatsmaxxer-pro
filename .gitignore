@@ -47,6 +47,8 @@ pnpm-lock.yaml
 # Local QA / scratch (large media, Chrome profiles, benchmarks)
 .artifacts/
 .tmp/
+# Tauri regenerates these ACL/capability schemas on every build
+desktop/src-tauri/gen/
 test_media/
 docs/preview.png
 .vercel

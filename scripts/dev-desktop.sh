@@ -2,7 +2,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DESKTOP_DEV_URL="${DESKTOP_DEV_URL:-http://127.0.0.1:5175}"
-export BSP_DESKTOP_PROOF_PATH="${BSP_DESKTOP_PROOF_PATH:-$ROOT/.artifacts/desktop-eight-video/report.json}"
 
 # Real @tauri-apps/api (not web stubs) + Essentia keys for the Rust analyze_rhythm command.
 export TAURI_ENV_PLATFORM=1

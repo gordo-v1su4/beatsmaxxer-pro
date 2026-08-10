@@ -24,15 +24,6 @@ export default defineConfig(({ mode, command }) => {
 	// Key-free on purpose — see isAnalysisUploadPathEnabled. The credential is a
 	// runtime server secret and must never gate what the browser bundle can offer.
 	const essentiaEnabled = isAnalysisUploadPathEnabled(essentiaProxyConfig);
-	// Native decode/composition is the desktop contract. The legacy CPU-frame
-	// bridge has its own explicit diagnostic switch; stale DESKTOP_NATIVE_DECODE
-	// values from the older experimental phase must not silently disable the
-	// compositor UI/layout bridge. The native compositor only exists on macOS;
-	// other hosts must fall back to htmlVideoSource inside the Tauri webview.
-	const desktopNativeDecode =
-		isTauriBuild &&
-		process.platform === 'darwin' &&
-		process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
 
 	return {
 		// No `base` here either: SvelteKit derives it from kit.paths and overrides
@@ -47,8 +38,7 @@ export default defineConfig(({ mode, command }) => {
 		],
 		define: {
 			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(essentiaEnabled),
-			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine),
-			__APP_DESKTOP_NATIVE_DECODE__: JSON.stringify(desktopNativeDecode)
+			__APP_ESSENTIA_ANALYSIS_ENGINE__: JSON.stringify(essentiaAnalysisEngine)
 		},
 		server: {
 			port: 5174,
