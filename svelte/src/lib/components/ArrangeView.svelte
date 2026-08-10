@@ -7,6 +7,7 @@
   import {
     activeChannelId,
     addMidiChannels,
+    clearMidiChannels,
     midiChannels,
     removeMidiChannel
   } from '$lib/stores/midiChannels';
@@ -175,6 +176,18 @@
     >
       <Upload size={9} /> LOAD MIDI STEMS
     </button>
+    <!-- Importing appends lanes, so without this the only way back from a
+         wrong set of stems was reloading the app. Deliberately not called
+         CLEAR: that word already means cuts one button along, and losing
+         imported stems when you meant to clear cuts is the worse mistake. -->
+    {#if $midiChannels.length > 0}
+      <button
+        type="button"
+        class="arr-btn"
+        onclick={() => clearMidiChannels()}
+        title="Remove every imported MIDI stem lane (does not touch cuts)"
+      >DROP STEMS</button>
+    {/if}
     <input
       bind:this={midiInput}
       type="file"
@@ -434,8 +447,9 @@
     height: 24px;
     margin-bottom: 3px;
   }
+  /* Follows .arr-bar's line-height — an 11px row clipped the taller numbers. */
   .arr-row-ruler {
-    height: 11px;
+    height: 13px;
   }
   /* Slot lanes carry more weight than channel lanes — they are the thing being
      authored; the channels are reference underneath them. */
@@ -562,16 +576,20 @@
   .arr-ruler {
     border-bottom: 1px solid #16181b;
   }
+  /* Was 6px in #3c464a: below a readable size and barely above the lane
+     colour, so bar positions could not be read at a glance while performing.
+     Selecting the text did not help either, because a 6px glyph highlights to
+     a sliver. Bigger and brighter, with a tick that actually marks the bar. */
   .arr-bar {
     position: absolute;
     top: 0;
-    padding-left: 2px;
-    border-left: 1px solid #1b1f22;
+    padding-left: 3px;
+    border-left: 1px solid #2b3338;
     font-family: var(--font-mono);
-    font-size: 6px;
-    color: #3c464a;
+    font-size: 9px;
+    color: #8b979d;
     font-variant-numeric: tabular-nums;
-    line-height: 11px;
+    line-height: 13px;
   }
 
   .arr-lane {
