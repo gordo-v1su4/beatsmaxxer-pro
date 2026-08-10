@@ -144,8 +144,8 @@ const defs: ModuleDefinition[] = [
     category: 'film',
     compact: true,
     shaderKey: 'anamorphic',
-    description: 'Scope letterbox + squeeze',
-    params: { bars: 55, squeeze: 35, flare: 20, mix: 100 }
+    description: 'Scope letterbox + crop-in',
+    params: { bars: 55, zoom: 35, flare: 20, mix: 100 }
   },
   {
     id: 'grain',

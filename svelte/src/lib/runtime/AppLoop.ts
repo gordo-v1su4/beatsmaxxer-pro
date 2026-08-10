@@ -100,7 +100,7 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'focus':
       return { mix: p.mix, p0: p.amt, p1: p.pulse, p2: p.soft, p3: p.xeye ?? 0 };
     case 'anamorphic':
-      return { mix: p.mix, p0: p.bars, p1: p.squeeze, p2: p.flare };
+      return { mix: p.mix, p0: p.bars, p1: p.zoom, p2: p.flare };
     case 'grain':
       return { mix: p.mix, p0: p.size, p1: p.amount, p2: p.drift };
     case 'leak':

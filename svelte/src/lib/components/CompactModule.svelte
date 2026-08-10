@@ -140,13 +140,13 @@
     },
     anamorphic: {
       buttons: [
-        { label: '2.39', set: { bars: 60, squeeze: 40, flare: 25 } },
-        { label: 'FLARE', set: { bars: 55, squeeze: 35, flare: 70 } },
-        { label: 'SQZ', set: { bars: 70, squeeze: 75, flare: 15 } }
+        { label: '2.39', set: { bars: 60, zoom: 40, flare: 25 } },
+        { label: 'FLARE', set: { bars: 55, zoom: 35, flare: 70 } },
+        { label: 'CROP', set: { bars: 70, zoom: 75, flare: 15 } }
       ],
       primary: 'bars',
       sliders: [
-        { param: 'squeeze', label: 'SQZ' },
+        { param: 'zoom', label: 'CROP' },
         { param: 'flare', label: 'FLARE' }
       ]
     },

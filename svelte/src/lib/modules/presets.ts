@@ -97,9 +97,9 @@ function presetsFor(id: string): ModulePreset[] {
       ];
     case 'anamorphic':
       return [
-        { n: '1', title: '2.39 scope', set: { bars: 60, squeeze: 40, flare: 25, mix: 100 } },
-        { n: '2', title: 'Flare heavy', set: { bars: 55, squeeze: 35, flare: 70, mix: 100 } },
-        { n: '3', title: 'Tight squeeze', set: { bars: 70, squeeze: 75, flare: 15, mix: 90 } }
+        { n: '1', title: '2.39 scope', set: { bars: 60, zoom: 40, flare: 25, mix: 100 } },
+        { n: '2', title: 'Flare heavy', set: { bars: 55, zoom: 35, flare: 70, mix: 100 } },
+        { n: '3', title: 'Tight crop', set: { bars: 70, zoom: 75, flare: 15, mix: 90 } }
       ];
     case 'prism':
       return [

@@ -836,11 +836,16 @@ fn effectFocus(col: vec3f, uv: vec2f) -> vec3f {
   return wet;
 }
 
-/** Scope presentation: variable letterbox, optical horizontal squeeze and a
-    timeline-locked blue flare. p0 = bars, p1 = squeeze, p2 = flare. */
+/** Scope presentation: variable letterbox, a crop-in, and a timeline-locked
+    blue flare. p0 = bars, p1 = zoom, p2 = flare.
+
+    p1 used to divide only X, which is the desqueeze of an anamorphic negative.
+    Footage that is already correctly proportioned has no squeeze to undo, so
+    that just made everything narrow. It now scales both axes together, which
+    crops into the frame and leaves the aspect alone. */
 fn effectAnamorphic(col: vec3f, uv: vec2f) -> vec3f {
-  let squeeze = 1.0 + u.p1 * 0.45;
-  let suv = clamp(vec2f((uv.x - 0.5) / squeeze + 0.5, uv.y), vec2f(0.0), vec2f(1.0));
+  let zoom = 1.0 + u.p1 * 0.45;
+  let suv = clamp((uv - vec2f(0.5)) / zoom + vec2f(0.5), vec2f(0.0), vec2f(1.0));
   var wet = sampleSource(suv);
   let barHeight = 0.055 + u.p0 * 0.155;
   let aperture = 1.0 - step(uv.y, barHeight) - step(1.0 - barHeight, uv.y);
