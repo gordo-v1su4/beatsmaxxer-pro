@@ -17,11 +17,11 @@ That single command:
 
 ## Local QA media (your machine)
 
-For real clips + Redline.wav from `~/Downloads/archive (2)`:
+For real clips + the Redline track from `~/Downloads/archive (2)`:
 
 ```bash
 cd svelte
-bash scripts/link-qa-media.sh   # symlinks 8 mp4s + redline.wav into tests/fixtures/media/
+bash scripts/link-qa-media.sh   # symlinks 8 mp4s + the track in $REDLINE into tests/fixtures/media/
 bun run dev --host 127.0.0.1
 # open http://127.0.0.1:5174/?qa=1&qaAutoplay=1
 ```
