@@ -28,6 +28,15 @@ Order: **modules → mobile → arrangement.** Ship/infra items are independent.
 ## Open — highest leverage first
 
 ### 1. Preview cards must run the real effect (#22)
+**This is smaller than it looks.** `MODULE_FX_IDLE_WGSL` is not a separate
+shader — it is `MODULE_FX_WGSL` with two string replacements swapping the
+external texture for a `texture_2d` (see the bottom of `moduleFx.wgsl.ts`). So
+the idle shader **already contains every effect function**, and `sampleSource`
+already falls back to `testCard(uv)` when `hasVideo` is 0. A filter-type module
+can therefore call its real effect over the test card instead of drawing a
+bespoke illustration, with no new plumbing. Start with the ones Gordo hit:
+GRAIN, LEAK, HALATION, VHS, ANAMORPHIC.
+
 Each module's preview card is a hand-drawn *impression* written separately
 from the effect itself — an illustration beside it, not a rendering of it.
 
@@ -99,17 +108,44 @@ Ask before starting the arrangement phase, so it can be scoped in one pass.
 
 ---
 
-## Mobile (#2)
+## Mobile (#2) — NEXT SESSION, start here
 
 A *representation* of the app, not the whole app: one video at a time,
 swipeable full-screen module cards, portrait to prepare, **landscape to
 perform**. References: beat-surfer v1/v2 prototypes in `test_media`, plus two
-mobile drawer shells.
+mobile drawer shells Gordo works from.
 
-The native-iOS package (`docs/iphone`) was merged and reverted as dated — this
-is the responsive layout of the existing Svelte app, shipping through the same
-Vercel deploy. Still readable at commit `1088907` if its UX thinking is worth
-mining.
+**Route: responsive layout of the existing Svelte app**, shipping through the
+same Vercel deploy. Not native iOS — that package (`docs/iphone`) was merged
+and reverted as dated. Still readable at commit `1088907` if its UX thinking is
+worth mining, but do not revive the Swift/TestFlight plan.
+
+Gordo wants this done fast and is happy to use **subagents** to parallelise.
+
+### What the layout is up against
+Measured on desktop: each rack module renders at a natural **420px**, five per
+row = **2191px**, plus **361px** of rails = **2552px** total. That is the whole
+problem in one number — the desktop rack cannot shrink to a phone, which is why
+mobile has to be a different arrangement rather than a responsive squeeze. Below
+about 1280 the module labels stop being readable, which Gordo confirmed by eye.
+
+### Useful entry points
+- `svelte/src/routes/+page.svelte` — mounts `TopBar`, `PgmRail`, `MainViewer`,
+  `RackSlot`, `ArrangeView`, and the overlays.
+- `svelte/src/lib/components/CompactModule.svelte` — already a condensed module
+  presentation; the closest existing thing to a phone card.
+- `svelte/src/lib/stores/rackUi.ts` — `moduleCollapsed`, `fxLibOpen`,
+  `pgmRailOpen`, `viewMode`, `topRowCompact`, `bottomRowCompact`. The app
+  already has a notion of compact/collapsed state to build on.
+- `resize_window` in the browser tools does a mobile preset (375x812) with touch
+  emulation — reload after switching so load-time device gates re-run.
+
+### Watch for
+- WebGPU on mobile Safari/Chrome is not a given; `probeWebGpu()` already gates
+  it and `CapabilityGate` renders the fallback. Decide early what the phone does
+  when WebGPU is absent.
+- The splash (`LoadingSplash`) and `AccessGate` are both fixed-position overlays
+  sized for desktop; check them at 375px.
 
 ---
 
