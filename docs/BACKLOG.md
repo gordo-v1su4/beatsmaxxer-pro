@@ -1,21 +1,39 @@
 # Backlog
 
-Captured 2026-08-10. Findings traced to `file:line` where known, so the next
-session can start from evidence rather than re-deriving it.
+Updated 2026-08-10. Findings traced to `file:line` where known, so the next
+session starts from evidence rather than re-deriving it.
 
-Order: **modules → mobile → arrangement.** Everything else is independent.
+Order: **modules → mobile → arrangement.** Ship/infra items are independent.
 
 ---
 
-## Cross-cutting (highest leverage)
+## Done (2026-08-10)
 
-### 1. Preview cards must run the real effect
-Each module's preview card is a hand-drawn *impression* written separately from
-the effect itself — an illustration beside it, not a rendering of it. Nothing
-keeps them honest.
+| Fix | Commit |
+|---|---|
+| v0.1.0 Windows release — draft with `.msi` + NSIS installer | — |
+| INCEPTION folded then clamped, smearing one edge texel into a streak | `9f38463` |
+| Preview never repainted on a state change while the transport was stopped | `88244b8` |
+| ANAMORPHIC squished instead of cropping (`squeeze` → `zoom`) | `5473780` |
+| HALATION appeared as two effects (`GLOW` → `HALO`) | `1a2802d` |
+| Desktop window opened at 1440 and clipped the rack; splash for first load | `9b4092a` |
+| Arcade title card — BEATS/MAXXER collide, segmented pipeline meter | `d9f4ba7` |
+| VHS beat gating, LIGHT LEAK screen-blend, FILM GRAIN de-grid | `9cbfd4a` |
+| Bar numbers legible; DROP STEMS to clear imported MIDI | `47db8ae` |
+| HALATION keyed off luminance, two-ring bloom, cool→warm range | `cedcca9` |
+| AUDIO lane marks where onset analysis stops | `a24d7da` |
 
-**Audited: 13 of 19 idle cards reference no `u.p0/p1/p2` at all**, so they cannot
-respond to any control.
+---
+
+## Open — highest leverage first
+
+### 1. Preview cards must run the real effect (#22)
+Each module's preview card is a hand-drawn *impression* written separately
+from the effect itself — an illustration beside it, not a rendering of it.
+
+**Audited: 13 of 19 idle cards reference no `u.p0/p1/p2` at all**, so they
+cannot respond to any control. That is why grain's `16MM / GATE / WEAVE`
+selector and its SIZE/DRIFT sliders changed nothing.
 
 - param-blind: SPEEDRAMP, PUNCH ZOOM, HANDHELD, DRIFT CAM, RACK FOCUS,
   ANAMORPHIC, FILM GRAIN, LIGHT LEAK, DUTCH ANGLE, HALATION, LENS BULGE,
@@ -23,157 +41,115 @@ respond to any control.
 - param-aware: TRANSITION, STUTTER, TIMESAMPLER, MOTION STREAK, INCEPTION,
   SPECIALTY LENS
 
-This is why grain's `16MM / GATE / WEAVE` selector and its SIZE/DRIFT sliders
-change nothing.
+**The pattern already exists.** INCEPTION was fixed and the file records why:
+its card "used to draw a radial kaleidoscope, which is the one thing this
+effect explicitly is not, so the preview advertised a look the module could
+not produce." Run the real effect function over a synthetic source in both
+places.
 
-**The pattern already exists.** INCEPTION was fixed and the reasoning is in the
-file: its card "used to draw a radial kaleidoscope, which is the one thing this
-effect explicitly is not, so the preview advertised a look the module could not
-produce." Run the real effect function over a synthetic source in both places.
+Goal, in Gordo's words: *play with all the previews without any videos, then
+put your videos in and know what it was going to look like.*
 
-Goal, in Gordo's words: *play with all the previews without any videos, then put
-your videos in and know what it was going to look like.*
+Several module fixes below were noticed *through* a lying preview, so do this
+before tuning anything by eye.
 
-Do this **before** tuning grain / leak / halation — those were noticed *through*
-a lying preview, so their true severity is unknown.
-
-### 2. Preview goes stale after a module swap
-Swapping a module updates colour and title, but the card only repaints once
-playback starts. Across the board; a loaded video updates fine.
-
-`renderAll()` is the only render path and AppLoop owns the sole rAF
-(`engine.start()` is a no-op). Each binding's `BindingScheduleState`
-(`lastChangeKey`, `nextRenderContextTimeSeconds`) throttles previews against
-**timeline context time**, which does not advance while stopped — so the redraw
-is never scheduled. Video bypasses this by driving its own texture upload.
-
-Invariant: changing what a module *is* must repaint its card immediately, with
-no transport dependency. `__BSP_QA__` already exposes `catalogHotSwap*` and
-`stressCatalogModule`, so this should reproduce headlessly.
-
-### 3. MIDI as an interchangeable source for any beat-driven param
-Not "MIDI triggers effects", and not every module. The rule:
-
+### 2. MIDI as an interchangeable source for any beat-driven param (#15)
 > Wherever a module has a beat slider, MIDI is an interchangeable source for
 > that same slot.
 
-The value is that MIDI need not follow the beat — "on the beat, not on the beat,
-on the vocal, all over." A rhythm source beat detection cannot produce.
+The value is that MIDI need not follow the beat — "on the beat, not on the
+beat, on the vocal, all over." Triggered effects fire the event; filters gate
+MIX. Same mechanism. Modules with no beat-reactive param are the exclusions.
 
-- Triggered effects (transition, speedramp, punch, timesampler, tapdelay): the
-  source fires the event.
-- Filters/overlays (vhs, grain, leak, halation, prism, focus): the source gates
-  MIX, bringing the look in and out.
+The gating half is now done (`9cbfd4a`), so the parameter this feeds can
+actually reach zero — that was the blocker.
 
-Both are the same mechanism. Modules with no beat-reactive param are the only
-genuine exclusions.
-
-**Blocked by #4** — swapping the source changes nothing if the param cannot gate.
-
-UI: use the **IN knob** for amount. Verified free — `in_` is rendered by
-`rack/MixSection.svelte:52`, has defaults in `catalog.ts` and a value in every
-preset, and is filtered out of the generic grid at `ModuleControls.svelte:488`,
-but `paramsForGpu()` (`AppLoop.ts:69`) never maps it to a shader slot. Sibling
-`out` is dead the same way. Repurposing IN means revisiting all three presets
-per module.
+UI: use the **IN knob**. Verified free — `in_` renders in
+`rack/MixSection.svelte:52`, has values in every preset, but `paramsForGpu()`
+(`AppLoop.ts:69`) never maps it to a shader slot. Sibling `out` is dead the
+same way. Repurposing IN means revisiting all three presets per module.
 
 Existing wiring: only `timesampler` consumes MIDI, via
-`AppLoop.configureTimeSampler` (`midiNotes`, `onsetSensitivity` from `chance`).
-Its comment records the trap: "A MIDI layer used to win simply by existing,
-which made loading one an irreversible decision." Default to MIDI on load, but
-keep a toggle back.
+`AppLoop.configureTimeSampler`. Its comment records the trap: "A MIDI layer
+used to win simply by existing, which made loading one an irreversible
+decision." Default to MIDI on load, keep a toggle back. The note lane should
+brighten **on** the hit, not continuously.
 
-Also: the note lane should brighten **on** the hit, not continuously.
+### 3. Arrangement timeline offset (#10)
+Repro order matters: import MIDI, load the song, let AUTO-RHY analyze. It
+finds 125 BPM, the grid rescales, lanes shift, and playback then starts with
+the seek bar in blank space while vocals are already audible.
 
-### 4. Beat amount must gate, not add on top
-On VHS, turning BEAT to zero leaves the effect fully on; only MIX disables it.
-The beat param is additive over an always-on base, so "this look appears only on
-the beat" — the most useful thing a beat slider can express — is impossible.
+**The original hypothesis is now weaker.** The truncated AUDIO lane turned out
+to be the 90-second analysis window (`a24d7da`), not a stale bars-per-second
+mapping — so it is no longer evidence for one. Investigate the offset on its
+own terms: check whether `beatAt()` in `stores/triggerLane.ts` is being handed
+a beat grid that starts at the first detected beat rather than at zero, which
+would shift everything by the track's lead-in.
 
-Start with `vhs`, then audit grain, leak, halation, prism, focus for the same
-additive-base pattern. Gordo also wants VHS glitch and TV-roll to hit at chosen
-moments rather than run continuously; that falls out of the same fix.
+Blocks #13 — section detection cannot be judged until this is right.
 
----
+### 4. TIMESAMPLER luminance channel intermittent (#20)
+"It kinda works and doesn't work sometimes." Reproduce before changing.
+Note `configureTimeSampler` is also the only place MIDI reaches a trigger, so
+this module has more moving parts than most.
 
-## Per-module
-
-| Module | Issue |
-|---|---|
-| **INCEPTION** | ✅ **Fixed, untested.** `moduleFx.wgsl.ts:1068` folded the coordinate then *clamped* it, smearing one border texel into a streak. Now folds via the existing `mirrorRepeat` helper. Compiles clean; the look is unverified. `sampleSource` clamps for every module, so `punch`, `shake`, `dutch`, `bulge` likely need the same one-line change. |
-| **ANAMORPHIC** | Squishes instead of cropping. `effectAnamorphic:842` divides X by a squeeze factor while leaving Y alone — desqueeze math applied to already-correct footage. Drop the squeeze, keep the existing letterbox (`barHeight`/`aperture`, 845-846), sample a 2.39 slice at native X scale. Gordo notes it arguably belongs at the output stage but said **leave it where it is**. |
-| **LIGHT LEAK** | `effectLeak:876` is `col + warm * leak` — purely additive, exactly as reported. Needs to blend/multiply so it reads as light in the scene. Warm-only palette (`vec3f(1,0.28,0.04)`→`vec3f(1,0.75,0.24)`); wants cool leaks, anamorphic streaks, glass/mirror characters, and presets for how much / how many / where. Top row, so there is room for preset buttons. |
-| **FILM GRAIN** | Preview and live are unrelated implementations (idle `mode == 10.0` fixed 110-cell field vs `effectGrain` cellScale 180–1400). Also: `hash21(floor(guv * cellScale))` hashes a **square cell grid** so grain reads as blocks, not noise; `guv = uv + weave * p2 * 0.008` (859-860) jitters the *picture*, which is unwanted; and grain is applied as flat additive monochrome (863) ignoring luminance. Wants film-stock presets — light, medium, 16mm, 35mm, plus an extreme — and more slider range. **Blocked by #1.** |
-| **HALATION** | `name: 'HALATION'` vs `shortName: 'GLOW'` — same effect under two labels on one screen (the split is catalog-wide by design, so consider showing both rather than renaming one). Too weak, too little variety; should key off the **luminance** channel and bloom from highlights. |
-| **VHS / TAPE** | See #4. Always on; only MIX disables it. Beat param reads as intensity and never gates off. |
-| **TIMESAMPLER** | Luminance channel works intermittently — "kinda works and doesn't work sometimes." Reproduce before changing. Worth doing before HALATION, since it is the reference Gordo wants HALATION to match. |
+### 5. Gordo has more arrangement notes (#14)
+Ask before starting the arrangement phase, so it can be scoped in one pass.
 
 ---
 
-## Mobile
+## Mobile (#2)
 
-A *representation* of the app, not the whole app: one video at a time, swipeable
-full-screen module cards, portrait to prepare, **landscape to perform**.
-References: beat-surfer v1/v2 prototypes in `test_media`, plus two mobile drawer
-shells.
+A *representation* of the app, not the whole app: one video at a time,
+swipeable full-screen module cards, portrait to prepare, **landscape to
+perform**. References: beat-surfer v1/v2 prototypes in `test_media`, plus two
+mobile drawer shells.
 
-The native-iOS planning package (`docs/iphone`) was merged in #20 and reverted
-as dated — **not** the native route. This is the responsive layout of the
-existing Svelte app, shipping through the same Vercel deploy. The old package is
-still readable at commit `1088907` if any of its UX thinking is worth mining.
-
----
-
-## Arrangement (after mobile)
-
-- **No way to remove imported MIDI tracks.** Import appends lanes; nothing
-  deletes them. Needs clear-all and/or per-track delete, visually distinct from
-  the existing CLEAR CUTS.
-- **Timeline offset — playhead and content do not line up.** Repro order
-  matters: import MIDI, then load the song, let AUTO-RHY analyze. It finds 125
-  BPM, the grid rescales, lanes shift, and playback then starts with the seek bar
-  in blank space while vocals are already audible.
-  *Hypothesis:* lanes are laid out against the pre-analysis BPM and never
-  re-laid-out after it changes — a stale bars-per-second mapping. Would explain
-  the truncated audio lane too, as one root cause.
-- **AUDIO lane renders only ~45%** of the arrangement while other lanes run full
-  width. Likely the same stale mapping; if not, check whether the waveform
-  decodes the whole file.
-- **Bar numbers illegible.** Selecting the text does not reveal them, which
-  points at fill colour — possibly canvas-drawn rather than DOM text.
-- **Section detection suspect** (INTRO/VERSE/CHORUS/BRIDGE) — but unjudgeable
-  until the offset is fixed. Do not tune the detector first.
-- **Gordo has more arrangement notes to give.** Ask before starting.
+The native-iOS package (`docs/iphone`) was merged and reverted as dated — this
+is the responsive layout of the existing Svelte app, shipping through the same
+Vercel deploy. Still readable at commit `1088907` if its UX thinking is worth
+mining.
 
 ---
 
 ## Ship / infra
 
-- **v0.1.0 Windows release is ready.** Pipeline proven — a `workflow_dispatch`
-  dry run passed green in 14m53s. `git tag v0.1.0 && git push origin v0.1.0`
-  builds on a Windows runner and attaches the `.msi` + NSIS `-setup.exe` to a
-  **draft** release. Bump `version` in `tauri.conf.json` before later tags — the
-  installer filename comes from that field, not the tag.
-- **Code signing.** Installers are unsigned; Windows shows a SmartScreen
-  warning. Needs an OV/EV certificate. Not blocking v0.1.0.
-- **macOS build.** Deferred. Must reuse the webview path — do **not** revive the
-  deleted VideoToolbox/Metal compositor. Tauri does not cross-compile, so add a
-  macOS entry to the release matrix (already structured for it) plus an Apple
-  Developer account for notarization.
-- **SoundTouch.** Gordo wants to consider the original C++ via WASM, or Rust.
-  Recommendation: **measure first, rank last.** The AudioWorklet's 128-sample
-  quantum (~2.9 ms) is fixed by spec, and SoundTouch's WSOLA time-stretch needs a
-  lookahead window that is identical in any language — so a port does not reduce
-  the dominant latency. WASM buys CPU headroom and upstream quality, not latency.
-  Rust would be a rewrite of ~10k lines of tuned DSP, and would only run on
-  desktop — re-forking web and desktop, which was just deliberately un-forked.
-  If profiling shows dropouts under 8-video load, go WASM. Note AudioWorklets
-  cannot `fetch()`; the `.wasm` must be passed in as an ArrayBuffer via
-  `processorOptions`.
-- **Cloud-agent / Docker tooling — decision needed, not action.** Gordo is no
-  longer using cloud agents here. Files existing only for that: `Dockerfile`,
+- **Releases.** Bump `version` in `desktop/src-tauri/tauri.conf.json`, commit,
+  then `git tag vX.Y.Z && git push origin main vX.Y.Z`. Builds on a Windows
+  runner (~6 min warm) and attaches installers to a **draft** release.
+  Publish with `gh release edit vX.Y.Z --draft=false`.
+- **Code signing (#6).** Installers are unsigned; Windows shows a SmartScreen
+  warning. Needs an OV/EV certificate.
+- **macOS build (#5).** Must reuse the webview path — do **not** revive the
+  deleted VideoToolbox/Metal compositor. Add a macOS entry to the release
+  matrix, plus an Apple Developer account for notarization.
+- **SoundTouch (#3).** Measure first, rank last. The AudioWorklet's
+  128-sample quantum (~2.9 ms) is fixed by spec, and WSOLA's lookahead is
+  identical in any language — a port does not reduce the dominant latency.
+  WASM buys CPU headroom and upstream quality. Rust would be a rewrite of
+  ~10k lines of tuned DSP that only runs on desktop, re-forking web and
+  desktop right after that fork was deliberately removed. AudioWorklets
+  cannot `fetch()`; the `.wasm` must arrive via `processorOptions`.
+- **Cloud-agent / Docker (#7) — decision, not action.** Gordo no longer uses
+  cloud agents here. Files existing only for that: `Dockerfile`,
   `docker-compose.yml`, `.cursor/environment.json`,
   `.cursor/install-cloud-tools.sh`, `scripts/cloud-agent-start.sh`,
   `docs/cursor-cloud-setup.md`, `verify:cloud-smoke`. **Do not delete without
-  confirming** — the GPU sandbox is also the only way to run WebGPU browser
-  gates on the 4090, which is useful independently of cloud agents.
+  confirming** — the GPU sandbox is the only way to run WebGPU browser gates
+  on the 4090, useful independently of cloud agents.
+
+---
+
+## Notes for whoever edits next
+
+- `moduleFx.wgsl.ts` is **WGSL inside a TypeScript template literal**. A
+  backtick in a comment terminates the string and the errors surface far from
+  the cause.
+- `sampleSource` clamps UV for every module, so any effect that samples
+  outside the frame smears the edge texel. INCEPTION now folds via
+  `mirrorRepeat`; `punch`, `shake`, `dutch` and `bulge` likely want the same
+  one-line change.
+- `?splash=hold` keeps the title card up for design work.
+- Analysis only sees the first 90 seconds of a track
+  (`prepareAnalysisUpload.ts`), capped by Vercel's serverless body limit.
