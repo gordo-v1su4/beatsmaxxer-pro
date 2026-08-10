@@ -39,7 +39,7 @@
   import { initVideoSourcePort } from '$lib/platform/videoSource';
   import LoadingSplash from '$lib/components/LoadingSplash.svelte';
 
-  let splashPhase = $state<'gpu' | 'shaders' | 'ready'>('gpu');
+  let splashPhase = $state<'gpu' | 'shaders' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
 
@@ -93,7 +93,15 @@
         await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
       }
     }
-    splashPhase = 'ready';
+    // ?splash=hold keeps the title card up so it can be designed against.
+    // A warm load dismisses it in well under a second, which is too fast to
+    // iterate on and the reason it could not be reviewed when first built.
+    if (params.get('splash') !== 'hold') {
+      // 'go' plays the exit; unmount only once it has actually run, so the
+      // card hands off instead of blinking out from under the user.
+      splashPhase = 'go';
+      setTimeout(() => { splashPhase = 'ready'; }, 900);
+    }
 
     if (params.has('qa')) {
       try {
