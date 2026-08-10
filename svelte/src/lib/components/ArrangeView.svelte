@@ -105,6 +105,16 @@
   }
 
   const audioTicks = $derived(bucketTicks($analysisOnsets));
+
+  /**
+   * Where onset data stops. Analysis only ever sees the first 90 seconds of a
+   * track — prepareAnalysisUpload trims to ANALYSIS_MAX_DURATION_S and shrinks
+   * further to fit the serverless body limit — so on anything longer the lane
+   * simply runs out of hits partway across. That looked like a broken lane;
+   * marking the uncovered span says it is missing data, not a missing feature.
+   */
+  const analysisEndPct = $derived(audioTicks.length > 0 ? audioTicks[audioTicks.length - 1] : 0);
+  const analysisTruncated = $derived(audioTicks.length > 0 && analysisEndPct < 92);
   const channelTicks = $derived(
     $midiChannels.map((channel) => ({ channel, ticks: bucketTicks(channel.onsets) }))
   );
@@ -289,6 +299,13 @@
         {#each audioTicks as left, i (i)}
           <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
         {/each}
+        {#if analysisTruncated}
+          <span
+            class="arr-chan-uncovered"
+            style="left:{analysisEndPct}%"
+            title="Analysis covers only the first 90 seconds of a track, so onsets stop here. The song keeps playing; there is just no onset data past this point."
+          ></span>
+        {/if}
         {#if audioTicks.length === 0}
           <span class="arr-chan-empty">no onset data — load a track and run analysis</span>
         {/if}
@@ -590,6 +607,22 @@
     color: #8b979d;
     font-variant-numeric: tabular-nums;
     line-height: 13px;
+  }
+
+  /* Hatched span where analysis never reached. Reads as absent data rather
+     than an empty lane someone forgot to fill. */
+  .arr-chan-uncovered {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    border-left: 1px dashed #3a4a3f;
+    background: repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.028) 0 3px,
+      transparent 3px 7px
+    );
+    pointer-events: auto;
   }
 
   .arr-lane {
