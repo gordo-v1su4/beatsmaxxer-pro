@@ -1064,8 +1064,13 @@ fn effectMirror(col: vec3f, uv0: vec2f) -> vec3f {
   let p0 = vec2f((uv0.x - 0.5) * asp, uv0.y - 0.5);
   let p = mirrorFoldPoint(p0, kind, shift, band, spin, asp, pulse);
 
+  // Fold, do not clamp. A fold that walks off the frame used to be clamped
+  // here, which smeared one edge pixel into a streak across everything past
+  // the border — the effect looked broken exactly where it was working
+  // hardest. Mirroring continues the shot back on itself instead, so an
+  // off-frame fold reads as more picture rather than a defect.
   let uv = vec2f(p.x / asp + 0.5, p.y + 0.5);
-  return sampleSource(clamp(uv, vec2f(0.0), vec2f(1.0)));
+  return sampleSource(vec2f(mirrorRepeat(uv.x), mirrorRepeat(uv.y)));
 }
 
 /** SPECIALTY LENS — fisheye to tele-crush glass. p0 = glass (0 = tele
