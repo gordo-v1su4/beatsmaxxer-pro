@@ -37,6 +37,11 @@
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
+  import LoadingSplash from '$lib/components/LoadingSplash.svelte';
+
+  let splashPhase = $state<'gpu' | 'shaders' | 'ready'>('gpu');
+  let splashDone = $state(0);
+  let splashTotal = $state(0);
 
   const ALL_MODULES = listCatalog();
   const rackModules = $derived(
@@ -74,6 +79,21 @@
     // remain static; playback advances them on the authoritative audio timeline.
     fxHold.set(false);
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
+
+    // init() only acquires the device; the stall users actually see is the
+    // module shader compiling as each canvas builds its pipeline. Hold the
+    // splash until a frame has genuinely been submitted, and cap the wait so a
+    // GPU that never reports ready cannot lock the app behind the overlay.
+    if (cap.webgpu) {
+      splashPhase = 'shaders';
+      const deadline = performance.now() + 12000;
+      while (!webGpuEngine.hasRenderedFrame && performance.now() < deadline) {
+        splashTotal = webGpuEngine.boundCanvasCount;
+        splashDone = Math.min(splashTotal, splashDone + 1);
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      }
+    }
+    splashPhase = 'ready';
 
     if (params.has('qa')) {
       try {
@@ -139,6 +159,7 @@
 </script>
 
 <div class="app-viewport">
+<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} />
 <AccessGate />
 <DragGhost />
 <CapabilityGate state={$capabilities} />

@@ -187,6 +187,20 @@ export class WebGpuEngine {
     return true;
   }
 
+  /** True once at least one binding has been encoded and submitted. The splash
+      waits on this rather than on init(): init only acquires the device and the
+      blit pipeline, while the visible stall is the 52KB module shader compiling
+      as each canvas builds its pipeline. */
+  get hasRenderedFrame() {
+    return this.frameIndex > 0;
+  }
+
+  /** How many canvases have registered — the denominator the splash counts
+      pipeline compilation against. */
+  get boundCanvasCount() {
+    return this.bindings.size;
+  }
+
   setPgmLiveModule(moduleId: string, sourceId: string) {
     if (sourceId !== this.pgmLiveSourceId) {
       this.pendingPgmCut = { at: latencyMarkNow(), sourceId };

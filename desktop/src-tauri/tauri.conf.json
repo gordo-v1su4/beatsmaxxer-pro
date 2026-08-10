@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "Beatsmaxxer Pro",
-        "width": 1440,
-        "height": 900,
-        "minWidth": 1100,
-        "minHeight": 700,
+        "width": 2552,
+        "height": 1440,
+        "minWidth": 1280,
+        "minHeight": 800,
         "center": true,
         "maximized": false,
         "resizable": true
