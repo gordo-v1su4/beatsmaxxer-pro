@@ -863,9 +863,19 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
   let frame = floor(u.beat * 24.0);
   let weave = vec2f(hash21(vec2f(frame, 2.1)), hash21(vec2f(4.7, frame))) - vec2f(0.5);
   let guv = clamp(uv + weave * u.p2 * 0.008, vec2f(0.0), vec2f(1.0));
-  let n = hash21(floor(guv * cellScale) + vec2f(frame * 0.71, frame * 1.13));
   let stock = sampleSource(guv);
-  return stock + vec3f(n - 0.5) * u.p1 * 0.34;
+  // One hash over one floored grid is a grid: the cells line up and read as
+  // woven blocks rather than grain. Two incommensurate scales, offset, break
+  // the alignment so the structure disappears into noise.
+  let n1 = hash21(floor(guv * cellScale) + vec2f(frame * 0.71, frame * 1.13));
+  let n2 = hash21(floor(guv * cellScale * 1.73 + vec2f(0.37, 0.61)) + vec2f(frame * 1.31, frame * 0.57));
+  let n = (n1 + n2) * 0.5;
+  // Film grain lives in the midtones: silver halide has nothing to develop in
+  // clipped blacks and little left in blown highlights. Flat additive noise
+  // over the whole range is the other half of why this did not read as film.
+  let lum = dot(stock, vec3f(0.2126, 0.7152, 0.0722));
+  let response = 4.0 * lum * (1.0 - lum);
+  return stock + vec3f(n - 0.5) * u.p1 * 0.42 * (0.30 + 0.70 * response);
 }
 
 /** Warm edge exposure with a slowly travelling hotspot. p0 = edge reach,
@@ -877,8 +887,20 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   let reach = 0.08 + u.p0 * 0.52;
   let leak = (1.0 - smoothstep(0.0, reach, edgeDistance))
              * (0.55 + 0.45 * sin(uv.y * 7.0 + phase * 2.3));
-  let warm = mix(vec3f(1.0, 0.28, 0.04), vec3f(1.0, 0.75, 0.24), u.p1);
-  return col + warm * leak * (0.25 + u.p1 * 0.7);
+  // p1 now sweeps the whole range rather than only how warm the warm is:
+  // cool window light at 0, through neutral flare, into hot amber at 1. It was
+  // orange-to-amber, which is why every leak looked like the same gel.
+  let tint = mix(
+    mix(vec3f(0.34, 0.60, 1.00), vec3f(0.92, 0.94, 1.00), smoothstep(0.0, 0.5, u.p1)),
+    mix(vec3f(1.00, 0.72, 0.30), vec3f(1.00, 0.34, 0.06), smoothstep(0.5, 1.0, u.p1)),
+    step(0.5, u.p1)
+  );
+  let amount = leak * (0.30 + abs(u.p1 - 0.5) * 0.9);
+  // Screen, not add. Adding pushes highlights past white and leaves the leak
+  // sitting on the picture like a coloured sheet; screen lets it interact with
+  // what is already bright, so it reads as light in the scene instead of over
+  // it, and it cannot blow out to flat white.
+  return vec3f(1.0) - (vec3f(1.0) - col) * (vec3f(1.0) - clamp(tint * amount, vec3f(0.0), vec3f(1.0)));
 }
 
 /** Rotating horizon with optional beat snap. p0 = tilt, p1 = drift,
@@ -966,7 +988,13 @@ fn vhsNoise(v: vec2f) -> f32 {
     p3 = beat glitch (block/line rips spiking on every beat). */
 fn effectVhs(col: vec3f, uv0: vec2f) -> vec3f {
   let t = u.beat * 0.5;
-  let glitch = u.p3 * (0.15 + 0.85 * beatPulse(6.0));
+  // p3 is the beat amount. It used to be p3 * (0.15 + 0.85 * pulse), whose
+  // 0.15 floor survived at every setting — so the glitch never actually
+  // stopped between hits and the control read as intensity rather than
+  // rhythm. Now the amount also sets how hard it gates: low values leave the
+  // artifacts sitting steady, high values collapse them onto the beat and
+  // reach zero in between, which is the thing a beat slider is for.
+  let glitch = u.p3 * mix(1.0, beatPulse(6.0), u.p3);
 
   var uv = uv0;
   let cc = uv - vec2f(0.5);
