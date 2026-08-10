@@ -1,8 +1,6 @@
-import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, loadEnv } from 'vite';
-import { viteSingleFile } from 'vite-plugin-singlefile';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
@@ -37,17 +35,14 @@ export default defineConfig(({ mode, command }) => {
 		process.env.BSP_DESKTOP_CPU_FRAME_BRIDGE !== '1';
 
 	return {
-		base: './',
+		// No `base` here either: SvelteKit derives it from kit.paths and overrides
+		// ours. Relative asset paths (what Tauri needs) come from kit.paths.relative,
+		// which is on by default.
 		plugins: [
 			tailwindcss(),
-			sveltekit({
-				compilerOptions: {
-					runes: ({ filename }: { filename: string }) =>
-						filename.split(/[/\\]/).includes('node_modules') ? undefined : true
-				},
-				adapter: adapter({ fallback: 'index.html' })
-			}),
-			viteSingleFile({ useRecommendedBuildConfig: false }),
+			// Options live in svelte.config.js — passing any here makes SvelteKit
+			// ignore that file, which svelte-kit sync and svelte-check still read.
+			sveltekit(),
 			essentiaDevProxyPlugin(essentiaProxyConfig)
 		],
 		define: {
@@ -82,7 +77,9 @@ export default defineConfig(({ mode, command }) => {
 		build: {
 			assetsInlineLimit: () => true,
 			chunkSizeWarningLimit: 100_000_000,
-			cssCodeSplit: false,
+			// No cssCodeSplit here: SvelteKit derives it from kit.output.bundleStrategy
+			// and overrides whatever we set. Tauri loads svelte/build as a directory,
+			// so a single inlined file was never a requirement.
 			assetsDir: ''
 		}
 	};

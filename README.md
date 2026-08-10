@@ -37,7 +37,7 @@ On every refresh, `?qa=1` auto-loads Redline + 8 rack clips via [`svelte/src/lib
 | Decode | 8 slot-owned `HTMLVideoElement` pipelines in a shared pool; PGM reuses one |
 | Rhythm | Essentia hosted analysis + Web Audio fallback |
 | Audio FX | SoundTouch.js (KEY / PITCH / TEMPO) |
-| Build | Vite 8 + Bun → single HTML via `vite-plugin-singlefile` |
+| Build | Vite 8 + Bun → static site via `@sveltejs/adapter-static` |
 
 ## Project structure
 

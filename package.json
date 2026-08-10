@@ -22,5 +22,9 @@
     "dev:desktop": "bash scripts/dev-desktop.sh",
     "build:desktop": "cd svelte && TAURI_ENV_PLATFORM=1 bun run build && cd ../desktop && bunx tauri build",
     "qa:secret-scan": "bun run scripts/secret-scan.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^6.0.3"
   }
 }
