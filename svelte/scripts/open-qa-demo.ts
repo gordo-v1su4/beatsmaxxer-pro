@@ -43,7 +43,7 @@ if (!status?.playing) {
 }
 
 console.log('[demo] clips=', status?.clips, 'bpm=', status?.bpm, 'playing=', status?.playing, 'rhy=', status?.rhy);
-console.log('[demo] Track: redline.wav (133 BPM). Click PLAY in the top bar if audio is silent.');
+console.log('[demo] Track: Redline (Remastered).mp3. Click PLAY in the top bar if audio is silent.');
 console.log('[demo] Window stays open — close Chrome or Ctrl+C here to exit.');
 
 process.on('SIGINT', () => {
