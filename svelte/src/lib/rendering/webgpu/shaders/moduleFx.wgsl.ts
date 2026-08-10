@@ -920,16 +920,32 @@ fn effectDutch(col: vec3f, uv: vec2f) -> vec3f {
 /** Highlight-selective red bloom. p0 = threshold, p1 = spread,
     p2 = warm tint. */
 fn effectHalation(col: vec3f, uv: vec2f) -> vec3f {
-  let radius = 0.002 + u.p1 * 0.035;
+  // Halation is light scattering back through the emulsion from bright areas,
+  // so the threshold has to key off LUMINANCE. Subtracting a threshold per
+  // channel, as this did, biases the bloom toward whichever channel happens to
+  // be hot and washes everything the same red regardless of the picture.
+  let threshold = 0.20 + u.p0 * 0.64;
+  let inner = 0.002 + u.p1 * 0.020;
+  let outer = inner * 2.7;
   var bloom = vec3f(0.0);
   for (var i = 0; i < 8; i = i + 1) {
     let a = f32(i) * 0.78539816339;
-    let s = sampleSource(clamp(uv + vec2f(cos(a), sin(a)) * radius, vec2f(0.0), vec2f(1.0)));
-    bloom += max(s - vec3f(0.25 + u.p0 * 0.65), vec3f(0.0));
+    let dir = vec2f(cos(a), sin(a));
+    // Two rings rather than one: the near ring carries the core, the far one
+    // the spread. A single radius gave a hard halo with nothing to vary.
+    let s1 = sampleSource(clamp(uv + dir * inner, vec2f(0.0), vec2f(1.0)));
+    let s2 = sampleSource(clamp(uv + dir * outer, vec2f(0.0), vec2f(1.0)));
+    let l1 = max(dot(s1, vec3f(0.2126, 0.7152, 0.0722)) - threshold, 0.0);
+    let l2 = max(dot(s2, vec3f(0.2126, 0.7152, 0.0722)) - threshold, 0.0);
+    bloom += s1 * l1 + s2 * l2 * 0.55;
   }
-  bloom /= 8.0;
-  let tint = mix(vec3f(1.0, 0.42, 0.28), vec3f(1.0, 0.16, 0.08), u.p2);
-  return col + bloom * tint * (0.7 + u.p1 * 1.5);
+  bloom /= 12.4;
+  // Cool blue-white through neutral into the classic red-orange halation, so
+  // the module covers more than one look. It only spanned orange to deep red.
+  let tint = mix(vec3f(0.58, 0.80, 1.0), vec3f(1.0, 0.22, 0.10), u.p2);
+  let amount = clamp(bloom * tint * (1.5 + u.p1 * 3.2), vec3f(0.0), vec3f(1.0));
+  // Screen so a hot core glows outward instead of clipping to a flat plate.
+  return vec3f(1.0) - (vec3f(1.0) - col) * (vec3f(1.0) - amount);
 }
 
 /** BARREL — radial lens warp that goes both ways.
