@@ -60,3 +60,7 @@ docs/preview.png
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+
+# Release artifacts downloaded for local testing (gh release download)
+*.msi
+*-setup.exe
