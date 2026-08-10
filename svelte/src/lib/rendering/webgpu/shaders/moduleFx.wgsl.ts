@@ -485,6 +485,17 @@ fn sampleSource(uv: vec2f) -> vec3f {
   return col;
 }
 
+/* For effects that MOVE the camera. Clamping a sample point that has walked
+   off the frame pins it to one border texel and smears that pixel into a
+   streak, which is the thing that reads as broken. Mirroring continues the
+   shot back on itself instead, so the edge looks like more picture.
+
+   Deliberately not used for blur or bloom taps: those want the edge colour
+   held, and folding bright content back in would invent highlights. */
+fn sampleSourceMirrored(uv: vec2f) -> vec3f {
+  return sampleSource(vec2f(mirrorRepeat(uv.x), mirrorRepeat(uv.y)));
+}
+
 fn sampleFeedback(uv: vec2f) -> vec3f {
   let dims = textureDimensions(feedbackTex);
   if (dims.x < 2u || dims.y < 2u) { return vec3f(0.0); }
@@ -783,7 +794,7 @@ fn effectShake(col: vec3f, uv: vec2f) -> vec3f {
   c.x *= max(u.aspect, 0.0001);
   c = rot2(c, ang);
   c.x /= max(u.aspect, 0.0001);
-  return sampleSource(clamp(c / z + vec2f(0.5) + drift + jit + stepOff, vec2f(0.0), vec2f(1.0)));
+  return sampleSourceMirrored(c / z + vec2f(0.5) + drift + jit + stepOff);
 }
 
 /** Drift cam: a flying dolly move across a cropped frame. The sweep runs on the
@@ -804,7 +815,7 @@ fn effectDrift(col: vec3f, uv: vec2f) -> vec3f {
   ) * dist * 0.6;
   offs += vec2f(sin(u.beat * 1.7), cos(u.beat * 1.1)) * pulse * nudge * (0.03 + nudge * 0.06);
   let z = zoomBase * (1.0 + pulse * nudge * 0.06);
-  return sampleSource(clamp((uv - vec2f(0.5)) / z + vec2f(0.5) + offs, vec2f(0.0), vec2f(1.0)));
+  return sampleSourceMirrored((uv - vec2f(0.5)) / z + vec2f(0.5) + offs);
 }
 
 /** Rack focus: a pull that ALWAYS lands back at sharp — the cosine envelope hits
@@ -914,7 +925,7 @@ fn effectDutch(col: vec3f, uv: vec2f) -> vec3f {
   c = rot2(c, angle);
   c.x /= max(u.aspect, 0.0001);
   let zoom = 1.0 + abs(sin(angle)) * 0.35;
-  return sampleSource(clamp(c / zoom + vec2f(0.5), vec2f(0.0), vec2f(1.0)));
+  return sampleSourceMirrored(c / zoom + vec2f(0.5));
 }
 
 /** Highlight-selective red bloom. p0 = threshold, p1 = spread,
