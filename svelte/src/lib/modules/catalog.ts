@@ -185,7 +185,10 @@ const defs: ModuleDefinition[] = [
   {
     id: 'halation',
     name: 'HALATION',
-    shortName: 'GLOW',
+    // Was 'GLOW'. Every other short name is an abbreviation you can trace back
+    // to the full one (SMPLR/TIMESAMPLER, TAPE/VHS, 2.39/ANAMORPHIC); this was
+    // a different word, so the palette and the rack header read as two effects.
+    shortName: 'HALO',
     accentColor: ACCENTS.halation,
     row: 'bottom',
     category: 'film',
