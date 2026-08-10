@@ -66,6 +66,9 @@ interface BindingScheduleState {
   lastRenderContextTimeSeconds: number;
   nextRenderContextTimeSeconds: number;
   lastChangeKey: string;
+  /** The state half of lastChangeKey — what the binding shows, not how far the
+      timeline has advanced. Tracked separately so a swap can bypass cadence. */
+  lastStateKey: string;
   renderCount: number;
   skippedRenderCount: number;
   lastFrameIntervalMs: number | null;
@@ -378,7 +381,7 @@ export class WebGpuEngine {
   renderAll(frame: TimelineFrame) {
     if (this.paused || !this.device || this.bindings.size === 0) return;
     this.frameCtx.timeline = frame;
-    const scheduled: Array<[string, CanvasBinding, string, string, string]> = [];
+    const scheduled: Array<[string, CanvasBinding, string, string, string, string]> = [];
 
     for (const [id, binding] of this.bindings) {
       // Older injected test bindings predate bindingId; normalize them at the
@@ -390,13 +393,14 @@ export class WebGpuEngine {
         moduleId = this.pgmLiveModuleId;
         sourceId = this.pgmLiveSourceId;
       }
+      const stateKey = this.bindingStateKey(binding, moduleId, sourceId);
       const changeKey = this.bindingChangeKey(binding, moduleId, sourceId, frame);
-      const skipReason = this.bindingSkipReason(id, binding, frame, changeKey);
+      const skipReason = this.bindingSkipReason(id, binding, frame, changeKey, stateKey);
       if (skipReason !== 'none') {
         this.recordSkippedBinding(id, moduleId, skipReason);
         continue;
       }
-      scheduled.push([id, binding, moduleId, sourceId, changeKey]);
+      scheduled.push([id, binding, moduleId, sourceId, changeKey, stateKey]);
     }
 
     if (scheduled.length === 0) return;
@@ -406,9 +410,9 @@ export class WebGpuEngine {
     this.taskExternalTextures = new Map<HTMLVideoElement, GPUExternalTexture>();
     this.videoTextureCache.beginFrame();
     try {
-      for (const [id, binding, moduleId, sourceId, changeKey] of scheduled) {
+      for (const [id, binding, moduleId, sourceId, changeKey, stateKey] of scheduled) {
         this.encodeBinding(encoder, binding, binding.color, moduleId, sourceId);
-        this.recordRenderedBinding(id, moduleId, frame, changeKey);
+        this.recordRenderedBinding(id, moduleId, frame, changeKey, stateKey);
       }
     } finally {
       // GPUExternalTexture objects are task-scoped and must never survive this call.
@@ -429,7 +433,7 @@ export class WebGpuEngine {
   /** Detect wraps once per frame per source, before any binding is encoded: PGM
    * and a preview sharing a source must reach the same cover decision, and the
    * budget must be spent once rather than once per canvas. */
-  private markLoopWraps(scheduled: Array<[string, CanvasBinding, string, string, string]>) {
+  private markLoopWraps(scheduled: Array<[string, CanvasBinding, string, string, string, string]>) {
     const seen = new Set<string>();
     for (const [, , , sourceId] of scheduled) {
       if (seen.has(sourceId)) continue;
@@ -455,6 +459,19 @@ export class WebGpuEngine {
     return !!state && this.frameIndex < state.coverUntilFrame;
   }
 
+  /** WHAT the binding is showing. Excludes anything that advances with the
+      timeline, so a change here always means the card is displaying something
+      stale — a different module, source, parameter set, or canvas size. */
+  private bindingStateKey(binding: CanvasBinding, moduleId: string, sourceId: string) {
+    return [
+      moduleId,
+      sourceId,
+      this.renderParamVersions.get(moduleId) ?? 0,
+      binding.canvas?.width ?? 0,
+      binding.canvas?.height ?? 0
+    ].join(':');
+  }
+
   private bindingChangeKey(
     binding: CanvasBinding,
     moduleId: string,
@@ -466,14 +483,10 @@ export class WebGpuEngine {
       ? Math.floor(video.currentTime * this.previewTargetFps)
       : -1;
     return [
-      moduleId,
-      sourceId,
-      this.renderParamVersions.get(moduleId) ?? 0,
+      this.bindingStateKey(binding, moduleId, sourceId),
       frame.generation,
       frame.fixedStepIndex,
-      sourceTime,
-      binding.canvas?.width ?? 0,
-      binding.canvas?.height ?? 0
+      sourceTime
     ].join(':');
   }
 
@@ -481,12 +494,21 @@ export class WebGpuEngine {
     id: string,
     binding: CanvasBinding,
     frame: TimelineFrame,
-    changeKey: string
+    changeKey: string,
+    stateKey: string
   ): WebGpuRenderDiagnostics['skipReason'] {
     if (binding.active === false) return 'inactive';
     if (id === 'pgm') return 'none';
     const state = this.bindingSchedule.get(id);
     if (!state) return 'none';
+    // Swapping a module changed the colour and title but left the card showing
+    // the old effect until playback started. The cadence gate below is measured
+    // in timeline context time, which does not advance while the transport is
+    // stopped — so it returned 'cadence' forever and the repaint never came.
+    // A change in WHAT the binding shows outranks the frame-rate budget: the
+    // budget exists to cap preview cost during playback, not to hold a stale
+    // picture. Time-driven redraws still fall through to the gate below.
+    if (stateKey !== state.lastStateKey) return 'none';
     const contextTimeSeconds = frame.contextTimeSeconds ?? frame.positionSeconds ?? 0;
     if (contextTimeSeconds + Number.EPSILON < state.nextRenderContextTimeSeconds) return 'cadence';
     if (changeKey === state.lastChangeKey) return 'unchanged';
@@ -497,7 +519,8 @@ export class WebGpuEngine {
     id: string,
     moduleId: string,
     frame: TimelineFrame,
-    changeKey: string
+    changeKey: string,
+    stateKey: string
   ) {
     const previous = this.bindingSchedule.get(id);
     const contextTimeSeconds = frame.contextTimeSeconds ?? frame.positionSeconds ?? 0;
@@ -515,6 +538,7 @@ export class WebGpuEngine {
       lastRenderContextTimeSeconds: contextTimeSeconds,
       nextRenderContextTimeSeconds,
       lastChangeKey: changeKey,
+      lastStateKey: stateKey,
       renderCount: (previous?.renderCount ?? 0) + 1,
       skippedRenderCount: previous?.skippedRenderCount ?? 0,
       lastFrameIntervalMs: intervalMs
