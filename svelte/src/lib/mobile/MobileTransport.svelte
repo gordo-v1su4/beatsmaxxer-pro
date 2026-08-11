@@ -61,6 +61,18 @@
     audioEngine.nudgeKey(delta);
     st = audioEngine.getSoundTouchState();
   }
+
+  function nudgePitch(delta: number) {
+    // Same range the desktop uses: a full octave either way in semitones.
+    const next = Math.max(-12, Math.min(12, st.pitchSemitones + delta));
+    audioEngine.setPitch(next);
+    st = audioEngine.getSoundTouchState();
+  }
+
+  /** Signed, so -2 reads as a transposition rather than as a quantity. */
+  const pitchLabel = $derived(
+    st.pitchSemitones > 0 ? `+${st.pitchSemitones}` : `${st.pitchSemitones}`
+  );
 </script>
 
 <footer class="mt" class:perform>
@@ -119,6 +131,15 @@
         <span class="cell-value">{st.key}</span>
       </span>
       <button type="button" aria-label="Key up" onclick={() => nudgeKey(1)}><Plus size={13} /></button>
+    </div>
+
+    <div class="stepper">
+      <button type="button" aria-label="Pitch down" onclick={() => nudgePitch(-1)}><Minus size={13} /></button>
+      <span class="cell">
+        <span class="cell-label">PITCH</span>
+        <span class="cell-value">{pitchLabel}<em>st</em></span>
+      </span>
+      <button type="button" aria-label="Pitch up" onclick={() => nudgePitch(1)}><Plus size={13} /></button>
     </div>
   </div>
 </footer>
@@ -231,9 +252,18 @@
     margin-left: auto;
   }
 
+  /*
+    Two by two, not four across.
+
+    At 375px, four steppers leave 84px each; the two keys take 48 of that and
+    the readout is left with 36px — which "1.00x" fills exactly, so TEMPO would
+    clip on the narrowest phones. Two rows cost 40px of height and every value
+    stays legible, which is the better trade for controls meant to be used while
+    watching the picture.
+  */
   .rail {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
   }
 

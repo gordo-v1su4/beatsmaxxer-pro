@@ -151,6 +151,34 @@ export class AudioEngine implements IAudioEngine {
       this.stop('restart-near-zero');
     }
     this._starting = true;
+
+    /**
+     * Start the song BEFORE any await.
+     *
+     * iOS only treats `play()` as user-initiated while the gesture that
+     * triggered it is still "active", and that activation does not survive an
+     * `await`. This used to call `ensureContext()` first, so by the time
+     * `play()` ran the gesture was spent, Safari rejected it with
+     * NotAllowedError, the catch below quietly set `useUploadedPlayback = false`
+     * and the transport carried on against the synthetic clock.
+     *
+     * The failure was invisible in the worst way: the timeline still advanced,
+     * so every video kept moving and reacting while the song sat paused — it
+     * looked like an audio bug in the track, not a lost gesture.
+     *
+     * The promise is captured here and awaited in the same place as before, so
+     * the stall detection and the fallback are unchanged.
+     */
+    let pendingPlay: Promise<void> | null = null;
+    if (this._usingUploadedTrack && this.mediaElement) {
+      try {
+        this.mediaElement.currentTime = 0;
+        pendingPlay = this.mediaElement.play();
+      } catch {
+        pendingPlay = null;
+      }
+    }
+
     try {
       await this.ensureContext();
       if (!this.ctx) return;
