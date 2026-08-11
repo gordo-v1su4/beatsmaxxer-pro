@@ -2,8 +2,22 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!--
+			viewport-fit=cover is what makes env(safe-area-inset-*) resolve to
+			anything other than 0. The phone shell pads its top bar, transport and
+			drawer off those insets, so without this the chrome sits under the notch
+			and the home indicator on every iPhone and the padding silently does
+			nothing.
+		-->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="text-scale" content="scale" />
+		<meta name="theme-color" content="#0a0b0c" />
+		<!--
+			The layout sets this too, but only once the client has run: the app is
+			`ssr = false`, so the served HTML carries no title of its own and the tab
+			reads as the bare URL until the bundle boots. Same string in both places.
+		-->
+		<title>BEATSMAXXER PRO</title>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
