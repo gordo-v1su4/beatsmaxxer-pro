@@ -38,6 +38,10 @@
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
   import LoadingSplash from '$lib/components/LoadingSplash.svelte';
+  import MobileShell from '$lib/mobile/MobileShell.svelte';
+  import { isMobileShell, initMobileEnv } from '$lib/mobile/mobileEnv';
+  import { seedMobileQaClips } from '$lib/mobile/mobileSession';
+  import { get } from 'svelte/store';
 
   let splashPhase = $state<'gpu' | 'shaders' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
@@ -50,6 +54,7 @@
       .filter((module) => module !== undefined)
   );
   let unsubHold: (() => void) | undefined;
+  let stopMobileEnv: (() => void) | undefined;
 
   const activeClipSlotCount = $derived($rackTop.length + $rackBottom.length);
 
@@ -62,6 +67,11 @@
 
   onMount(async () => {
     const params = new URLSearchParams(window.location.search);
+    // Decided before the engine starts: which shell mounts determines how many
+    // canvases the engine is about to be asked for — eleven on the rack, one on
+    // the phone. Getting this after init would mean attaching ten canvases and
+    // tearing them straight back down.
+    stopMobileEnv = initMobileEnv();
     const cap = await probeWebGpu();
     capabilities.set(cap);
     if (cap.webgpu) {
@@ -105,7 +115,11 @@
 
     if (params.has('qa')) {
       try {
-        await fetchAndLoadQaMedia();
+        // The phone has one slot and a clip bank; the rack has ten slots and no
+        // bank. Fanning the manifest across slots leaves the phone's grid empty,
+        // so each shell seeds itself the way its own import path would.
+        if (get(isMobileShell)) await seedMobileQaClips();
+        else await fetchAndLoadQaMedia();
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
       }
@@ -117,6 +131,7 @@
 
   onDestroy(() => {
     unsubHold?.();
+    stopMobileEnv?.();
     stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();
@@ -166,11 +181,21 @@
   }
 </script>
 
-<div class="app-viewport">
+<div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
 <LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} />
 <AccessGate />
-<DragGhost />
 <CapabilityGate state={$capabilities} />
+
+<!--
+  Two shells, one engine. The rack below is unchanged; the phone gets its own
+  tree because the rack's smallest honest width is 2552px and no breakpoint
+  closes that gap. DragGhost stays on the desktop side — there is no drag-and-
+  drop surface on the phone to ghost.
+-->
+{#if $isMobileShell}
+  <MobileShell />
+{:else}
+<DragGhost />
 
 <div class="app-shell">
   <TopBar
@@ -250,4 +275,5 @@
     <ArrangeView />
   {/if}
 </div>
+{/if}
 </div>

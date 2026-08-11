@@ -22,6 +22,7 @@ Order: **modules → mobile → arrangement.** Ship/infra items are independent.
 | Bar numbers legible; DROP STEMS to clear imported MIDI | `47db8ae` |
 | HALATION keyed off luminance, two-ring bloom, cool→warm range | `cedcca9` |
 | AUDIO lane marks where onset analysis stops | `a24d7da` |
+| Mobile shell (#2) — phone surface, first complete pass | — |
 
 ---
 
@@ -108,44 +109,68 @@ Ask before starting the arrangement phase, so it can be scoped in one pass.
 
 ---
 
-## Mobile (#2) — NEXT SESSION, start here
+## Mobile (#2) — first pass shipped, now needs Gordo's eyes
 
-A *representation* of the app, not the whole app: one video at a time,
-swipeable full-screen module cards, portrait to prepare, **landscape to
-perform**. References: beat-surfer v1/v2 prototypes in `test_media`, plus two
-mobile drawer shells Gordo works from.
+Built as a **second component tree, not a breakpoint**. `svelte/src/lib/mobile/`
+is the whole surface; `+page.svelte` picks a shell and the two share nothing but
+the engine. The rack is untouched — verified at 1440x900: still 10 slots, 11
+canvases, 1729px wide.
 
-**Route: responsive layout of the existing Svelte app**, shipping through the
-same Vercel deploy. Not native iOS — that package (`docs/iphone`) was merged
-and reverted as dated. Still readable at commit `1088907` if its UX thinking is
-worth mining, but do not revive the Swift/TestFlight plan.
+### The shape it took
+- **One live canvas, ever.** `MobileStage` mounts `pgm` and nothing else.
+  Measured: 1 canvas on the phone against 11 on the rack. Anywhere the desktop
+  shows a module preview, the phone draws a **static poster** —
+  `ModulePosterTile` hand-draws a glyph per effect at 28x20/1.8 stroke (exactly
+  2x `FoldGlyph`'s 14x10/0.9, so INCEPTION reuses the rack's own diagram).
+- **One video, ever.** `mobileSession.ts` rewrites the rack to a single slot
+  (`top-0`) and swaps which effect occupies it. This works with no engine change
+  because `videoLayers` is keyed by *slot*, and `PgmDirector.normalizeSelection`
+  already follows the stable slot across an effect replacement — so paging
+  modules changes the look without reloading the video.
+- **Row affinity is deliberately ignored** on the phone. `top`/`bottom` is a
+  desktop layout convention; honouring it would have forced a second decode lane
+  purely to host bottom-row effects.
+- **The module editor is a swipe-up sheet, not a screen.** Measured portrait:
+  62% of viewport, resting at a 76px peek, leaving 309px of picture live above
+  it. Landscape it becomes a 46%-width right panel instead, because a bottom
+  sheet would cover the thing you are dialling.
+- **Drawer matches the reference exactly**: 319px = 85.1% of 375,
+  `rgba(12,12,12,0.6)`, `blur(20px)`, `transform 0.3s cubic-bezier(0.2,0,0,1)`.
+- **Advance is musical, not clip-driven.** `VideoPool` sets `video.loop = true`,
+  so a rack clip never fires `ended` — LINEAR/RANDOM run off the bar counter
+  (`advanceBars`, default 8), the same way PGM cuts already quantise.
 
-Gordo wants this done fast and is happy to use **subagents** to parallelise.
+### Two things that had to change outside `lib/mobile/`
+- **`+layout.ts` sets `ssr = false`.** `attachCanvas` awaits device init before
+  registering its binding, so a rack that mounts for one frame and unmounts
+  registers ten bindings *after* their `detachCanvas` already ran — ten ghost
+  canvases for the life of the session. The shell must be known before the first
+  render. Nothing was server-rendered anyway, and `adapter-static` already emits
+  `fallback: 'index.html'`, so the Vercel deploy shape is unchanged (verified:
+  build succeeds, `index.html` is a 1.3KB shell with no rack markup).
+- **`touch-action` now exists.** The app had none anywhere, so a knob drag and
+  the browser's pan gesture both claimed the first 10px of every stroke.
 
-### What the layout is up against
-Measured on desktop: each rack module renders at a natural **420px**, five per
-row = **2191px**, plus **361px** of rails = **2552px** total. That is the whole
-problem in one number — the desktop rack cannot shrink to a phone, which is why
-mobile has to be a different arrangement rather than a responsive squeeze. Below
-about 1280 the module labels stop being readable, which Gordo confirmed by eye.
+### Measured
+375x812: document width **375px, down from 870** — no horizontal scroll. **0 of
+49 controls under 44px** across the sheet and all three drawer tabs. Slider
+drag (not just tap) moves a param. Import → poster → stage → ON AIR works end to
+end and produces exactly one `<video>`. 850x390 landscape: perform posture, no
+overflow, transport floating over the picture. `svelte-check` 0 errors, 307
+unit tests pass, production build clean.
 
-### Useful entry points
-- `svelte/src/routes/+page.svelte` — mounts `TopBar`, `PgmRail`, `MainViewer`,
-  `RackSlot`, `ArrangeView`, and the overlays.
-- `svelte/src/lib/components/CompactModule.svelte` — already a condensed module
-  presentation; the closest existing thing to a phone card.
-- `svelte/src/lib/stores/rackUi.ts` — `moduleCollapsed`, `fxLibOpen`,
-  `pgmRailOpen`, `viewMode`, `topRowCompact`, `bottomRowCompact`. The app
-  already has a notion of compact/collapsed state to build on.
-- `resize_window` in the browser tools does a mobile preset (375x812) with touch
-  emulation — reload after switching so load-time device gates re-run.
-
-### Watch for
-- WebGPU on mobile Safari/Chrome is not a given; `probeWebGpu()` already gates
-  it and `CapabilityGate` renders the fallback. Decide early what the phone does
-  when WebGPU is absent.
-- The splash (`LoadingSplash`) and `AccessGate` are both fixed-position overlays
-  sized for desktop; check them at 375px.
+### Open / needs a decision
+- **Hosted rhythm analysis is off on the phone.** The desktop gates it behind a
+  per-upload disclosure that has no mobile home yet, so mobile song loads run
+  local realtime (`RHY·RT`) and get the weaker beat grid.
+- **`advanceBars` is fixed at 8** with no UI. It wants to be a control, or to
+  follow arrangement sections once #10 is fixed.
+- **WebGPU-absent path is written but unexercised** — `NoGpuPanel` renders in
+  place of the picture and `CapabilityGate` stands down when the phone shell is
+  up, but no real GPU-less device has been tested against it.
+- The in-app browser pane does not composite while hidden, so **rAF never runs
+  and the loading splash never dismisses there**. Everything above was measured
+  through the DOM; a real device pass is still owed.
 
 ---
 

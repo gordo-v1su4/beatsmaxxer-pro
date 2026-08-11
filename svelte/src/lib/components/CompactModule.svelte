@@ -19,6 +19,11 @@
   import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
+  // The condensed button/slider table used to be declared here, where only the
+  // rack could see it. The phone renders the same parameters at four times the
+  // size, so it moved somewhere both surfaces import from — the values are
+  // unchanged, and a new variant now lands on both at once.
+  import { COMPACT_CONTROLS, primaryTolerance } from '$lib/mobile/moduleControlSpecs';
 
   interface Props {
     mod: ModuleDefinition;
@@ -53,208 +58,12 @@
   const modulePresets = $derived(presetsForModule(mod.id));
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
 
-  const COMPACT_CONTROLS: Record<
-    string,
-    {
-      buttons: { label: string; set: Record<string, number> }[];
-      primary: string;
-      sliders: { param: string; label: string }[];
-      toggle?: { param: string; label: string };
-    }
-  > = {
-    punch: {
-      buttons: [
-        { label: 'IN', set: { dir: 10 } },
-        { label: 'ALT', set: { dir: 50 } },
-        { label: 'OUT', set: { dir: 90 } }
-      ],
-      primary: 'dir',
-      sliders: [
-        { param: 'amt', label: 'AMOUNT' },
-        { param: 'snap', label: 'SNAP' }
-      ]
-    },
-    shake: {
-      buttons: [
-        { label: 'WALK', set: { impact: 22, hand: 22, sway: 15 } },
-        { label: 'RUN', set: { impact: 48, hand: 45, sway: 30 } },
-        { label: 'CHASE', set: { impact: 72, hand: 68, sway: 50 } },
-        { label: 'RIOT', set: { impact: 100, hand: 100, sway: 85 } }
-      ],
-      primary: 'impact',
-      sliders: [
-        { param: 'hand', label: 'HANDHELD' },
-        { param: 'sway', label: 'SWAY' }
-      ]
-    },
-    orbit: {
-      buttons: [
-        { label: 'SLOW', set: { spd: 15, drift: 32, nudge: 20 } },
-        { label: 'MED', set: { spd: 45, drift: 55, nudge: 40 } },
-        { label: 'FAST', set: { spd: 72, drift: 75, nudge: 60 } },
-        { label: 'WARP', set: { spd: 100, drift: 100, nudge: 90 } }
-      ],
-      primary: 'spd',
-      sliders: [
-        { param: 'drift', label: 'DRIFT' },
-        { param: 'nudge', label: 'NUDGE' }
-      ]
-    },
-    focus: {
-      buttons: [
-        { label: 'SOFT', set: { pulse: 22, amt: 18, soft: 30 } },
-        { label: 'PULL', set: { pulse: 52, amt: 30, soft: 45 } },
-        { label: 'HARD', set: { pulse: 78, amt: 50, soft: 60 } },
-        { label: 'BLIND', set: { pulse: 100, amt: 88, soft: 95 } }
-      ],
-      primary: 'pulse',
-      sliders: [
-        { param: 'amt', label: 'AMOUNT' },
-        { param: 'soft', label: 'BLOOM' }
-      ],
-      toggle: { param: 'xeye', label: 'XEYE' }
-    },
-    grain: {
-      buttons: [
-        { label: '16MM', set: { size: 25, amount: 30, drift: 15 } },
-        { label: 'GATE', set: { size: 55, amount: 65, drift: 35 } },
-        { label: 'WEAVE', set: { size: 40, amount: 50, drift: 70 } }
-      ],
-      primary: 'amount',
-      sliders: [
-        { param: 'size', label: 'SIZE' },
-        { param: 'drift', label: 'DRIFT' }
-      ]
-    },
-    dutch: {
-      buttons: [
-        { label: '5°', set: { tilt: 25, drift: 30, snap: 20 } },
-        { label: 'DRIFT', set: { tilt: 55, drift: 55, snap: 35 } },
-        { label: 'SNAP', set: { tilt: 70, drift: 40, snap: 85 } }
-      ],
-      primary: 'tilt',
-      sliders: [
-        { param: 'drift', label: 'DRIFT' },
-        { param: 'snap', label: 'SNAP' }
-      ]
-    },
-    anamorphic: {
-      buttons: [
-        { label: '2.39', set: { bars: 60, zoom: 40, flare: 25 } },
-        { label: 'FLARE', set: { bars: 55, zoom: 35, flare: 70 } },
-        { label: 'CROP', set: { bars: 70, zoom: 75, flare: 15 } }
-      ],
-      primary: 'bars',
-      sliders: [
-        { param: 'zoom', label: 'CROP' },
-        { param: 'flare', label: 'FLARE' }
-      ]
-    },
-    halation: {
-      buttons: [
-        { label: 'SOFT', set: { threshold: 40, spread: 35, tint: 30 } },
-        { label: 'FLARE', set: { threshold: 60, spread: 55, tint: 50 } },
-        { label: 'HOT', set: { threshold: 75, spread: 70, tint: 40 } }
-      ],
-      primary: 'threshold',
-      sliders: [
-        { param: 'spread', label: 'SPREAD' },
-        { param: 'tint', label: 'TINT' }
-      ]
-    },
-    // amount is signed around 50: PINCH sits below it, BULGE and FISH above.
-    // PUMP leaves the warp strong but hands it to the beat gate.
-    bulge: {
-      buttons: [
-        { label: 'PINCH', set: { amount: 22, center: 50, falloff: 55, beat: 0 } },
-        { label: 'BULGE', set: { amount: 68, center: 50, falloff: 55, beat: 0 } },
-        { label: 'FISH', set: { amount: 92, center: 50, falloff: 40, beat: 0 } },
-        { label: 'PUMP', set: { amount: 85, center: 50, falloff: 60, beat: 85 } }
-      ],
-      primary: 'amount',
-      sliders: [
-        { param: 'center', label: 'CENTER' },
-        { param: 'falloff', label: 'FALL' },
-        { param: 'beat', label: 'BEAT' }
-      ]
-    },
-    vhs: {
-      buttons: [
-        { label: 'CLEAN', set: { tracking: 15, chroma: 25, noise: 15, beat: 15 } },
-        { label: 'WORN', set: { tracking: 50, chroma: 55, noise: 40, beat: 35 } },
-        { label: 'GLITCH', set: { tracking: 45, chroma: 60, noise: 35, beat: 80 } },
-        { label: 'WRECK', set: { tracking: 85, chroma: 80, noise: 70, beat: 100 } }
-      ],
-      primary: 'tracking',
-      sliders: [
-        { param: 'chroma', label: 'CHROMA' },
-        { param: 'beat', label: 'BEAT' }
-      ]
-    },
-    prism: {
-      buttons: [
-        { label: 'EDGE', set: { split: 30, angle: 50, edge: 35 } },
-        { label: 'RAIN', set: { split: 55, angle: 35, edge: 50 } },
-        { label: 'HEAVY', set: { split: 75, angle: 65, edge: 45 } }
-      ],
-      primary: 'split',
-      sliders: [
-        { param: 'angle', label: 'ANGLE' },
-        { param: 'edge', label: 'EDGE' }
-      ]
-    },
-    // Twelve folds, matching SPEEDRAMP's shape density. `fold` steps in
-    // 100/11 so each button lands exactly on one shader branch.
-    mirror: {
-      buttons: [
-        { label: 'MIR L', set: { fold: 0, offset: 50, spin: 50, beat: 20 } },
-        { label: 'MIR R', set: { fold: 9, offset: 50, spin: 50, beat: 20 } },
-        { label: 'MIR D', set: { fold: 18, offset: 50, spin: 50, beat: 25 } },
-        { label: 'MIR U', set: { fold: 27, offset: 50, spin: 50, beat: 25 } },
-        { label: 'QUAD', set: { fold: 36, offset: 50, spin: 50, beat: 30 } },
-        { label: 'SLB V', set: { fold: 45, offset: 38, spin: 50, beat: 35 } },
-        { label: 'SLB H', set: { fold: 55, offset: 38, spin: 50, beat: 35 } },
-        { label: 'BOX', set: { fold: 64, offset: 34, spin: 50, beat: 40 } },
-        { label: 'COR A', set: { fold: 73, offset: 50, spin: 50, beat: 30 } },
-        { label: 'COR B', set: { fold: 82, offset: 50, spin: 50, beat: 30 } },
-        { label: 'TUNL', set: { fold: 91, offset: 30, spin: 45, beat: 70 } },
-        { label: 'SPIN', set: { fold: 100, offset: 42, spin: 62, beat: 55 } }
-      ],
-      primary: 'fold',
-      sliders: [
-        { param: 'offset', label: 'FOLD POS' },
-        { param: 'beat', label: 'BEAT' }
-      ]
-    },
-    lens: {
-      buttons: [
-        { label: 'FISH', set: { amount: 95, zoom: 55, edge: 55, beat: 30 } },
-        { label: 'PEEP', set: { amount: 100, zoom: 20, edge: 85, beat: 25 } },
-        { label: 'TELE', set: { amount: 15, zoom: 65, edge: 30, beat: 20 } },
-        { label: 'PUMP', set: { amount: 70, zoom: 50, edge: 45, beat: 85 } }
-      ],
-      primary: 'amount',
-      sliders: [
-        { param: 'zoom', label: 'ZOOM' },
-        { param: 'beat', label: 'BEAT' }
-      ]
-    }
-  };
-
   const spec = $derived(COMPACT_CONTROLS[mod.id]);
 
   /** Half the closest gap between this module's own preset values. A fixed
    * tolerance lit up neighbouring buttons once a module had enough presets to
    * space them under 18 apart — INCEPTION's twelve folds sit 9.09 apart. */
-  const activeTolerance = $derived.by(() => {
-    const values = (spec?.buttons ?? [])
-      .map((btn) => btn.set[spec!.primary])
-      .filter((value): value is number => typeof value === 'number')
-      .sort((a, b) => a - b);
-    let gap = Infinity;
-    for (let i = 1; i < values.length; i++) gap = Math.min(gap, values[i]! - values[i - 1]!);
-    return Number.isFinite(gap) ? Math.max(1, gap / 2) : 9;
-  });
+  const activeTolerance = $derived(primaryTolerance(spec?.buttons ?? [], spec?.primary ?? ''));
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter(isVideoFile);

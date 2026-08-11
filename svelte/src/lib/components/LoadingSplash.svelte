@@ -64,10 +64,72 @@
 {/if}
 
 <style>
+  /*
+   * Phone sizing is driven by these properties rather than by a duplicated set
+   * of rules. Two things break at phone size: the title is `white-space:
+   * nowrap` with a 32px floor, so BEATSMAXXER measures ~10x its font size and
+   * runs off a narrow screen; and in landscape there are ~390px of height for a
+   * title that wants to be 6.2vw of an 850px viewport. Both are fixed by
+   * scaling the type against whichever axis is scarcer.
+   *
+   * Two switches, because there are two ways to be the phone: an actual phone
+   * (media query) and the review path — `?mobile=1` on a desktop browser, which
+   * mounts the shell but still reports a fine pointer and a wide window.
+   */
+  .splash {
+    --s-title: clamp(32px, 6.2vw, 86px);
+    --s-pro: clamp(12px, 2.1vw, 28px);
+    --s-pro-track: 0.3em;
+    --s-phase-track: 0.3em;
+    --s-detail: 10px;
+    --s-detail-track: 0.16em;
+    --s-stage-pad: 0px;
+    --s-stage-w: min(1100px, 92vw);
+    --s-readout-w: min(420px, 80vw);
+    --s-readout-mt: clamp(22px, 4vh, 46px);
+    --s-seg-h: 9px;
+  }
+
+  @media (max-width: 820px), (pointer: coarse) and (max-height: 500px) {
+    .splash {
+      /* vh participates so the word shrinks when the phone lies down. */
+      --s-title: clamp(24px, min(8.4vw, 13vh), 64px);
+      /* 11px is the phone type floor; the vw term only takes over above ~420px. */
+      --s-pro: clamp(11px, 2.6vw, 20px);
+      --s-pro-track: 0.24em;
+      --s-phase-track: 0.24em;
+      --s-detail: 11px;
+      --s-stage-pad: 0 14px;
+      --s-stage-w: min(1100px, 100%);
+      --s-readout-w: min(420px, 100%);
+      --s-readout-mt: clamp(18px, 4vh, 40px);
+      --s-seg-h: 8px;
+    }
+  }
+
+  :global(.mobile-shell) .splash,
+  :global(.mobile-shell-active) .splash {
+    --s-title: clamp(24px, min(8.4vw, 13vh), 64px);
+    --s-pro: clamp(11px, 2.6vw, 20px);
+    --s-pro-track: 0.24em;
+    --s-phase-track: 0.24em;
+    --s-detail: 11px;
+    --s-detail-track: 0.12em;
+    --s-stage-pad: 0 14px;
+    --s-stage-w: min(1100px, 100%);
+    --s-readout-w: min(420px, 100%);
+    --s-readout-mt: clamp(18px, 4vh, 40px);
+    --s-seg-h: 8px;
+  }
+
   .splash {
     position: fixed;
     inset: 0;
     z-index: 4200;
+    /* The card centres inside the safe area, so nothing lands under a notch
+       when the phone is on its side. */
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -94,7 +156,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: min(1100px, 92vw);
+    width: var(--s-stage-w);
+    padding: var(--s-stage-pad);
   }
 
   /* One baseline, so PRO sits at the end of the word rather than under it. */
@@ -110,7 +173,7 @@
   }
 
   .half {
-    font-size: clamp(32px, 6.2vw, 86px);
+    font-size: var(--s-title);
     letter-spacing: 0.01em;
     background: linear-gradient(180deg, #ffffff 0%, #a7fff2 26%, #2dd4bf 54%, #0d9488 82%, #0b5f57 100%);
     -webkit-background-clip: text;
@@ -138,9 +201,9 @@
   /* Smaller, and after the word — not stacked under it. */
   .pro {
     margin-left: clamp(7px, 0.9vw, 15px);
-    font-size: clamp(12px, 2.1vw, 28px);
+    font-size: var(--s-pro);
     font-weight: 600;
-    letter-spacing: 0.30em;
+    letter-spacing: var(--s-pro-track);
     color: #7fe8dc;
     animation: scoot 440ms cubic-bezier(0.2, 0.9, 0.25, 1) 680ms both;
   }
@@ -172,8 +235,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: min(420px, 80vw);
-    margin-top: clamp(22px, 4vh, 46px);
+    width: var(--s-readout-w);
+    margin-top: var(--s-readout-mt);
     animation: fade-in 400ms ease-out 950ms both;
   }
 
@@ -182,7 +245,7 @@
     font-family: var(--font-ui), system-ui, sans-serif;
     font-size: 11px;
     font-weight: 500;
-    letter-spacing: 0.30em;
+    letter-spacing: var(--s-phase-track);
   }
 
   /* Segmented power meter: one block per preview pipeline. */
@@ -195,7 +258,7 @@
 
   .seg {
     flex: 1 1 0;
-    height: 9px;
+    height: var(--s-seg-h);
     background: #0e1c1b;
     box-shadow: inset 0 0 0 1px #16302d;
     transition: background 140ms linear, box-shadow 140ms linear;
@@ -222,8 +285,8 @@
   .detail {
     color: #5c6a72;
     font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 10px;
-    letter-spacing: 0.16em;
+    font-size: var(--s-detail);
+    letter-spacing: var(--s-detail-track);
   }
 
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

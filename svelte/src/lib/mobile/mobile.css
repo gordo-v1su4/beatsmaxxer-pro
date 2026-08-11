@@ -1,0 +1,219 @@
+/*
+ * Phone shell stylesheet.
+ *
+ * Imported once from app.css. Everything here is either (a) a token the phone
+ * components read, or (b) a targeted neutralisation of a desktop rule that only
+ * applies while the phone shell is actually mounted.
+ *
+ * The scope hook is a class on the shell wrapper. Two names are honoured
+ * because the page wrapper currently carries `mobile-shell-active` while the
+ * brief for these tokens named `mobile-shell` — supporting both means neither
+ * surface breaks if the other is renamed. Whichever element carries it (the
+ * `.app-viewport` wrapper, <body>, or :root) the rules below still resolve,
+ * since each one is written to match the element itself *and* its descendants.
+ *
+ * Nothing here deletes a desktop rule. The rack still needs --app-min-width and
+ * its horizontal scroll; the phone simply overrides both inside its own scope.
+ */
+
+/* ─────────────────────────── tokens ─────────────────────────── */
+
+:is(.mobile-shell, .mobile-shell-active) {
+	/* Apple's HIG minimum and the floor for every phone hit target here. */
+	--m-tap: 44px;
+	--m-tap-sm: 36px; /* only for controls inside a >=44px padded row */
+
+	/* Type ramp. It bottoms out at 11px: the rack's 6.5–9px labels are read at
+	   arm's length on a desktop monitor, not at 30cm on a phone. */
+	--m-text-xs: 11px;
+	--m-text-sm: 12px;
+	--m-text-md: 13px;
+	--m-text-lg: 15px;
+	--m-text-xl: 19px;
+	--m-text-2xl: 24px;
+	/* Anything the user types into. Below 16px iOS zooms the page on focus and
+	   the layout never comes back. */
+	--m-text-input: 16px;
+
+	--m-track: 0.16em; /* label letterspacing */
+	--m-track-wide: 0.26em;
+
+	/* Surfaces — same near-black family as the rack. */
+	--m-bg: #0a0b0c;
+	--m-sheet: #131416;
+	--m-raised: #17191c;
+	--m-sunken: #070809;
+	--m-line: #0d0e0f;
+	--m-line-soft: #1e2226;
+	--m-line-lit: #2a3138;
+
+	--m-ink: #e5e7eb;
+	--m-ink-dim: #7a8090;
+	--m-ink-faint: #4a515c;
+
+	--m-accent: #2dd4bf;
+	--m-accent-soft: #99f6e4;
+	--m-accent-deep: #0d2b28;
+	--m-warn: #fca5a5;
+
+	/* Height of the phone top bar, so overlays can clear it without measuring.
+	   MobileTopBar owns the real number; this is the shared default it renders
+	   at today (45px) and the one place to change if that bar is re-sized. */
+	--m-topbar-h: 45px;
+
+	--m-radius: 2px;
+	--m-gap: 10px;
+	--m-pad: 14px;
+
+	/* Overlay scrim + sheet shadow, shared so every phone surface stacks the
+	   same way over the picture. */
+	--m-scrim: rgba(4, 6, 7, 0.72);
+	--m-sheet-shadow: 0 -18px 48px rgba(0, 0, 0, 0.72);
+	--m-card-shadow: 0 18px 46px rgba(0, 0, 0, 0.78);
+
+	/* Safe areas, resolved once. `env()` inside a calc chain in twenty places is
+	   how insets get forgotten; read these instead. */
+	--m-safe-top: env(safe-area-inset-top, 0px);
+	--m-safe-right: env(safe-area-inset-right, 0px);
+	--m-safe-bottom: env(safe-area-inset-bottom, 0px);
+	--m-safe-left: env(safe-area-inset-left, 0px);
+
+	/* Chrome that has to clear the notch/home indicator adds these. */
+	--m-inset-top: calc(var(--m-safe-top) + 8px);
+	--m-inset-bottom: calc(var(--m-safe-bottom) + 8px);
+}
+
+/* ──────────────────── page-level touch behaviour ───────────────────
+   These are unscoped on purpose: rubber-band scroll and pinch-zoom are
+   properties of the document, and the desktop rack is unaffected by either
+   (a mouse never triggers them). */
+
+html,
+body {
+	/* No rubber-band. The phone shell owns its own scroll containers, and the
+	   bounce at the top of the page drags the whole performance surface. */
+	overscroll-behavior: none;
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+/*
+ * touch-action baseline.
+ *
+ * The app had none anywhere, which is a real bug on touch, not a nicety: a
+ * pointerdown on a knob starts a rotation *and* the browser starts a pan, so
+ * the first 10px of the gesture is stolen and the knob jumps when the browser
+ * finally yields. `manipulation` also removes the 300ms double-tap delay.
+ */
+button,
+[role='button'],
+select,
+label,
+summary {
+	touch-action: manipulation;
+}
+
+/* Anything dragged along an axis must own the gesture outright. */
+.knob-hit,
+.knob-wrap,
+input[type='range'],
+[data-drag],
+.m-drag {
+	touch-action: none;
+}
+
+/* ───────────── desktop sizing, neutralised inside the shell ─────────────
+   The rack is 1721px at its narrowest honest width, and .app-viewport scrolls
+   to reach it. On a 375px phone that produced an 870px-wide document with a
+   horizontal scrollbar. None of it is deleted — it is overridden only while the
+   phone shell is mounted. */
+
+:is(.mobile-shell, .mobile-shell-active) {
+	--app-min-width: 100%;
+	--app-min-height: 100%;
+}
+
+:is(.mobile-shell, .mobile-shell-active).app-viewport,
+:is(.mobile-shell, .mobile-shell-active) .app-viewport {
+	width: 100%;
+	max-width: 100%;
+	/* dvh, not vh: iOS Safari's 100vh is the *expanded* viewport, so the bottom
+	   of the shell sits under the URL bar until the user scrolls. */
+	height: 100dvh;
+	max-height: 100dvh;
+	overflow: hidden;
+	overscroll-behavior: none;
+}
+
+:is(.mobile-shell, .mobile-shell-active).app-shell,
+:is(.mobile-shell, .mobile-shell-active) .app-shell {
+	min-width: 0;
+	width: 100%;
+	max-width: 100%;
+	min-height: 0;
+	overflow: hidden;
+}
+
+/* Belt and braces: anything the shell renders is bounded by the viewport, so a
+   single wide child cannot re-introduce the horizontal scroll. */
+:is(.mobile-shell, .mobile-shell-active) {
+	max-width: 100%;
+	overflow-x: hidden;
+}
+
+/* ───────────────────────── chrome feel ───────────────────────── */
+
+:is(.mobile-shell, .mobile-shell-active) {
+	-webkit-tap-highlight-color: transparent;
+	/* Chrome is not a document: a long-press on the transport should not select
+	   the label. Inputs opt back in below. */
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+:is(.mobile-shell, .mobile-shell-active) :is(input, textarea, [contenteditable='true']) {
+	-webkit-user-select: text;
+	user-select: text;
+	/* iOS zooms into any field under 16px and does not zoom back out. */
+	font-size: max(var(--m-text-input), 1em);
+}
+
+/* ───────────────────────── helpers ─────────────────────────
+   Small, additive classes the phone components share. Nothing here is required
+   to make a component work; they exist so five components do not each invent
+   their own 44px row or their own uppercase label. */
+
+.m-tap {
+	min-width: var(--m-tap);
+	min-height: var(--m-tap);
+}
+
+.m-label {
+	font-family: var(--font-ui);
+	font-size: var(--m-text-xs);
+	font-weight: 500;
+	letter-spacing: var(--m-track);
+	text-transform: uppercase;
+	color: var(--m-ink-dim);
+	line-height: 1;
+}
+
+.m-safe-top {
+	padding-top: var(--m-safe-top);
+}
+.m-safe-bottom {
+	padding-bottom: var(--m-safe-bottom);
+}
+.m-safe-x {
+	padding-left: var(--m-safe-left);
+	padding-right: var(--m-safe-right);
+}
+
+/* Scroll containers inside the shell: contain the bounce so a flick at the end
+   of a list does not drag the shell behind it. */
+.m-scroll {
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	-webkit-overflow-scrolling: touch;
+	touch-action: pan-y;
+}
