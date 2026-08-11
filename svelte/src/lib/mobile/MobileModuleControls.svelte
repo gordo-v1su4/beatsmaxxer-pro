@@ -311,8 +311,11 @@
   .group {
     display: flex;
     flex-direction: column;
-    gap: 9px;
-    padding: 10px 12px 12px;
+    /* Tightened from 9/10/12. The rack packs its sections at 6px and still
+       reads; the phone was carrying desktop-sized air on a screen with a
+       fraction of the height, which is what made every panel feel thick. */
+    gap: 7px;
+    padding: 7px 10px 9px;
     background: linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
     border-top: 1px solid #23262a;
     border-bottom: 2px solid #0b0c0d;

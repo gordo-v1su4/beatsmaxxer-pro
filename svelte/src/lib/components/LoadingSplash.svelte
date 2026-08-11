@@ -83,6 +83,44 @@
     const key = new URLSearchParams(window.location.search).get('face') ?? 'anton';
     return FACES[key] ?? FACES.anton!;
   });
+
+  /**
+   * Terminal block-letter wordmark, as an alternative to the chrome one.
+   *
+   * It belongs here more than it might look: the card already ends in a
+   * monospace boot log, so a wordmark drawn out of box-drawing characters reads
+   * as the same machine talking rather than as a second design.
+   *
+   * Column count is the whole constraint. Set on one line, BEATSMAXXER is about
+   * 90 columns and cannot fit a 375px phone at any readable size. Stacked, the
+   * wider half — MAXXER — is 51, which does. Both halves are padded to the same
+   * 51 columns so the two blocks share an edge instead of centring two
+   * different widths against each other.
+   */
+  const ASCII_COLUMNS = 51;
+
+  const ASCII_BEATS = [
+    '██████╗ ███████╗ █████╗ ████████╗███████╗          ',
+    '██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██╔════╝          ',
+    '██████╔╝█████╗  ███████║   ██║   ███████╗          ',
+    '██╔══██╗██╔══╝  ██╔══██║   ██║   ╚════██║          ',
+    '██████╔╝███████╗██║  ██║   ██║   ███████║          ',
+    '╚═════╝ ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚══════╝          '
+  ].join('\n');
+
+  const ASCII_MAXXER = [
+    '███╗   ███╗ █████╗ ██╗  ██╗██╗  ██╗███████╗██████╗ ',
+    '████╗ ████║██╔══██╗╚██╗██╔╝╚██╗██╔╝██╔════╝██╔══██╗',
+    '██╔████╔██║███████║ ╚███╔╝  ╚███╔╝ █████╗  ██████╔╝',
+    '██║╚██╔╝██║██╔══██║ ██╔██╗  ██╔██╗ ██╔══╝  ██╔══██╗',
+    '██║ ╚═╝ ██║██║  ██║██╔╝ ██╗██╔╝ ██╗███████╗██║  ██║',
+    '╚═╝     ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝'
+  ].join('\n');
+
+  const asciiTitle = $derived.by(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('title') === 'ascii';
+  });
 </script>
 
 {#if phase !== 'ready'}

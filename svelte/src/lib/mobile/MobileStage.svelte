@@ -97,9 +97,17 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    gap: 10px;
-    padding: 10px 12px;
+    /*
+      Top-aligned, not centred. A 16:9 picture in a 9:19.5 viewport leaves
+      ~500px spare whatever you do; centring split that into two dead bands, one
+      above the picture and one below it, so the whole screen read as loose.
+      Pinned to the top the spare collects in a single pool at the bottom —
+      which is exactly where the sheet rises from and where the drawer opens, so
+      it stops being dead space and starts being the gap those things live in.
+    */
+    justify-content: flex-start;
+    gap: 7px;
+    padding: 8px 10px;
     background: var(--m-bg, #0a0b0c);
   }
 

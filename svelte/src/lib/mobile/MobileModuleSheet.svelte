@@ -474,8 +474,10 @@
     z-index: 2;
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 0 12px;
+    /* The position rail is chrome, not content — it was spending 18px of
+       vertical on a row of dots and a fraction. */
+    gap: 8px;
+    padding: 3px 0 7px;
     background: linear-gradient(180deg, rgba(12, 12, 12, 0.85), rgba(12, 12, 12, 0));
   }
 

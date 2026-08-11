@@ -48,6 +48,25 @@
 </script>
 
 {#if show}
+  <!--
+    The backdrop is the point of this, more than the card's position. Without
+    it the note sat *among* the controls — one more panel competing with the
+    picture and the transport, which is why it read as clutter rather than as
+    something to deal with first. Blurring everything behind it makes the card
+    the only thing in focus, and dismissing it is then an obvious single act.
+
+    It is a button so the whole field is a dismiss target and so it is reachable
+    from the keyboard; `aria-hidden` because the close control inside the card
+    already names the action.
+  -->
+  <button
+    class="scrim"
+    type="button"
+    aria-hidden="true"
+    tabindex="-1"
+    onclick={dismiss}
+  ></button>
+
   <aside class="note" aria-label="About the phone version">
     <div class="head">
       <span class="icon" aria-hidden="true"><Monitor size={13} strokeWidth={1.75} /></span>
@@ -75,6 +94,42 @@
 {/if}
 
 <style>
+  /*
+    Sits one layer under the card and covers everything else. The blur radius is
+    deliberately large: at 6-8px the rack behind still reads as UI you could try
+    to use, which is the confusing state. At 16px it is unmistakably parked.
+  */
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 3199;
+    margin: 0;
+    padding: 0;
+    border: none;
+    display: block;
+    background: rgba(6, 8, 9, 0.66);
+    -webkit-backdrop-filter: blur(16px) saturate(0.65);
+    backdrop-filter: blur(16px) saturate(0.65);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    animation: scrim-in 220ms ease-out both;
+  }
+
+  @keyframes scrim-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scrim {
+      animation: none;
+    }
+  }
+
   .note {
     position: fixed;
     /* Clears the phone top bar. The bar owns --m-topbar-h; 48px is the fallback

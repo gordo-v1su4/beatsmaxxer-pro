@@ -1,23 +1,25 @@
 <script lang="ts">
-  import { Play, Square, ChevronLeft, ChevronRight, Upload } from '@lucide/svelte';
+  import { Play, Square, Minus, Plus } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
-  import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
-  import { activeModule, pageModule } from './mobileSession';
+  import { activeModule } from './mobileSession';
   import { isPerformPosture } from './mobileEnv';
 
   /**
-   * The thumb strip.
+   * The thumb strip — transport and the song controls, nothing else.
    *
-   * The desktop top bar is forty controls in a 46px row. This is five, at sizes
-   * a thumb can actually hit, and the one that matters most — the module
-   * stepper — is a persistent pill that stays put underneath every sheet and
-   * drawer. Paging effects is the phone's primary verb; it should never be
-   * something you have to open a panel to do.
+   * Two things left this row. The module stepper pill went because the sheet
+   * header already pages effects with its own arrows, so the name was printed
+   * twice on one screen and the pill was the copy doing less work. LOAD SONG
+   * went because it is a once-per-session action holding permanent real estate,
+   * and the drawer's SONG tab already does it.
+   *
+   * What replaced them is what you actually reach for while an effect is
+   * running: BPM, tempo and key. Every one is a pair of steppers rather than a
+   * field — typing a number on a phone while watching a video is not a thing
+   * anyone does, and a knob needs more travel than this row has.
    */
-
-  let audioInput = $state<HTMLInputElement>();
 
   const td = $derived($transportDisplay);
   const bar = $derived(Math.floor(td.beat / 4) + 1);
@@ -26,44 +28,42 @@
   const accent = $derived(mod?.accentColor ?? '#38bdf8');
   const perform = $derived($isPerformPosture);
 
+  /** Re-read after every mutation; SoundTouch state is not a store. */
+  let st = $state(audioEngine.getSoundTouchState());
+  $effect(() => {
+    void td.beat;
+    void td.playing;
+    st = audioEngine.getSoundTouchState();
+  });
+
+  const TEMPO_MIN = 0.5;
+  const TEMPO_MAX = 2;
+  const TEMPO_STEP = 0.05;
+
   async function togglePlay() {
     if (td.playing) audioEngine.stop();
     else await audioEngine.start();
   }
 
-  async function handleAudio(event: Event) {
-    const input = event.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    input.value = '';
-    if (!file) return;
-    // No options: hosted analysis is opt-in on the desktop behind a consent
-    // dialog, and a phone strip is not the place to ask. Local-only is the
-    // safe default and still gives a real-time beat grid.
-    await audioEngine.loadAudioFile(file);
+  function nudgeBpm(delta: number) {
+    const next = Math.round((td.bpm + delta) * 10) / 10;
+    audioEngine.setBPM(Math.max(60, Math.min(200, next)));
+    st = audioEngine.getSoundTouchState();
+  }
+
+  function nudgeTempo(delta: number) {
+    const next = Math.round((st.tempo + delta) * 100) / 100;
+    audioEngine.setTempo(Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, next)));
+    st = audioEngine.getSoundTouchState();
+  }
+
+  function nudgeKey(delta: number) {
+    audioEngine.nudgeKey(delta);
+    st = audioEngine.getSoundTouchState();
   }
 </script>
 
 <footer class="mt" class:perform>
-  <input
-    bind:this={audioInput}
-    type="file"
-    accept={AUDIO_FILE_ACCEPT}
-    class="file-input"
-    onchange={handleAudio}
-  />
-
-  <!-- The stepper pill. Persistent, thumb-height, accent-coloured: it is how you
-       walk the catalog without taking your eyes off the picture. -->
-  <div class="stepper" style="--accent:{accent}">
-    <button type="button" class="step" aria-label="Previous effect" onclick={() => pageModule(-1)}>
-      <ChevronLeft size={20} />
-    </button>
-    <span class="step-label" style="color:{accent}">{mod?.name ?? ''}</span>
-    <button type="button" class="step" aria-label="Next effect" onclick={() => pageModule(1)}>
-      <ChevronRight size={20} />
-    </button>
-  </div>
-
   <div class="row">
     <button
       type="button"
@@ -72,27 +72,54 @@
       aria-label={td.playing ? 'Stop' : 'Play'}
       onclick={togglePlay}
     >
-      {#if td.playing}<Square size={16} />{:else}<Play size={16} />{/if}
+      {#if td.playing}<Square size={13} />{:else}<Play size={13} />{/if}
     </button>
 
     <div class="beat" class:idle={!td.playing}>
-      <span class="beat-value">{bar}<i>·</i>{beatInBar}</span>
+      <span class="beat-value" style="color:{td.playing ? accent : '#444c56'}">
+        {bar}<i>·</i>{beatInBar}
+      </span>
       <span class="beat-kicker">BAR · BEAT</span>
     </div>
 
     <div class="meters" aria-hidden="true">
       <VUMeter value={td.bassAmp * 100} color={accent} />
       <VUMeter value={td.amplitude * 200} color={accent} />
-      <div class="meter-legend">
-        <span>BASS</span>
-        <span>PEAK</span>
-      </div>
+    </div>
+  </div>
+
+  <!--
+    Three steppers on one rail. Each is [−][ value ][+] so the value is never
+    something you have to type, and the readouts are recessed so they read as
+    the machine telling you where it is rather than as editable fields.
+  -->
+  <div class="rail">
+    <div class="stepper">
+      <button type="button" aria-label="BPM down" onclick={() => nudgeBpm(-1)}><Minus size={13} /></button>
+      <span class="cell">
+        <span class="cell-label">BPM</span>
+        <span class="cell-value">{Math.round(td.bpm)}{#if td.bpmLocked}<em>L</em>{/if}</span>
+      </span>
+      <button type="button" aria-label="BPM up" onclick={() => nudgeBpm(1)}><Plus size={13} /></button>
     </div>
 
-    <button type="button" class="song" onclick={() => audioInput?.click()}>
-      <Upload size={14} />
-      <span>LOAD SONG</span>
-    </button>
+    <div class="stepper">
+      <button type="button" aria-label="Tempo down" onclick={() => nudgeTempo(-TEMPO_STEP)}><Minus size={13} /></button>
+      <span class="cell">
+        <span class="cell-label">TEMPO</span>
+        <span class="cell-value">{st.tempo.toFixed(2)}<em>x</em></span>
+      </span>
+      <button type="button" aria-label="Tempo up" onclick={() => nudgeTempo(TEMPO_STEP)}><Plus size={13} /></button>
+    </div>
+
+    <div class="stepper">
+      <button type="button" aria-label="Key down" onclick={() => nudgeKey(-1)}><Minus size={13} /></button>
+      <span class="cell">
+        <span class="cell-label">KEY</span>
+        <span class="cell-value">{st.key}</span>
+      </span>
+      <button type="button" aria-label="Key up" onclick={() => nudgeKey(1)}><Plus size={13} /></button>
+    </div>
   </div>
 </footer>
 
@@ -101,87 +128,27 @@
     position: relative;
     z-index: 30;
     flex: 0 0 auto;
-    /* Portrait: the shell's body is a flex column and the stage is top-pinned,
-       so the strip claims the slack and settles at the bottom of the viewport —
-       thumb height is the whole point of it. Inert in landscape, where the shell
-       wraps this in its own fixed container. */
     margin-top: auto;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px 12px calc(8px + var(--m-safe-bottom, 0px));
-    background: linear-gradient(180deg, var(--m-sheet, #131416) 0%, var(--m-bg, #0a0b0c) 100%);
-    border-top: 1px solid var(--m-line, #0d0e0f);
+    gap: 7px;
+    padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, #131416 0%, #0a0b0c 100%);
+    border-top: 1px solid #23262a;
     font-family: var(--font-ui);
   }
 
-  /* Landscape: the strip rides over the picture. It deliberately does NOT
-     position itself — MobileShell owns the perform placement (`.mobile-perform-
-     transport`: fixed, its own scrim, its own bottom safe-area padding), and a
-     second fixed box inside it would double the scrim and the inset. This only
-     changes how the strip reads on top of a picture. */
   .mt.perform {
-    gap: 6px;
-    padding: 6px calc(12px + var(--m-safe-right, 0px)) 6px calc(12px + var(--m-safe-left, 0px));
+    gap: 5px;
+    padding: 5px calc(10px + env(safe-area-inset-right, 0px)) 5px
+      calc(10px + env(safe-area-inset-left, 0px));
     background: transparent;
     border-top: none;
   }
-  .mt.perform .stepper,
   .mt.perform .play,
-  .mt.perform .song {
-    /* Over moving video, flat panels disappear; the glass keeps them legible
-       without adding another opaque band across the picture. */
+  .mt.perform .stepper {
     backdrop-filter: blur(10px) saturate(0.8);
     -webkit-backdrop-filter: blur(10px) saturate(0.8);
-  }
-
-  .file-input {
-    display: none;
-  }
-
-  .stepper {
-    display: flex;
-    align-items: center;
-    height: 48px;
-    background: linear-gradient(180deg, #131416, #0d0e0f);
-    border: 1px solid color-mix(in srgb, var(--accent) 26%, #0d0e0f);
-    border-radius: 24px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
-    overflow: hidden;
-  }
-
-  .step {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 46px;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: #7a8390;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .step:active {
-    color: #e2e9f0;
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .step-label {
-    flex: 1 1 auto;
-    min-width: 0;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .row {
@@ -190,42 +157,59 @@
     gap: 10px;
   }
 
+  /*
+    Rectangular and small. It was a 52x48 slab, which on a phone reads as the
+    most important object on screen — it is not; the picture is. 46x30 is still
+    an easy target once the ::after expansion is counted.
+  */
   .play {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 48px;
-    margin: 0;
+    width: 46px;
+    height: 30px;
     padding: 0;
-    border: 1px solid #23282c;
-    border-radius: 3px;
-    background: linear-gradient(180deg, #1c2020, #141818);
+    border: 1px solid;
+    border-color: #26292d #16181a #131416 #16181a;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #202429 0%, #191c20 52%, #141619 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.5);
     color: #6d7784;
     cursor: pointer;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
+  .play::after {
+    content: '';
+    position: absolute;
+    inset: -8px -4px;
+  }
   .play[data-playing='true'] {
-    background: linear-gradient(180deg, #1a2a1a, #121c12);
-    border-color: #22c55e55;
+    border-color: #22c55e44 #16181a #131416 #16181a;
     color: #22c55e;
-    box-shadow: 0 0 10px rgba(34, 197, 94, 0.2);
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.6),
+      inset 0 0 10px rgba(34, 197, 94, 0.14),
+      0 0 8px rgba(34, 197, 94, 0.18);
+  }
+  .play:active {
+    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.7);
   }
 
   .beat {
     display: flex;
     flex-direction: column;
     gap: 1px;
-    min-width: 52px;
+    min-width: 48px;
   }
   .beat-value {
     font-family: var(--font-mono);
-    font-size: 17px;
+    font-size: 16px;
     font-variant-numeric: tabular-nums;
-    color: #cfe0e2;
     line-height: 1;
   }
   .beat-value i {
@@ -233,12 +217,9 @@
     color: #3a4048;
     padding: 0 1px;
   }
-  .beat.idle .beat-value {
-    color: #444c56;
-  }
   .beat-kicker {
     font-size: 11px;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.16em;
     color: #3a4048;
   }
@@ -249,60 +230,94 @@
     gap: 4px;
     margin-left: auto;
   }
-  .meter-legend {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    height: 36px;
-    padding-left: 1px;
-  }
-  .meter-legend span {
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
-    color: #2f353d;
-    line-height: 1;
+
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
   }
 
-  .song {
+  .stepper {
+    display: flex;
+    align-items: stretch;
+    height: 34px;
+    border: 1px solid;
+    border-color: #26292d #16181a #131416 #16181a;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .stepper button {
+    position: relative;
     flex: 0 0 auto;
+    width: 28px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    height: 48px;
-    padding: 0 14px;
-    margin: 0;
-    border: 1px solid #23282c;
-    border-radius: 3px;
-    background: linear-gradient(180deg, #1c2020, #141818);
-    color: #8a939f;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #5a636e;
     cursor: pointer;
-    font-family: var(--font-ui);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-  .song:active {
-    color: #dfe6ee;
+  /* Steppers get pressed repeatedly, so the target reaches well past the paint
+     on the outer edges where the thumb actually lands. */
+  .stepper button::after {
+    content: '';
+    position: absolute;
+    inset: -8px -4px;
+  }
+  .stepper button:active {
+    color: #d8e2ea;
+    background: rgba(255, 255, 255, 0.05);
   }
 
-  /* A phone in landscape is ~390px tall; the legend and the LOAD label are the
-     first things to go when the strip has to share that with the picture. */
+  /* Recessed glass between the two keys. */
+  .cell {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    border-left: 1px solid #0c0d0f;
+    border-right: 1px solid #0c0d0f;
+    background: linear-gradient(180deg, #080a0c, #0d1013 70%, #090b0d);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.75);
+  }
+  .cell-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    color: #3d4550;
+    line-height: 1;
+  }
+  .cell-value {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: #9fe8dc;
+    text-shadow: 0 0 8px rgba(45, 212, 191, 0.35);
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .cell-value em {
+    font-style: normal;
+    font-size: 11px;
+    color: #46525c;
+    padding-left: 1px;
+  }
+
+  /* A phone in landscape is ~390px tall; the kicker is the first thing to go. */
   @media (max-height: 430px) {
-    .mt.perform .meter-legend,
     .mt.perform .beat-kicker {
       display: none;
-    }
-    .mt.perform .song span {
-      display: none;
-    }
-    .mt.perform .song {
-      padding: 0;
-      width: 48px;
     }
   }
 </style>
