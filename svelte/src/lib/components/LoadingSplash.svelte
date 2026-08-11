@@ -15,8 +15,27 @@
    * No webfont and no asset: this has to render instantly and offline inside
    * the Tauri shell, before anything else in the app exists.
    *
+   * Underneath it runs a terminal strip: the boot log, newest line at the
+   * bottom, naming the step that is currently running. Those lines are written
+   * from JS, so they stop updating the instant the main thread blocks — which
+   * is the point, because the line frozen on screen is the thing that is
+   * taking the time.
+   *
+   * The hairline above the log is the liveness proof, and it is the one piece
+   * of this file with a hard technical constraint: it animates `transform`
+   * only, in a plain CSS keyframe, with no JS driving it. Compositor-driven
+   * animations keep running while the main thread is stuck, so it carries on
+   * sweeping through a shader compile that has frozen everything else. Do not
+   * reach for `width`, `left`, `background-position` or a rAF tick here — all
+   * of those live on the main thread and would freeze along with the app,
+   * which turns a stall back into something indistinguishable from a crash.
+   * The segment meter's pre-count charge follows the same rule: it pulses
+   * `opacity` on a pseudo-element rather than swapping `background`.
+   *
    * Add ?splash=hold to keep it up while iterating on the design.
    */
+  import { bootLog } from '$lib/stores/bootLog';
+
   interface Props {
     /** 'gpu' while the adapter/device is acquired, 'shaders' while pipelines
         compile, 'go' to play the exit, 'ready' to unmount. */
@@ -35,13 +54,59 @@
 
   const label = $derived(phase === 'gpu' ? 'ACQUIRING GPU DEVICE' : 'COMPILING SHADERS');
   const detail = $derived(known ? `PREVIEW PIPELINE ${done} / ${total}` : 'INITIALISING');
+
+  // Last five only: the strip is anchored to the bottom of the screen and
+  // grows upward, so an uncapped log would eventually walk over the title.
+  const tail = $derived($bootLog.slice(-5));
+
+  /**
+   * Which display face the wordmark is cut from.
+   *
+   * Five are self-hosted under `static/fonts/` with their licences. They are
+   * genuinely different shapes, not weights of one family, so the wordmark has
+   * to be looked at in each rather than argued about — `?face=bungee` and so on
+   * switches it, and `?splash=hold` keeps the card up while you compare.
+   *
+   * Anton is the default: heavy, condensed and close to the arcade-marquee slab
+   * in the reference art once it is slanted.
+   */
+  const FACES: Record<string, { stack: string; slant: number; track: string }> = {
+    anton: { stack: "'Anton'", slant: -8, track: '0.005em' },
+    archivo: { stack: "'Archivo Black'", slant: -8, track: '-0.005em' },
+    bungee: { stack: "'Bungee'", slant: 0, track: '0.01em' },
+    audiowide: { stack: "'Audiowide'", slant: -6, track: '0.005em' },
+    russo: { stack: "'Russo One'", slant: -8, track: '0.01em' }
+  };
+
+  const face = $derived.by(() => {
+    if (typeof window === 'undefined') return FACES.anton!;
+    const key = new URLSearchParams(window.location.search).get('face') ?? 'anton';
+    return FACES[key] ?? FACES.anton!;
+  });
 </script>
 
 {#if phase !== 'ready'}
-  <div class="splash" class:leaving role="status" aria-live="polite" aria-label="Loading Beatsmaxxer Pro">
+  <div
+    class="splash"
+    class:leaving
+    role="status"
+    aria-live="polite"
+    aria-label="Loading Beatsmaxxer Pro"
+    style="--face:{face.stack};--slant:{face.slant}deg;--face-track:{face.track}"
+  >
+    <span class="grid" aria-hidden="true"></span>
+    <span class="stars" aria-hidden="true"></span>
     <div class="stage">
       <div class="title">
-        <span class="half left">BEATS</span><span class="half right">MAXXER</span><span class="pro">PRO</span>
+        <!-- data-word feeds the ::before extrude layer. `background-clip:text`
+             and `text-shadow` cannot coexist on one element — the shadow paints
+             behind glyphs that are transparent, so the gradient shows straight
+             through it. The solid extrude therefore has to be its own layer
+             sitting behind the clipped face. -->
+        <span class="half left" data-word="BEATS">BEATS</span><span
+          class="half right"
+          data-word="MAXXER">MAXXER</span
+        ><span class="pro">PRO</span>
         <span class="impact" aria-hidden="true"></span>
       </div>
 
@@ -56,6 +121,23 @@
 
         <span class="detail">{detail}</span>
       </div>
+    </div>
+
+    <!-- aria-hidden: the readout above already announces phase and progress
+         through the live region, and five churning log lines on top of that
+         would be noise rather than information. -->
+    <div class="tty" aria-hidden="true">
+      <div class="wire">
+        <span class="shuttle"></span>
+      </div>
+      <ol class="lines">
+        {#each tail as step (step.id)}
+          <li class:done={step.state === 'done'}>
+            <span class="mark">{step.state === 'done' ? 'ok' : '>'}</span>
+            <span class="text">{step.label}{step.note ? ` ${step.note}` : ''}</span>
+          </li>
+        {/each}
+      </ol>
     </div>
 
     <div class="scanlines" aria-hidden="true"></div>
@@ -88,6 +170,9 @@
     --s-readout-w: min(420px, 80vw);
     --s-readout-mt: clamp(22px, 4vh, 46px);
     --s-seg-h: 9px;
+    --s-tty: 12px;
+    --s-tty-pad: 20px;
+    --s-tty-w: min(640px, 100%);
   }
 
   @media (max-width: 820px), (pointer: coarse) and (max-height: 500px) {
@@ -104,6 +189,10 @@
       --s-readout-w: min(420px, 100%);
       --s-readout-mt: clamp(18px, 4vh, 40px);
       --s-seg-h: 8px;
+      /* 11px is the phone type floor and the log sits at it, not below. */
+      --s-tty: 11px;
+      --s-tty-pad: 14px;
+      --s-tty-w: 100%;
     }
   }
 
@@ -120,6 +209,9 @@
     --s-readout-w: min(420px, 100%);
     --s-readout-mt: clamp(18px, 4vh, 40px);
     --s-seg-h: 8px;
+    --s-tty: 11px;
+    --s-tty-pad: 14px;
+    --s-tty-w: 100%;
   }
 
   .splash {
@@ -167,19 +259,342 @@
     align-items: baseline;
     justify-content: center;
     white-space: nowrap;
-    font-family: var(--font-ui), system-ui, sans-serif;
-    font-weight: 800;
+    font-family: var(--face), var(--font-ui), system-ui, sans-serif;
+    font-weight: 400;
     line-height: 1;
+    /* The slant is applied to the row, not per-glyph, so BEATS and MAXXER stay
+       on one shear plane and the seam between them does not kink. */
+    transform: skewX(var(--slant));
   }
 
+  /*
+    The chrome.
+    ───────────
+    Four stacked layers, because no single CSS property does this:
+
+      ::before  the extruded body — the same word in a dark plum, offset down
+                and right in 1px steps, plus a dark outline so the face has an
+                edge to sit against
+      ::after   the top bevel — a hairline of near-white clipped to the upper
+                edge, which is what makes the face read as a machined surface
+                rather than a gradient fill
+      .half     the face itself: a gradient with a HARD stop at 47%, which is
+                the horizon break that every reference has running through the
+                letterforms
+      filter    the bloom, in magenta rather than the face colour so it reads as
+                light spilling off chrome instead of a coloured shadow
+  */
+  /*
+    Paint order matters more than anything else here, and it is not obvious:
+    `background-clip: text` paints in the element's *background* layer, which is
+    below BOTH pseudo-elements — even one set to `z-index: -1`. Putting the
+    extrude on ::before and the gradient on .half therefore buries the chrome
+    under the extrude, and the wordmark comes out dark with only a glow.
+
+    So the element itself is the extruded body, and the chrome face is ::before
+    painted on top of it, with the bevel hairline on ::after above that.
+  */
   .half {
+    position: relative;
     font-size: var(--s-title);
-    letter-spacing: 0.01em;
-    background: linear-gradient(180deg, #ffffff 0%, #a7fff2 26%, #2dd4bf 54%, #0d9488 82%, #0b5f57 100%);
+    letter-spacing: var(--face-track);
+    color: #0c2e2b;
+    /*
+      Five steps, not nine, and in a teal that is lighter than the background.
+      A dark extrude on a dark field does not read as depth — it merges with the
+      backdrop and eats the glyph's outer edge, which was a large part of why the
+      mark would not resolve.
+    */
+    text-shadow:
+      1px 1px 0 #0e3835,
+      2px 2px 0 #0c302d,
+      3px 3px 0 #0a2825,
+      4px 4px 0 #08201e,
+      5px 6px 10px rgba(0, 0, 0, 0.7);
+    filter:
+      drop-shadow(0 0 16px rgba(45, 212, 191, 0.5))
+      drop-shadow(0 0 44px rgba(45, 212, 191, 0.28));
+  }
+
+  .half::before,
+  .half::after {
+    content: attr(data-word);
+    position: absolute;
+    left: 0;
+    top: 0;
+    letter-spacing: inherit;
+    pointer-events: none;
+  }
+
+  /* The face. A hard stop at 47% is the horizon break the reference art runs
+     through every letterform — a 0.6% band, not a blend, or it turns to mush. */
+  /*
+    The ramp is sized to the CAP HEIGHT, not to the element box.
+
+    A gradient on a text element spans the whole line box, which for a display
+    face is a good deal taller than the letters — so 0% lands in the empty air
+    above the caps and the horizon break falls below the baseline. The visible
+    result is a mark that is purple almost all the way up with its bright half
+    wasted on nothing.
+
+    Anton's caps occupy roughly 0.72em starting ~0.17em down the box, so the
+    ramp is given exactly that band and told not to repeat. Every stop below is
+    therefore a real position on the letterform.
+  */
+  .half::before {
+    /*
+      Every stop is a light value. The previous ramp put #241a52 at the horizon
+      and stayed under #5c34a0 for the whole lower half — near-black letters on
+      a near-black field, which is why the mark could not be read at all. The
+      horizon in the reference art is a *thin dark line* separating two bright
+      halves, not a fade into the background.
+    */
+    background-image: linear-gradient(
+      180deg,
+      /*
+        Legibility comes from luminance, not hue. The mark sits on #0a0b0c, so
+        every stop that is not the horizon line has to be *light* — earlier
+        ramps spent half the letterform in the 20-40% lightness range, which is
+        near-black on near-black and unreadable at any size.
+
+        Teal rather than the reference art's magenta: it is already the app's
+        accent, so the splash and the instrument read as one product.
+
+        Stops are placed for where the caps sit in the line box (~16% to 100%),
+        not for the box edges.
+      */
+      #ffffff 16%,
+      #f2fffd 28%,
+      #bdf5ea 42%,
+      #7ae6d2 52%,
+      /* the horizon: a thin dark line between two bright halves */ #0d3b38 55%,
+      #0a302e 56.5%,
+      #4fded0 58%,
+      #2dd4bf 68%,
+      #6ceede 82%,
+      #d8fff9 100%
+    );
+    /*
+      Deliberately NOT sized to a cap-height band. Clipping the ramp to 0.72em
+      with `no-repeat` left the glyph below that band with no background at all,
+      so the bottom of every letter fell through to the dark extrude body — the
+      mark was unreadable for exactly that reason. A full-box ramp always paints
+      the whole letterform; the stops below are placed for where the glyphs
+      actually sit in the box rather than for the box itself.
+    */
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
-    filter: drop-shadow(0 0 12px rgba(45, 212, 191, 0.40));
+    /* A thin dark rim so the face reads as sitting on the body rather than
+       floating a shade above it. */
+    -webkit-text-stroke: 0.5px rgba(20, 11, 36, 0.55);
+  }
+
+  /*
+    Top bevel: a hairline of near-white on the cap edge. Clipped in em units
+    against the same band as the ramp — the previous percentage clip cut the
+    element box, which put the highlight in the air above the caps where it read
+    as a floating white bar rather than as a lit edge.
+  */
+  /*
+    The top highlight, blended rather than stacked.
+
+    This was a flat white fill clipped to a band, which is why it read as a bar
+    laid across the word instead of light catching an edge: a hard clip has no
+    falloff, and an opaque colour hides the chrome underneath rather than
+    brightening it.
+
+    Now it is a gradient that steps down to nothing over the top third, and it
+    is composited with `overlay` — so it multiplies into the dark parts of the
+    ramp and screens into the light ones, which is what a real specular does.
+    The band edge is gone entirely; the falloff is the shape.
+  */
+  .half::after {
+    background-image: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.85) 16%,
+      rgba(255, 255, 255, 0.5) 23%,
+      rgba(255, 255, 255, 0.22) 30%,
+      rgba(255, 255, 255, 0.06) 38%,
+      rgba(255, 255, 255, 0) 46%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    /*
+      `screen`, not `overlay`. Overlay decides per-pixel from the *base*: where
+      the ramp is below mid-luminance it multiplies, so the highlight was
+      darkening the lower two thirds of every letter and the mark got harder to
+      read, not easier. Screen can only lighten, which is what a specular does.
+    */
+    mix-blend-mode: screen;
+  }
+
+  /*
+    The world the wordmark sits in. Both layers are pure CSS — no image, so they
+    cost nothing to ship and stay sharp on any display.
+  */
+
+  /* Starfield: three repeating radial-gradients at different densities. One
+     layer reads as a pattern; three at coprime spacings read as random. */
+  .stars {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1.1px 1.1px at 17% 23%, rgba(255, 255, 255, 0.85), transparent 100%),
+      radial-gradient(1px 1px at 63% 11%, rgba(200, 225, 255, 0.7), transparent 100%),
+      radial-gradient(1.4px 1.4px at 82% 41%, rgba(255, 255, 255, 0.6), transparent 100%),
+      radial-gradient(1px 1px at 34% 67%, rgba(255, 220, 255, 0.55), transparent 100%),
+      radial-gradient(1.2px 1.2px at 91% 78%, rgba(255, 255, 255, 0.5), transparent 100%),
+      radial-gradient(1px 1px at 8% 88%, rgba(190, 210, 255, 0.6), transparent 100%);
+    background-size:
+      163px 149px,
+      211px 197px,
+      127px 181px,
+      241px 173px,
+      179px 227px,
+      139px 211px;
+    /* Slow drift, transform-only so it survives a blocked main thread the same
+       way the boot-log indicator does. */
+    animation: drift 240s linear infinite;
+    opacity: 0.55;
+  }
+  @keyframes drift {
+    from {
+      transform: translate3d(0, 0, 0);
+    }
+    to {
+      transform: translate3d(-163px, -149px, 0);
+    }
+  }
+
+  /* Perspective floor. A repeating linear-gradient rotated into the X plane is
+     the whole trick — the mask fades it out before the horizon so it does not
+     terminate in a hard line. */
+  .grid {
+    position: absolute;
+    left: -50%;
+    right: -50%;
+    bottom: -10%;
+    height: 62%;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(
+        90deg,
+        rgba(232, 72, 156, 0.5) 0 1px,
+        transparent 1px 76px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        rgba(120, 90, 230, 0.42) 0 1px,
+        transparent 1px 58px
+      );
+    transform: perspective(340px) rotateX(74deg);
+    transform-origin: 50% 100%;
+    -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 42%, #000 100%);
+    mask-image: linear-gradient(180deg, transparent 0%, #000 42%, #000 100%);
+    opacity: 0.45;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stars {
+      animation: none;
+    }
+  }
+
+  /*
+    Phone: stack the wordmark.
+    ──────────────────────────
+    BEATSMAXXER is eleven characters. Set on one line at 375px it can only be
+    ~31px, which is why the hero of the loading screen was reading as a caption
+    with an acre of black around it. Every piece of the reference art stacks for
+    exactly this reason — RUNHOAN over Records, Hyperpix over ARCADE — and once
+    the halves are stacked the face can be three times the size in the same
+    width. The collide animation still works; the halves just meet vertically.
+  */
+  /*
+    Portrait only. A phone on its side has the width for one line, and stacking
+    two 100px lines into a 390px-tall viewport would leave no room for the
+    readout or the log.
+
+    Both selectors are listed because `:global(.mobile-shell-active) .splash`
+    already sets `--s-title` elsewhere and outranks a bare `.splash` even inside
+    a media query — matching its specificity is the only way this value lands.
+  */
+  @media (max-width: 820px) and (orientation: portrait) {
+    .splash,
+    :global(.mobile-shell-active) .splash {
+      /* MAXXER is the constraint: six characters of Anton run ~0.52em each, so
+         26vw keeps the wider half inside 375px with margin to spare. */
+      --s-title: clamp(56px, 26vw, 132px);
+    }
+
+    .title {
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+      /* 0.82 collapsed the halves into each other — the descender box of BEATS
+         landed inside MAXXER's cap height and the extrudes interleaved. 0.92
+         still locks them as one object without the words touching. */
+      line-height: 0.92;
+    }
+
+    .half.right {
+      /* MAXXER is the wider word; nudging it left of centre by a hair lines the
+         stems up under BEATS rather than centring two different widths. */
+      margin-left: -0.02em;
+    }
+
+    /* PRO leaves the flex flow so stacking does not push it onto a third line;
+       it tucks against the bottom-right corner the way the references set their
+       secondary word. */
+    .pro {
+      position: absolute;
+      right: 0;
+      bottom: -0.42em;
+      margin-left: 0;
+    }
+
+    /* The halves arrive vertically now, so a horizontal overshoot would slide
+       them off their own stack. */
+    .left {
+      animation-name: slam-down;
+    }
+    .right {
+      animation-name: slam-up;
+    }
+  }
+
+  @keyframes slam-down {
+    0% {
+      opacity: 0;
+      transform: translateY(-46vh);
+    }
+    64% {
+      opacity: 1;
+      transform: translateY(7px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes slam-up {
+    0% {
+      opacity: 0;
+      transform: translateY(46vh);
+    }
+    64% {
+      opacity: 1;
+      transform: translateY(-7px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 
   /* The collision: each half arrives from its own side, overshoots slightly
@@ -199,12 +614,18 @@
   }
 
   /* Smaller, and after the word — not stacked under it. */
+  /* Sits on the baseline after MAXXER, in the pink half of the chrome ramp so
+     it reads as part of the same object rather than as a separate label. */
   .pro {
     margin-left: clamp(7px, 0.9vw, 15px);
     font-size: var(--s-pro);
-    font-weight: 600;
+    font-weight: 400;
     letter-spacing: var(--s-pro-track);
-    color: #7fe8dc;
+    color: #b9fff2;
+    text-shadow:
+      0 0 12px rgba(45, 212, 191, 0.8),
+      0 2px 0 #0e3835,
+      0 3px 0 #08201e;
     animation: scoot 440ms cubic-bezier(0.2, 0.9, 0.25, 1) 680ms both;
   }
   @keyframes scoot {
@@ -257,11 +678,25 @@
   }
 
   .seg {
+    position: relative;
     flex: 1 1 0;
     height: var(--s-seg-h);
     background: #0e1c1b;
     box-shadow: inset 0 0 0 1px #16302d;
     transition: background 140ms linear, box-shadow 140ms linear;
+  }
+
+  /* The charge lives on this layer so it can be an opacity fade. Painting it
+     once and revealing it costs the compositor nothing to keep running; the
+     old version swapped `background` every frame, which is main-thread work
+     and therefore stopped dead during the very stall it was covering. */
+  .seg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, #7df0e0, #14b8a6);
+    box-shadow: inset 0 0 0 1px #5eead4;
+    opacity: 0;
   }
 
   .seg.on {
@@ -273,13 +708,14 @@
 
   /* Before the denominator is known there is nothing honest to fill, so run a
      charge across the blocks instead of parking at zero. */
-  .meter.sweeping .seg {
+  .meter.sweeping .seg::after {
     animation: charge 1.25s ease-in-out infinite;
     animation-delay: calc(var(--i) * 70ms);
+    will-change: opacity;
   }
   @keyframes charge {
-    0%, 70%, 100% { background: #0e1c1b; box-shadow: inset 0 0 0 1px #16302d; }
-    22%           { background: #14b8a6; box-shadow: inset 0 0 0 1px #5eead4, 0 0 10px rgba(45,212,191,0.5); }
+    0%, 70%, 100% { opacity: 0; }
+    22%           { opacity: 1; }
   }
 
   .detail {
@@ -290,6 +726,98 @@
   }
 
   @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---- terminal strip ----
+     Bottom-anchored, so new lines push the stack upward and nothing above it
+     ever moves. Sits above the vignette, which would otherwise be darkening
+     exactly the corner the text lives in. */
+  .tty {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+    padding: 0 var(--s-tty-pad) max(12px, env(safe-area-inset-bottom, 0px));
+    pointer-events: none;
+    animation: fade-in 300ms ease-out 180ms both;
+  }
+
+  .wire,
+  .lines {
+    width: var(--s-tty-w);
+  }
+
+  /* ---- the liveness hairline ----
+     Everything about this element is chosen so the compositor can run it
+     without the main thread: fixed geometry, a single translated child, and
+     keyframes that touch nothing but `transform`. That is what lets it keep
+     sweeping while a shader compile has the main thread pinned. */
+  .wire {
+    position: relative;
+    height: 2px;
+    overflow: hidden;
+    background: rgba(20, 184, 166, 0.10);
+  }
+
+  .shuttle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    /* Static width; the travel is all transform. */
+    width: 26%;
+    background: linear-gradient(90deg, transparent, #14b8a6 42%, #a7fff2 52%, #14b8a6 62%, transparent);
+    will-change: transform;
+    transform: translate3d(-100%, 0, 0);
+    animation: shuttle 1.15s linear infinite;
+  }
+
+  /* 26% wide, so 385% clears the right edge exactly. */
+  @keyframes shuttle {
+    from { transform: translate3d(-100%, 0, 0); }
+    to   { transform: translate3d(385%, 0, 0); }
+  }
+
+  .lines {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .lines li {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--s-tty);
+    line-height: 1.5;
+    color: #7c9a9a;
+  }
+
+  /* Finished work recedes; the running line is the one worth reading. */
+  .lines li.done { color: #4b5d63; }
+
+  .mark {
+    flex: none;
+    width: 2ch;
+    text-align: right;
+    color: #2dd4bf;
+  }
+  .lines li.done .mark { color: #14b8a6; }
+
+  .text {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
 
   /* ---- CRT dressing ---- */
   .scanlines {
@@ -314,9 +842,24 @@
 
   /* Motion is decoration; the readout still carries the information. */
   @media (prefers-reduced-motion: reduce) {
-    .splash, .splash.leaving, .left, .right, .pro, .readout { animation: none; }
-    .left, .right, .pro, .readout { opacity: 1; transform: none; }
+    .splash, .splash.leaving, .left, .right, .pro, .readout, .tty { animation: none; }
+    .left, .right, .pro, .readout, .tty { opacity: 1; transform: none; }
     .impact { display: none; }
-    .meter.sweeping .seg { animation: none; }
+    .meter.sweeping .seg::after { animation: none; }
+
+    /* The hairline keeps going even here. Travel is what people object to, so
+       it stops travelling and breathes instead — still opacity-only, still on
+       the compositor, still the one thing that proves the app is alive when
+       the main thread is gone. */
+    .shuttle {
+      width: 100%;
+      transform: none;
+      animation: breathe 2.6s ease-in-out infinite;
+      will-change: opacity;
+    }
+    @keyframes breathe {
+      0%, 100% { opacity: 0.16; }
+      50%      { opacity: 0.75; }
+    }
   }
 </style>

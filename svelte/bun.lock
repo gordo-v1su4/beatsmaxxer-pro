@@ -9,6 +9,11 @@
         "@soundtouchjs/audio-worklet": "^2.1.0",
       },
       "devDependencies": {
+        "@fontsource/anton": "^5.3.0",
+        "@fontsource/archivo-black": "^5.3.0",
+        "@fontsource/audiowide": "^5.3.0",
+        "@fontsource/bungee": "^5.3.0",
+        "@fontsource/russo-one": "^5.3.0",
         "@sveltejs/adapter-static": "^3.0.10",
         "@sveltejs/kit": "^2.63.0",
         "@sveltejs/vite-plugin-svelte": "^7.1.2",
@@ -86,6 +91,16 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.28.1", "", { "os": "win32", "cpu": "ia32" }, "sha512-zvb/mB2bSCoJOpoCBgYKKpX6YM6mJBlBUVUtVj41DlZJVEB6/0CKlRYxP5wWl1C1ILiCoAU5wZZ4q1P3qeS6Eg=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.1", "", { "os": "win32", "cpu": "x64" }, "sha512-bm4Mowrv+GXMlpWX++EcXw/iLyd1o3+bJkC2DkWXYVvgZCqD/bSj9ctZeAMC3cIxgjRVR2Dufaiu4YPxr5gW1A=="],
+
+    "@fontsource/anton": ["@fontsource/anton@5.3.0", "", {}, "sha512-OR1D5n124n2XRs66SbX7IjcOSptljEJE8FcDNnlni2y1/M6KpTx7cU2PIWzTSsBj4WFkHPw24On8qw3qkQZuTw=="],
+
+    "@fontsource/archivo-black": ["@fontsource/archivo-black@5.3.0", "", {}, "sha512-7EsTIQ+Blf96ktpzTUpI7msi+u9/AJxM/GZxOSkEubVd1jSTrFSTNxMgfpX/8rQsjZ+19a+qvRbtcTEp5J/72g=="],
+
+    "@fontsource/audiowide": ["@fontsource/audiowide@5.3.0", "", {}, "sha512-ECBdWgQPaCSuwlFyeXzV0i2DAGq0SKID7jxD1oHhYTObx3wz26YKs3F9Ic/EO369Anzld9IqxflRukJm6nVxpw=="],
+
+    "@fontsource/bungee": ["@fontsource/bungee@5.3.0", "", {}, "sha512-vKwbDE7yMrqfGxgFan+diPLwgWp9j4FGYaLm+OhUoqYO6Pr02QIi/p0KiTW0E/7uiXqfTd6cMj+/E4h2sc3Ocg=="],
+
+    "@fontsource/russo-one": ["@fontsource/russo-one@5.3.0", "", {}, "sha512-loHnqTq6D+H2WQdOB2pnAeCHbbsGqobmxnxU79MNFKjPWV2TPXdc78dbbkOAcWuKWDEY+FNXZFZ1nhaQvCWNAw=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 

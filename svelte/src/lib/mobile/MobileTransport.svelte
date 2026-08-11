@@ -3,6 +3,7 @@
   import { audioEngine } from '$lib/audio';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
+  import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import { activeModule, pageModule } from './mobileSession';
   import { isPerformPosture } from './mobileEnv';
 
@@ -46,7 +47,7 @@
   <input
     bind:this={audioInput}
     type="file"
-    accept="audio/*"
+    accept={AUDIO_FILE_ACCEPT}
     class="file-input"
     onchange={handleAudio}
   />

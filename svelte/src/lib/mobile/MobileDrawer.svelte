@@ -1,6 +1,7 @@
 <script lang="ts">
   import { X, Upload } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
+  import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import { listCatalog, type ModuleCategory, type ModuleDefinition } from '$lib/modules/catalog';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import MobileClipGrid from './MobileClipGrid.svelte';
@@ -287,7 +288,7 @@
         <input
           bind:this={audioInput}
           type="file"
-          accept="audio/*"
+          accept={AUDIO_FILE_ACCEPT}
           hidden
           onchange={(e) => void onTrackChosen(e.currentTarget)}
         />

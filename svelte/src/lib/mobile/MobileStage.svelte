@@ -80,12 +80,26 @@
 </section>
 
 <style>
+  /*
+    The stage takes the slack instead of leaving it at the bottom.
+
+    It used to be `flex: 0 0 auto` while the transport carried `margin-top:auto`,
+    so every spare pixel in the column collected into one dead black band between
+    the readouts and the transport — around 370px of nothing on a 812px phone,
+    which read as the layout having failed rather than as breathing room.
+
+    The picture is 16:9 and the phone is 9:19.5, so some letterbox is unavoidable
+    without cropping the frame the effects are acting on. Centring it makes that
+    letterbox symmetric and deliberate rather than a void hanging under the text.
+  */
   .stage {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: 10px;
-    padding: 10px 12px 0;
+    padding: 10px 12px;
     background: var(--m-bg, #0a0b0c);
   }
 

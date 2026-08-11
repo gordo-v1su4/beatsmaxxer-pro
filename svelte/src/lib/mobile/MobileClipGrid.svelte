@@ -2,6 +2,7 @@
   import { Play, Plus, Film } from '@lucide/svelte';
   import { addClipsToLibrary, clipLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { formatClipDuration } from '$lib/media/clipThumbnail';
+  import { VIDEO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import {
     advanceMode,
     clipQueueIds,
@@ -125,7 +126,7 @@
   <input
     bind:this={fileInput}
     type="file"
-    accept="video/*"
+    accept={VIDEO_FILE_ACCEPT}
     multiple
     hidden
     onchange={(e) => void onFilesChosen(e.currentTarget)}

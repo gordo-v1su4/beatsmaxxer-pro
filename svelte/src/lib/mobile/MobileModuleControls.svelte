@@ -285,85 +285,174 @@
 </div>
 
 <style>
+  /*
+    Hardware, not chips.
+    ────────────────────
+    This surface used to be 6px-radius rectangles with a symmetric border, a
+    flat gradient, and an "active" state that *filled* the shape and added an
+    outer glow. That is the web-button idiom, and next to the rack — which is
+    machined faceplates, engraved labels and keys pressed into the panel — it
+    read as a different, cheaper product.
+
+    Three rules carry the change, all lifted from `RackBtn`/`Section` on the
+    rack rather than invented here:
+      · borders are asymmetric — light on top, dark down the sides and bottom
+      · keys are *inset* at rest and sink further when pressed; they never rise
+      · the accent is a low-alpha wash plus a glow, never a fill. Lit, not painted.
+  */
   .controls {
     display: flex;
     flex-direction: column;
-    gap: 18px;
-    padding: 4px 0 8px;
+    /* Seams, not gaps: the panels butt against each other like a rack unit. */
+    gap: 0;
+    padding: 0 0 6px;
   }
 
   .group {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 9px;
+    padding: 10px 12px 12px;
+    background: linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
+    border-top: 1px solid #23262a;
+    border-bottom: 2px solid #0b0c0d;
+  }
+  .group:last-of-type {
+    border-bottom: none;
   }
 
+  /* Engraved: a dark line above and a light line below is the standard cut-in
+     pair, and it still reads at 11px on a phone. */
   .group-label {
+    position: relative;
+    padding-left: 9px;
     font-family: var(--font-ui);
     font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.18em;
+    font-weight: 600;
+    letter-spacing: 0.22em;
     text-transform: uppercase;
-    color: #5a6270;
+    color: #5c6672;
+    line-height: 1;
+    text-shadow:
+      0 -1px 0 rgba(0, 0, 0, 0.75),
+      0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  /* A lit notch in the module's colour — says which module you are inside
+     without printing its name a third time. */
+  .group-label::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 10px;
+    margin-top: -5px;
+    border-radius: 1px;
+    background: var(--accent);
+    box-shadow: 0 0 7px color-mix(in srgb, var(--accent) 55%, transparent);
   }
 
   .pads {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 6px;
   }
 
-  /* 46px, not 44: the pads sit under the fold of a curled thumb, and the extra
-     2px is the difference between hitting and nearly hitting. */
+  /*
+    34px painted rather than 46. The 44px floor was being spent on paint, which
+    is why every button looked like a slab with a word floating in it; the hit
+    area is restored past 44 by the transparent ::after below, so the target is
+    unchanged and only the ink shrank.
+  */
   .pad {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 3px;
-    min-height: 46px;
-    padding: 6px 4px;
-    border: 1px solid #24272b;
-    border-radius: 6px;
-    background: linear-gradient(180deg, #1b1e21, #141618);
-    color: #6b7280;
+    gap: 2px;
+    min-height: 34px;
+    padding: 5px 4px;
+    border: 1px solid;
+    border-color: #26292d #16181a #131416 #16181a;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #202429 0%, #191c20 52%, #141619 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.045),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.5),
+      0 1px 0 rgba(0, 0, 0, 0.55);
+    color: #4d5561;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    transition:
+      background 90ms ease,
+      border-color 90ms ease,
+      color 90ms ease,
+      box-shadow 90ms ease;
+  }
+
+  /* The target the finger gets, independent of the box the eye gets. */
+  .pad::after {
+    content: '';
+    position: absolute;
+    inset: -6px -2px;
   }
 
   .pad.on {
-    border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 34%, #26292d)
+      color-mix(in srgb, var(--accent) 20%, #16181a)
+      color-mix(in srgb, var(--accent) 16%, #131416)
+      color-mix(in srgb, var(--accent) 20%, #16181a);
     background: linear-gradient(
       180deg,
-      color-mix(in srgb, var(--accent) 22%, transparent),
-      color-mix(in srgb, var(--accent) 9%, transparent)
+      color-mix(in srgb, var(--accent) 16%, #202429),
+      color-mix(in srgb, var(--accent) 7%, #141619)
     );
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.62),
+      inset 0 0 10px color-mix(in srgb, var(--accent) 14%, transparent),
+      0 0 8px color-mix(in srgb, var(--accent) 20%, transparent);
     color: var(--accent);
-    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 18%, transparent);
+    text-shadow: 0 0 9px color-mix(in srgb, var(--accent) 45%, transparent);
   }
 
+  /* Presses in. It used to translate down 1px, which reads as a card lifting
+     and dropping rather than as a key being depressed. */
   .pad:active {
-    transform: translateY(1px);
+    box-shadow:
+      inset 0 3px 6px rgba(0, 0, 0, 0.7),
+      inset 0 0 8px color-mix(in srgb, var(--accent) 10%, transparent);
   }
 
   .pad.fire {
-    border-color: #ef444455;
-    color: #ef6b6b;
+    border-color: #3a2020 #1a1010 #150d0d #1a1010;
+    color: #c4585c;
+  }
+  .pad.fire:active {
+    box-shadow:
+      inset 0 3px 6px rgba(0, 0, 0, 0.7),
+      inset 0 0 12px rgba(239, 68, 68, 0.28);
+    color: #ff8b8b;
   }
 
   .pad-label {
     font-family: var(--font-ui);
     font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.1em;
+    font-weight: 600;
+    letter-spacing: 0.12em;
     line-height: 1.1;
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pad {
+      transition: none;
+    }
   }
 
   .pad-curve {
@@ -388,92 +477,131 @@
   .row-label {
     font-family: var(--font-ui);
     font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.14em;
+    font-weight: 600;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #7b838f;
+    color: #626c78;
+    text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.7);
   }
 
+  /* The number reads off a lit display, not off the panel. */
   .row-val {
-    font-family: var(--font-ui);
+    font-family: var(--font-mono);
     font-size: 12px;
-    font-weight: 500;
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.04em;
     color: var(--accent);
+    text-shadow: 0 0 8px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
-  /* The hit area is the full 44px band; the groove inside it is only 6px so the
-     control still reads as a rack slider rather than a web form input. */
+  /*
+    A fader, not a form input.
+
+    The illusion is entirely in opposing shadow directions on adjacent parts:
+    the groove is cut *into* the panel (inset shadow, dark top edge, light
+    bottom) and the cap sits *proud* of it (outer shadow, light top edge). Both
+    elements flat-shaded is what made this read as a web slider before.
+
+    The groove is deeper than the old 6px because a 6px line under a 22px pill
+    looks like a progress bar; 12px with a lit fill looks like travel.
+  */
   .track {
-    --thumb: 22px;
+    --thumb: 20px;
     position: relative;
-    height: 44px;
+    height: 34px;
     display: flex;
     align-items: center;
     touch-action: none;
     cursor: ew-resize;
     -webkit-tap-highlight-color: transparent;
   }
+  /* Painted 34, grabbed at 48. */
+  .track::after {
+    content: '';
+    position: absolute;
+    inset: -7px 0;
+  }
 
   .track:focus-visible {
-    outline: 1px solid var(--accent);
+    outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
     outline-offset: 2px;
-    border-radius: 4px;
+    border-radius: 3px;
   }
 
   .groove {
     position: absolute;
     left: calc(var(--thumb) / 2);
     right: calc(var(--thumb) / 2);
-    height: 6px;
-    background: #101214;
-    border: 1px solid #1e2124;
-    border-radius: 3px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
+    height: 12px;
+    background: linear-gradient(180deg, #0a0c0e, #101215 70%, #0c0e10);
+    border: 1px solid #0c0d0f;
+    border-bottom-color: #1a1d20;
+    border-radius: 2px;
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.8),
+      0 1px 0 rgba(255, 255, 255, 0.03);
     overflow: hidden;
   }
 
+  /* Lit from within rather than painted across. */
   .fill {
     height: 100%;
     background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--accent) 25%, transparent),
-      color-mix(in srgb, var(--accent) 65%, transparent)
+      180deg,
+      color-mix(in srgb, var(--accent) 34%, transparent),
+      color-mix(in srgb, var(--accent) 14%, transparent)
     );
+    box-shadow: inset 0 0 10px color-mix(in srgb, var(--accent) 24%, transparent);
   }
 
+  /* Machined cap with a grip, sitting on top of the groove. */
   .thumb {
     position: absolute;
     top: 50%;
     width: var(--thumb);
-    height: var(--thumb);
-    margin-top: calc(var(--thumb) / -2);
+    height: 24px;
+    margin-top: -12px;
     transform: translateX(-50%);
-    border-radius: 5px;
-    background: linear-gradient(180deg, #32373e, #1c1f23);
-    border: 1px solid color-mix(in srgb, var(--accent) 50%, #3a4048);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+    border-radius: 2px;
+    border: 1px solid;
+    border-color: #34393f #101214 #0c0e0f #101214;
+    background: linear-gradient(180deg, #2c3137 0%, #21262b 50%, #15181b 100%);
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.75),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
     pointer-events: none;
   }
+  .thumb::before {
+    content: '';
+    position: absolute;
+    inset: 5px 6px;
+    border-left: 1px solid rgba(0, 0, 0, 0.55);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+  }
 
+  /* MIX is the one every module has, so it gets the wider cap and a taller
+     groove — the master fader on the unit. */
   .mix .row-label {
-    font-size: 13px;
-    letter-spacing: 0.24em;
+    font-size: 12px;
+    letter-spacing: 0.26em;
     color: var(--accent);
+    text-shadow: 0 0 9px color-mix(in srgb, var(--accent) 40%, transparent);
   }
 
   .mix .row-val {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .mix .groove {
-    height: 10px;
-    border-radius: 5px;
+    height: 16px;
   }
 
   .mix .track {
-    --thumb: 28px;
-    height: 52px;
+    --thumb: 26px;
+    height: 42px;
+  }
+  .mix .thumb {
+    height: 30px;
+    margin-top: -15px;
   }
 </style>

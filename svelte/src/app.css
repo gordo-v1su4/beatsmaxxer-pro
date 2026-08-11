@@ -1,6 +1,61 @@
 @import 'tailwindcss';
 @import './lib/mobile/mobile.css';
 
+/* ---- title-card display faces ----
+ *
+ * These exist for exactly one thing: the loading splash rasterises the wordmark
+ * into a signed distance field at boot and hands it to a WGSL shader. They are
+ * NOT part of the app UI, which stays on system fonts so it paints with no
+ * network and no layout shift.
+ *
+ * Self-hosted on purpose. A CDN request at boot would sit in front of the very
+ * stall the splash exists to cover, and the desktop build runs offline inside
+ * Tauri where there is no CDN to reach. The files are vendored into
+ * static/fonts/ from the @fontsource packages; each ships its licence next to
+ * it as <face>-LICENSE.txt. All five are SIL Open Font License 1.1.
+ *
+ * font-display: block is deliberate and is the opposite of the usual advice.
+ * Nothing here is body text — a fallback face would be rasterised into the SDF
+ * and baked into the title card for the life of the session. Blocking is
+ * bounded (the files are 7-19KB and local) and the splash already has the CSS
+ * title card underneath it, so there is something on screen either way.
+ */
+@font-face {
+	font-family: 'Anton';
+	src: url('/fonts/anton-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+@font-face {
+	font-family: 'Archivo Black';
+	src: url('/fonts/archivo-black-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+@font-face {
+	font-family: 'Bungee';
+	src: url('/fonts/bungee-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+@font-face {
+	font-family: 'Audiowide';
+	src: url('/fonts/audiowide-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+@font-face {
+	font-family: 'Russo One';
+	src: url('/fonts/russo-one-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
+
 :root {
 	--rack-bg: #0a0b0c;
 	--panel-bg: #131416;

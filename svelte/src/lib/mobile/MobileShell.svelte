@@ -5,7 +5,6 @@
   import MobileTransport from './MobileTransport.svelte';
   import MobileModuleSheet from './MobileModuleSheet.svelte';
   import MobileDrawer from './MobileDrawer.svelte';
-  import RotateHint from './RotateHint.svelte';
   import DesktopNote from './DesktopNote.svelte';
   import { isPerformPosture, orientation } from './mobileEnv';
   import { enterMobileSession, startMobileClipAdvance } from './mobileSession';
@@ -59,7 +58,6 @@
        sheet's drag maths depend on scroll position. -->
   <MobileModuleSheet />
   <MobileDrawer />
-  <RotateHint />
   <DesktopNote />
 
   {#if $isPerformPosture}
@@ -95,6 +93,25 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    /*
+      Reserve the sheet's resting grabber.
+
+      The sheet is fixed to the bottom of the viewport and the transport is the
+      last thing in normal flow, so without this they occupy the same 76px: the
+      grabber sat directly on top of the play button, the bar/beat readout and
+      the meters. Everything still worked, which is what made it bad — the row
+      was there, just permanently half-covered.
+
+      Padding on the body rather than a margin on the transport, so the transport
+      does not have to know a sheet exists.
+    */
+    padding-bottom: var(--m-sheet-peek, 76px);
+  }
+
+  /* Landscape floats the transport instead of stacking it, so nothing is
+     underneath the sheet and the reservation would just be dead space. */
+  .mobile-shell.is-perform .mobile-body {
+    padding-bottom: 0;
   }
 
   /* Landscape hands the whole viewport to the picture and floats the chrome. */

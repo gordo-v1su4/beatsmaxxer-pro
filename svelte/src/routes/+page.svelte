@@ -41,6 +41,7 @@
   import MobileShell from '$lib/mobile/MobileShell.svelte';
   import { isMobileShell, initMobileEnv } from '$lib/mobile/mobileEnv';
   import { seedMobileQaClips } from '$lib/mobile/mobileSession';
+  import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
 
   let splashPhase = $state<'gpu' | 'shaders' | 'go' | 'ready'>('gpu');
@@ -71,15 +72,31 @@
     // canvases the engine is about to be asked for — eleven on the rack, one on
     // the phone. Getting this after init would mean attaching ten canvases and
     // tearing them straight back down.
+    // Each bootStep() lands *before* the call it names, because the calls below
+    // block the main thread and nothing gets painted mid-block. The line on
+    // screen when everything freezes has to already say what is running.
+    const stepLayout = bootStep('Setting up the workspace');
     stopMobileEnv = initMobileEnv();
+    stepLayout.done();
+
+    const stepProbe = bootStep('Checking graphics support');
     const cap = await probeWebGpu();
     capabilities.set(cap);
+    stepProbe.note(cap.webgpu ? 'WebGPU' : 'unavailable');
+    stepProbe.done();
+
     if (cap.webgpu) {
+      const stepDevice = bootStep('Waking up the graphics card');
       await webGpuEngine.init();
       webGpuEngine.start();
+      stepDevice.done();
     }
 
+    const stepVideo = bootStep('Connecting video playback');
     await initVideoSourcePort();
+    stepVideo.done();
+
+    const stepClock = bootStep('Starting the transport clock');
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
@@ -89,6 +106,7 @@
     // remain static; playback advances them on the authoritative audio timeline.
     fxHold.set(false);
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
+    stepClock.done();
 
     // init() only acquires the device; the stall users actually see is the
     // module shader compiling as each canvas builds its pipeline. Hold the
@@ -96,12 +114,18 @@
     // GPU that never reports ready cannot lock the app behind the overlay.
     if (cap.webgpu) {
       splashPhase = 'shaders';
+      // The long one. It is pushed before the loop for the same reason as the
+      // rest: pipeline creation blocks, so this label is what stays on screen
+      // through the stall.
+      const stepShaders = bootStep('Compiling effect shaders');
       const deadline = performance.now() + 12000;
       while (!webGpuEngine.hasRenderedFrame && performance.now() < deadline) {
         splashTotal = webGpuEngine.boundCanvasCount;
         splashDone = Math.min(splashTotal, splashDone + 1);
+        if (splashTotal > 0) stepShaders.note(`${splashDone} / ${splashTotal}`);
         await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
       }
+      stepShaders.done();
     }
     // ?splash=hold keeps the title card up so it can be designed against.
     // A warm load dismisses it in well under a second, which is too fast to
@@ -114,6 +138,7 @@
     }
 
     if (params.has('qa')) {
+      const stepQa = bootStep('Loading test clips');
       try {
         // The phone has one slot and a clip bank; the rack has ten slots and no
         // bank. Fanning the manifest across slots leaves the phone's grid empty,
@@ -122,11 +147,16 @@
         else await fetchAndLoadQaMedia();
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
+        stepQa.note('failed');
       }
+      stepQa.done();
     }
     if (params.get('qaAutoplay') === '1') {
+      const stepPlay = bootStep('Starting playback');
       await audioEngine.start();
+      stepPlay.done();
     }
+    bootLogSettle();
   });
 
   onDestroy(() => {

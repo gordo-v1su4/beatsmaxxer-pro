@@ -16,8 +16,10 @@ import { writable, derived, get } from 'svelte/store';
  * The first version keyed landscape off `pointer: coarse`, and a 850x390 phone
  * that does not report coarse — or any device where the emulation differs —
  * fell straight through to the desktop rack at 390px tall, mid-performance.
- * Turning the phone sideways is the app's stated way to perform; it is the one
- * moment the shell absolutely must not change underneath the operator.
+ * Landscape is no longer promoted as the way to perform — it does not make this
+ * surface better, so the prompt that suggested it is gone. The shell must still
+ * survive a rotation without swapping out from under whoever turned the phone,
+ * which is what this test is for.
  *
  * 1180 on the long edge keeps the iPad out (1024x768 has a 768 short edge and
  * would already fail) while covering every phone in landscape.

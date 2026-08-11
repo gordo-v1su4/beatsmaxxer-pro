@@ -38,8 +38,13 @@ export function openDrawer(tab: DrawerTab) {
   drawerOpen.set(true);
 }
 
-/** One-time nudges. Dismissal is per session — nothing is persisted. */
-export const rotateHintDismissed = writable(false);
+/**
+ * One-time nudges. Dismissal is per session — nothing is persisted.
+ *
+ * There was a `rotateHintDismissed` here for a "turn sideways to perform" pill.
+ * It is gone along with the pill: landscape does not actually make this surface
+ * better, so advertising it was talking users into a worse screen.
+ */
 export const desktopNoteDismissed = writable(false);
 
 /** Transient toast line under the top bar (clip loaded, no WebGPU, etc). */
