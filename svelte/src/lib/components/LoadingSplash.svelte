@@ -332,30 +332,34 @@
     So the element itself is the extruded body, and the chrome face is ::before
     painted on top of it, with the bevel hairline on ::after above that.
   */
+  /*
+    Deliberately plain.
+
+    This carried a nine-step extrude, a hard horizon break and a clipped bevel
+    layer, chasing the chrome in the reference art. Every one of those needs the
+    resolution and the hand-placed highlights of a raster treatment to read; in
+    CSS at phone size they stacked into mud and the wordmark got harder to read
+    with each addition.
+
+    So: one gradient, one shadow for separation, one soft glow. Clean type set
+    confidently beats a poor imitation of chrome, and it is a better base for
+    real art to replace later.
+  */
   .half {
     position: relative;
     font-size: var(--s-title);
     letter-spacing: var(--face-track);
-    color: #0c2e2b;
-    /*
-      Five steps, not nine, and in a teal that is lighter than the background.
-      A dark extrude on a dark field does not read as depth — it merges with the
-      backdrop and eats the glyph's outer edge, which was a large part of why the
-      mark would not resolve.
-    */
-    text-shadow:
-      1px 1px 0 #0e3835,
-      2px 2px 0 #0c302d,
-      3px 3px 0 #0a2825,
-      4px 4px 0 #08201e,
-      5px 6px 10px rgba(0, 0, 0, 0.7);
-    filter:
-      drop-shadow(0 0 16px rgba(45, 212, 191, 0.5))
-      drop-shadow(0 0 44px rgba(45, 212, 191, 0.28));
+    /* The face is the gradient on ::before; this layer only separates the mark
+       from the field behind it. */
+    color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.8))
+      drop-shadow(0 0 26px rgba(45, 212, 191, 0.3));
   }
 
-  .half::before,
-  .half::after {
+  /* ::after carried the white bevel band. It is gone — a specular hairline is
+     the last thing to add once the rest is right, not the first. */
+  .half::before {
     content: attr(data-word);
     position: absolute;
     left: 0;
@@ -401,16 +405,12 @@
         Stops are placed for where the caps sit in the line box (~16% to 100%),
         not for the box edges.
       */
-      #ffffff 16%,
-      #f2fffd 28%,
-      #bdf5ea 42%,
-      #7ae6d2 52%,
-      /* the horizon: a thin dark line between two bright halves */ #0d3b38 55%,
-      #0a302e 56.5%,
-      #4fded0 58%,
-      #2dd4bf 68%,
-      #6ceede 82%,
-      #d8fff9 100%
+      /* Three stops and no break. The hard horizon line needed hand-placed
+         highlights either side of it to read as metal; without them it was just
+         a dark band cutting every letter in half. */
+      #ffffff 18%,
+      #a9f0e2 58%,
+      #2dd4bf 100%
     );
     /*
       Deliberately NOT sized to a cap-height band. Clipping the ramp to 0.72em
@@ -447,26 +447,8 @@
     ramp and screens into the light ones, which is what a real specular does.
     The band edge is gone entirely; the falloff is the shape.
   */
-  .half::after {
-    background-image: linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.85) 16%,
-      rgba(255, 255, 255, 0.5) 23%,
-      rgba(255, 255, 255, 0.22) 30%,
-      rgba(255, 255, 255, 0.06) 38%,
-      rgba(255, 255, 255, 0) 46%
-    );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    /*
-      `screen`, not `overlay`. Overlay decides per-pixel from the *base*: where
-      the ramp is below mid-luminance it multiplies, so the highlight was
-      darkening the lower two thirds of every letter and the mark got harder to
-      read, not easier. Screen can only lighten, which is what a specular does.
-    */
-    mix-blend-mode: screen;
-  }
+  /* Removed. Kept only as a note: `screen` is the right mode for a specular —
+     `overlay` decides from the base and so darkens the lower half of a ramp. */
 
   /*
     The world the wordmark sits in. Both layers are pure CSS — no image, so they
