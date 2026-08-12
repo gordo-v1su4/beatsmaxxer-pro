@@ -405,12 +405,20 @@
         Stops are placed for where the caps sit in the line box (~16% to 100%),
         not for the box edges.
       */
-      /* Three stops and no break. The hard horizon line needed hand-placed
-         highlights either side of it to read as metal; without them it was just
-         a dark band cutting every letter in half. */
-      #ffffff 18%,
-      #a9f0e2 58%,
-      #2dd4bf 100%
+      /*
+        Teal-led, not white-led. Starting the ramp at #ffffff made the mark a
+        bright slab on a near-black screen — it read as a light-mode logo
+        dropped onto a dark app rather than as part of it. Leading with a light
+        teal keeps enough luminance to be legible against #0a0b0c while staying
+        inside the palette the rest of the UI uses.
+
+        Three stops and no break: the hard horizon line needed hand-placed
+        highlights either side of it to read as metal, and without them it was
+        just a dark band cutting every letter in half.
+      */
+      #9ff2e4 18%,
+      #2dd4bf 62%,
+      #17a091 100%
     );
     /*
       Deliberately NOT sized to a cap-height band. Clipping the ramp to 0.72em
@@ -641,11 +649,18 @@
     font-size: var(--s-pro);
     font-weight: 400;
     letter-spacing: var(--s-pro-track);
-    color: #b9fff2;
-    text-shadow:
-      0 0 12px rgba(45, 212, 191, 0.8),
-      0 2px 0 #0e3835,
-      0 3px 0 #08201e;
+    /*
+      PRO was set at the same weight as body chrome in a pale teal, tucked under
+      the corner of MAXXER — at that size and contrast it disappeared into the
+      glow of the word above it. It is part of the mark, so it gets its own
+      plate: solid dark chip, bright text, real letterspacing.
+    */
+    padding: 0.06em 0.22em;
+    border-radius: 2px;
+    background: rgba(8, 26, 24, 0.9);
+    border: 1px solid rgba(45, 212, 191, 0.45);
+    color: #d9fff8;
+    text-shadow: 0 0 10px rgba(45, 212, 191, 0.6);
     animation: scoot 440ms cubic-bezier(0.2, 0.9, 0.25, 1) 680ms both;
   }
   @keyframes scoot {
