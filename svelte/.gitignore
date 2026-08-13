@@ -8,6 +8,9 @@ node_modules
 /.svelte-kit
 /build
 
+# fxlab render output (regenerate with: bun run verify:fx)
+scripts/fxlab/.out
+
 # OS
 .DS_Store
 Thumbs.db
