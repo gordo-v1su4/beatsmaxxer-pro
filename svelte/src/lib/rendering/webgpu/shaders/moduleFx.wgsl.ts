@@ -96,6 +96,53 @@ fn hash21(p: vec2f) -> f32 {
   return fract(sin(dot(p, vec2f(12.9898, 78.233))) * 43758.5453);
 }
 
+/** Smooth value noise on a lattice. hash21 alone is white noise -- it can only
+    ever produce grain. Interpolating it gives a field with SHAPE at a chosen
+    scale, which is what separates fog from speckle. */
+fn valueNoise(p: vec2f) -> f32 {
+  let i = floor(p);
+  let f = fract(p);
+  let w = f * f * (3.0 - 2.0 * f);
+  let a = hash21(i);
+  let b = hash21(i + vec2f(1.0, 0.0));
+  let c = hash21(i + vec2f(0.0, 1.0));
+  let d = hash21(i + vec2f(1.0, 1.0));
+  return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+
+/** Three octaves, rotated between each so the square lattice never lines up
+    into visible axis-aligned structure. Normalised to 0..1. */
+fn fbm3(p0: vec2f) -> f32 {
+  var p = p0;
+  var f = 0.0;
+  var amp = 0.5;
+  for (var i = 0; i < 3; i = i + 1) {
+    f = f + amp * valueNoise(p);
+    p = rot2(p, 0.73) * 2.03;
+    amp = amp * 0.5;
+  }
+  return f / 0.875;
+}
+
+/** Domain-warped fbm: fbm(p + fbm(p)). Feeding noise back into its own
+    coordinates is what turns smooth blobs into the curdled, marbled structure
+    real fog has. Plain fbm still reads as an airbrush; warped fbm does not. */
+fn warpedFbm(p: vec2f) -> f32 {
+  let q = fbm3(p);
+  return fbm3(p + vec2f(q * 1.7, q * 1.1));
+}
+
+/** Per-pixel triangular dither at one 8-bit step.
+    The render targets are rgba8unorm, and a light leak is a wide, shallow
+    gradient -- the exact signal that bands into visible stair-steps at 8 bits.
+    Two hashes make the noise triangular rather than uniform, which removes the
+    banding without the flat "sand" a single uniform hash lays over the frame. */
+fn dither8(uv: vec2f, seed: f32) -> f32 {
+  let a = hash21(uv * 311.7 + vec2f(seed, seed * 1.7));
+  let b = hash21(uv * 517.3 + vec2f(seed * 2.3, seed));
+  return (a + b - 1.0) / 255.0;
+}
+
 /** Mirrored repeat that maps 0.5 back to 0.5, so a fold centred on the frame
     stays centred on the source. Folding with fract(x + 0.5) instead lands the
     centre of the frame on the corner of the source. */
@@ -340,12 +387,43 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += vec3f(g * g) * 0.30 * fade;
     col += acc * step(0.98, g) * 0.55 * fade;
   } else if (mode == 11.0) {
-    // LIGHT LEAK — warm bloom washing in from the frame edge
-    let sweep = 0.55 + 0.35 * sin(t * 0.5);
-    let edge = smoothstep(sweep, 0.0, p.x);
-    col += vec3f(1.0, 0.52, 0.18) * edge * edge * 0.65 * fade;
-    col += acc * edge * 0.22 * fade;
-    col += vec3f(1.0, 0.8, 0.5) * smoothstep(0.06, 0.0, p.x) * 0.5 * fade;
+    // LIGHT LEAK -- deliberately NOT a drawing of a light leak.
+    //
+    // This used to hand-draw a warm gradient washing in from the left edge. It
+    // read none of p0/p1/p2/p3, so TYPE, SIZE, WARMTH and DRIFT could not move
+    // it: all seven types rendered the same orange wash, which is most of why
+    // the module looked like one faded gradient with some dials attached.
+    // Worse, effectLeak then ran ON TOP of that drawing, so the card showed a
+    // fake leak plus a real one and the fake one dominated.
+    //
+    // effectLeak runs over this card exactly as it runs over video, so the
+    // honest subject is a neutral one with a real tonal range. A leak needs
+    // three things to show what it does, and a flat card supplies none of them:
+    // deep shadows for the fog to lift, a blown highlight for the core to bloom
+    // against (STREAK keys off luminance and renders nothing without one), and
+    // midtone detail you can still see through the tint.
+    let horizon = 0.62;
+    // Sky: dark at the top falling to a lighter band at the horizon.
+    col += mix(vec3f(0.04, 0.05, 0.075), vec3f(0.20, 0.21, 0.24),
+               smoothstep(0.05, horizon, p.y)) * fade;
+    // Ground: the shadow region, near black, so fogging is unmistakable.
+    col += vec3f(0.02, 0.022, 0.028) * step(horizon, p.y);
+    // Blown practical, off centre. Pinned near 1.0 so the highlight-selective
+    // branches actually trigger.
+    let lamp = vec2f((p.x - 0.66) * asp, p.y - 0.34);
+    let lr = length(lamp);
+    col += vec3f(1.0, 0.97, 0.92) * smoothstep(0.055, 0.0, lr);
+    col += vec3f(0.85, 0.80, 0.70) * smoothstep(0.22, 0.03, lr) * 0.35 * fade;
+    // Midtone blocks with hard edges, so loss of detail under the leak shows.
+    let b1 = step(0.06, p.x) * step(p.x, 0.20) * step(0.30, p.y) * step(p.y, horizon);
+    let b2 = step(0.24, p.x) * step(p.x, 0.34) * step(0.44, p.y) * step(p.y, horizon);
+    let b3 = step(0.82, p.x) * step(p.x, 0.95) * step(0.38, p.y) * step(p.y, horizon);
+    col += vec3f(0.16, 0.17, 0.20) * (b1 + b2 + b3) * fade;
+    // Small bright marks on the blocks: mid-high values that must survive.
+    let win = step(0.78, fract(p.x * asp * 11.0)) * step(0.74, fract(p.y * 13.0));
+    col += vec3f(0.95, 0.82, 0.55) * win * (b1 + b2 + b3) * 0.65 * fade;
+    // Accent baseline along the horizon, keeping the house style.
+    col += acc * smoothstep(0.006, 0.0, abs(p.y - horizon)) * 0.55 * fade;
   } else if (mode == 12.0) {
     // DUTCH ANGLE — a level grid rocking past horizontal
     let ang = sin(t * 0.6) * 0.42;
@@ -901,20 +979,36 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
 }
 
 /**
- * Six kinds of light leak, not one gradient with three dials.
+ * Seven kinds of light leak, built out of fogged noise rather than clean curves.
  *
- * This used to be a single geometry: a soft falloff from whichever side a slow
- * sine pointed at, modulated by a sine down Y. WARM, FLARE and BLEED only moved
- * the reach and the colour temperature, so every preset was the same shape in a
- * different gel -- which is exactly what "just a faded gradient thing" means.
+ * The first version of this was a single geometry -- a soft falloff from
+ * whichever side a slow sine pointed at -- so every preset was the same shape in
+ * a different gel. Splitting it into seven types fixed the shapes but not the
+ * look, because every type was still a smoothstep of a distance: an analytic
+ * curve reads as an airbrush gradient no matter what outline you give it, which
+ * is what "just a faded gradient thing" means.
  *
- * The types below are different light *events*, not different tints:
+ * Three things separate this pass from that one:
+ *
+ *   1. The boundary is warped by domain-warped fbm, not multiplied by it.
+ *      Perturbing the DISTANCE makes the edge of the fog ragged and curdled;
+ *      multiplying the result only mottles an outline that is still a visibly
+ *      smooth curve underneath.
+ *   2. Two leak events run at once, at different scales and phases. Reference
+ *      sheets of real fogged frames almost never show a single clean event --
+ *      there is a dominant one and a weaker second, and the overlap is most of
+ *      what makes it read as film damage instead of an overlay.
+ *   3. It composites by MULTIPLYING its colour into the picture before it adds
+ *      any light. See the composite note in effectLeak.
+ *
+ * The types are different light EVENTS, not different tints:
  *   0 EDGE    film gate bleed creeping in from one side
- *   1 STREAK  anamorphic horizontal flare, driven by what is actually bright
- *   2 BAR     a hard-edged shaft sweeping across the frame
+ *   1 STREAK  anamorphic flare, driven by what is actually bright in frame
+ *   2 SHAFT   a hard-edged shaft sweeping across the frame
  *   3 CORNER  a hotspot burning in from a corner
  *   4 BURN    organic blotches, the way a scratched neg fogs
  *   5 VEIL    whole-frame veiling glare that breathes on the beat
+ *   6 PRISM   the same fog split per wavelength into a spectral fringe
  *
  * p0 = size/reach, p1 = colour temperature, p2 = drift speed, p3 = type.
  */
@@ -926,7 +1020,7 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
  * or white through cyan into violet -- the film is being fogged by light that
  * scatters differently at each wavelength as it falls off. Picking one tint and
  * multiplying the whole falloff by it is exactly what makes an effect read as a
- * gel taped over the lens, which is what this was doing.
+ * gel taped over the lens.
  *
  * Param w is the WARMTH dial and chooses the family, cool at 0 to hot at 1.
  * Param i is the leak's own intensity at this pixel, so the ramp is walked from
@@ -936,8 +1030,13 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
  * literal, so one in a comment ends the string and the errors land hundreds of
  * lines away from the cause.
  */
-fn leakRamp(w: f32, i: f32) -> vec3f {
+fn leakRamp(w0: f32, i: f32) -> vec3f {
   let k = clamp(i, 0.0, 1.0);
+  // Sharpened, because the cool and warm families sit on opposite sides of the
+  // wheel and a linear crossfade between them passes straight through grey. Mid
+  // WARMTH produced a muddy tan that was neither, so most of the dial's travel
+  // read as "slightly dirty" rather than as cool or warm.
+  let w = smoothstep(0.10, 0.90, clamp(w0, 0.0, 1.0));
 
   // Cool family: violet fringe, cyan body, white-blue core.
   let coolFringe = vec3f(0.42, 0.24, 0.78);
@@ -956,129 +1055,235 @@ fn leakRamp(w: f32, i: f32) -> vec3f {
   // Fringe holds the outer third, core only arrives where the leak is strong --
   // that late arrival is what makes the middle read as a blowout rather than a
   // flat wash.
-  return mix(mix(fringe, mid, smoothstep(0.0, 0.55, k)), core, smoothstep(0.62, 1.0, k));
+  let ramp = mix(mix(fringe, mid, smoothstep(0.0, 0.55, k)), core, smoothstep(0.62, 1.0, k));
+
+  // Push the saturation back up. Any mix of two hues loses chroma toward the
+  // middle, and the ramp mixes twice -- once across the families and once along
+  // the falloff -- so without this the body of the leak lands closer to beige
+  // than to either colour it was built from. The core is left alone: it is
+  // supposed to be blown and near-white.
+  let lum = dot(ramp, vec3f(0.2126, 0.7152, 0.0722));
+  let sat = mix(1.55, 1.0, smoothstep(0.55, 1.0, k));
+  return max(vec3f(0.0), mix(vec3f(lum), ramp, sat));
+}
+
+/**
+ * One leak event as a scalar field over the frame.
+ *
+ * seed offsets both the noise field and the drift, so calling this twice gives
+ * two independent events rather than the same one drawn twice.
+ */
+fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32) -> f32 {
+  let asp = max(u.aspect, 0.0001);
+  // Aspect-corrected frame coordinates, so a round hotspot stays round on a
+  // 16:9 canvas instead of stretching into an ellipse.
+  let q = vec2f((uv.x - 0.5) * asp, uv.y - 0.5);
+
+  // Coarse fog for the boundary. A big leak wants big structure, so the noise
+  // scale falls as reach rises -- holding it fixed makes a full-frame wash look
+  // like it has small-scale crud dusted over it.
+  let fogScale = mix(5.2, 2.0, clamp(reach, 0.0, 1.0));
+  let fog = warpedFbm(uv * vec2f(asp, 1.0) * fogScale + vec2f(seed * 7.1, phase * 0.3));
+  let warp = (fog - 0.5) * 0.5;
+
+  var v = 0.0;
+
+  if (kind < 0.5) {
+    // EDGE -- gate bleed creeping in from one side.
+    // step(), not a continuous mix: blending uv.x with 1.0 - uv.x by a moving
+    // fraction lands on a CONSTANT 0.5 across the entire frame at the halfway
+    // point, so the old version flattened to a uniform wash twice per cycle.
+    let side = step(0.0, sin(phase * 0.5 + seed * 2.1));
+    let d = mix(uv.x, 1.0 - uv.x, side) + warp * 0.30;
+    // Raised to a power so the bleed stays anchored at the edge and falls away
+    // fast. A bare smoothstep over most of the frame width is a gradient across
+    // the whole picture, which is the thing this type kept turning back into.
+    v = pow(clamp(1.0 - smoothstep(0.0, reach * 0.80, d), 0.0, 1.0), 1.5) * 1.35;
+    // Vertical break-up, so the bleed is not a perfectly even column.
+    v = v * (0.60 + 0.40 * fbm3(vec2f(uv.y * 3.1 + seed, phase * 0.2)));
+
+  } else if (kind < 1.5) {
+    // STREAK -- an anamorphic flare has to come FROM something bright, or it is
+    // just a bar. Walking the source horizontally and keeping only the top of
+    // the luminance range is what makes it sit in the scene and move with it.
+    let cy = 0.5 + 0.34 * sin(phase * 0.6 + seed);
+    let band = exp(-pow((uv.y - cy + warp * 0.10) / max(reach * 0.30, 0.015), 2.0));
+    var glare = 0.0;
+    for (var i = 0; i < 9; i = i + 1) {
+      let o = (f32(i) - 4.0) * (0.014 + reach * 0.05);
+      let s = sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
+      let lum = dot(s, vec3f(0.2126, 0.7152, 0.0722));
+      glare = glare + smoothstep(0.45, 1.0, lum) * (1.0 - abs(f32(i) - 4.0) / 5.0);
+    }
+    // The glare rides on a floor rather than being the whole term. Keyed purely
+    // off highlights, this type rendered NOTHING over any shot without a blown
+    // one in the flare's path -- the selector had a dead button in it. The band
+    // is always a flare; what is bright in frame decides how hard it blows.
+    v = band * (0.50 + clamp(glare * 0.80, 0.0, 1.9));
+
+  } else if (kind < 2.5) {
+    // SHAFT -- a shaft with an actual edge, travelling across the frame. The
+    // warp gives it the wobble a real shaft picks up through a dirty gate.
+    let sweep = fract(phase * 0.3 + seed * 0.37);
+    let x = (uv.x - sweep * 1.5 + 0.25 + warp * 0.18) / max(reach * 0.62, 0.03);
+    v = exp(-x * x * 2.6) * (0.68 + 0.32 * fbm3(vec2f(uv.y * 4.0, phase * 0.4 + seed)));
+
+  } else if (kind < 3.5) {
+    // CORNER -- burns in from whichever corner the drift is pointing at.
+    let cx = step(0.5, fract(phase * 0.11 + seed * 0.41));
+    let cy = step(0.5, fract(phase * 0.09 + 0.37 + seed * 0.23));
+    let corner = vec2f((cx - 0.5) * asp, cy - 0.5);
+    let d = length(q - corner) + warp * 0.30;
+    v = pow(clamp(1.0 - smoothstep(0.0, reach * 1.25, d), 0.0, 1.0), 1.8) * 1.6;
+
+  } else if (kind < 4.5) {
+    // BURN -- the fog IS the shape here, not a modifier on one. Thresholding a
+    // warped fbm gives blotches with the ragged, unrepeatable outline of a
+    // scratched neg; the old three drifting circles could not, because three
+    // circles always look like three circles.
+    let blot = warpedFbm(uv * vec2f(asp, 1.0) * 2.6 + vec2f(phase * 0.16 + seed * 3.3, phase * 0.12));
+    // Bias toward the frame edge: a leak is light getting past the gate or the
+    // back, so it is strongest at the border and thins toward the middle.
+    let edgeBias = smoothstep(0.10, 0.62, max(abs(q.x) / asp, abs(q.y)) * 2.0);
+    v = smoothstep(0.62 - reach * 0.40, 0.92, blot) * (0.35 + 0.65 * edgeBias) * 1.2;
+
+  } else if (kind < 5.5) {
+    // VEIL -- glare over the whole frame, pumped by the beat. Even a veil has
+    // structure: a flat one is indistinguishable from lowering the contrast,
+    // which is exactly what it used to look like.
+    let breathe = 0.45 + 0.55 * beatPulse(3.0);
+    let edgeBias = smoothstep(0.05, 0.95, length(q / vec2f(asp, 1.0)) * 1.5);
+    // Floor plus reach rather than reach alone: scaled straight off the dial it
+    // vanished entirely at low SIZE, so a third of the control did nothing.
+    v = breathe * (0.30 + reach * 1.05) * (0.28 + 0.72 * edgeBias) * (0.42 + 0.58 * fog);
+
+  } else {
+    // PRISM -- a soft blob, displaced per channel by the caller so the three
+    // evaluations land in slightly different places. That displacement IS
+    // chromatic aberration, so the overlap reads as spectrum rather than as
+    // three tinted copies of one shape.
+    let centre = vec2f(cos(phase * 0.37 + seed), sin(phase * 0.31 + seed)) * 0.30;
+    let d = length(q - centre) + warp * 0.26;
+    v = clamp(1.0 - smoothstep(0.0, reach * 1.25, d), 0.0, 1.0);
+  }
+
+  // Internal mottling. Fine grain inside the fog: light-struck emulsion is
+  // exposed silver, so the fogged area carries grain of its own rather than
+  // being the one perfectly clean region of the picture.
+  let mottle = 0.78 + 0.22 * fbm3(uv * vec2f(asp, 1.0) * 11.0 + vec2f(seed * 13.0, phase * 0.9));
+  return max(v, 0.0) * mottle;
 }
 
 fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   let kind = floor(clamp(u.p3, 0.0, 1.0) * 100.0 + 0.5);
-  let phase = u.beat * (0.04 + u.p2 * 0.22);
-  // Leaks are big. The old ceiling of 0.60 meant even a maxed EDGE only fogged
-  // a band down one side, where the real thing routinely swallows half the
-  // frame or more. Going past 1.0 lets the falloff run off the edge entirely,
-  // which is what gives a full-frame wash instead of a visible gradient stop.
-  let reach = 0.18 + u.p0 * 0.95;
-  var leak = 0.0;
-  // Set only by the spectral type, which needs a per-channel result rather
-  // than one scalar the tint is multiplied into.
+  let phase = u.beat * (0.06 + u.p2 * 0.34);
+  let asp = max(u.aspect, 0.0001);
+  // Leaks are big. A ceiling that only fogs a band down one side is the other
+  // half of why this read as an overlay -- the real thing routinely swallows
+  // half the frame.
+  let reach = 0.20 + u.p0 * 0.90;
+
+  var amount = 0.0;
   var spectral = vec3f(0.0);
 
-  if (kind < 0.5) {
-    // EDGE -- the original gate bleed, kept because it is the classic.
-    let side = 0.5 + 0.5 * sin(phase);
-    let edgeDistance = mix(uv.x, 1.0 - uv.x, side);
-    leak = (1.0 - smoothstep(0.0, reach, edgeDistance))
-           * (0.55 + 0.45 * sin(uv.y * 7.0 + phase * 2.3));
-
-  } else if (kind < 1.5) {
-    // STREAK -- an anamorphic flare has to come *from* something bright, or it
-    // is just a bar. Walking the source horizontally and keeping the highlights
-    // is what makes it sit in the scene and move with the shot.
-    let band = exp(-pow((uv.y - (0.5 + 0.32 * sin(phase * 0.7))) / max(reach * 0.55, 0.02), 2.0));
-    var glare = 0.0;
-    for (var i = 0; i < 9; i = i + 1) {
-      let o = (f32(i) - 4.0) * (0.012 + u.p0 * 0.03);
-      let s = sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
-      let lum = dot(s, vec3f(0.2126, 0.7152, 0.0722));
-      // Only the top of the range blooms; a flare off midtones reads as haze.
-      glare = glare + smoothstep(0.62, 1.0, lum) * (1.0 - abs(f32(i) - 4.0) / 5.0);
-    }
-    leak = band * clamp(glare * 0.42, 0.0, 1.6);
-
-  } else if (kind < 2.5) {
-    // BAR -- a shaft with an actual edge, travelling across the frame.
-    let sweep = fract(phase * 0.35);
-    let x = (uv.x - sweep * 1.4 + 0.2) / max(reach * 0.8, 0.03);
-    leak = exp(-x * x * 3.0) * (0.75 + 0.25 * sin(uv.y * 3.0 + phase));
-
-  } else if (kind < 3.5) {
-    // CORNER -- burns in from whichever corner the drift is pointing at.
-    let cx = step(0.5, fract(phase * 0.13));
-    let cy = step(0.5, fract(phase * 0.11 + 0.37));
-    let corner = vec2f(cx, cy);
-    let d = length((uv - corner) / vec2f(max(u.aspect, 0.0001), 1.0));
-    leak = pow(1.0 - smoothstep(0.0, reach * 2.2, d), 1.6);
-
-  } else if (kind < 4.5) {
-    // BURN -- three drifting blobs at incommensurate rates, so the fog never
-    // visibly repeats the way a single moving hotspot does.
-    var acc = 0.0;
-    for (var i = 0; i < 3; i = i + 1) {
-      let fi = f32(i);
-      let c = vec2f(
-        0.5 + 0.42 * sin(phase * (0.31 + fi * 0.17) + fi * 2.1),
-        0.5 + 0.42 * cos(phase * (0.23 + fi * 0.13) + fi * 1.3)
-      );
-      let d = length((uv - c) / vec2f(max(u.aspect, 0.0001), 1.0));
-      acc = acc + (1.0 - smoothstep(0.0, reach * 1.5, d));
-    }
-    leak = clamp(acc * 0.7, 0.0, 1.4);
-
-  } else if (kind < 5.5) {
-    // VEIL -- flat glare over everything, pumped by the beat. The vignette
-    // keeps it off the centre so the subject does not wash out.
-    let vig = 1.0 - 0.55 * (1.0 - length(uv - vec2f(0.5)) * 1.4);
-    leak = (0.35 + 0.65 * beatPulse(3.0)) * reach * 1.6 * vig;
-
-  } else {
-    // SPECTRAL -- the prismatic leaks in the reference sheets, where the fog
-    // splits into rainbow bands. Same falloff evaluated three times at slightly
-    // different positions, one per channel: that displacement IS chromatic
-    // aberration, so red trails one way and blue the other and the overlap
-    // reads as spectrum rather than as three tinted copies.
+  if (kind > 5.5) {
+    // Three evaluations of the same field, displaced along one axis. Red trails
+    // one way and blue the other, and where they overlap the fog goes white.
     let axis = vec2f(cos(phase * 0.4), sin(phase * 0.4));
-    let disp = 0.06 + u.p0 * 0.22;
-    let centre = vec2f(0.5) + axis * 0.35 * sin(phase * 0.6);
+    let disp = (0.05 + u.p0 * 0.16) / vec2f(asp, 1.0).x;
     for (var c = 0; c < 3; c = c + 1) {
       let off = (f32(c) - 1.0) * disp;
-      let q = uv - centre - axis * off;
-      let d = length(q / vec2f(max(u.aspect, 0.0001), 1.0));
-      let band = 1.0 - smoothstep(0.0, reach * 1.1, d);
+      let p = uv - axis * off;
+      let band = leakField(p, 6.0, reach, phase, 0.0)
+               + leakField(p, 6.0, reach * 0.62, phase * 1.7 + 2.3, 4.7) * 0.55;
       if (c == 0) { spectral.r = band; }
       else if (c == 1) { spectral.g = band; }
       else { spectral.b = band; }
     }
-    leak = max(spectral.r, max(spectral.g, spectral.b));
+    amount = max(spectral.r, max(spectral.g, spectral.b));
+  } else {
+    // Two events, not one. The second is smaller, faster and offset in the
+    // noise field, so it lands somewhere else in the frame and the two overlap
+    // the way real fogging does. Summing rather than max-ing means the overlap
+    // is genuinely hotter, which is where the blowout wants to be.
+    let a = leakField(uv, kind, reach, phase, 0.0);
+    let b = leakField(uv, kind, reach * 0.55, phase * 1.63 + 5.1, 3.9);
+    amount = a + b * 0.6;
   }
 
-  // Take a third of the colour from the frame itself. Real spill picks up
-  // whatever it is bouncing off, so a leak with a fixed tint always reads as a
-  // gel taped to the lens no matter how well the shape is drawn. Dividing by
-  // luminance keeps the scene's hue and discards its brightness, so a dark shot
-  // biases the leak just as strongly as a bright one.
+  amount = clamp(amount, 0.0, 1.6);
+  let k = clamp(amount, 0.0, 1.0);
+
+  // Take a little of the colour from the frame itself. Real spill picks up
+  // whatever it is bouncing off. Dividing by luminance keeps the scene's hue
+  // and discards its brightness, so a dark shot biases the leak as strongly as
+  // a bright one.
   let sceneLum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 0.001);
   let sceneHue = clamp(col / sceneLum, vec3f(0.0), vec3f(2.0));
-  let amount = clamp(leak, 0.0, 1.4);
 
-  // Walk the ramp with the leak's own intensity so the colour changes across
-  // the falloff, then take a fifth of it from the frame so the spill picks up
-  // what it is bouncing off. The spectral type already carries its colour in
-  // the per-channel bands, so it only needs the warmth family applied.
-  var tint = mix(leakRamp(u.p1, amount), sceneHue, 0.20);
+  // Two colours, not one.
+  //
+  // leakRamp runs fringe -> body -> near-white core, and walking it with the
+  // leak's own strength meant that anywhere the field saturated -- which, with
+  // two layers summed, is most of the leak -- the colour used was the blown
+  // core. Every type came out the same cream haze no matter what WARMTH said,
+  // because the ramp was pinned at its white end.
+  //
+  // The body keeps to the saturated part of the ramp and drives the tint and
+  // the fog. The core is the white end and is reserved for the screened
+  // blowout, so the picture goes properly warm or properly cool and only the
+  // hottest centre of the leak goes white.
+  var body = mix(leakRamp(u.p1, min(amount, 0.55)), sceneHue, 0.10);
+  var coreTint = leakRamp(u.p1, 1.0);
   if (kind > 5.5) {
-    tint = spectral * mix(vec3f(0.85, 0.92, 1.00), vec3f(1.00, 0.86, 0.70), u.p1);
+    // The spectral bands already carry the colour; warmth only biases which end
+    // of the spectrum leads.
+    let spec = normalize(spectral + vec3f(0.02))
+             * mix(vec3f(0.82, 0.92, 1.00), vec3f(1.00, 0.84, 0.66), u.p1);
+    body = spec * 1.5;
+    coreTint = mix(spec * 1.5, vec3f(1.0), 0.55);
   }
 
-  let energy = clamp(tint * amount, vec3f(0.0), vec3f(1.0));
-  // Fog the blacks before screening. Film that has been light-struck loses its
-  // shadows first -- screen alone only lifts what is already bright, which left
-  // the picture looking like it had a glow pasted over it rather than like the
-  // stock itself had been exposed.
-  let fogged = col + energy * 0.13;
-  // Screen, not add. Adding pushes highlights past white and leaves the leak
-  // sitting on the picture like a coloured sheet; screen lets it interact with
-  // what is already bright, so it reads as light in the scene instead of over
-  // it, and it cannot blow out to flat white.
-  return vec3f(1.0) - (vec3f(1.0) - clamp(fogged, vec3f(0.0), vec3f(1.0))) * (vec3f(1.0) - energy);
+  // ---- Composite -------------------------------------------------------
+  // The old version screened a colour over the picture and stopped there, which
+  // is why it looked like a coloured sheet laid on top: screen can only ADD
+  // light, so every pixel it touched got brighter and flatter until the shot
+  // was a milky haze with its blacks at mid grey.
+  //
+  // Light-struck film does two separable things, and the order matters:
+  //
+  //   1. The stock is exposed through the leak's colour, so the picture under
+  //      it is TINTED -- the frame keeps its detail and its contrast and comes
+  //      out warm, not washed. That is a multiply, and it is the step that was
+  //      missing entirely.
+  //   2. Then the fogging light is added on top, blowing the core out and
+  //      lifting the shadows -- but only where the leak actually is.
+  //
+  // Multiply first, add second. Doing it the other way round tints light the
+  // leak just deposited instead of tinting the picture.
+
+  // Normalised so the brightest channel is 1: multiplying by a colour whose
+  // peak is below 1 would darken the shot overall instead of shifting its hue.
+  let tintMul = body / max(max(body.r, max(body.g, body.b)), 0.001);
+  var wet = col * mix(vec3f(1.0), tintMul, k * 0.95);
+
+  // Fog. Weighted by (1 - wet) so it lands in the shadows and leaves the
+  // highlights alone -- fogging adds density to the parts of the neg that were
+  // never exposed, so the blacks go first and the highlights barely move. This
+  // is also the only term that reads at all on a night shot, where multiplying
+  // a near-black pixel by anything leaves it near-black.
+  wet = wet + body * (k * 0.42) * (vec3f(1.0) - wet);
+
+  // Core. Screened, and scaled by what is already bright so the leak blows out
+  // where it crosses a highlight instead of ignoring the picture underneath.
+  // pow keeps it off the weak fringe, so only the hot middle of the leak blows.
+  let coreK = pow(k, 2.1) * (0.35 + 0.90 * smoothstep(0.20, 1.0, sceneLum));
+  let core = clamp(coreTint * coreK, vec3f(0.0), vec3f(1.0));
+  wet = vec3f(1.0) - (vec3f(1.0) - clamp(wet, vec3f(0.0), vec3f(1.0))) * (vec3f(1.0) - core);
+
+  // Dither. A leak is a wide shallow gradient across an 8-bit target, which is
+  // the exact signal that stair-steps into visible bands.
+  return clamp(wet + vec3f(dither8(uv, u.beat * 0.37)), vec3f(0.0), vec3f(1.0));
 }
 
 /** Rotating horizon with optional beat snap. p0 = tilt, p1 = drift,

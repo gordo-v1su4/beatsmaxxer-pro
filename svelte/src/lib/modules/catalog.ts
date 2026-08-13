@@ -167,9 +167,9 @@ const defs: ModuleDefinition[] = [
     row: 'top',
     category: 'film',
     shaderKey: 'leak',
-    description: 'Six leak types: gate bleed, anamorphic streak, shaft, corner burn',
+    description: 'Seven leak types: gate bleed, streak, shaft, corner, burn, veil, prism',
     // `type` selects the leak geometry, not a tint. It is read as a discrete
-    // index by the shader, so the preset values below sit exactly on 0..5.
+    // index by the shader, so the preset values below sit exactly on 0..6.
     params: { type: 0, edge: 50, warmth: 60, drift: 35, mix: 55, in_: 80, out: 70 }
   },
   {

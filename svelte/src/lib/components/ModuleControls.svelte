@@ -401,10 +401,10 @@
       <div style="display:flex;gap:2px;flex-wrap:wrap">
         {#each [
           // Spread across the whole temperature range, not clustered in the
-          // warm half. leakTint splits at 0.5; the first pass put five of six
-          // presets above it, so every type came out the same orange and there
-          // was no cool option at all. Anamorphic streaks are blue in practice,
-          // and a daylight shaft is cooler still.
+          // warm half. leakRamp sharpens WARMTH around its midpoint, so a value
+          // near 50 reads neutral and the character lives at the ends -- these
+          // sit well out to one side or the other on purpose. Anamorphic
+          // streaks are blue in practice, and a daylight shaft is cooler still.
           { l: 'GATE', set: { type: 0, edge: 45, warmth: 66, drift: 30 } },
           { l: 'STREAK', set: { type: 1, edge: 60, warmth: 28, drift: 35 } },
           { l: 'SHAFT', set: { type: 2, edge: 40, warmth: 14, drift: 55 } },

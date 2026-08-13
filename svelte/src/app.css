@@ -277,6 +277,12 @@ input[type='range']::-moz-range-thumb {
 	display: flex;
 	gap: 3px;
 	align-items: center;
+	/* The strip is a fixed 46px and clips, so a module that outgrows one row of
+	   presets would silently lose the overflow. Wrapping keeps them reachable;
+	   the 160px cap is the measured gap between the row's left edge and the
+	   knob cluster, so a full row never pushes into the knobs. */
+	flex-wrap: wrap;
+	max-width: 160px;
 }
 
 .mix-strip-knobs {

@@ -64,10 +64,23 @@ function presetsFor(id: string): ModulePreset[] {
         { n: '3', title: 'Weave', set: { size: 40, amount: 50, drift: 70, mix: 55 } }
       ];
     case 'leak':
+      // Every preset names its type as well as its dials. The old three set no
+      // type at all, so all of them landed on whatever the module happened to
+      // be on and only moved SIZE/WARMTH/MIX -- three tints of one shape, which
+      // is the complaint the whole module was rebuilt around.
+      //
+      // Paired cool and warm across the range: WARMTH is sharpened around its
+      // midpoint, so anything near 50 reads neutral and the character lives out
+      // at the ends.
       return [
-        { n: '1', title: 'Warm edge', set: { edge: 45, warmth: 55, drift: 30, mix: 50, in_: 80, out: 70 } },
-        { n: '2', title: 'Sun flare', set: { edge: 75, warmth: 85, drift: 50, mix: 65, in_: 85, out: 75 } },
-        { n: '3', title: 'Subtle bleed', set: { edge: 25, warmth: 40, drift: 20, mix: 35, in_: 75, out: 65 } }
+        { n: '1', title: 'Cold gate — blue bleed off one edge', set: { type: 0, edge: 45, warmth: 10, drift: 25, mix: 55, in_: 80, out: 70 } },
+        { n: '2', title: 'Warm gate — amber bleed off one edge', set: { type: 0, edge: 50, warmth: 90, drift: 30, mix: 60, in_: 80, out: 70 } },
+        { n: '3', title: 'Blue streak — anamorphic flare off highlights', set: { type: 1, edge: 60, warmth: 16, drift: 35, mix: 70, in_: 85, out: 75 } },
+        { n: '4', title: 'Sun shaft — hot bar sweeping across', set: { type: 2, edge: 45, warmth: 92, drift: 55, mix: 65, in_: 85, out: 75 } },
+        { n: '5', title: 'Corner burn — hotspot from the frame corner', set: { type: 3, edge: 55, warmth: 96, drift: 20, mix: 65, in_: 80, out: 70 } },
+        { n: '6', title: 'Neg burn — organic fog, scratched negative', set: { type: 4, edge: 55, warmth: 82, drift: 40, mix: 70, in_: 85, out: 75 } },
+        { n: '7', title: 'Ice veil — cold glare breathing on the beat', set: { type: 5, edge: 40, warmth: 6, drift: 25, mix: 50, in_: 75, out: 65 } },
+        { n: '8', title: 'Prism — spectral fringe, split per wavelength', set: { type: 6, edge: 55, warmth: 50, drift: 35, mix: 60, in_: 80, out: 70 } }
       ];
     case 'vhs':
       return [

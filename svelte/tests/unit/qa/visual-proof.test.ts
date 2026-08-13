@@ -15,6 +15,19 @@ import {
 } from '$lib/qa/visualProof';
 import { verifyVisualProof } from '../../../scripts/verify-visual-proof-runner';
 import { realMediaFileMetadata } from '../../../scripts/visual-proof-verification';
+import { MODULE_PRESETS } from '$lib/modules/presets';
+import { catalogIds } from '$lib/modules/catalog';
+
+/** Derived, not hardcoded. These totals were literals, so adding presets to a
+ *  single module failed two unrelated release-gate tests with a bare number
+ *  mismatch that says nothing about what actually broke. Counting the catalog
+ *  still catches a manifest that drops or dedupes entries, which is what the
+ *  gate is for -- the manifest is built by different code than these. */
+const CATALOG_MODULE_COUNT = catalogIds().length;
+const CATALOG_PRESET_COUNT = Object.values(MODULE_PRESETS).reduce(
+  (total, list) => total + list.length,
+  0
+);
 
 function completeReport(): VisualProofReport {
   const manifest = buildVisualProofManifest([
@@ -456,9 +469,9 @@ describe('visual proof release gate', () => {
     const presets = manifest.items.filter((item) => item.kind === 'preset');
     const shaders = manifest.items.filter((item) => item.kind === 'shader');
 
-    expect(modules).toHaveLength(19);
-    expect(presets).toHaveLength(63);
-    expect(shaders).toHaveLength(19);
+    expect(modules).toHaveLength(CATALOG_MODULE_COUNT);
+    expect(presets).toHaveLength(CATALOG_PRESET_COUNT);
+    expect(shaders).toHaveLength(CATALOG_MODULE_COUNT);
     expect(shaders.map((item) => item.subjectId).sort()).toEqual(
       modules.map((item) => item.subjectId).sort()
     );
@@ -506,13 +519,15 @@ describe('visual proof release gate', () => {
     expect(metadata?.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  test('rejects the synthetic 102-item report backed by one-byte artifacts', async () => {
+  test('rejects a whole-catalog report backed by one-byte artifacts', async () => {
     const report = completeReport();
     report.manifest.items = report.manifest.items.filter((item) => item.kind !== 'control' || item.subjectId === 'button:play');
     report.manifest.controlInventory.discoveredCount = 1;
     report.manifest.controlInventory.includedCount = 1;
     report.evidence = report.evidence.filter((item) => report.manifest.items.some((manifestItem) => manifestItem.id === item.itemId));
-    expect(report.manifest.items).toHaveLength(102);
+    // one module + one shader entry each, every preset, and the single
+    // surviving control the filter above leaves in place.
+    expect(report.manifest.items).toHaveLength(CATALOG_MODULE_COUNT * 2 + CATALOG_PRESET_COUNT + 1);
     await mkdir('.artifacts/visual-proof', { recursive: true });
     await Promise.all([
       writeFile('.artifacts/visual-proof/one-byte-before.png', Uint8Array.of(0)),
