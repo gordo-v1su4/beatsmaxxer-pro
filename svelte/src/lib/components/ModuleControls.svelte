@@ -102,7 +102,11 @@
 {#if moduleId === 'transition'}
   <div style="display:flex;flex-direction:column;flex:1">
     <Section label="PACK" {color}>
-      <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px">
+      <!-- Six across, not eight. At the 272px module minimum an 8-column grid
+           gives each move ~30px, and the longest labels ("WHP L", "GLTC") need
+           about 30px of glyph on their own — so they clipped. Six columns gives
+           ~41px and costs one extra 16px row. -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:2px">
         {#each TRANSITION_PACK as o (o.l)}
           <!-- fill, not a fixed 34px: these sit in `repeat(8, 1fr)`, so on a
                narrow module the tracks shrink while a pixel-width button does
