@@ -44,6 +44,26 @@ Note that a *neutral* card should ignore the params — the effect running over 
 supplies the response. The question is whether the card draws a **subject** or
 draws the **effect**.
 
+## What it cannot show
+
+fxlab feeds a **fixed frame** and a **black feedback texture**, at one beat
+position. Four modules therefore render an unchanged video row, and that is
+correct rather than a fault in them:
+
+| Module | Where its effect actually happens |
+|---|---|
+| TIMESAMPLER | seeks the video element upstream of the shader |
+| SPEEDRAMP | changes playback rate upstream of the shader |
+| STUTTER | holds a frame in the feedback texture, which is black here |
+| TRANSITION | only fires for a window every few bars, not continuously |
+
+For these four the card is the only preview there can be, so it legitimately
+draws the *gesture* -- a playhead that locks, ticks that accelerate -- rather
+than a subject. Judge them on whether the card responds to its controls; the
+video row cannot be evidence either way.
+
+Everything else does the work in the fragment shader and shows up in both rows.
+
 ## Why naga
 
 `build-glsl.ts` compiles `MODULE_FX_IDLE_WGSL` — the shader the app actually
