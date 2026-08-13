@@ -381,12 +381,23 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += acc * tear * 0.45 * fade;
     col += vec3f(hash21(vec2f(floor(p.y * 220.0), floor(t * 20.0))) - 0.5) * 0.10 * fade;
   } else if (mode == 17.0) {
-    // PRISM — one edge fanned into red, green and blue copies
-    let spread = 0.030 + 0.018 * sin(t * 0.7);
-    col += vec3f(1.0, 0.22, 0.22) * smoothstep(0.018, 0.0, abs(p.x - 0.5 + spread)) * 0.6 * fade;
-    col += vec3f(0.25, 1.0, 0.42) * smoothstep(0.018, 0.0, abs(p.x - 0.5)) * 0.6 * fade;
-    col += vec3f(0.28, 0.48, 1.0) * smoothstep(0.018, 0.0, abs(p.x - 0.5 - spread)) * 0.6 * fade;
-    col += acc * smoothstep(0.30, 0.0, abs(p.x - 0.5)) * 0.10 * fade;
+    // PRISM -- deliberately NOT a drawing of a chromatic split.
+    //
+    // This used to hand-draw three coloured lines at a fixed spread of
+    // 0.030 + 0.018*sin(t). It read none of p0/p1/p2, so SPLIT, ANGLE and EDGE
+    // could not change the card no matter what they were set to, and the
+    // picture it advertised was not the one the module produces.
+    //
+    // effectPrism runs over this card exactly as it runs over video, so the
+    // honest subject is a neutral, high-contrast one: an RGB split is only
+    // visible as fringing on edges that have luminance contrast and no colour
+    // of their own. Splitting something already red, green and blue shows
+    // nothing, which is the other half of why the controls looked dead.
+    let bars = step(0.62, fract(p.x * 7.0));
+    let ring = smoothstep(0.020, 0.004,
+      abs(length(vec2f((p.x - 0.5) * asp, p.y - 0.5)) - 0.30));
+    col += vec3f(0.90) * bars * fade * 0.5;
+    col += vec3f(0.95) * ring * fade;
   } else if (mode == 18.0) {
     // MOTION STREAK — comet heads dragging trails along the move axis.
     // Read no params and ran on the wall clock, so LENGTH, ANGLE and DECAY did
