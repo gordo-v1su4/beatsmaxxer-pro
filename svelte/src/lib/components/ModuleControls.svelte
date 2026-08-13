@@ -410,7 +410,8 @@
           { l: 'SHAFT', set: { type: 2, edge: 40, warmth: 14, drift: 55 } },
           { l: 'CORNER', set: { type: 3, edge: 55, warmth: 84, drift: 25 } },
           { l: 'BURN', set: { type: 4, edge: 50, warmth: 96, drift: 40 } },
-          { l: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } }
+          { l: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
+          { l: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
         ] as p (p.l)}
           {@const active = Math.round(params.type ?? 0) === p.set.type}
           <RackBtn

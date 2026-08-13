@@ -283,7 +283,10 @@ export const MODULE_CATALOG = new Map<string, ModuleDefinition>(
 // BEAT FX family, which has five members; the bottom takes the four camera
 // moves plus INCEPTION. Leaving two slots empty by default hid two working
 // modules behind a drag nobody knew to perform.
-export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'streak'];
+// LEAK rather than STREAK in the fifth top slot: it is the one being worked on
+// and the one actually reached for, and a default rack should open on what gets
+// used. STREAK is one drag away in the FX rail.
+export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'leak'];
 export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'prism'];
 
 export function getModuleDef(id: string): ModuleDefinition | undefined {

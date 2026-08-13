@@ -453,12 +453,13 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
         // discrete index by the shader, so these sit exactly on 0..5.
         label: 'TYPE',
         buttons: [
-          { label: 'GATE', set: { type: 0, edge: 45, warmth: 55, drift: 30 } },
-          { label: 'STREAK', set: { type: 1, edge: 60, warmth: 70, drift: 35 } },
-          { label: 'SHAFT', set: { type: 2, edge: 40, warmth: 62, drift: 55 } },
-          { label: 'CORNER', set: { type: 3, edge: 55, warmth: 80, drift: 25 } },
-          { label: 'BURN', set: { type: 4, edge: 45, warmth: 88, drift: 40 } },
-          { label: 'VEIL', set: { type: 5, edge: 35, warmth: 45, drift: 30 } }
+          { label: 'GATE', set: { type: 0, edge: 45, warmth: 66, drift: 30 } },
+          { label: 'STREAK', set: { type: 1, edge: 60, warmth: 28, drift: 35 } },
+          { label: 'SHAFT', set: { type: 2, edge: 40, warmth: 14, drift: 55 } },
+          { label: 'CORNER', set: { type: 3, edge: 55, warmth: 84, drift: 25 } },
+          { label: 'BURN', set: { type: 4, edge: 50, warmth: 96, drift: 40 } },
+          { label: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
+          { label: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
         ],
         match: 'exact',
         primary: 'type',

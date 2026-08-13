@@ -918,21 +918,59 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
  *
  * p0 = size/reach, p1 = colour temperature, p2 = drift speed, p3 = type.
  */
-fn leakTint(t: f32) -> vec3f {
-  // Sweeps the whole range rather than only how warm the warm is: cool window
-  // light at 0, through neutral flare, into hot amber at 1.
-  return mix(
-    mix(vec3f(0.34, 0.60, 1.00), vec3f(0.92, 0.94, 1.00), smoothstep(0.0, 0.5, t)),
-    mix(vec3f(1.00, 0.72, 0.30), vec3f(1.00, 0.34, 0.06), smoothstep(0.5, 1.0, t)),
-    step(0.5, t)
-  );
+/**
+ * The colour through the leak, not the colour of the leak.
+ *
+ * A real leak is never one hue. Look at any reference sheet of them: a single
+ * leak runs a blown white core out through orange into magenta at its fringe,
+ * or white through cyan into violet -- the film is being fogged by light that
+ * scatters differently at each wavelength as it falls off. Picking one tint and
+ * multiplying the whole falloff by it is exactly what makes an effect read as a
+ * gel taped over the lens, which is what this was doing.
+ *
+ * Param w is the WARMTH dial and chooses the family, cool at 0 to hot at 1.
+ * Param i is the leak's own intensity at this pixel, so the ramp is walked from
+ * fringe to core across the falloff.
+ *
+ * No backticks anywhere in this file: the whole shader is a TypeScript template
+ * literal, so one in a comment ends the string and the errors land hundreds of
+ * lines away from the cause.
+ */
+fn leakRamp(w: f32, i: f32) -> vec3f {
+  let k = clamp(i, 0.0, 1.0);
+
+  // Cool family: violet fringe, cyan body, white-blue core.
+  let coolFringe = vec3f(0.42, 0.24, 0.78);
+  let coolMid = vec3f(0.30, 0.72, 1.00);
+  let coolCore = vec3f(0.90, 0.97, 1.00);
+
+  // Warm family: magenta fringe, orange body, blown amber-white core.
+  let warmFringe = vec3f(1.00, 0.16, 0.48);
+  let warmMid = vec3f(1.00, 0.52, 0.12);
+  let warmCore = vec3f(1.00, 0.94, 0.74);
+
+  let fringe = mix(coolFringe, warmFringe, w);
+  let mid = mix(coolMid, warmMid, w);
+  let core = mix(coolCore, warmCore, w);
+
+  // Fringe holds the outer third, core only arrives where the leak is strong --
+  // that late arrival is what makes the middle read as a blowout rather than a
+  // flat wash.
+  return mix(mix(fringe, mid, smoothstep(0.0, 0.55, k)), core, smoothstep(0.62, 1.0, k));
 }
 
 fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   let kind = floor(clamp(u.p3, 0.0, 1.0) * 100.0 + 0.5);
   let phase = u.beat * (0.04 + u.p2 * 0.22);
-  let reach = 0.08 + u.p0 * 0.52;
+  // Leaks are big. The old ceiling of 0.60 meant even a maxed EDGE only fogged
+  // a band down one side, where the real thing routinely swallows half the
+  // frame or more. Going past 1.0 lets the falloff run off the edge entirely,
+  // which is what gives a full-frame wash instead of a visible gradient stop.
+  let reach = 0.18 + u.p0 * 0.95;
   var leak = 0.0;
+  // Set only by the spectral type, which needs a per-channel result rather
+  // than one scalar the tint is multiplied into.
+  var spectral = vec3f(0.0);
 
   if (kind < 0.5) {
     // EDGE -- the original gate bleed, kept because it is the classic.
@@ -985,11 +1023,31 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
     }
     leak = clamp(acc * 0.7, 0.0, 1.4);
 
-  } else {
+  } else if (kind < 5.5) {
     // VEIL -- flat glare over everything, pumped by the beat. The vignette
     // keeps it off the centre so the subject does not wash out.
     let vig = 1.0 - 0.55 * (1.0 - length(uv - vec2f(0.5)) * 1.4);
     leak = (0.35 + 0.65 * beatPulse(3.0)) * reach * 1.6 * vig;
+
+  } else {
+    // SPECTRAL -- the prismatic leaks in the reference sheets, where the fog
+    // splits into rainbow bands. Same falloff evaluated three times at slightly
+    // different positions, one per channel: that displacement IS chromatic
+    // aberration, so red trails one way and blue the other and the overlap
+    // reads as spectrum rather than as three tinted copies.
+    let axis = vec2f(cos(phase * 0.4), sin(phase * 0.4));
+    let disp = 0.06 + u.p0 * 0.22;
+    let centre = vec2f(0.5) + axis * 0.35 * sin(phase * 0.6);
+    for (var c = 0; c < 3; c = c + 1) {
+      let off = (f32(c) - 1.0) * disp;
+      let q = uv - centre - axis * off;
+      let d = length(q / vec2f(max(u.aspect, 0.0001), 1.0));
+      let band = 1.0 - smoothstep(0.0, reach * 1.1, d);
+      if (c == 0) { spectral.r = band; }
+      else if (c == 1) { spectral.g = band; }
+      else { spectral.b = band; }
+    }
+    leak = max(spectral.r, max(spectral.g, spectral.b));
   }
 
   // Take a third of the colour from the frame itself. Real spill picks up
@@ -999,13 +1057,28 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // biases the leak just as strongly as a bright one.
   let sceneLum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 0.001);
   let sceneHue = clamp(col / sceneLum, vec3f(0.0), vec3f(2.0));
-  let tint = mix(leakTint(u.p1), sceneHue, 0.34);
-  let amount = leak * (0.30 + abs(u.p1 - 0.5) * 0.9);
+  let amount = clamp(leak, 0.0, 1.4);
+
+  // Walk the ramp with the leak's own intensity so the colour changes across
+  // the falloff, then take a fifth of it from the frame so the spill picks up
+  // what it is bouncing off. The spectral type already carries its colour in
+  // the per-channel bands, so it only needs the warmth family applied.
+  var tint = mix(leakRamp(u.p1, amount), sceneHue, 0.20);
+  if (kind > 5.5) {
+    tint = spectral * mix(vec3f(0.85, 0.92, 1.00), vec3f(1.00, 0.86, 0.70), u.p1);
+  }
+
+  let energy = clamp(tint * amount, vec3f(0.0), vec3f(1.0));
+  // Fog the blacks before screening. Film that has been light-struck loses its
+  // shadows first -- screen alone only lifts what is already bright, which left
+  // the picture looking like it had a glow pasted over it rather than like the
+  // stock itself had been exposed.
+  let fogged = col + energy * 0.13;
   // Screen, not add. Adding pushes highlights past white and leaves the leak
   // sitting on the picture like a coloured sheet; screen lets it interact with
   // what is already bright, so it reads as light in the scene instead of over
   // it, and it cannot blow out to flat white.
-  return vec3f(1.0) - (vec3f(1.0) - col) * (vec3f(1.0) - clamp(tint * amount, vec3f(0.0), vec3f(1.0)));
+  return vec3f(1.0) - (vec3f(1.0) - clamp(fogged, vec3f(0.0), vec3f(1.0))) * (vec3f(1.0) - energy);
 }
 
 /** Rotating horizon with optional beat snap. p0 = tilt, p1 = drift,
