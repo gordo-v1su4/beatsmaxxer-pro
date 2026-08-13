@@ -889,23 +889,106 @@ fn effectGrain(col: vec3f, uv: vec2f) -> vec3f {
   return stock + vec3f(n - 0.5) * u.p1 * 0.42 * (0.30 + 0.70 * response);
 }
 
-/** Warm edge exposure with a slowly travelling hotspot. p0 = edge reach,
-    p1 = warmth, p2 = drift speed. */
-fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
-  let phase = u.beat * (0.04 + u.p2 * 0.22);
-  let side = 0.5 + 0.5 * sin(phase);
-  let edgeDistance = mix(uv.x, 1.0 - uv.x, side);
-  let reach = 0.08 + u.p0 * 0.52;
-  let leak = (1.0 - smoothstep(0.0, reach, edgeDistance))
-             * (0.55 + 0.45 * sin(uv.y * 7.0 + phase * 2.3));
-  // p1 now sweeps the whole range rather than only how warm the warm is:
-  // cool window light at 0, through neutral flare, into hot amber at 1. It was
-  // orange-to-amber, which is why every leak looked like the same gel.
-  let tint = mix(
-    mix(vec3f(0.34, 0.60, 1.00), vec3f(0.92, 0.94, 1.00), smoothstep(0.0, 0.5, u.p1)),
-    mix(vec3f(1.00, 0.72, 0.30), vec3f(1.00, 0.34, 0.06), smoothstep(0.5, 1.0, u.p1)),
-    step(0.5, u.p1)
+/**
+ * Six kinds of light leak, not one gradient with three dials.
+ *
+ * This used to be a single geometry: a soft falloff from whichever side a slow
+ * sine pointed at, modulated by a sine down Y. WARM, FLARE and BLEED only moved
+ * the reach and the colour temperature, so every preset was the same shape in a
+ * different gel -- which is exactly what "just a faded gradient thing" means.
+ *
+ * The types below are different light *events*, not different tints:
+ *   0 EDGE    film gate bleed creeping in from one side
+ *   1 STREAK  anamorphic horizontal flare, driven by what is actually bright
+ *   2 BAR     a hard-edged shaft sweeping across the frame
+ *   3 CORNER  a hotspot burning in from a corner
+ *   4 BURN    organic blotches, the way a scratched neg fogs
+ *   5 VEIL    whole-frame veiling glare that breathes on the beat
+ *
+ * p0 = size/reach, p1 = colour temperature, p2 = drift speed, p3 = type.
+ */
+fn leakTint(t: f32) -> vec3f {
+  // Sweeps the whole range rather than only how warm the warm is: cool window
+  // light at 0, through neutral flare, into hot amber at 1.
+  return mix(
+    mix(vec3f(0.34, 0.60, 1.00), vec3f(0.92, 0.94, 1.00), smoothstep(0.0, 0.5, t)),
+    mix(vec3f(1.00, 0.72, 0.30), vec3f(1.00, 0.34, 0.06), smoothstep(0.5, 1.0, t)),
+    step(0.5, t)
   );
+}
+
+fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
+  let kind = floor(clamp(u.p3, 0.0, 1.0) * 100.0 + 0.5);
+  let phase = u.beat * (0.04 + u.p2 * 0.22);
+  let reach = 0.08 + u.p0 * 0.52;
+  var leak = 0.0;
+
+  if (kind < 0.5) {
+    // EDGE -- the original gate bleed, kept because it is the classic.
+    let side = 0.5 + 0.5 * sin(phase);
+    let edgeDistance = mix(uv.x, 1.0 - uv.x, side);
+    leak = (1.0 - smoothstep(0.0, reach, edgeDistance))
+           * (0.55 + 0.45 * sin(uv.y * 7.0 + phase * 2.3));
+
+  } else if (kind < 1.5) {
+    // STREAK -- an anamorphic flare has to come *from* something bright, or it
+    // is just a bar. Walking the source horizontally and keeping the highlights
+    // is what makes it sit in the scene and move with the shot.
+    let band = exp(-pow((uv.y - (0.5 + 0.32 * sin(phase * 0.7))) / max(reach * 0.55, 0.02), 2.0));
+    var glare = 0.0;
+    for (var i = 0; i < 9; i = i + 1) {
+      let o = (f32(i) - 4.0) * (0.012 + u.p0 * 0.03);
+      let s = sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
+      let lum = dot(s, vec3f(0.2126, 0.7152, 0.0722));
+      // Only the top of the range blooms; a flare off midtones reads as haze.
+      glare = glare + smoothstep(0.62, 1.0, lum) * (1.0 - abs(f32(i) - 4.0) / 5.0);
+    }
+    leak = band * clamp(glare * 0.42, 0.0, 1.6);
+
+  } else if (kind < 2.5) {
+    // BAR -- a shaft with an actual edge, travelling across the frame.
+    let sweep = fract(phase * 0.35);
+    let x = (uv.x - sweep * 1.4 + 0.2) / max(reach * 0.8, 0.03);
+    leak = exp(-x * x * 3.0) * (0.75 + 0.25 * sin(uv.y * 3.0 + phase));
+
+  } else if (kind < 3.5) {
+    // CORNER -- burns in from whichever corner the drift is pointing at.
+    let cx = step(0.5, fract(phase * 0.13));
+    let cy = step(0.5, fract(phase * 0.11 + 0.37));
+    let corner = vec2f(cx, cy);
+    let d = length((uv - corner) / vec2f(max(u.aspect, 0.0001), 1.0));
+    leak = pow(1.0 - smoothstep(0.0, reach * 2.2, d), 1.6);
+
+  } else if (kind < 4.5) {
+    // BURN -- three drifting blobs at incommensurate rates, so the fog never
+    // visibly repeats the way a single moving hotspot does.
+    var acc = 0.0;
+    for (var i = 0; i < 3; i = i + 1) {
+      let fi = f32(i);
+      let c = vec2f(
+        0.5 + 0.42 * sin(phase * (0.31 + fi * 0.17) + fi * 2.1),
+        0.5 + 0.42 * cos(phase * (0.23 + fi * 0.13) + fi * 1.3)
+      );
+      let d = length((uv - c) / vec2f(max(u.aspect, 0.0001), 1.0));
+      acc = acc + (1.0 - smoothstep(0.0, reach * 1.5, d));
+    }
+    leak = clamp(acc * 0.7, 0.0, 1.4);
+
+  } else {
+    // VEIL -- flat glare over everything, pumped by the beat. The vignette
+    // keeps it off the centre so the subject does not wash out.
+    let vig = 1.0 - 0.55 * (1.0 - length(uv - vec2f(0.5)) * 1.4);
+    leak = (0.35 + 0.65 * beatPulse(3.0)) * reach * 1.6 * vig;
+  }
+
+  // Take a third of the colour from the frame itself. Real spill picks up
+  // whatever it is bouncing off, so a leak with a fixed tint always reads as a
+  // gel taped to the lens no matter how well the shape is drawn. Dividing by
+  // luminance keeps the scene's hue and discards its brightness, so a dark shot
+  // biases the leak just as strongly as a bright one.
+  let sceneLum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 0.001);
+  let sceneHue = clamp(col / sceneLum, vec3f(0.0), vec3f(2.0));
+  let tint = mix(leakTint(u.p1), sceneHue, 0.34);
   let amount = leak * (0.30 + abs(u.p1 - 0.5) * 0.9);
   // Screen, not add. Adding pushes highlights past white and leaves the leak
   // sitting on the picture like a coloured sheet; screen lets it interact with

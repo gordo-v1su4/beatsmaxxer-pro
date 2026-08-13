@@ -5,6 +5,17 @@
     color?: string;
     onclick?: () => void;
     width?: number;
+    /**
+     * Fill the layout track instead of holding a fixed pixel width.
+     *
+     * `width` is a hard px value, which is correct for a button sitting in a
+     * flex row that can wrap. It is wrong inside a grid: TRANSITION lays its
+     * sixteen PACK moves out as `repeat(8, 1fr)`, so once a module is narrower
+     * than 8 x 34px the tracks shrink but the buttons do not, and the last
+     * couple of moves slide out past the module's own edge — across the on-air
+     * ring, which made the ring look like a stray line rather than a border.
+     */
+    fill?: boolean;
     height?: number;
     title?: string;
   }
@@ -14,6 +25,7 @@
     color = '#666',
     onclick,
     width = 28,
+    fill = false,
     // 16 is the rack-wide control height. The top row used to default to 18 and
     // the bottom row passed 16 explicitly, which read as the top modules being
     // subtly chunkier — and cost 2px on every button row of the tallest cards.
@@ -29,7 +41,9 @@
   {onclick}
   onmouseenter={() => (hov = true)}
   onmouseleave={() => (hov = false)}
-  style="width:{width}px;height:{height}px;background:{active
+  style="{fill
+    ? `width:100%;min-width:0;overflow:hidden;`
+    : `width:${width}px;`}height:{height}px;background:{active
     ? `linear-gradient(180deg,${color}22,${color}11)`
     : hov
       ? '#1e2022'

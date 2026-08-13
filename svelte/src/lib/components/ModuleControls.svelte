@@ -104,11 +104,14 @@
     <Section label="PACK" {color}>
       <div style="display:grid;grid-template-columns:repeat(8,1fr);gap:2px">
         {#each TRANSITION_PACK as o (o.l)}
+          <!-- fill, not a fixed 34px: these sit in `repeat(8, 1fr)`, so on a
+               narrow module the tracks shrink while a pixel-width button does
+               not, and the last moves overflow the module's own edge. -->
           <RackBtn
             label={o.l}
             active={Math.round(params.type ?? 0) === o.v}
             {color}
-            width={34}
+            fill
             onclick={() => {
               onUpdate('type', o.v);
               onUpdate('trig', ((params.trig ?? 0) + 1) % 100);
@@ -387,21 +390,25 @@
   </div>
 {:else if moduleId === 'leak'}
   <div style="display:flex;flex-direction:column;flex:1">
-    <Section label="PRESET" {color}>
+    <!-- Six leak geometries, not three tints of one gradient. `type` is a
+         discrete index in the shader, so it matches on the value itself
+         rather than on the whole set. -->
+    <Section label="TYPE" {color}>
       <div style="display:flex;gap:2px;flex-wrap:wrap">
         {#each [
-          { l: 'WARM', set: { edge: 45, warmth: 55, drift: 30 } },
-          { l: 'FLARE', set: { edge: 75, warmth: 85, drift: 50 } },
-          { l: 'BLEED', set: { edge: 25, warmth: 40, drift: 20 } }
+          { l: 'GATE', set: { type: 0, edge: 45, warmth: 55, drift: 30 } },
+          { l: 'STREAK', set: { type: 1, edge: 60, warmth: 70, drift: 35 } },
+          { l: 'SHAFT', set: { type: 2, edge: 40, warmth: 62, drift: 55 } },
+          { l: 'CORNER', set: { type: 3, edge: 55, warmth: 80, drift: 25 } },
+          { l: 'BURN', set: { type: 4, edge: 45, warmth: 88, drift: 40 } },
+          { l: 'VEIL', set: { type: 5, edge: 35, warmth: 45, drift: 30 } }
         ] as p (p.l)}
-          {@const active = Object.entries(p.set).every(
-            ([k, v]) => Math.abs((params[k] ?? -999) - v) <= 9
-          )}
+          {@const active = Math.round(params.type ?? 0) === p.set.type}
           <RackBtn
             label={p.l}
             {active}
             {color}
-            width={36}
+            width={40}
             onclick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}
           />
         {/each}

@@ -104,7 +104,7 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'grain':
       return { mix: p.mix, p0: p.size, p1: p.amount, p2: p.drift };
     case 'leak':
-      return { mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift };
+      return { mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift, p3: p.type };
     case 'dutch':
       return { mix: p.mix, p0: p.tilt, p1: p.drift, p2: p.snap };
     case 'halation':
