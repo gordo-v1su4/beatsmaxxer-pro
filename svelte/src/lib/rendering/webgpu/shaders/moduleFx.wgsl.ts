@@ -49,6 +49,10 @@ struct Uniforms {
   generation: u32,
   deterministicSeed: u32,
   audioFrameId: u32,
+  /** Beats since this module's last MIDI trigger, or < 0 to follow the beat
+      grid. Same units as beatPhase, which is what lets it substitute directly.
+      See beatPulse. */
+  triggerAge: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -57,8 +61,23 @@ struct Uniforms {
 @group(0) @binding(3) var feedbackTex: texture_2d<f32>;
 @group(0) @binding(4) var feedbackSampler: sampler;
 
+/**
+ * How far into the current hit we are, decaying from 1 at the hit.
+ *
+ * This is the single point where MIDI substitutes for the track. Every module
+ * that reacts to rhythm already routes through here, so handing this one
+ * function a different clock makes the whole rack MIDI-drivable without a line
+ * of per-module plumbing -- which is the reason the trigger is expressed as an
+ * AGE IN BEATS rather than as a ready-made envelope. beatPhase is already
+ * beats-since-the-last-beat, so a MIDI note's age drops straight into its place
+ * and every caller keeps its own sharpness.
+ *
+ * triggerAge is negative when the module follows the transport, which is the
+ * default and costs one comparison.
+ */
 fn beatPulse(sharpness: f32) -> f32 {
-  return u.playing * exp(-u.beatPhase * sharpness);
+  let phase = select(u.beatPhase, u.triggerAge, u.triggerAge >= 0.0);
+  return u.playing * exp(-phase * sharpness);
 }
 
 /** How much of an effect is on right now, given its BEAT control.
@@ -871,7 +890,12 @@ fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {
 fn effectPunch(col: vec3f, uv: vec2f) -> vec3f {
   let amt = u.p0;
   let snap = u.p2;
-  let pulse = u.playing * exp(-u.beatPhase * (3.0 + snap * 9.0));
+  // beatPulse rather than the same expression written out by hand. It was
+  // identical maths, but writing it inline meant PUNCH was the one rhythmic
+  // module reading u.beatPhase directly -- so it kept following the transport
+  // when every other module had been switched to a MIDI part, and SNAP is
+  // exactly the control you would want on a written kick.
+  let pulse = beatPulse(3.0 + snap * 9.0);
   var dir = 1.0;
   if (u.p1 >= 0.66) { dir = -1.0; }
   else if (u.p1 >= 0.33) {

@@ -37,6 +37,8 @@ import {
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
 import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
+import { firingTimes, moduleTriggerSource, triggerAgeBeats } from '$lib/stores/midiTrigger';
+import type { MidiLayer } from '$lib/stores/rack';
 import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
@@ -48,6 +50,50 @@ let unsubscribeTimeSamplerConfig: (() => void) | null = null;
 
 const SYNC_MODULES = new Set(['timesampler', 'speedramp']);
 const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
+/**
+ * Cache of DENSITY-filtered note times per module.
+ *
+ * firingTimes walks and sorts the whole part, which is thousands of notes on a
+ * real drum track -- far too much to redo every frame. It only changes when the
+ * loaded part or the DENSITY dial changes, so the cache is keyed on both and the
+ * per-frame cost drops to one binary search.
+ */
+const midiFiringCache = new Map<string, { key: string; times: number[] }>();
+
+function firingTimesFor(moduleId: string, layer: MidiLayer | null, density: number): number[] {
+  const key = `${layer?.name ?? ''}:${layer?.notes.length ?? 0}:${density.toFixed(3)}`;
+  const hit = midiFiringCache.get(moduleId);
+  if (hit && hit.key === key) return hit.times;
+  const times = firingTimes(layer, density);
+  midiFiringCache.set(moduleId, { key, times });
+  return times;
+}
+
+/**
+ * How far into its last MIDI note each module is, in beats.
+ *
+ * Returns -1 for anything following the transport, which the shader reads as
+ * "use the beat grid" -- so a module that is not MIDI-driven costs one map
+ * lookup and nothing on the GPU.
+ */
+function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
+  const sources = get(moduleTriggerSource);
+  const ages: Record<string, number> = {};
+  const ids = Object.keys(sources);
+  if (ids.length === 0) return ages;
+  const layers = get(midiLayers);
+  const params = get(moduleParams);
+  for (const id of ids) {
+    if (sources[id] !== 'midi') continue;
+    const layer = layers[id];
+    if (!layer) continue;
+    const density = (params[id]?.density ?? 100) / 100;
+    const times = firingTimesFor(id, layer, density);
+    ages[id] = triggerAgeBeats(times, frame.positionSeconds, frame.bpm);
+  }
+  return ages;
+}
+
 /** Latest speedramp rate/phase, forwarded to the shader as aux1/aux2. */
 let lastSpeedRampAux = { aux1: 1, aux2: 0 };
 /** Authoritative TimeSampler accent event: aux1=pulse, aux2=LUM/RGB/OFF. */
@@ -364,12 +410,19 @@ export function startAppLoop() {
 
     const params = get(moduleParams);
     const layers = get(videoLayers);
+    const triggerAges = midiTriggerAges(frame);
     for (const id of moduleIds) {
-      webGpuEngine.setModuleParams(id, paramsForGpu(id, params[id] ?? {}));
+      webGpuEngine.setModuleParams(id, {
+        ...paramsForGpu(id, params[id] ?? {}),
+        triggerAge: triggerAges[id] ?? -1
+      });
     }
 
     if (livePgmSlot && layers[livePgmSlot]) {
-      webGpuEngine.setModuleParams(livePgm, paramsForGpu(livePgm, params[livePgm] ?? {}));
+      webGpuEngine.setModuleParams(livePgm, {
+        ...paramsForGpu(livePgm, params[livePgm] ?? {}),
+        triggerAge: triggerAges[livePgm] ?? -1
+      });
     }
 
     runSequencer(frame);

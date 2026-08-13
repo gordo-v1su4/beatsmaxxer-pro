@@ -16,6 +16,7 @@
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
+  import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
     bypassed,
@@ -159,7 +160,15 @@
         onSetMidi={(file) => (file ? onMidiUpload?.(file) : onClearMidi?.())}
       />
       {#if midiLayer}
-        <MidiTimeline color={mod.accentColor} {midiLayer} />
+        <MidiTimeline
+          color={mod.accentColor}
+          {midiLayer}
+          moduleId={mod.id}
+          source={$moduleTriggerSource[mod.id] ?? 'audio'}
+          onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
+          density={params.density ?? 100}
+          onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
+        />
       {/if}
     {/if}
     <div class="module-preview">

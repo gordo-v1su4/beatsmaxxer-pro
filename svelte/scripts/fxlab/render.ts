@@ -28,6 +28,8 @@ export type Cell = {
   aspect?: number;
   aux1?: number;
   aux2?: number;
+  /** Beats since a MIDI trigger; omit (or negative) to follow the beat grid. */
+  triggerAge?: number;
   /** PNG path bound as the video texture. Omit to render the idle test card. */
   source?: string;
 };
@@ -65,6 +67,7 @@ function uniformArray(c: Cell): number[] {
   d[21] = c.aux2 ?? 0;
   d[23] = 1 / 60;
   d[26] = 1;
+  d[30] = c.triggerAge ?? -1;
   return d;
 }
 

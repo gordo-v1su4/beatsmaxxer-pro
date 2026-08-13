@@ -253,7 +253,9 @@
   {:else if !collapsed}
     <div style="flex:0 0 auto;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;flex-direction:column;gap:3px">
-        {#each Object.keys(params).filter((k) => k !== 'mix') as key (key)}
+        <!-- density has its own control on the MIDI lane; it would otherwise
+             appear here a second time as a bare slider the moment it is set. -->
+        {#each Object.keys(params).filter((k) => k !== 'mix' && k !== 'density') as key (key)}
           <div style="display:flex;align-items:center;gap:4px">
             <span style="width:36px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;text-transform:uppercase">{key.slice(0, 5)}</span>
             <div style="flex:1">

@@ -33,6 +33,7 @@
   import { topRowCompact, bottomRowCompact, viewMode } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
+  import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
@@ -192,6 +193,12 @@
 
   function clearModuleMidi(id: string) {
     midiLayers.update((layers) => ({ ...layers, [id]: null }));
+    // Hand the module back to the track. Leaving it on 'midi' with no part
+    // loaded would silently stop it reacting to anything at all, and the only
+    // control that could undo that has just been removed from the UI along with
+    // the file — the same irreversible-decision trap configureTimeSampler
+    // already documents on the other MIDI path.
+    setModuleTriggerSource(id, 'audio');
   }
 
   async function loadClips(files: File[]) {

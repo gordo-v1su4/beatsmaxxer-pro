@@ -23,6 +23,15 @@ export interface ModuleRenderParams {
   aux1?: number;
   /** Second live signal: speedramp cycle phase (0-1). */
   aux2?: number;
+  /**
+   * Beats since this module's last MIDI trigger, or negative to follow the
+   * transport's beat grid (the default).
+   *
+   * Expressed as an age rather than as an envelope so the shader's beatPulse
+   * can substitute it for beatPhase directly and each effect keeps its own
+   * decay sharpness. See the beatPulse note in moduleFx.wgsl.ts.
+   */
+  triggerAge?: number;
 }
 
 export interface FrameContext {
@@ -642,6 +651,9 @@ export class WebGpuEngine {
     data[19] = ch > 0 && cw > 0 ? cw / ch : 16 / 9;
     data[20] = rp.aux1 ?? 1;
     data[21] = rp.aux2 ?? 0;
+    // Written after the timeline block below would overwrite nothing here:
+    // index 30 sits past the timeline's 22-29 window.
+    data[30] = rp.triggerAge ?? -1;
     if (timeline) writeTimelineUniformData(data, timeline);
 
     let shaderHasVideo = hasVideo;
@@ -907,7 +919,8 @@ export function importAndBindExternalVideo(
 
 function sameRenderParams(a: ModuleRenderParams, b: ModuleRenderParams) {
   return a.mix === b.mix && a.p0 === b.p0 && a.p1 === b.p1 && a.p2 === b.p2 &&
-    a.p3 === b.p3 && a.accent === b.accent && a.aux1 === b.aux1 && a.aux2 === b.aux2;
+    a.p3 === b.p3 && a.accent === b.accent && a.aux1 === b.aux1 && a.aux2 === b.aux2 &&
+    a.triggerAge === b.triggerAge;
 }
 
 function createIdleBindGroup(
