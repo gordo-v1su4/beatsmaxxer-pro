@@ -33,7 +33,25 @@
    * to be judged for sharpness. PGM renders at true device resolution.
    */
   const PREVIEW_SIZE = { width: 320, height: 180 };
-  const PGM_MAX_WIDTH = 1920;
+  /**
+   * 720p, not 1080p.
+   *
+   * PGM is where the pixels actually are. Ten preview canvases at a fixed
+   * 320x180 come to 576k pixels between them, are capped at previewTargetFps,
+   * and are skipped entirely when off-screen or unchanged. PGM alone was up to
+   * 1920x1080 — 2.07M pixels, roughly 3.6x the whole rack — and it is never
+   * throttled. Every module's fragment cost is dominated by this one number.
+   *
+   * At 1280x720 that drops to 921k pixels: about 2.25x less fragment work for
+   * every effect at once, which beats any per-effect micro-optimisation. It also
+   * shrinks the feedback textures attachCanvas sizes off the canvas (STUTTER's
+   * hold buffer and the ping-pong pair) by the same factor, so it is a memory
+   * win as well as a speed one.
+   *
+   * The source is 16:9 video scaled to fit, so this is a resample rather than a
+   * crop. Raise it back if the softening shows on a large display.
+   */
+  const PGM_MAX_WIDTH = 1280;
 
   function targetSize() {
     if (id !== 'pgm') return PREVIEW_SIZE;

@@ -28,7 +28,9 @@ function hexToRgb(hex: string): [number, number, number] {
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-buildGlsl();
+// compare-rev.ts compiles an older revision itself and points FXLAB_OUT at it;
+// rebuilding here would overwrite that with the working tree's shader.
+if (!process.env.FXLAB_SKIP_BUILD) buildGlsl();
 mkdirSync(outDir, { recursive: true });
 const sources = await makeSources(`${FXLAB_OUT}/src`);
 

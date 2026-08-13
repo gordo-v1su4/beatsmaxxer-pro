@@ -12,7 +12,14 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 export const FXLAB_DIR = new URL('.', import.meta.url).pathname.replace(/\/$/, '');
-export const FXLAB_OUT = `${FXLAB_DIR}/.out`;
+
+/**
+ * Where compiled GLSL and rendered sheets land. Overridable so an older build of
+ * the shader can be compiled to a second directory and rendered beside the
+ * current one — comparing before against after is the main way a card fix gets
+ * judged, and doing it by stashing the working tree risks losing it.
+ */
+export const FXLAB_OUT = process.env.FXLAB_OUT ?? `${FXLAB_DIR}/.out`;
 
 const NAGA_HINT = [
   'fxlab needs the naga WGSL compiler and could not find it.',

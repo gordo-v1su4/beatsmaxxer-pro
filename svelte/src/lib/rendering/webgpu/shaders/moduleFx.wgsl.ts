@@ -220,6 +220,66 @@ fn idleFade(y: f32) -> f32 {
   return 0.22 + 0.78 * smoothstep(0.50, 0.18, abs(y - 0.5));
 }
 
+/**
+ * The shared subject for every module that FILTERS the picture rather than
+ * moving it: LEAK, GRAIN, HALATION, VHS, ANAMORPHIC and STREAK.
+ *
+ * Each of those used to hand-draw an impression of its own output -- speckle for
+ * GRAIN, a bloom for HALATION, scanlines and a tear for VHS -- and the real
+ * effect then ran on top of that drawing. The preview showed a fake plus a real
+ * one, and the fake, being unconnected to any control, always won.
+ *
+ * A filter needs something to act ON, and a flat card supplies none of what any
+ * of them key off. This subject carries all of it in one place:
+ *
+ *   deep shadow ground   fog and bleed lift the blacks first; on a bright card
+ *                        there is nothing to lift
+ *   a blown practical    HALATION, LEAK's core and STREAK's flare are all
+ *                        highlight-selective and render NOTHING without one
+ *   a highlight ladder   four marks from dim to blown, so sweeping a THRESHOLD
+ *                        visibly changes which of them survive
+ *   hard-edged midtones  a directional blur or a chroma bleed is only legible
+ *                        against an edge
+ *
+ * Six callers, one implementation: this replaced six separate bespoke drawings,
+ * so the idle branch of the shader got materially smaller, not larger.
+ */
+fn idlePictureSubject(p: vec2f, asp: f32, fade: f32, acc: vec3f) -> vec3f {
+  var col = vec3f(0.0);
+  let horizon = 0.62;
+
+  // Sky: dark at the top, lifting toward the horizon.
+  col += mix(vec3f(0.04, 0.05, 0.075), vec3f(0.20, 0.21, 0.24),
+             smoothstep(0.05, horizon, p.y)) * fade;
+  // Ground: near black, the region fogging is measured against.
+  col += vec3f(0.02, 0.022, 0.028) * step(horizon, p.y);
+
+  // Blown practical, off centre and pinned near 1.0.
+  let lamp = vec2f((p.x - 0.66) * asp, p.y - 0.34);
+  let lr = length(lamp);
+  col += vec3f(1.0, 0.97, 0.92) * smoothstep(0.055, 0.0, lr);
+  col += vec3f(0.85, 0.80, 0.70) * smoothstep(0.22, 0.03, lr) * 0.35 * fade;
+
+  // Midtone blocks with hard edges.
+  let b1 = step(0.06, p.x) * step(p.x, 0.20) * step(0.30, p.y) * step(p.y, horizon);
+  let b2 = step(0.24, p.x) * step(p.x, 0.34) * step(0.44, p.y) * step(p.y, horizon);
+  let b3 = step(0.82, p.x) * step(p.x, 0.95) * step(0.38, p.y) * step(p.y, horizon);
+  col += vec3f(0.16, 0.17, 0.20) * (b1 + b2 + b3) * fade;
+  let win = step(0.78, fract(p.x * asp * 11.0)) * step(0.74, fract(p.y * 13.0));
+  col += vec3f(0.95, 0.82, 0.55) * win * (b1 + b2 + b3) * 0.65 * fade;
+
+  // Highlight ladder along the ground: 0.30, 0.50, 0.72, 1.00.
+  for (var i = 0; i < 4; i = i + 1) {
+    let fi = f32(i);
+    let d = length(vec2f((p.x - (0.12 + fi * 0.13)) * asp, p.y - 0.78));
+    col += vec3f(0.30 + fi * 0.235) * smoothstep(0.030, 0.012, d);
+  }
+
+  // Accent baseline on the horizon, keeping the house style.
+  col += acc * smoothstep(0.006, 0.0, abs(p.y - horizon)) * 0.55 * fade;
+  return col;
+}
+
 /** Per-module idle graphic, drawn in the lower band of the test card. Each one
     shows what the module DOES before any clip is loaded, in a shared house style:
     dark ground, accent-coloured marks, faded top and bottom.
@@ -372,92 +432,77 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
       col += acc * smoothstep(w + 0.010, w * 0.5, abs(m - sz)) * (0.22 + z * 0.42) * fade;
     }
   } else if (mode == 9.0) {
-    // ANAMORPHIC — scope bars closing in with a horizontal blue flare
-    let bar = step(p.y, 0.17) + step(0.83, p.y);
-    col += acc * (smoothstep(0.010, 0.0, abs(p.y - 0.17))
-                + smoothstep(0.010, 0.0, abs(p.y - 0.83))) * 0.7 * fade;
-    let flare = smoothstep(0.05, 0.0, abs(p.y - 0.5)) * (0.45 + 0.55 * beatPulse(3.0));
-    col += vec3f(0.35, 0.62, 1.0) * flare * 0.55 * (1.0 - bar);
-    col += vec3f(0.9) * smoothstep(0.004, 0.0, abs(p.y - 0.5))
-         * smoothstep(0.55, 0.1, abs(p.x - 0.5)) * 0.5;
+    // ANAMORPHIC -- the subject, not the bars.
+    //
+    // This drew its own scope bars at a FIXED 0.17/0.83 plus a blue flare, and
+    // effectAnamorphic then drew bars at 0.055 + BARS * 0.155 and a flare of its
+    // own on top. Two sets of bars at different heights, and the drawn pair did
+    // not move when BARS did -- so the control looked broken while working.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 10.0) {
-    // FILM GRAIN — speckle field jittering on a gate weave
-    let weave = vec2f(sin(t * 3.1) * 0.006, cos(t * 2.3) * 0.006);
-    let g = hash21(floor((p + weave) * vec2f(asp * 110.0, 110.0)) + floor(t * 24.0));
-    col += vec3f(g * g) * 0.30 * fade;
-    col += acc * step(0.98, g) * 0.55 * fade;
+    // FILM GRAIN -- the stock, not the grain.
+    //
+    // This drew its own speckle at a fixed 110 cells on a fixed weave, and
+    // effectGrain then added real grain over it. The drawn speckle was coarser
+    // than anything SIZE could produce and swamped it, which is exactly why the
+    // 16MM/GATE/WEAVE selector and the SIZE and DRIFT sliders appeared dead.
+    // effectGrain also weights itself by 4L(1-L) so grain lives in the midtones,
+    // which needs a real tonal range to show.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 11.0) {
-    // LIGHT LEAK -- deliberately NOT a drawing of a light leak.
-    //
-    // This used to hand-draw a warm gradient washing in from the left edge. It
-    // read none of p0/p1/p2/p3, so TYPE, SIZE, WARMTH and DRIFT could not move
-    // it: all seven types rendered the same orange wash, which is most of why
-    // the module looked like one faded gradient with some dials attached.
-    // Worse, effectLeak then ran ON TOP of that drawing, so the card showed a
-    // fake leak plus a real one and the fake one dominated.
-    //
-    // effectLeak runs over this card exactly as it runs over video, so the
-    // honest subject is a neutral one with a real tonal range. A leak needs
-    // three things to show what it does, and a flat card supplies none of them:
-    // deep shadows for the fog to lift, a blown highlight for the core to bloom
-    // against (STREAK keys off luminance and renders nothing without one), and
-    // midtone detail you can still see through the tint.
-    let horizon = 0.62;
-    // Sky: dark at the top falling to a lighter band at the horizon.
-    col += mix(vec3f(0.04, 0.05, 0.075), vec3f(0.20, 0.21, 0.24),
-               smoothstep(0.05, horizon, p.y)) * fade;
-    // Ground: the shadow region, near black, so fogging is unmistakable.
-    col += vec3f(0.02, 0.022, 0.028) * step(horizon, p.y);
-    // Blown practical, off centre. Pinned near 1.0 so the highlight-selective
-    // branches actually trigger.
-    let lamp = vec2f((p.x - 0.66) * asp, p.y - 0.34);
-    let lr = length(lamp);
-    col += vec3f(1.0, 0.97, 0.92) * smoothstep(0.055, 0.0, lr);
-    col += vec3f(0.85, 0.80, 0.70) * smoothstep(0.22, 0.03, lr) * 0.35 * fade;
-    // Midtone blocks with hard edges, so loss of detail under the leak shows.
-    let b1 = step(0.06, p.x) * step(p.x, 0.20) * step(0.30, p.y) * step(p.y, horizon);
-    let b2 = step(0.24, p.x) * step(p.x, 0.34) * step(0.44, p.y) * step(p.y, horizon);
-    let b3 = step(0.82, p.x) * step(p.x, 0.95) * step(0.38, p.y) * step(p.y, horizon);
-    col += vec3f(0.16, 0.17, 0.20) * (b1 + b2 + b3) * fade;
-    // Small bright marks on the blocks: mid-high values that must survive.
-    let win = step(0.78, fract(p.x * asp * 11.0)) * step(0.74, fract(p.y * 13.0));
-    col += vec3f(0.95, 0.82, 0.55) * win * (b1 + b2 + b3) * 0.65 * fade;
-    // Accent baseline along the horizon, keeping the house style.
-    col += acc * smoothstep(0.006, 0.0, abs(p.y - horizon)) * 0.55 * fade;
+    // LIGHT LEAK -- deliberately NOT a drawing of a light leak. It used to be a
+    // warm gradient washing in from the left, reading none of p0-p3, so all
+    // seven TYPEs previewed identically -- and effectLeak then ran on top of it.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 12.0) {
-    // DUTCH ANGLE — a level grid rocking past horizontal
-    let ang = sin(t * 0.6) * 0.42;
-    let q = rot2(vec2f((p.x - 0.5) * asp, p.y - 0.5), ang);
+    // DUTCH ANGLE -- a LEVEL horizon. The card must not tilt.
+    //
+    // This used to rotate its own grid by sin(t * 0.6) * 0.42, and effectDutch
+    // then rotated the result again. The card's own angle was large, fixed by
+    // the clock rather than by the controls, and swamped the module's actual
+    // tilt -- so the preview showed the same steep diagonal at TILT 15, 50 and
+    // 90. A tilt is only readable against something known to be straight, so
+    // the subject is now level and the effect supplies every degree of angle.
+    let q = vec2f((p.x - 0.5) * asp, p.y - 0.5);
     col += vec3f(0.09, 0.10, 0.12) * step(0.93, fract(q.y * 5.0 + 0.5)) * fade;
+    col += vec3f(0.09, 0.10, 0.12) * step(0.93, fract(q.x * 5.0 + 0.5)) * fade;
     col += acc * smoothstep(0.014, 0.003, abs(q.y)) * 0.9 * fade;
     col += acc * smoothstep(0.06, 0.0, abs(q.y)) * 0.18 * fade;
+    // Verticals at the sides: a horizon alone can read as level when it is not.
+    col += vec3f(0.30, 0.32, 0.38)
+         * smoothstep(0.010, 0.002, abs(abs(q.x) - 0.34 * asp)) * 0.5 * fade;
   } else if (mode == 13.0) {
-    // HALATION — a hot core blooming into soft rings
-    let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
-    let r = length(c);
-    let pulse = 0.55 + 0.45 * beatPulse(3.0);
-    col += vec3f(1.0, 0.88, 0.74) * smoothstep(0.09, 0.0, r) * pulse;
-    col += vec3f(1.0, 0.62, 0.42) * smoothstep(0.30, 0.04, r) * 0.42 * pulse * fade;
-    col += acc * smoothstep(0.44, 0.16, r) * 0.16 * fade;
+    // HALATION -- the highlights, not the halo.
+    //
+    // This pre-drew the bloom: a hot core and two soft rings, which is the
+    // module's output rather than its input. effectHalation keys off luminance
+    // above THRESHOLD, so the honest subject is a set of highlights at DIFFERENT
+    // brightnesses -- the ladder in the shared subject -- and sweeping THRESHOLD
+    // then visibly changes which of them bloom and which stay clean.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 14.0) {
-    // LENS BULGE — a grid pushed outward through the centre
+    // BARREL -- a FLAT grid. The card must not bulge.
+    //
+    // This used to push its own grid out through the centre by
+    // 1 + 1.5r^2 * (0.55 + 0.45 sin(t)), and effectBulge then bulged it again.
+    // The card's warp was driven by the clock rather than by AMOUNT, so the
+    // preview bulged identically whether the module was set to pinch, to bulge,
+    // or to sit flat. Straight lines are the only thing a lens distortion is
+    // legible against.
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
     let r = length(c);
-    let k = 1.0 + 1.5 * r * r * (0.55 + 0.45 * sin(t * 0.8));
-    let q = c / max(k, 0.0001) + vec2f(0.5);
-    let gr = fract(q * vec2f(asp * 7.0, 7.0));
+    let gr = fract((c + vec2f(0.5)) * vec2f(asp * 7.0, 7.0));
     col += acc * step(0.90, max(gr.x, gr.y)) * 0.55 * fade;
     col += vec3f(0.85) * smoothstep(0.028, 0.0, r) * 0.3;
   } else if (mode == 15.0) {
-    // VHS / CAM — scanlines, a rolling tracking tear and chroma split
-    col += vec3f(0.05, 0.06, 0.07) * step(0.5, fract(p.y * 55.0));
-    let band = fract(p.y + t * 0.22);
-    let tear = smoothstep(0.055, 0.0, abs(band - 0.5));
-    let sx = p.x + tear * 0.06;
-    col += vec3f(0.85, 0.12, 0.16) * step(0.5, fract(sx * 8.0)) * 0.14 * fade;
-    col += vec3f(0.12, 0.42, 0.9) * step(0.5, fract(sx * 8.0 + 0.5)) * 0.14 * fade;
-    col += acc * tear * 0.45 * fade;
-    col += vec3f(hash21(vec2f(floor(p.y * 220.0), floor(t * 20.0))) - 0.5) * 0.10 * fade;
+    // VHS / CAM -- the tape's subject, not the tape damage.
+    //
+    // This drew scanlines, a rolling tear AND a chroma split, which is all three
+    // things effectVhs does -- then effectVhs did them again. The drawn tear ran
+    // on the wall clock at a fixed rate, so TRACKING, CHROMA, NOISE and BEAT all
+    // appeared to do nothing against it. Chroma bleed and a tracking tear are
+    // only legible across a hard edge, which the shared subject provides.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 17.0) {
     // PRISM -- deliberately NOT a drawing of a chromatic split.
     //
@@ -477,28 +522,15 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     col += vec3f(0.90) * bars * fade * 0.5;
     col += vec3f(0.95) * ring * fade;
   } else if (mode == 18.0) {
-    // MOTION STREAK — comet heads dragging trails along the move axis.
-    // Read no params and ran on the wall clock, so LENGTH, ANGLE and DECAY did
-    // nothing to it and the drift never landed on a beat. All three now drive
-    // it, and the heads advance on u.beat like the effect's own pulse term.
-    let ang18 = (u.p1 - 0.5) * 3.14159265;
-    let dir18 = vec2f(cos(ang18), sin(ang18));
-    let len18 = 0.10 + clamp(u.p0, 0.0, 1.0) * 0.55;
-    let decay18 = 1.0 + clamp(u.p2, 0.0, 1.0) * 5.0;
-    let march = u.beat * 0.25 + t * 0.05;
-    for (var i = 0; i < 4; i = i + 1) {
-      let fi = f32(i);
-      let lane0 = vec2f(0.5, 0.24 + fi * 0.17) - vec2f(0.5);
-      let headT = fract(march + fi * 0.29) - 0.5;
-      let head = vec2f(0.5) + lane0 + dir18 * headT;
-      let rel = (p - head) * vec2f(asp, 1.0);
-      let along = dot(rel, dir18);
-      let across = abs(dot(rel, vec2f(-dir18.y, dir18.x)));
-      let trail = exp(along * decay18 / max(len18, 0.02)) * step(along, 0.0)
-                * smoothstep(len18, 0.0, -along);
-      col += acc * trail * smoothstep(0.030, 0.0, across) * 0.85 * fade;
-      col += vec3f(0.95) * smoothstep(0.014, 0.0, length(rel)) * 0.8 * fade;
-    }
+    // MOTION STREAK -- the thing being smeared, not the smear.
+    //
+    // This drew four comet heads already dragging trails, and effectStreak then
+    // smeared those trails again. A directional blur is legible only against a
+    // SHARP edge, and the card supplied none -- everything in it was pre-blurred
+    // along the same axis the effect blurs on, so LENGTH and DECAY had almost
+    // nothing left to act on. The ladder of small bright marks in the shared
+    // subject is what a streak pulls into lines.
+    col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 19.0) {
     // INCEPTION — the real fold, run over a deliberately lopsided scene.
     // A symmetric figure looks identical before and after mirroring, so the
@@ -527,15 +559,22 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     // Seam marker: where the fold plane actually sits, so walking p1 is visible.
     col += vec3f(0.85) * smoothstep(0.004, 0.0, abs(src.x - shift)) * 0.20 * fade;
   } else if (mode == 20.0) {
-    // SPECIALTY LENS — a grid bent through a fisheye element
+    // SPECIALTY LENS -- a FLAT grid and a TRUE circle. The card must not bend.
+    //
+    // This used to bend its own grid by 1 + 2r^2 and pulse its ring on the beat,
+    // and effectLens then bent the result again through its own glass and beat
+    // gate. Both halves of the module were therefore pre-drawn: the preview
+    // showed a fisheye whether GLASS was set to fisheye, to neutral, or to tele
+    // crush, and it breathed on the beat whether or not BEAT was up.
+    //
+    // A circle is the honest reference here: tele flattening and fisheye bulge
+    // pull it out of round in opposite directions, which a grid alone shows far
+    // less clearly.
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
     let r = length(c);
-    let bend = 1.0 + 2.0 * r * r;
-    let q = c * bend / 1.5 + vec2f(0.5);
-    let gr = fract(q * vec2f(asp * 6.0, 6.0));
-    col += acc * step(0.90, max(gr.x, gr.y)) * smoothstep(0.50, 0.08, r) * 0.65 * fade;
-    col += acc * smoothstep(0.012, 0.003, abs(r - 0.38))
-         * (0.7 + 0.3 * beatPulse(4.0)) * 0.8 * fade;
+    let gr = fract((c + vec2f(0.5)) * vec2f(asp * 6.0, 6.0));
+    col += acc * step(0.90, max(gr.x, gr.y)) * smoothstep(0.62, 0.08, r) * 0.65 * fade;
+    col += acc * smoothstep(0.012, 0.003, abs(r - 0.30)) * 0.8 * fade;
     col += vec3f(0.85) * smoothstep(0.035, 0.0, r) * 0.32;
   } else {
     // any future module before it earns bespoke art: fine scan lines
@@ -1073,17 +1112,16 @@ fn leakRamp(w0: f32, i: f32) -> vec3f {
  * seed offsets both the noise field and the drift, so calling this twice gives
  * two independent events rather than the same one drawn twice.
  */
-fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32) -> f32 {
+fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) -> f32 {
   let asp = max(u.aspect, 0.0001);
   // Aspect-corrected frame coordinates, so a round hotspot stays round on a
   // 16:9 canvas instead of stretching into an ellipse.
   let q = vec2f((uv.x - 0.5) * asp, uv.y - 0.5);
 
-  // Coarse fog for the boundary. A big leak wants big structure, so the noise
-  // scale falls as reach rises -- holding it fixed makes a full-frame wash look
-  // like it has small-scale crud dusted over it.
-  let fogScale = mix(5.2, 2.0, clamp(reach, 0.0, 1.0));
-  let fog = warpedFbm(uv * vec2f(asp, 1.0) * fogScale + vec2f(seed * 7.1, phase * 0.3));
+  // fog is passed in rather than computed here. It is a domain-warped fbm --
+  // two fbm evaluations, six value-noise lookups, twenty-four hash21 calls --
+  // and computing it per call meant PRISM paid for it six times over for what
+  // is physically ONE fog bank seen through three wavelength displacements.
   let warp = (fog - 0.5) * 0.5;
 
   var v = 0.0;
@@ -1141,7 +1179,10 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32) -> f32 {
     // warped fbm gives blotches with the ragged, unrepeatable outline of a
     // scratched neg; the old three drifting circles could not, because three
     // circles always look like three circles.
-    let blot = warpedFbm(uv * vec2f(asp, 1.0) * 2.6 + vec2f(phase * 0.16 + seed * 3.3, phase * 0.12));
+    // Reuses the fog it was handed rather than warping a second field: the two
+    // differed only in scale and offset, and one warpedFbm is twelve hash21
+    // calls. Thresholding the same field lower gives the same blotches.
+    let blot = fog;
     // Bias toward the frame edge: a leak is light getting past the gate or the
     // back, so it is strongest at the border and thins toward the middle.
     let edgeBias = smoothstep(0.10, 0.62, max(abs(q.x) / asp, abs(q.y)) * 2.0);
@@ -1167,11 +1208,7 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32) -> f32 {
     v = clamp(1.0 - smoothstep(0.0, reach * 1.25, d), 0.0, 1.0);
   }
 
-  // Internal mottling. Fine grain inside the fog: light-struck emulsion is
-  // exposed silver, so the fogged area carries grain of its own rather than
-  // being the one perfectly clean region of the picture.
-  let mottle = 0.78 + 0.22 * fbm3(uv * vec2f(asp, 1.0) * 11.0 + vec2f(seed * 13.0, phase * 0.9));
-  return max(v, 0.0) * mottle;
+  return max(v, 0.0);
 }
 
 fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
@@ -1182,6 +1219,18 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // half of why this read as an overlay -- the real thing routinely swallows
   // half the frame.
   let reach = 0.20 + u.p0 * 0.90;
+
+  // The two noise fields are evaluated ONCE here and handed down.
+  //
+  // Each is a domain-warped fbm -- twenty-four hash21 calls, every one of them a
+  // sin -- and leakField used to compute its own. PRISM calls leakField six
+  // times (three wavelengths x two layers), so it was paying for the same fog
+  // six times over: ~216 hash21 per pixel, and PGM runs unthrottled. Hoisting
+  // them is also more physically honest, because the three PRISM channels are
+  // one fog bank seen through three displacements, not three separate banks.
+  let fogScale = mix(5.2, 2.0, clamp(reach, 0.0, 1.0));
+  let fogA = warpedFbm(uv * vec2f(asp, 1.0) * fogScale + vec2f(0.0, phase * 0.3));
+  let fogB = warpedFbm(uv * vec2f(asp, 1.0) * fogScale * 1.7 + vec2f(27.7, phase * 0.5));
 
   var amount = 0.0;
   var spectral = vec3f(0.0);
@@ -1194,8 +1243,8 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
     for (var c = 0; c < 3; c = c + 1) {
       let off = (f32(c) - 1.0) * disp;
       let p = uv - axis * off;
-      let band = leakField(p, 6.0, reach, phase, 0.0)
-               + leakField(p, 6.0, reach * 0.62, phase * 1.7 + 2.3, 4.7) * 0.55;
+      let band = leakField(p, 6.0, reach, phase, 0.0, fogA)
+               + leakField(p, 6.0, reach * 0.62, phase * 1.7 + 2.3, 4.7, fogB) * 0.55;
       if (c == 0) { spectral.r = band; }
       else if (c == 1) { spectral.g = band; }
       else { spectral.b = band; }
@@ -1206,10 +1255,16 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
     // noise field, so it lands somewhere else in the frame and the two overlap
     // the way real fogging does. Summing rather than max-ing means the overlap
     // is genuinely hotter, which is where the blowout wants to be.
-    let a = leakField(uv, kind, reach, phase, 0.0);
-    let b = leakField(uv, kind, reach * 0.55, phase * 1.63 + 5.1, 3.9);
+    let a = leakField(uv, kind, reach, phase, 0.0, fogA);
+    let b = leakField(uv, kind, reach * 0.55, phase * 1.63 + 5.1, 3.9, fogB);
     amount = a + b * 0.6;
   }
+
+  // Internal mottling, applied once to the combined field rather than inside
+  // each layer. Light-struck emulsion is exposed silver, so the fogged area
+  // carries grain of its own instead of being the one perfectly clean region of
+  // the picture.
+  amount = amount * (0.78 + 0.22 * fbm3(uv * vec2f(asp, 1.0) * 11.0 + vec2f(0.0, phase * 0.9)));
 
   amount = clamp(amount, 0.0, 1.6);
   let k = clamp(amount, 0.0, 1.0);
