@@ -45,7 +45,7 @@ export function syncAnalysisTriggers(onsetGeneration: number) {
  * `60/bpm` apart, and quantizing its onsets against a constant tempo smears
  * every hit in the back half of the song into the wrong sixteenth.
  */
-function beatAt(seconds: number, grid: readonly number[], bpm: number): number {
+export function beatAt(seconds: number, grid: readonly number[], bpm: number): number {
   if (grid.length < 2) return (seconds * bpm) / 60;
   if (seconds <= grid[0]) {
     const span = grid[1] - grid[0];

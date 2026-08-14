@@ -2,6 +2,8 @@
   import type { MidiLayer } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { noteFires, type ModuleTriggerSource } from '$lib/stores/midiTrigger';
+  import { analyseMidiTiming, formatMidiTiming } from '$lib/stores/midiTiming';
+  import { analysisBeatGrid } from '$lib/stores/triggerLane';
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
 
@@ -44,6 +46,14 @@
   );
 
   const active = $derived(source === 'midi');
+
+  /**
+   * What the part looks like on the way in. Strictly a readout -- nothing here
+   * touches a note. Recomputed only when the part or the beat grid changes,
+   * not per frame: it walks every note in the file.
+   */
+  const timing = $derived(analyseMidiTiming(midiLayer, $analysisBeatGrid, td.bpm));
+  const timingLabel = $derived(formatMidiTiming(timing));
 </script>
 
 <div class="midi-trigger-bar">
@@ -77,6 +87,24 @@
   <span class="midi-trigger-value" style="opacity:{active ? 1 : 0.35}">
     {Math.round(density)}%
   </span>
+</div>
+
+<!-- Its own line, not squeezed into the control row: sharing that row shrank the
+     DENSITY slider from about 130px to 42px, and a readout should never cost a
+     control its drag target. -->
+<div class="midi-timing-bar">
+  <span class="midi-trigger-label">AS IMPORTED</span>
+  <span
+    class="midi-timing"
+    class:is-loose={!timing.quantised}
+    title="How this part arrived: the grid it fits, the share of notes on it, and the median distance from it{timing.swingRatio !==
+    null
+      ? `, swing ${Math.round(timing.swingRatio * 100)}%`
+      : ''}. Read-only — notes are never altered. Measured against the transport tempo, so a part written at another BPM reads loose."
+  >
+    {timingLabel}
+  </span>
+  <span class="midi-timing-count">{timing.noteCount} notes</span>
 </div>
 
 <div
@@ -124,6 +152,39 @@
     letter-spacing: 0.1em;
     color: #3a4050;
     flex-shrink: 0;
+  }
+
+  /* Amber for a loose part, dim for a tight one: the interesting case is the
+     one that did not arrive on a grid. */
+  .midi-timing-bar {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 6px 2px;
+    background: #0b0c0e;
+    border-bottom: 1px solid #0d0e0f;
+    flex-shrink: 0;
+  }
+
+  .midi-timing-count {
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    color: #3a4050;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .midi-timing {
+    font-family: var(--font-mono);
+    font-size: 6.5px;
+    color: #4a5260;
+    white-space: nowrap;
+    flex-shrink: 0;
+    cursor: help;
+  }
+
+  .midi-timing.is-loose {
+    color: #8a6a3a;
   }
 
   .midi-trigger-value {
