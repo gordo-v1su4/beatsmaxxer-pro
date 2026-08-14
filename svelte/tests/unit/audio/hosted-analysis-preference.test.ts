@@ -75,9 +75,14 @@ describe('TopBar consent boundary with remembered choices', () => {
   const topBar = source('components/TopBar.svelte');
 
   test('the prompt is only skipped forward from an explicit remembered choice', () => {
-    expect(topBar).toContain("const remembered = readHostedAnalysisPreference();");
-    expect(topBar).toContain("if (remembered === 'analyze' && hostedAnalysisAvailable) {");
-    expect(topBar).toContain("if (remembered === 'local') {");
+    // The branching this used to match verbatim now lives in planAudioUpload,
+    // shared with the phone drawer and covered directly in
+    // hosted-analysis-decision.test.ts -- which is a stronger guarantee than
+    // string-matching one shell's source. What still has to hold here is that
+    // TopBar asks that function and honours an 'ask' by opening the modal.
+    expect(topBar).toContain('readHostedAnalysisPreference()');
+    expect(topBar).toContain('planAudioUpload(');
+    expect(topBar).toContain("if (plan.action === 'load') {");
     // No remembered value must still route through the modal.
     expect(topBar).toContain('pendingAudioFile = file;');
   });

@@ -8,6 +8,7 @@
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
+  import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
   import {
     readHostedAnalysisPreference,
     setHostedAnalysisPreference,
@@ -176,15 +177,13 @@
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
 
-    // A remembered choice is still an explicit one, so honour it rather than
-    // re-prompting. Only ever skips forward from a stored answer; never assumed.
-    const remembered = readHostedAnalysisPreference();
-    if (remembered === 'analyze' && hostedAnalysisAvailable) {
-      await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
-      return;
-    }
-    if (remembered === 'local') {
-      await audioEngine.loadAudioFile(file, { hostedAnalysis: false });
+    // Shared with the phone drawer, so both shells answer this identically. It
+    // also closes a gap here: a build with hosted analysis switched off used to
+    // fall through to the prompt, offering a choice that could not be honoured
+    // and an ANALYZE button that would start an upload with nowhere to go.
+    const plan = planAudioUpload(readHostedAnalysisPreference(), hostedAnalysisAvailable);
+    if (plan.action === 'load') {
+      await audioEngine.loadAudioFile(file, { hostedAnalysis: plan.hostedAnalysis });
       return;
     }
 

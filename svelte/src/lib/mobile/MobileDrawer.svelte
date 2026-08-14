@@ -1,6 +1,13 @@
 <script lang="ts">
   import { X, Upload } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
+  import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
+  import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
+  import {
+    readHostedAnalysisPreference,
+    setHostedAnalysisPreference
+  } from '$lib/audio/hostedAnalysisPreference';
+  import MobileAnalysisConsent from '$lib/mobile/MobileAnalysisConsent.svelte';
   import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import { listCatalog, type ModuleCategory, type ModuleDefinition } from '$lib/modules/catalog';
   import { transportDisplay } from '$lib/stores/transportDisplay';
@@ -93,20 +100,43 @@
 
   let audioInput = $state<HTMLInputElement>();
   let loadingTrack = $state(false);
+  let pendingTrack = $state<File | null>(null);
+  const hostedAnalysisAvailable = isHostedAnalysisEnabled();
+
+  async function loadTrack(file: File, hostedAnalysis: boolean) {
+    loadingTrack = true;
+    try {
+      await audioEngine.loadAudioFile(file, { hostedAnalysis });
+    } finally {
+      loadingTrack = false;
+    }
+  }
 
   async function onTrackChosen(input: HTMLInputElement) {
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    loadingTrack = true;
-    try {
-      // Local analysis only. The hosted path uploads the file, and that is a
-      // per-upload disclosure the desktop bar owns — not something a phone
-      // drawer should decide on the operator's behalf.
-      await audioEngine.loadAudioFile(file);
-    } finally {
-      loadingTrack = false;
+
+    // The hosted path uploads the file, so it needs a disclosure. The phone used
+    // to have nowhere to show one and so never took that path at all -- every
+    // song load fell to the weaker realtime grid. It has a sheet now, and the
+    // decision is the same one the desktop bar makes, from the same stored
+    // answer, so opting in on either surface carries to the other.
+    const plan = planAudioUpload(readHostedAnalysisPreference(), hostedAnalysisAvailable);
+    if (plan.action === 'ask') {
+      pendingTrack = file;
+      return;
     }
+    await loadTrack(file, plan.hostedAnalysis);
+  }
+
+  async function resolveConsent(choice: 'analyze' | 'local' | 'cancel', remember: boolean) {
+    const file = pendingTrack;
+    pendingTrack = null;
+    // Cancel leaves nothing loaded, matching the desktop bar.
+    if (!file || choice === 'cancel') return;
+    if (remember) setHostedAnalysisPreference(choice);
+    await loadTrack(file, choice === 'analyze');
   }
 
   function close() {
@@ -203,6 +233,12 @@
     dragX = 0;
   }
 </script>
+
+<!-- Above the drawer: the answer decides whether the file leaves the device, so
+     it must not be reachable past or dismissed by the panel underneath. -->
+{#if pendingTrack}
+  <MobileAnalysisConsent fileName={pendingTrack.name} onResolve={resolveConsent} />
+{/if}
 
 <!-- Cross-fades rather than mounting: the panel must be able to animate out, and
      a scrim that appears instantly under a sliding panel reads as a flash. -->
