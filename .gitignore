@@ -44,12 +44,13 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
-# Local QA / scratch (large media, Chrome profiles, benchmarks)
+# Local QA / scratch (Chrome profiles, benchmarks)
 .artifacts/
 .tmp/
 # Tauri regenerates these ACL/capability schemas on every build
 desktop/src-tauri/gen/
-test_media/
+# Local UI prototypes — not QA media
+test_media/refining-beat-surfer-ui_*/
 docs/preview.png
 .vercel
 .codex/*
