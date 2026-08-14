@@ -224,6 +224,21 @@ export class LiveScheduleRuntime<T = string> {
   }
 
   configureTimeSampler(input: LiveTimeSamplerInput) {
+    // Swapping the clip has to clear the state that described the old one.
+    //
+    // Without this the sampler kept its slice position, its half-scanned
+    // trigger bookkeeping and -- the one that shows -- its last accent, which
+    // is the LUM/RGB channel the shader reads. A stale accent survives into the
+    // new clip and decays against a playhead that has moved somewhere else
+    // entirely, so the channel appears to work, then not work, depending on
+    // whether a clip change happened to land mid-accent.
+    if (input.sourceKey !== this.timeSamplerInput.sourceKey) {
+      this.timeSampler.reset();
+      this.frame = null;
+      this.accent = null;
+      this.lastTriggerScanSeconds = null;
+      this.lastTriggerGeneration = null;
+    }
     this.timeSamplerInput = { ...input };
   }
 

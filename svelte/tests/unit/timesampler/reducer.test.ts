@@ -5,7 +5,7 @@ import {
   type TimeSamplerMode,
   type TimeSamplerParams,
   type TimeSamplerTransportSample,
-} from "$lib/runtime/timesampler";
+} from "$lib/timesampler";
 
 const BASE_PARAMS: TimeSamplerParams = {
   sourceDurationSeconds: 16,

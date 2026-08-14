@@ -67,6 +67,48 @@ describe("live TimeSampler integration", () => {
     });
   });
 
+  test("swapping the clip clears state that described the old one", () => {
+    // This is the regression the duplicated runtime hid. Two copies of this
+    // file existed; only the one the app did NOT import reset on a source
+    // change, and `accent` is the LUM/RGB channel the shader reads. A stale
+    // accent survives into the new clip and decays against a playhead that has
+    // moved elsewhere, so the channel appears to work or not work depending on
+    // whether the clip change landed mid-accent.
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      sourceKey: "clip-a",
+    });
+    runtime.advance(transport(0), []);
+    expect(runtime.getFrame()).not.toBeNull();
+
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      sourceKey: "clip-b",
+    });
+    expect(runtime.getFrame()).toBeNull();
+  });
+
+  test("reconfiguring the SAME clip keeps the frame", () => {
+    // The reset must key on the clip, not on any reconfigure: AppLoop pushes
+    // this input every frame, so resetting unconditionally would clear the
+    // sampler continuously and it would never advance at all.
+    const runtime = new LiveScheduleRuntime<string>();
+    const input = {
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      sourceKey: "clip-a",
+    };
+    runtime.configureTimeSampler(input);
+    runtime.advance(transport(0), []);
+    const before = runtime.getFrame();
+
+    runtime.configureTimeSampler({ ...input });
+    expect(runtime.getFrame()).toBe(before);
+  });
+
   test("preview and PGM read one centrally reduced frame", () => {
     const runtime = new LiveScheduleRuntime<string>();
     runtime.configureTimeSampler({
