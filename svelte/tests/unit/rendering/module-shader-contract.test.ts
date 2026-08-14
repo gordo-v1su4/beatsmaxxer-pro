@@ -118,3 +118,20 @@ describe('module shader identity contract', () => {
     );
   });
 });
+
+describe('uniform buffer capacity', () => {
+  test('the Uniforms struct still fits the 128-byte buffer', () => {
+    // encodeBinding writes a Float32Array(32) into a 128-byte buffer, so the
+    // struct has exactly 32 words and no headroom. A member added past that
+    // reads garbage rather than failing loudly, which is a miserable bug to
+    // chase through a shader, so it is counted here instead.
+    const struct = MODULE_FX_WGSL.slice(
+      MODULE_FX_WGSL.indexOf('struct Uniforms {'),
+      MODULE_FX_WGSL.indexOf('@group(0) @binding(0)')
+    );
+    const members = struct
+      .split('\n')
+      .filter((line) => /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*(f32|u32|i32),/.test(line));
+    expect(members.length).toBe(32);
+  });
+});

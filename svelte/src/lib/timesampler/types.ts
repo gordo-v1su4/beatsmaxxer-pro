@@ -35,6 +35,12 @@ export interface TimeSamplerParams {
   accentMode: TimeSamplerAccentMode;
   randomSeed: number;
   forcedJumpSeed?: number;
+  /**
+   * The rack's groove, from the PGM rail: 0 straight, 1 swing, 2 dotted.
+   * Optional so existing callers and fixtures keep their straight-grid
+   * behaviour rather than silently acquiring a swing.
+   */
+  feel?: 0 | 1 | 2;
 }
 
 export interface TimeSamplerQueuedParams {
@@ -92,6 +98,8 @@ export interface TimeSamplerState {
   loopCount: number;
   playbackRate: number;
   accentMode: TimeSamplerAccentMode;
+  /** The rack groove this state's boundaries were laid out on. */
+  feel: 0 | 1 | 2;
   queuedParams: TimeSamplerQueuedParams | null;
   lastTransportSeconds: number;
   lastBeatPosition: number;

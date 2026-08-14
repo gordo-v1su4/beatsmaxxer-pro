@@ -1,3 +1,4 @@
+import { nextGrooveBeat } from "$lib/runtime/groove";
 import type { TransportSample } from "$lib/transport";
 import type { TransportEvent } from "$lib/transport/events";
 import { randomSlice } from "./random";
@@ -29,6 +30,11 @@ export interface LiveTimeSamplerInput {
   midiDurationSeconds?: number;
   onsetSensitivity?: number;
   bypassed?: boolean;
+  /**
+   * The rack groove from the PGM rail. Not one of the module's controls -- it
+   * is set once for the whole rack and every time module follows it.
+   */
+  feel?: PgmFeel;
 }
 
 export interface PgmScheduleInput<T> {
@@ -80,6 +86,7 @@ export function jumpSizeBeatsFromControl(size = 50) {
 export function timeSamplerParamsFromControls(
   controls: TimeSamplerControlParams,
   sourceDurationSeconds: number,
+  feel: PgmFeel = 0,
 ): TimeSamplerParams {
   const modeIndex = Math.min(3, Math.max(0, Math.round(controls.mode ?? 0)));
   const accentIndex = Math.min(
@@ -96,6 +103,7 @@ export function timeSamplerParamsFromControls(
     playbackRate: 0.25 + ((controls.rate ?? 43) / 100) * 1.75,
     accentMode: ACCENT_BY_INDEX[accentIndex],
     randomSeed: DEFAULT_RANDOM_SEED,
+    feel,
   };
 }
 
@@ -144,6 +152,7 @@ export class LiveTimeSamplerSchedule {
     const params = timeSamplerParamsFromControls(
       input.controls,
       input.sourceDurationSeconds,
+      input.feel,
     );
 
     if (this.reduction === null) {
@@ -169,29 +178,19 @@ export class LiveTimeSamplerSchedule {
   }
 }
 
+/**
+ * PGM cut boundaries, on the rack's shared groove.
+ *
+ * Kept as a named re-export rather than replaced at the call sites: this was the
+ * reference implementation the shared helper was extracted from, and the name is
+ * what the PGM tests and the desktop pre-open path already speak.
+ */
 export function nextQuantizedBeat(
   currentBeat: number,
   intervalBeats: number,
   feel: PgmFeel,
 ) {
-  const safeBeat = Math.max(0, currentBeat);
-  const base = Math.max(0.25, intervalBeats);
-
-  if (feel === 2) {
-    const dotted = base * 1.5;
-    return (Math.floor(safeBeat / dotted) + 1) * dotted;
-  }
-
-  if (feel === 1) {
-    const pairLength = base * 2;
-    const pairStart = Math.floor(safeBeat / pairLength) * pairLength;
-    const longStep = base * (4 / 3);
-    return safeBeat < pairStart + longStep - 1e-4
-      ? pairStart + longStep
-      : pairStart + pairLength;
-  }
-
-  return (Math.floor(safeBeat / base) + 1) * base;
+  return nextGrooveBeat(currentBeat, intervalBeats, feel);
 }
 
 function isTriggerEvent(event: TransportEvent): event is TransportEvent &

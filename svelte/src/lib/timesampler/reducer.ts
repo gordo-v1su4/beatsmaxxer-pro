@@ -1,3 +1,4 @@
+import { nextGrooveBeat } from "$lib/runtime/groove";
 import { randomSlice } from "./random";
 import type {
   TimeSamplerAccentEvent,
@@ -61,11 +62,19 @@ function initialSlice(mode: TimeSamplerParams["mode"], sliceCount: number): numb
   return mode === "REV" ? sliceCount - 1 : 0;
 }
 
-function boundaryAfter(beatPosition: number, jumpSizeBeats: number): number {
-  const boundaryIndex = Math.floor(
-    (beatPosition + BOUNDARY_EPSILON) / jumpSizeBeats,
-  );
-  return (boundaryIndex + 1) * jumpSizeBeats;
+/**
+ * The next slice boundary, on the rack's groove.
+ *
+ * This was a plain even grid, so TIMESAMPLER jumped straight through a swung
+ * song no matter what the PGM rail was set to -- the one module whose whole job
+ * is landing on the beat was the one ignoring the groove.
+ */
+function boundaryAfter(
+  beatPosition: number,
+  jumpSizeBeats: number,
+  feel: 0 | 1 | 2 = 0,
+): number {
+  return nextGrooveBeat(beatPosition + BOUNDARY_EPSILON, jumpSizeBeats, feel);
 }
 
 function clampSlice(slice: number, sliceCount: number): number {
@@ -139,7 +148,11 @@ export function createTimeSamplerState(
     loopIteration: 1,
     jumpGeneration: 0,
     discontinuityGeneration: sample.discontinuityGeneration,
-    nextBoundaryBeat: boundaryAfter(sample.beatPosition, params.jumpSizeBeats),
+    nextBoundaryBeat: boundaryAfter(
+      sample.beatPosition,
+      params.jumpSizeBeats,
+      params.feel,
+    ),
     sliceStartedBeat: sample.beatPosition,
     sourceAnchorTransportSeconds: sample.transportSeconds,
     sourceAnchorOffsetSeconds: 0,
@@ -157,6 +170,7 @@ export function createTimeSamplerState(
     loopCount: params.loopCount,
     playbackRate: params.playbackRate,
     accentMode: params.accentMode,
+    feel: params.feel ?? 0,
     queuedParams: null,
     lastTransportSeconds: sample.transportSeconds,
     lastBeatPosition: sample.beatPosition,
@@ -338,6 +352,7 @@ function resetForDiscontinuity(
   state.nextBoundaryBeat = boundaryAfter(
     sample.beatPosition,
     state.jumpSizeBeats,
+    state.feel,
   );
   state.sliceStartedBeat = sample.beatPosition;
   state.sourceAnchorTransportSeconds = sample.transportSeconds;
@@ -431,6 +446,9 @@ export function reduceTimeSampler(
   if (discontinuity) {
     state.playbackRate = params.playbackRate;
     state.accentMode = params.accentMode;
+    // Groove follows the rail live: flipping STR8/SWNG/DOT mid-song should
+    // move the next boundary, not wait for a clip change to take effect.
+    state.feel = params.feel ?? 0;
     state.beatIntervalSeconds = positiveFinite(sample.beatIntervalSeconds, 0);
     state.sourceDurationSeconds = params.sourceDurationSeconds;
     state.sliceCount = params.sliceCount;
@@ -488,6 +506,9 @@ export function reduceTimeSampler(
 
     state.playbackRate = params.playbackRate;
     state.accentMode = params.accentMode;
+    // Groove follows the rail live: flipping STR8/SWNG/DOT mid-song should
+    // move the next boundary, not wait for a clip change to take effect.
+    state.feel = params.feel ?? 0;
     state.beatIntervalSeconds = positiveFinite(
       sample.beatIntervalSeconds,
       state.beatIntervalSeconds,

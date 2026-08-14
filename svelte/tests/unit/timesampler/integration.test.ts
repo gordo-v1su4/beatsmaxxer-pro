@@ -9,6 +9,7 @@ import {
   jumpSizeBeatsFromControl,
   timeSamplerParamsFromControls,
 } from "$lib/timesampler/integration";
+import { createTimeSamplerState } from "$lib/timesampler/reducer";
 
 function transport(
   beatPosition: number,
@@ -65,6 +66,27 @@ describe("live TimeSampler integration", () => {
       accentMode: "LUM",
       randomSeed: 0x12345678,
     });
+  });
+
+  test("the rack groove moves the sampler's slice boundary", () => {
+    // TIMESAMPLER ran on a straight grid regardless of the PGM rail, so the one
+    // module whose whole job is landing on the beat ignored the groove. CONTROLS
+    // size 50 is a 1-beat jump, so straight lands the first boundary on 1,
+    // swing on 4/3 and dotted on 1.5.
+    const boundaryFor = (feel: 0 | 1 | 2) =>
+      createTimeSamplerState(
+        transport(0),
+        timeSamplerParamsFromControls(CONTROLS, 8, feel),
+      ).nextState.nextBoundaryBeat;
+
+    expect(boundaryFor(0)).toBeCloseTo(1, 4);
+    expect(boundaryFor(1)).toBeCloseTo(4 / 3, 4);
+    expect(boundaryFor(2)).toBeCloseTo(1.5, 4);
+  });
+
+  test("feel reaches the reducer params, defaulting to straight", () => {
+    expect(timeSamplerParamsFromControls(CONTROLS, 8).feel).toBe(0);
+    expect(timeSamplerParamsFromControls(CONTROLS, 8, 1).feel).toBe(1);
   });
 
   test("swapping the clip clears state that described the old one", () => {

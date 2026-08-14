@@ -32,6 +32,8 @@ export interface ModuleRenderParams {
    * decay sharpness. See the beatPulse note in moduleFx.wgsl.ts.
    */
   triggerAge?: number;
+  /** Rack groove from the PGM rail: 0 straight, 1 swing, 2 dotted. */
+  feel?: number;
 }
 
 export interface FrameContext {
@@ -351,6 +353,9 @@ export class WebGpuEngine {
     });
 
     const uniformBuffer = this.device.createBuffer({
+      // 32 f32/u32 words, and the Uniforms struct now fills every one of them.
+      // Adding another member means growing this AND the Float32Array in
+      // encodeBinding, or the new field silently reads garbage.
       size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
@@ -654,6 +659,7 @@ export class WebGpuEngine {
     // Written after the timeline block below would overwrite nothing here:
     // index 30 sits past the timeline's 22-29 window.
     data[30] = rp.triggerAge ?? -1;
+    data[31] = rp.feel ?? 0;
     if (timeline) writeTimelineUniformData(data, timeline);
 
     let shaderHasVideo = hasVideo;
@@ -920,7 +926,7 @@ export function importAndBindExternalVideo(
 function sameRenderParams(a: ModuleRenderParams, b: ModuleRenderParams) {
   return a.mix === b.mix && a.p0 === b.p0 && a.p1 === b.p1 && a.p2 === b.p2 &&
     a.p3 === b.p3 && a.accent === b.accent && a.aux1 === b.aux1 && a.aux2 === b.aux2 &&
-    a.triggerAge === b.triggerAge;
+    a.triggerAge === b.triggerAge && a.feel === b.feel;
 }
 
 function createIdleBindGroup(

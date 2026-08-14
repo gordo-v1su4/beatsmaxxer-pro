@@ -38,6 +38,8 @@ import {
 } from '$lib/stores/arrangement';
 import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
 import { firingTimes, moduleTriggerSource, triggerAgeBeats } from '$lib/stores/midiTrigger';
+import { grooveSegment } from '$lib/runtime/groove';
+import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
 import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
@@ -309,9 +311,13 @@ function syncControlledVideos(
     const cycleBeats = SPEEDRAMP_CYCLE_BEATS[
       Math.min(6, Math.floor(((sr.len ?? 36) / 100) * 7))
     ]!;
+    // Cycle phase on the rack groove rather than a plain modulo. Under swing the
+    // two halves of a pair are different lengths, and grooveSegment reports
+    // progress across whichever half we are in -- so the ramp stretches with the
+    // groove instead of running straight through it.
     lastSpeedRampAux = {
       aux1: rate,
-      aux2: (((frame.beatPosition % cycleBeats) + cycleBeats) % cycleBeats) / cycleBeats
+      aux2: grooveSegment(frame.beatPosition, cycleBeats, get(pgmFeel)).progress
     };
   } else {
     speedRampSourceState = null;
@@ -360,6 +366,7 @@ function configureTimeSampler() {
       rate: tsParams.rate,
       accent: tsParams.accent
     },
+    feel: get(pgmFeel),
     midiNotes: tsMidi?.notes,
     midiDurationSeconds: tsMidi?.duration,
     onsetSensitivity: (tsParams.chance ?? 60) / 100,

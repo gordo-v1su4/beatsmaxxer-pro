@@ -53,6 +53,8 @@ struct Uniforms {
       grid. Same units as beatPhase, which is what lets it substitute directly.
       See beatPulse. */
   triggerAge: f32,
+  /** The rack's groove from the PGM rail: 0 straight, 1 swing, 2 dotted. */
+  feel: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -99,6 +101,49 @@ fn beatPulse(sharpness: f32) -> f32 {
 fn beatGate(amount: f32, sharpness: f32, bass: f32) -> f32 {
   let env = clamp(beatPulse(sharpness) + u.bassAmp * bass, 0.0, 1.0);
   return mix(1.0, env, clamp(amount, 0.0, 1.0) * u.playing);
+}
+
+/**
+ * Where the groove puts the current segment: x = start beat, y = its length.
+ *
+ * The TypeScript twin of grooveSegment in runtime/groove.ts, and the rule has to
+ * match it exactly -- one side quantising differently from the other is how
+ * STUTTER ended up carrying its own copy with the swing ratio rounded to
+ * 1.34/0.66 while the PGM rail used 4/3.
+ *
+ *   STRAIGHT  an even grid
+ *   SWING     each PAIR splits 2:1, first hit at 4/3 of an interval
+ *   DOTTED    an even grid of 1.5x
+ *
+ * Length is returned because under swing the two halves of a pair are different
+ * sizes, so anything easing across a segment has to stretch with it.
+ */
+fn grooveSegmentFeel(beat: f32, intervalBeats: f32, mode: f32) -> vec2f {
+  let safeBeat = max(beat, 0.0);
+  let base = max(intervalBeats, 0.25);
+
+  if (mode > 1.5) {
+    let step = base * 1.5;
+    return vec2f(floor(safeBeat / step) * step, step);
+  }
+
+  if (mode > 0.5) {
+    let pairLength = base * 2.0;
+    let pairStart = floor(safeBeat / pairLength) * pairLength;
+    let longStep = base * (4.0 / 3.0);
+    if (safeBeat < pairStart + longStep - 0.0001) {
+      return vec2f(pairStart, longStep);
+    }
+    return vec2f(pairStart + longStep, pairLength - longStep);
+  }
+
+  return vec2f(floor(safeBeat / base) * base, base);
+}
+
+/** The rack groove, from the PGM rail. Modules with a local FEEL call
+    grooveSegmentFeel directly and override it. */
+fn grooveSegment(beat: f32, intervalBeats: f32) -> vec2f {
+  return grooveSegmentFeel(beat, intervalBeats, floor(u.feel + 0.5));
 }
 
 fn accentRgb() -> vec3f {
@@ -750,11 +795,17 @@ fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
   let intervalBeats = transitionIntervalBeats(u.p3);
   let durBeats = 0.15 + u.p1 * 0.85;
 
-  let beatInCycle = u.beat - floor(u.beat / intervalBeats) * intervalBeats;
-  let start = intervalBeats - durBeats;
+  // On the rack groove, not a plain modulo. This ran straight through a swung
+  // song no matter what the PGM rail said, so the one module whose entire job is
+  // arriving on the beat arrived on the wrong one.
+  let seg = grooveSegment(u.beat, intervalBeats);
+  let beatInCycle = u.beat - seg.x;
+  // The move keeps its own length and lands ON the boundary, so a short swing
+  // segment shortens the gap before the move rather than squashing the move.
+  let start = max(seg.y - durBeats, 0.0);
   if (beatInCycle < start) { return col; }
 
-  let p = clamp((beatInCycle - start) / durBeats, 0.0, 1.0);
+  let p = clamp((beatInCycle - start) / max(seg.y - start, 0.0001), 0.0, 1.0);
   // ease in-out so the move snaps like a whip instead of sliding linearly
   var e = 2.0 * p * p;
   if (p >= 0.5) { e = 1.0 - pow(-2.0 * p + 2.0, 2.0) / 2.0; }
@@ -811,20 +862,21 @@ fn stutterLenBeats(p: f32) -> f32 {
     p0 = LEN, p1 = HOLD, p2 = FEEL (0 straight, 1 swing, 2 dotted). */
 fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   let hold = clamp(u.p1, 0.0, 1.0);
-  var seg = stutterLenBeats(u.p0);
+  let len = stutterLenBeats(u.p0);
   let feel = floor(clamp(u.p2, 0.0, 1.0) * 100.0 + 0.5);
 
-  // FEEL reshapes the repeat grid on top of whatever LEN is set. This is real
-  // subdivision, not a wobble: swing genuinely lengthens the first half of each
-  // pair and shortens the second, so the retrigger lands where the ear expects.
-  if (feel > 1.5) {
-    seg = seg * 1.5;                                   // dotted
-  } else if (feel > 0.5) {
-    let pair = floor(u.beat / (seg * 2.0));
-    let inPair = u.beat - pair * seg * 2.0;
-    if (inPair < seg * 1.34) { seg = seg * 1.34; } else { seg = seg * 0.66; }
-  }
-  let prog = clamp((u.beat - floor(u.beat / seg) * seg) / seg, 0.0, 1.0);
+  // FEEL reshapes the repeat grid on top of whatever LEN is set, and STUTTER
+  // keeps its own rather than following the rail -- it is the module you reach
+  // for to put a stutter somewhere the song is not.
+  //
+  // It now goes through the shared groove rule, which fixes more than the
+  // rounding. The old code picked a swung segment length and then took a plain
+  // modulo of it, laying a UNIFORM grid at 1.34 (or 0.66) beats -- so the
+  // repeats marched away from the pair structure instead of alternating long,
+  // short, long. Swing was not slightly off, it was a different rhythm.
+  let stutterSeg = grooveSegmentFeel(u.beat, len, feel);
+  let seg = stutterSeg.y;
+  let prog = clamp((u.beat - stutterSeg.x) / max(stutterSeg.y, 0.0001), 0.0, 1.0);
 
   // Capture window: wide enough to survive a dropped frame at any sane division,
   // narrow enough that the held frame is the one on the beat and not a later one.
