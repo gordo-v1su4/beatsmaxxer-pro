@@ -42,7 +42,11 @@ const frames = await page.evaluate(
     return out;
   },
   {
-    dataUrl: 'data:video/webm;base64,' + readFileSync(clip).toString('base64'),
+    // Mime from the extension: a data URL with the wrong container makes the
+    // element fail to load with no useful diagnostic.
+    dataUrl:
+      `data:video/${/\.mp4$/i.test(clip) ? 'mp4' : 'webm'};base64,` +
+      readFileSync(clip).toString('base64'),
     count,
     width
   }
