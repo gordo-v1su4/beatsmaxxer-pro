@@ -122,7 +122,19 @@ export function analyseMidiTiming(
 ): MidiTimingProfile {
   if (!layer || layer.notes.length === 0) return EMPTY;
 
-  const beats = layer.notes.map((note) => beatAt(note.time, beatGrid, bpm));
+  // Prefer the file's own musical grid when the part carries one.
+  //
+  // Measuring the seconds against a constant BPM answers a question about the
+  // tempo map, not about the notes. Real transcribed parts carry a tempo that
+  // drifts every bar -- the Suno stems in test_media declare 27 tempo events
+  // wandering between 124.53 and 125.39 BPM -- so a part sitting exactly where
+  // it was written still reads as scattered once its seconds are divided by one
+  // fixed tempo. tick / ticksPerBeat is where the note was PLACED, which is what
+  // "was this quantised" is asking.
+  const written = layer.notes.every((note) => typeof note.beat === 'number');
+  const beats = written
+    ? layer.notes.map((note) => note.beat as number)
+    : layer.notes.map((note) => beatAt(note.time, beatGrid, bpm));
   const secondsPerBeat = beatGrid.length >= 2 ? 0 : 60 / (bpm > 0 ? bpm : 120);
 
   // Milliseconds per beat, measured from the grid where there is one so the

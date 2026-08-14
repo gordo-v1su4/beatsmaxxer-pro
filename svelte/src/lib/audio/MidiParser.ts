@@ -9,6 +9,18 @@
 export interface MidiNote {
   /** Absolute time in seconds from song start */
   time: number;
+  /**
+   * Position on the FILE's own musical grid, in beats (tick / ticksPerBeat).
+   *
+   * Carried alongside the seconds because the two answer different questions.
+   * Seconds are where the note plays; beats are where it was written. A file
+   * with a tempo map -- and audio-to-MIDI transcription emits one, drifting
+   * every bar -- has notes whose second-positions look scattered against any
+   * constant BPM while sitting exactly where they were placed musically.
+   * Reading "was this quantised" off the seconds therefore answers a question
+   * about the tempo map instead of about the notes.
+   */
+  beat: number;
   /** MIDI note number 0-127 */
   note: number;
   /** Velocity 0-127 (0 = note-off by convention) */
@@ -169,7 +181,13 @@ export function parseMidi(buffer: ArrayBuffer): MidiData {
       currentTempo = ev.usPerBeat;
     } else if (ev.type === 'note' && ev.velocity > 0) {
       const time = tickToSec(ev.tick);
-      notes.push({ time, note: ev.note, velocity: ev.velocity, track: ev.track });
+      notes.push({
+        time,
+        beat: ev.tick / ticksPerBeat,
+        note: ev.note,
+        velocity: ev.velocity,
+        track: ev.track
+      });
       if (time > maxTime) maxTime = time;
     }
   }

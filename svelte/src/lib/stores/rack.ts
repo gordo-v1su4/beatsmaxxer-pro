@@ -15,7 +15,13 @@ import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
 
 export interface MidiLayer {
   name: string;
-  notes: Array<{ time: number; note: number; velocity: number }>;
+  /**
+   * `beat` is the note's position on the file's own musical grid
+   * (tick / ticksPerBeat), kept beside its playback time in seconds. Optional
+   * because a layer can be synthesised from onsets, which have no written
+   * position -- see the timing readout for why the distinction matters.
+   */
+  notes: Array<{ time: number; note: number; velocity: number; beat?: number }>;
   duration: number;
 }
 
