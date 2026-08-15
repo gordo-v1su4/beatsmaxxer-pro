@@ -405,11 +405,15 @@
           // near 50 reads neutral and the character lives at the ends -- these
           // sit well out to one side or the other on purpose. Anamorphic
           // streaks are blue in practice, and a daylight shaft is cooler still.
-          { l: 'GATE', set: { type: 0, edge: 45, warmth: 66, drift: 30 } },
-          { l: 'STREAK', set: { type: 1, edge: 60, warmth: 28, drift: 35 } },
-          { l: 'SHAFT', set: { type: 2, edge: 40, warmth: 14, drift: 55 } },
-          { l: 'CORNER', set: { type: 3, edge: 55, warmth: 84, drift: 25 } },
-          { l: 'BURN', set: { type: 4, edge: 50, warmth: 96, drift: 40 } },
+          // Warmth sits cool by default across the flare types: the blue cast on
+          // an anamorphic streak is the lens COATING, not the light, so it is
+          // the normal case rather than an extreme of the dial. EDGE stays warm
+          // because film edge-fog genuinely is.
+          { l: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30 } },
+          { l: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35 } },
+          { l: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45 } },
+          { l: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30 } },
+          { l: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30 } },
           { l: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
           { l: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
         ] as p (p.l)}
@@ -446,6 +450,20 @@
           {color}
           label="DRIFT"
           controlId="{moduleId}-drift"
+        />
+        <HSlider
+          value={params.freq ?? 45}
+          onChange={(v) => onUpdate('freq', v)}
+          {color}
+          label="FREQ"
+          controlId="{moduleId}-freq"
+        />
+        <HSlider
+          value={params.hold ?? 30}
+          onChange={(v) => onUpdate('hold', v)}
+          {color}
+          label="HOLD"
+          controlId="{moduleId}-hold"
         />
       </div>
     </Section>

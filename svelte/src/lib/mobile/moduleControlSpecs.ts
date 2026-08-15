@@ -453,11 +453,11 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
         // discrete index by the shader, so these sit exactly on 0..5.
         label: 'TYPE',
         buttons: [
-          { label: 'GATE', set: { type: 0, edge: 45, warmth: 66, drift: 30 } },
-          { label: 'STREAK', set: { type: 1, edge: 60, warmth: 28, drift: 35 } },
-          { label: 'SHAFT', set: { type: 2, edge: 40, warmth: 14, drift: 55 } },
-          { label: 'CORNER', set: { type: 3, edge: 55, warmth: 84, drift: 25 } },
-          { label: 'BURN', set: { type: 4, edge: 50, warmth: 96, drift: 40 } },
+          { label: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30 } },
+          { label: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35 } },
+          { label: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45 } },
+          { label: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30 } },
+          { label: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30 } },
           { label: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
           { label: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
         ],
@@ -469,7 +469,9 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
     sliders: [
       { param: 'edge', label: 'EDGE' },
       { param: 'warmth', label: 'WARMTH' },
-      { param: 'drift', label: 'DRIFT' }
+      { param: 'drift', label: 'DRIFT' },
+      { param: 'freq', label: 'FREQ' },
+      { param: 'hold', label: 'HOLD' }
     ]
   },
   streak: {

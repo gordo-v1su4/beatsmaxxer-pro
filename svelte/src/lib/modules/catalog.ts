@@ -167,10 +167,15 @@ const defs: ModuleDefinition[] = [
     row: 'top',
     category: 'film',
     shaderKey: 'leak',
-    description: 'Seven leak types: gate bleed, streak, shaft, corner, burn, veil, prism',
+    description: 'Iris ghosts, anamorphic, spikes, rings, edge fog, veil, prism',
     // `type` selects the leak geometry, not a tint. It is read as a discrete
     // index by the shader, so the preset values below sit exactly on 0..6.
-    params: { type: 0, edge: 50, warmth: 60, drift: 35, mix: 55, in_: 80, out: 70 }
+    // freq = how often a pass fires (0 is off entirely), hold = how long one
+    // lasts once it starts. See the firing-cycle note in effectLeak.
+    params: {
+      type: 0, edge: 50, warmth: 34, drift: 35,
+      freq: 45, hold: 30, mix: 55, in_: 80, out: 70
+    }
   },
   {
     id: 'dutch',

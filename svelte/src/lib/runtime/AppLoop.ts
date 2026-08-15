@@ -152,7 +152,14 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
     case 'grain':
       return { mix: p.mix, p0: p.size, p1: p.amount, p2: p.drift };
     case 'leak':
-      return { mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift, p3: p.type };
+      // FREQ/HOLD ride on aux1/aux2: every p-slot is taken by EDGE/WARMTH/
+      // DRIFT/TYPE. Unlike the p-slots the engine writes aux raw, so the 0-100
+      // control range is normalised here.
+      return {
+        mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift, p3: p.type,
+        aux1: (p.freq ?? 45) / 100,
+        aux2: (p.hold ?? 30) / 100
+      };
     case 'dutch':
       return { mix: p.mix, p0: p.tilt, p1: p.drift, p2: p.snap };
     case 'halation':

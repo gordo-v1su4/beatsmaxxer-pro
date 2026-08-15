@@ -73,14 +73,14 @@ function presetsFor(id: string): ModulePreset[] {
       // midpoint, so anything near 50 reads neutral and the character lives out
       // at the ends.
       return [
-        { n: '1', title: 'Cold gate — blue bleed off one edge', set: { type: 0, edge: 45, warmth: 10, drift: 25, mix: 55, in_: 80, out: 70 } },
-        { n: '2', title: 'Warm gate — amber bleed off one edge', set: { type: 0, edge: 50, warmth: 90, drift: 30, mix: 60, in_: 80, out: 70 } },
-        { n: '3', title: 'Blue streak — anamorphic flare off highlights', set: { type: 1, edge: 60, warmth: 16, drift: 35, mix: 70, in_: 85, out: 75 } },
-        { n: '4', title: 'Sun shaft — hot bar sweeping across', set: { type: 2, edge: 45, warmth: 92, drift: 55, mix: 65, in_: 85, out: 75 } },
-        { n: '5', title: 'Corner burn — hotspot from the frame corner', set: { type: 3, edge: 55, warmth: 96, drift: 20, mix: 65, in_: 80, out: 70 } },
-        { n: '6', title: 'Neg burn — organic fog, scratched negative', set: { type: 4, edge: 55, warmth: 82, drift: 40, mix: 70, in_: 85, out: 75 } },
-        { n: '7', title: 'Ice veil — cold glare breathing on the beat', set: { type: 5, edge: 40, warmth: 6, drift: 25, mix: 50, in_: 75, out: 65 } },
-        { n: '8', title: 'Prism — spectral fringe, split per wavelength', set: { type: 6, edge: 55, warmth: 50, drift: 35, mix: 60, in_: 80, out: 70 } }
+        { n: '1', title: 'Iris ghosts — slow discs mirroring the highlights', set: { type: 0, edge: 55, warmth: 34, drift: 25, freq: 30, hold: 55, mix: 55, in_: 80, out: 70 } },
+        { n: '2', title: 'Iris flicker — quick aperture stabs on the beat', set: { type: 0, edge: 45, warmth: 40, drift: 30, freq: 82, hold: 14, mix: 60, in_: 80, out: 70 } },
+        { n: '3', title: 'Blue anamorphic — coated streak off highlights', set: { type: 1, edge: 60, warmth: 16, drift: 35, freq: 45, hold: 35, mix: 70, in_: 85, out: 75 } },
+        { n: '4', title: 'Sunstar — diffraction spikes off the blades', set: { type: 2, edge: 45, warmth: 30, drift: 45, freq: 55, hold: 22, mix: 65, in_: 85, out: 75 } },
+        { n: '5', title: 'Newton rings — interference fringes drifting', set: { type: 3, edge: 50, warmth: 42, drift: 20, freq: 26, hold: 62, mix: 65, in_: 80, out: 70 } },
+        { n: '6', title: 'Edge fog — a long pass leaking off the border', set: { type: 4, edge: 50, warmth: 76, drift: 30, freq: 18, hold: 78, mix: 70, in_: 85, out: 75 } },
+        { n: '7', title: 'Ice veil — cold glare breathing on the beat', set: { type: 5, edge: 40, warmth: 6, drift: 25, freq: 38, hold: 66, mix: 50, in_: 75, out: 65 } },
+        { n: '8', title: 'Prism — spectral fringe, split per wavelength', set: { type: 6, edge: 55, warmth: 50, drift: 35, freq: 45, hold: 40, mix: 60, in_: 80, out: 70 } }
       ];
     case 'vhs':
       return [

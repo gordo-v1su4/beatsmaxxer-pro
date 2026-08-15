@@ -307,36 +307,53 @@ fn idleFade(y: f32) -> f32 {
  *
  * Six callers, one implementation: this replaced six separate bespoke drawings,
  * so the idle branch of the shader got materially smaller, not larger.
+ *
+ * The subject is built as TONE and tinted by the caller's accent. Every cue
+ * above is a brightness cue, so the tint costs none of them, and it settles the
+ * one thing this card got wrong: hardcoded in warm greys and beiges it was the
+ * single photograph in a rack of accent-coloured schematics, which read as a
+ * different app pasted into the slot. LEAK's card is now orange, GRAIN's straw,
+ * VHS's neutral -- each the colour of its own title, like every other module.
  */
 fn idlePictureSubject(p: vec2f, asp: f32, fade: f32, acc: vec3f) -> vec3f {
   var col = vec3f(0.0);
   let horizon = 0.62;
 
   // Sky: dark at the top, lifting toward the horizon.
-  col += mix(vec3f(0.04, 0.05, 0.075), vec3f(0.20, 0.21, 0.24),
-             smoothstep(0.05, horizon, p.y)) * fade;
+  col += mix(acc * 0.05, acc * 0.26, smoothstep(0.05, horizon, p.y)) * fade;
   // Ground: near black, the region fogging is measured against.
-  col += vec3f(0.02, 0.022, 0.028) * step(horizon, p.y);
+  col += acc * 0.03 * step(horizon, p.y);
 
-  // Blown practical, off centre and pinned near 1.0.
+  // Blown practical, off centre and pinned near 1.0. The core stays near-white
+  // deliberately: HALATION, LEAK's core and STREAK's flare are all
+  // highlight-selective, and an accent-tinted highlight is by definition not a
+  // blown one -- the tint spends the very luminance they threshold against. The
+  // falloff around it carries the module colour instead, which is also what a
+  // hot practical actually looks like.
   let lamp = vec2f((p.x - 0.66) * asp, p.y - 0.34);
   let lr = length(lamp);
   col += vec3f(1.0, 0.97, 0.92) * smoothstep(0.055, 0.0, lr);
-  col += vec3f(0.85, 0.80, 0.70) * smoothstep(0.22, 0.03, lr) * 0.35 * fade;
+  col += acc * smoothstep(0.22, 0.03, lr) * 0.55 * fade;
 
   // Midtone blocks with hard edges.
   let b1 = step(0.06, p.x) * step(p.x, 0.20) * step(0.30, p.y) * step(p.y, horizon);
   let b2 = step(0.24, p.x) * step(p.x, 0.34) * step(0.44, p.y) * step(p.y, horizon);
   let b3 = step(0.82, p.x) * step(p.x, 0.95) * step(0.38, p.y) * step(p.y, horizon);
-  col += vec3f(0.16, 0.17, 0.20) * (b1 + b2 + b3) * fade;
-  let win = step(0.78, fract(p.x * asp * 11.0)) * step(0.74, fract(p.y * 13.0));
-  col += vec3f(0.95, 0.82, 0.55) * win * (b1 + b2 + b3) * 0.65 * fade;
+  col += acc * 0.22 * (b1 + b2 + b3) * fade;
+  // No lit-window grid on the blocks. It was pure set dressing -- none of the
+  // six filters keys off it -- and at card size it stopped reading as windows
+  // and just became a rash of little squares competing with the practical and
+  // the ladder, which are the two things that actually have to be seen.
 
-  // Highlight ladder along the ground: 0.30, 0.50, 0.72, 1.00.
+  // Highlight ladder along the ground: 0.30, 0.50, 0.72, 1.00. The rungs walk
+  // from accent toward white as they climb, so the ladder still spans the whole
+  // tonal range a THRESHOLD sweeps through -- the dim end simply reads in the
+  // module's colour rather than in grey.
   for (var i = 0; i < 4; i = i + 1) {
     let fi = f32(i);
     let d = length(vec2f((p.x - (0.12 + fi * 0.13)) * asp, p.y - 0.78));
-    col += vec3f(0.30 + fi * 0.235) * smoothstep(0.030, 0.012, d);
+    col += mix(acc, vec3f(1.0), fi / 3.0) * (0.30 + fi * 0.235)
+         * smoothstep(0.030, 0.012, d);
   }
 
   // Accent baseline on the horizon, keeping the house style.
@@ -514,10 +531,25 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     // which needs a real tonal range to show.
     col += idlePictureSubject(p, asp, fade, acc);
   } else if (mode == 11.0) {
-    // LIGHT LEAK -- deliberately NOT a drawing of a light leak. It used to be a
-    // warm gradient washing in from the left, reading none of p0-p3, so all
-    // seven TYPEs previewed identically -- and effectLeak then ran on top of it.
-    col += idlePictureSubject(p, asp, fade, acc);
+    // LIGHT LEAK -- a gradient only. Nothing on this card is a drawn shape.
+    //
+    // Two earlier versions put discrete marks here: first three accent discs,
+    // then three highlight dots to feed the ghost chain. Both read as OBJECTS
+    // sitting on the card, and because neither depended on p0-p3 they stayed
+    // put through all seven TYPEs -- exactly the fault this file already
+    // documents for PRISM and ANAMORPHIC, committed twice more.
+    //
+    // A third attempt replaced the dots with a bright directional wash, which
+    // removed the objects but broke the card the other way: subject and leak are
+    // both painted in the accent, so a bright card leaves the leak nothing to
+    // read against and the preview showed a plain gradient.
+    //
+    // The requirements only looked contradictory. IRIS and ANAMO now synthesise
+    // a virtual light source whenever no clip is loaded, so they need nothing
+    // drawn here at all -- which frees this card to be what a leak actually
+    // needs: black. Every lit pixel on it comes from effectLeak.
+    let q = vec2f((p.x - 0.5) * asp, p.y - 0.5);
+    col += acc * 0.05 * (1.0 - smoothstep(0.10, 0.66, length(q)));
   } else if (mode == 12.0) {
     // DUTCH ANGLE -- a LEVEL horizon. The card must not tilt.
     //
@@ -1183,6 +1215,84 @@ fn leakRamp(w0: f32, i: f32) -> vec3f {
 }
 
 /**
+ * Stretched striation -- the internal texture a real leak actually carries.
+ *
+ * Reference plates do have structure inside their shapes, but it is nothing
+ * like turbulence: it is drawn out along one axis into fine parallel lines, the
+ * way light smears through a gate or across an anamorphic element. An fbm
+ * cannot produce that however it is warped, because it carries the same detail
+ * in every direction -- that isotropy is exactly what makes it read as smoke.
+ *
+ * So the lattice is sampled anisotropically: many cycles across the axis,
+ * almost none along it.
+ */
+fn leakStriation(p: vec2f, ang: f32, fineness: f32) -> f32 {
+  let d = rot2(p, ang);
+  return fbm3(vec2f(d.x * fineness, d.y * 0.55));
+}
+
+/**
+ * One defocused iris disc: flat-ish interior, hotter rim, soft outer edge.
+ *
+ * An out-of-focus point source does not render as a gaussian blob. The aperture
+ * images itself, so it arrives as a DISC with a defined boundary and a brighter
+ * ring where the blade edges pile up. A gaussian reads as a smudge; the rim is
+ * the whole reason bokeh reads as bokeh.
+ */
+fn leakDisc(p: vec2f, centre: vec2f, radius: f32, soft: f32) -> f32 {
+  let d = length(p - centre) / max(radius, 0.01);
+  let body = 1.0 - smoothstep(1.0 - soft, 1.0 + soft * 0.35, d);
+  let rim = exp(-pow((d - 0.88) / max(soft * 0.55, 0.02), 2.0));
+  return body * 0.72 + rim * 0.55;
+}
+
+/**
+ * The aperture, imaged. Returns the radius of the iris opening in direction p.
+ *
+ * A ghost is not a generic blob -- it is a PICTURE OF THE HOLE, formed when
+ * light reflects between two lens elements and lands back on the sensor. That
+ * is why a six-blade iris throws hexagons and a nine-blade rounded one throws
+ * near-circles: you are looking at the diaphragm itself. In polar form the
+ * distance to the nearest straight blade edge is
+ *
+ *   r = cos(pi/n) / cos(mod(t + pi/n, 2pi/n) - pi/n)
+ *
+ * and the round parameter lerps that back toward a plain circle, which is
+ * exactly what rounded blades do physically.
+ */
+fn apertureNgon(p: vec2f, blades: f32, round: f32) -> f32 {
+  let n = max(blades, 3.0);
+  let seg = 6.2831853 / n;
+  let half = seg * 0.5;
+  let t = atan2(p.y, p.x) + half;
+  let edge = cos(3.14159265 / n)
+           / max(cos(t - floor(t / seg) * seg - half), 1e-4);
+  return mix(edge, 1.0, clamp(round, 0.0, 1.0));
+}
+
+/**
+ * One aperture image at the given centre, anisotropically scaled.
+ *
+ * SQUEEZE is the whole anamorphic story in one number. A desqueeze in post
+ * stretches every internal reflection along the anamorphic axis, so a circular
+ * ghost becomes a horizontal line. Round bokeh, oval bokeh and the anamorphic
+ * streak are therefore the SAME primitive at three axis ratios, not three
+ * separate effects -- which is why this function is shared by IRIS and ANAMO.
+ */
+fn leakAperture(
+  q: vec2f, centre: vec2f, radius: f32, squeeze: f32, blades: f32, round: f32
+) -> f32 {
+  let d = (q - centre) / vec2f(max(squeeze, 0.05), 1.0) / max(radius, 0.008);
+  let r = length(d);
+  let e = apertureNgon(d, blades, round);
+  // Body plus rim: the blade edges pile up light at the boundary, and that ring
+  // is the whole reason bokeh reads as bokeh instead of as a smudge.
+  let body = 1.0 - smoothstep(e * 0.70, e * 1.06, r);
+  let rim = exp(-pow((r - e * 0.90) / 0.20, 2.0));
+  return body * 0.78 + rim * 0.5;
+}
+
+/**
  * One leak event as a scalar field over the frame.
  *
  * seed offsets both the noise field and the drift, so calling this twice gives
@@ -1203,66 +1313,129 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
   var v = 0.0;
 
   if (kind < 0.5) {
-    // EDGE -- gate bleed creeping in from one side.
-    // step(), not a continuous mix: blending uv.x with 1.0 - uv.x by a moving
-    // fraction lands on a CONSTANT 0.5 across the entire frame at the halfway
-    // point, so the old version flattened to a uniform wash twice per cycle.
-    let side = step(0.0, sin(phase * 0.5 + seed * 2.1));
-    let d = mix(uv.x, 1.0 - uv.x, side) + warp * 0.30;
-    // Raised to a power so the bleed stays anchored at the edge and falls away
-    // fast. A bare smoothstep over most of the frame width is a gradient across
-    // the whole picture, which is the thing this type kept turning back into.
-    v = pow(clamp(1.0 - smoothstep(0.0, reach * 0.80, d), 0.0, 1.0), 1.5) * 1.35;
-    // Vertical break-up, so the bleed is not a perfectly even column.
-    v = v * (0.60 + 0.40 * fbm3(vec2f(uv.y * 3.1 + seed, phase * 0.2)));
+    // IRIS -- the ghost chain.
+    //
+    // Light reflecting between two elements re-images the aperture onto the
+    // sensor, mirrored through the optical axis, once per reflection path. So
+    // the ghosts are PLACED BY THE PICTURE: sample the frame along the vector
+    // through centre, keep only what is bright, and stand an aperture image
+    // there. That is why the reference plates are full of overlapping discs.
+    //
+    // It is also why they sweep so fast. Ghost i sits at uv + gv * i, so it
+    // travels i times as far as the light source does -- a small camera move
+    // swings the outer ghosts clear across frame. The quickness is geometric,
+    // not a speed setting.
+    if (u.hasVideo > 0.5) {
+      let gv = (vec2f(0.5) - uv) * (0.30 + reach * 0.60);
+      for (var i = 1; i < 5; i = i + 1) {
+        let fi = f32(i);
+        let suv = clamp(uv + gv * fi, vec2f(0.0), vec2f(1.0));
+        let lum = max(dot(sampleSource(suv), vec3f(0.2126, 0.7152, 0.0722)) - 0.52, 0.0);
+        let c = vec2f((suv.x - 0.5) * asp, suv.y - 0.5);
+        v = v + leakAperture(q, c, reach * (0.09 + fi * 0.05), 1.0, 6.0, 0.45)
+              * lum * (1.25 - fi * 0.18);
+      }
+    } else {
+      // No clip loaded: there is nothing to sample. Drawing a highlight on the
+      // idle card just to feed this loop is what put fixed marks on the preview
+      // twice over -- and a card bright enough to sample is also too bright for
+      // the leak to read against, since both are painted in the accent.
+      //
+      // A virtual source instead. Same ghost chain, same mirrored geometry, no
+      // drawn subject, so the card can stay black and every lit pixel on it is
+      // the effect.
+      let lp = vec2f(0.5 + 0.30 * cos(phase * 0.5 + seed),
+                     0.5 + 0.22 * sin(phase * 0.42 + seed));
+      let gv = (vec2f(0.5) - lp) * (0.55 + reach * 0.60);
+      for (var i = 1; i < 5; i = i + 1) {
+        let fi = f32(i);
+        let c = lp + gv * fi;
+        v = v + leakAperture(q, vec2f((c.x - 0.5) * asp, c.y - 0.5),
+                             reach * (0.09 + fi * 0.05), 1.0, 6.0, 0.45)
+              * (1.25 - fi * 0.18);
+      }
+    }
 
   } else if (kind < 1.5) {
-    // STREAK -- an anamorphic flare has to come FROM something bright, or it is
-    // just a bar. Walking the source horizontally and keeping only the top of
-    // the luminance range is what makes it sit in the scene and move with it.
-    let cy = 0.5 + 0.34 * sin(phase * 0.6 + seed);
-    let band = exp(-pow((uv.y - cy + warp * 0.10) / max(reach * 0.30, 0.015), 2.0));
-    var glare = 0.0;
-    for (var i = 0; i < 9; i = i + 1) {
-      let o = (f32(i) - 4.0) * (0.014 + reach * 0.05);
-      let s = sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
-      let lum = dot(s, vec3f(0.2126, 0.7152, 0.0722));
-      glare = glare + smoothstep(0.45, 1.0, lum) * (1.0 - abs(f32(i) - 4.0) / 5.0);
+    // ANAMO -- the same aperture, squeezed hard on one axis.
+    //
+    // Not a drawn bar. An anamorphic streak IS a ghost that the desqueeze has
+    // stretched along the anamorphic axis, which is why it is built from the
+    // same primitive as IRIS and why it still has to come FROM something bright
+    // or it reads as a painted line. The cool cast belongs to the lens COATING
+    // rather than to the light, so the ramp supplies it, not this field.
+    if (u.hasVideo > 0.5) {
+      let gv = (vec2f(0.5) - uv) * (0.22 + reach * 0.40);
+      for (var i = 1; i < 4; i = i + 1) {
+        let fi = f32(i);
+        let suv = clamp(uv + gv * fi, vec2f(0.0), vec2f(1.0));
+        let lum = max(dot(sampleSource(suv), vec3f(0.2126, 0.7152, 0.0722)) - 0.48, 0.0);
+        let c = vec2f((suv.x - 0.5) * asp, suv.y - 0.5);
+        v = v + leakAperture(q, c, reach * 0.10, 9.0 + reach * 6.0, 9.0, 0.90)
+              * lum * (1.40 - fi * 0.25);
+      }
+    } else {
+      // Virtual source on the idle card, for the same reason as IRIS above.
+      let lp = vec2f(0.5 + 0.28 * cos(phase * 0.44 + seed),
+                     0.5 + 0.20 * sin(phase * 0.38 + seed));
+      let gv = (vec2f(0.5) - lp) * (0.45 + reach * 0.45);
+      for (var i = 1; i < 4; i = i + 1) {
+        let fi = f32(i);
+        let c = lp + gv * fi;
+        v = v + leakAperture(q, vec2f((c.x - 0.5) * asp, c.y - 0.5),
+                             reach * 0.10, 9.0 + reach * 6.0, 9.0, 0.90)
+              * (1.40 - fi * 0.25);
+      }
     }
-    // The glare rides on a floor rather than being the whole term. Keyed purely
-    // off highlights, this type rendered NOTHING over any shot without a blown
-    // one in the flare's path -- the selector had a dead button in it. The band
-    // is always a flare; what is bright in frame decides how hard it blows.
-    v = band * (0.50 + clamp(glare * 0.80, 0.0, 1.9));
+    // Striation along the streak axis. Stretched, never isotropic -- this is the
+    // only place noise belongs, as texture inside a shape rather than as shape.
+    v = v * (0.74 + 0.26 * leakStriation(uv, 0.0, 34.0));
 
   } else if (kind < 2.5) {
-    // SHAFT -- a shaft with an actual edge, travelling across the frame. The
-    // warp gives it the wobble a real shaft picks up through a dirty gate.
-    let sweep = fract(phase * 0.3 + seed * 0.37);
-    let x = (uv.x - sweep * 1.5 + 0.25 + warp * 0.18) / max(reach * 0.62, 0.03);
-    v = exp(-x * x * 2.6) * (0.68 + 0.32 * fbm3(vec2f(uv.y * 4.0, phase * 0.4 + seed)));
+    // SPIKE -- the diffraction star.
+    //
+    // Every straight blade edge diffracts light perpendicular to itself, and a
+    // spike runs BOTH ways from that edge. So an odd blade count shows 2n rays
+    // while an even one shows n, because opposite edges are parallel and their
+    // spikes superimpose: five blades give a ten-point star, six give six. That
+    // is a rule of the optics, so the ray count is derived from the blade count
+    // rather than dialled in by hand.
+    let blades = 6.0;
+    let rays = select(blades, blades * 2.0, fract(blades * 0.5) > 0.25);
+    let src = vec2f(cos(phase * 0.30 + seed) * 0.26, sin(phase * 0.26 + seed) * 0.18);
+    let d = q - src;
+    let r = max(length(d), 1e-4);
+    let star = pow(abs(cos(atan2(d.y, d.x) * rays * 0.5)), 22.0);
+    v = exp(-r / max(reach * 0.55, 0.03)) * (0.18 + star * 1.5);
 
   } else if (kind < 3.5) {
-    // CORNER -- burns in from whichever corner the drift is pointing at.
-    let cx = step(0.5, fract(phase * 0.11 + seed * 0.41));
-    let cy = step(0.5, fract(phase * 0.09 + 0.37 + seed * 0.23));
-    let corner = vec2f((cx - 0.5) * asp, cy - 0.5);
-    let d = length(q - corner) + warp * 0.30;
-    v = pow(clamp(1.0 - smoothstep(0.0, reach * 1.25, d), 0.0, 1.0), 1.8) * 1.6;
+    // RINGS -- Newton fringes.
+    //
+    // The concentric colour rings on a leak plate are thin-film interference,
+    // and their radii go as sqrt(m), so the fringes bunch progressively TIGHTER
+    // toward the outside. Evenly spaced sin(d * k) rings are the obvious
+    // implementation and they read as wrong for precisely that reason, so the
+    // fringe phase here is quadratic in radius: m ~ r^2.
+    let centre = vec2f(cos(phase * 0.19 + seed) * 0.22, sin(phase * 0.23 + seed) * 0.16);
+    let r = length(q - centre) / max(reach * 1.10, 0.05);
+    let m = r * r * (7.0 + reach * 14.0);
+    let fringe = 0.5 + 0.5 * cos(m * 6.2831853);
+    v = exp(-r * r * 1.5) * (0.30 + 0.70 * fringe);
 
   } else if (kind < 4.5) {
-    // BURN -- the fog IS the shape here, not a modifier on one. Thresholding a
-    // warped fbm gives blotches with the ragged, unrepeatable outline of a
-    // scratched neg; the old three drifting circles could not, because three
-    // circles always look like three circles.
-    // Reuses the fog it was handed rather than warping a second field: the two
-    // differed only in scale and offset, and one warpedFbm is twelve hash21
-    // calls. Thresholding the same field lower gives the same blotches.
-    let blot = fog;
-    // Bias toward the frame edge: a leak is light getting past the gate or the
-    // back, so it is strongest at the border and thins toward the middle.
-    let edgeBias = smoothstep(0.10, 0.62, max(abs(q.x) / asp, abs(q.y)) * 2.0);
-    v = smoothstep(0.62 - reach * 0.40, 0.92, blot) * (0.35 + 0.65 * edgeBias) * 1.2;
+    // EDGE -- the actual light LEAK, as distinct from a lens flare.
+    //
+    // Light entering at the film edge or through the sprocket holes fogs the
+    // emulsion inward, and the polyester base pipes it along like fibre optic.
+    // The mechanism is a smooth exponential falloff from the border with a
+    // periodic accent where the perforations sit. There is no turbulence
+    // anywhere in it, which is exactly what the old fbm version got wrong.
+    let side = step(0.0, sin(phase * 0.5 + seed * 2.1));
+    let dx = mix(uv.x, 1.0 - uv.x, side);
+    let perf = 0.80 + 0.20 * (0.5 + 0.5 * cos(uv.y * 6.2831853 * 8.0 + phase));
+    v = exp(-dx / max(reach * 0.42, 0.02)) * perf * 1.5;
+    // Striation runs ALONG the bleed, keeping it streaky rather than mottled.
+    v = v * (0.78 + 0.22 * leakStriation(uv + vec2f(seed), 1.5708, 30.0));
 
   } else if (kind < 5.5) {
     // VEIL -- glare over the whole frame, pumped by the beat. Even a veil has
@@ -1295,6 +1468,44 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // half of why this read as an overlay -- the real thing routinely swallows
   // half the frame.
   let reach = 0.20 + u.p0 * 0.90;
+
+  // ---- Firing cycle --------------------------------------------------------
+  // A leak is an EVENT, not a state. Real ones catch the light as the camera
+  // swings past it: they arrive, flood, and pass, and between passes there is
+  // nothing at all. Every type here was permanently on at constant strength,
+  // which is the single biggest reason the module read as a coloured sheet laid
+  // over the picture rather than as light striking the lens.
+  //
+  // FREQ sets how often a pass happens; HOLD how long one lasts once it starts.
+  // Between them they cover the whole range: quick flicker (high FREQ, low
+  // HOLD), slow travelling pass (low FREQ, high HOLD), and silence.
+  //
+  // FREQ at 0 means the leak never fires -- fully off, not merely quiet.
+  let freq = clamp(u.aux1, 0.0, 1.0);
+  let hold = mix(0.06, 0.92, clamp(u.aux2, 0.0, 1.0));
+  // Squared so the bottom half of the dial spreads events across bars rather
+  // than bunching every useful setting into the last few percent.
+  let period = mix(32.0, 0.5, freq * freq);
+  let cyc = fract(u.beat / max(period, 0.125));
+  // Fast attack, slower release: light arrives the moment the gap lines up and
+  // drains as it swings away. Symmetric envelopes read as a square wave.
+  var env = smoothstep(0.0, 0.05, cyc) * (1.0 - smoothstep(hold * 0.55, hold, cyc));
+
+  // A written part outranks the internal clock. triggerAge counts beats since
+  // this module's last MIDI note, so when a part is driving the rack it decides
+  // WHEN a leak happens and FREQ is left setting only how long the tail runs.
+  // Without this the module would keep firing on its own grid underneath the
+  // part, which is the failure PUNCH had before it moved onto beatPulse.
+  if (u.triggerAge >= 0.0) {
+    let span = max(period * hold, 0.08);
+    let a = clamp(1.0 - u.triggerAge / span, 0.0, 1.0);
+    env = a * a;
+  }
+
+  if (freq <= 0.001) { env = 0.0; }
+  // Stopped, u.beat is frozen so the cycle cannot advance -- but the preview
+  // card still has to show what the module does, so it holds fully on.
+  if (u.playing < 0.5) { env = 1.0; }
 
   // The two noise fields are evaluated ONCE here and handed down.
   //
@@ -1342,15 +1553,28 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // the picture.
   amount = amount * (0.78 + 0.22 * fbm3(uv * vec2f(asp, 1.0) * 11.0 + vec2f(0.0, phase * 0.9)));
 
-  amount = clamp(amount, 0.0, 1.6);
-  let k = clamp(amount, 0.0, 1.0);
-
   // Take a little of the colour from the frame itself. Real spill picks up
   // whatever it is bouncing off. Dividing by luminance keeps the scene's hue
   // and discards its brightness, so a dark shot biases the leak as strongly as
   // a bright one.
   let sceneLum = max(dot(col, vec3f(0.2126, 0.7152, 0.0722)), 0.001);
   let sceneHue = clamp(col / sceneLum, vec3f(0.0), vec3f(2.0));
+
+  // Keyed to the picture's own luminance. Light striking the stock lands on the
+  // same emulsion the image is on, so a leak POOLS around what is already
+  // bright -- a practical, a window, a blown sky -- and thins across the parts
+  // of the frame carrying no light of their own. Without this the field is
+  // placed purely by noise and lands wherever it likes, which is most of why it
+  // sat on the picture instead of in it.
+  //
+  // Floored well above zero rather than scaled straight off luminance: keyed
+  // purely to brightness the leak would vanish on a night shot, and fogging is
+  // most visible on exactly that stock.
+  let lumKey = 0.58 + 0.80 * smoothstep(0.04, 0.72, sceneLum);
+  amount = amount * lumKey * env;
+
+  amount = clamp(amount, 0.0, 1.6);
+  let k = clamp(amount, 0.0, 1.0);
 
   // Two colours, not one.
   //
