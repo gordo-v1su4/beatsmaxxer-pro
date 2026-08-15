@@ -158,7 +158,11 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
       return {
         mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift, p3: p.type,
         aux1: (p.freq ?? 45) / 100,
-        aux2: (p.hold ?? 30) / 100
+        aux2: (p.hold ?? 30) / 100,
+        // BLADES is sent as a real blade count, not 0-1: the shader needs the
+        // integer to build the polygon and to derive the spike rule from it.
+        aux3: 5 + Math.round(((p.blades ?? 50) / 100) * 4),
+        aux4: (p.squeeze ?? 0) / 100
       };
     case 'dutch':
       return { mix: p.mix, p0: p.tilt, p1: p.drift, p2: p.snap };

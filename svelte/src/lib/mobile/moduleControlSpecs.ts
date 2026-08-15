@@ -453,13 +453,13 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
         // discrete index by the shader, so these sit exactly on 0..5.
         label: 'TYPE',
         buttons: [
-          { label: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30 } },
-          { label: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35 } },
-          { label: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45 } },
-          { label: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30 } },
-          { label: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30 } },
-          { label: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
-          { label: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
+          { label: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30, blades: 25, squeeze: 0 } },
+          { label: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35, blades: 100, squeeze: 85 } },
+          { label: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45, blades: 0, squeeze: 0 } },
+          { label: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30, blades: 50, squeeze: 0 } },
+          { label: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30, blades: 50, squeeze: 0 } },
+          { label: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30, blades: 50, squeeze: 0 } },
+          { label: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35, blades: 50, squeeze: 15 } }
         ],
         match: 'exact',
         primary: 'type',
@@ -470,6 +470,8 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
       { param: 'edge', label: 'EDGE' },
       { param: 'warmth', label: 'WARMTH' },
       { param: 'drift', label: 'DRIFT' },
+      { param: 'blades', label: 'BLADES' },
+      { param: 'squeeze', label: 'SQUEEZE' },
       { param: 'freq', label: 'FREQ' },
       { param: 'hold', label: 'HOLD' }
     ]

@@ -55,6 +55,11 @@ struct Uniforms {
   triggerAge: f32,
   /** The rack's groove from the PGM rail: 0 straight, 1 swing, 2 dotted. */
   feel: f32,
+  /** Third and fourth live slots. LEAK carries BLADES and SQUEEZE here: it has
+      seven real controls and only four p-slots, and both of these are physical
+      properties of the lens rather than tuning knobs. */
+  aux3: f32,
+  aux4: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -1300,6 +1305,14 @@ fn leakAperture(
  */
 fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) -> f32 {
   let asp = max(u.aspect, 0.0001);
+  // The two lens properties, read once. BLADES arrives as a real count (5..9)
+  // because the polygon and the spike rule both need the integer, not a ratio.
+  // SQUEEZE 0 leaves the aperture round; 1 stretches it into an anamorphic bar.
+  let blades = clamp(round(u.aux3), 3.0, 12.0);
+  let squeeze = 1.0 + clamp(u.aux4, 0.0, 1.0) * 13.0;
+  // Rounded blades soften the polygon toward a circle, exactly as they do in a
+  // real iris -- a nine-blade rounded stop is why modern bokeh reads circular.
+  let blRound = clamp((blades - 5.0) / 4.0, 0.0, 1.0) * 0.7;
   // Aspect-corrected frame coordinates, so a round hotspot stays round on a
   // 16:9 canvas instead of stretching into an ellipse.
   let q = vec2f((uv.x - 0.5) * asp, uv.y - 0.5);
@@ -1340,9 +1353,11 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
         // Fade toward the frame edge, or fract() shows the wrap as a hard seam.
         let w = pow(max(1.0 - length(suv - vec2f(0.5)) * 1.42, 0.0), 4.0);
         // Aperture character: the iris polygon modulates the ghost by direction,
-        // so a six-blade stop reads faintly hexagonal instead of perfectly round.
-        let ap = apertureNgon(suv - vec2f(0.5), 6.0, 0.55);
-        v = v + lum * w * (1.30 - fi * 0.13) * (0.75 + 0.25 * ap);
+        // so a five-blade stop reads pentagonal and a nine-blade rounded one
+        // reads circular. SQUEEZE stretches the same shape into oval bokeh.
+        let d = (suv - vec2f(0.5)) / vec2f(squeeze, 1.0);
+        let ap = apertureNgon(d, blades, blRound);
+        v = v + lum * w * (1.30 - fi * 0.13) * (0.72 + 0.28 * ap);
       }
     } else {
       // No clip loaded: there is nothing to sample. Drawing a highlight on the
@@ -1360,7 +1375,7 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
         let fi = f32(i);
         let c = lp + gv * fi;
         v = v + leakAperture(q, vec2f((c.x - 0.5) * asp, c.y - 0.5),
-                             reach * (0.09 + fi * 0.05), 1.0, 6.0, 0.45)
+                             reach * (0.09 + fi * 0.05), squeeze, blades, blRound)
               * (1.25 - fi * 0.18);
       }
     }
@@ -1380,7 +1395,10 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
       // of its travel off the top or bottom edge, so the type read as "nothing
       // happening" for most of the cycle.
       let cy = 0.5 + 0.22 * sin(phase * 0.5 + seed);
-      let band = exp(-pow((uv.y - cy) / max(reach * 0.26, 0.014), 2.0));
+      // SQUEEZE tightens the band: the anamorphic axis ratio is exactly what
+      // decides whether a flare is a soft glow or a hard horizontal line.
+      let bw = reach * mix(0.30, 0.085, clamp(u.aux4, 0.0, 1.0));
+      let band = exp(-pow((uv.y - cy) / max(bw, 0.010), 2.0));
       var glare = 0.0;
       for (var i = 0; i < 11; i = i + 1) {
         let o = (f32(i) - 5.0) * (0.020 + reach * 0.055);
@@ -1399,8 +1417,10 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
       for (var i = 1; i < 4; i = i + 1) {
         let fi = f32(i);
         let c = lp + gv * fi;
+        // ANAMO floors the stretch well above SQUEEZE's own range: this type IS
+        // the anamorphic one, so it reads as a streak even with the dial at 0.
         v = v + leakAperture(q, vec2f((c.x - 0.5) * asp, c.y - 0.5),
-                             reach * 0.10, 9.0 + reach * 6.0, 9.0, 0.90)
+                             reach * 0.10, max(squeeze, 6.0) + reach * 5.0, blades, blRound)
               * (1.40 - fi * 0.25);
       }
     }
@@ -1417,12 +1437,14 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
     // spikes superimpose: five blades give a ten-point star, six give six. That
     // is a rule of the optics, so the ray count is derived from the blade count
     // rather than dialled in by hand.
-    let blades = 6.0;
     let rays = select(blades, blades * 2.0, fract(blades * 0.5) > 0.25);
     let src = vec2f(cos(phase * 0.30 + seed) * 0.26, sin(phase * 0.26 + seed) * 0.18);
-    let d = q - src;
+    let d = (q - src) / vec2f(squeeze, 1.0);
     let r = max(length(d), 1e-4);
-    let star = pow(abs(cos(atan2(d.y, d.x) * rays * 0.5)), 22.0);
+    // Rounded blades diffract less sharply, so the star softens as BLADES rises
+    // -- the same trade a real lens makes between clean sunstars and round bokeh.
+    let sharp = mix(26.0, 9.0, blRound / 0.7);
+    let star = pow(abs(cos(atan2(d.y, d.x) * rays * 0.5)), sharp);
     v = exp(-r / max(reach * 0.55, 0.03)) * (0.18 + star * 1.5);
 
   } else if (kind < 3.5) {

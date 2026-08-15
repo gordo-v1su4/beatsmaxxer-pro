@@ -174,6 +174,9 @@ const defs: ModuleDefinition[] = [
     // lasts once it starts. See the firing-cycle note in effectLeak.
     params: {
       type: 0, edge: 50, warmth: 34, drift: 35,
+      // blades 0-100 maps to a 5..9 blade iris; squeeze 0 is a round aperture
+      // and 100 is a hard anamorphic stretch. Both are lens properties.
+      blades: 25, squeeze: 0,
       freq: 45, hold: 30, mix: 55, in_: 80, out: 70
     }
   },

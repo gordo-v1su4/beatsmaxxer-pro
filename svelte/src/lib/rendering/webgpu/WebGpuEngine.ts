@@ -23,6 +23,9 @@ export interface ModuleRenderParams {
   aux1?: number;
   /** Second live signal: speedramp cycle phase (0-1). */
   aux2?: number;
+  /** Third and fourth live signals. LEAK sends BLADES and SQUEEZE. */
+  aux3?: number;
+  aux4?: number;
   /**
    * Beats since this module's last MIDI trigger, or negative to follow the
    * transport's beat grid (the default).
@@ -353,10 +356,11 @@ export class WebGpuEngine {
     });
 
     const uniformBuffer = this.device.createBuffer({
-      // 32 f32/u32 words, and the Uniforms struct now fills every one of them.
-      // Adding another member means growing this AND the Float32Array in
-      // encodeBinding, or the new field silently reads garbage.
-      size: 128,
+      // 36 f32/u32 words. The Uniforms struct fills 34 of them (aux3/aux4 were
+      // added for LEAK's BLADES and SQUEEZE); the pad keeps the size on a
+      // 16-byte boundary. Adding another member means growing this AND the
+      // Float32Array in encodeBinding, or the new field silently reads garbage.
+      size: 144,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
@@ -629,7 +633,7 @@ export class WebGpuEngine {
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
     const timeline = this.frameCtx.timeline;
-    const data = new Float32Array(32);
+    const data = new Float32Array(36);
     data[0] = timeline?.beatPosition ?? this.frameCtx.beat;
     data[1] = timeline?.beatPhase ?? this.frameCtx.beatPhase;
     data[2] = timeline?.bpm ?? this.frameCtx.bpm;
@@ -660,6 +664,8 @@ export class WebGpuEngine {
     // index 30 sits past the timeline's 22-29 window.
     data[30] = rp.triggerAge ?? -1;
     data[31] = rp.feel ?? 0;
+    data[32] = rp.aux3 ?? 0;
+    data[33] = rp.aux4 ?? 0;
     if (timeline) writeTimelineUniformData(data, timeline);
 
     let shaderHasVideo = hasVideo;
@@ -926,6 +932,7 @@ export function importAndBindExternalVideo(
 function sameRenderParams(a: ModuleRenderParams, b: ModuleRenderParams) {
   return a.mix === b.mix && a.p0 === b.p0 && a.p1 === b.p1 && a.p2 === b.p2 &&
     a.p3 === b.p3 && a.accent === b.accent && a.aux1 === b.aux1 && a.aux2 === b.aux2 &&
+    a.aux3 === b.aux3 && a.aux4 === b.aux4 &&
     a.triggerAge === b.triggerAge && a.feel === b.feel;
 }
 

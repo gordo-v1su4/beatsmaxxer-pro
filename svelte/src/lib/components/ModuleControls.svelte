@@ -409,13 +409,18 @@
           // an anamorphic streak is the lens COATING, not the light, so it is
           // the normal case rather than an extreme of the dial. EDGE stays warm
           // because film edge-fog genuinely is.
-          { l: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30 } },
-          { l: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35 } },
-          { l: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45 } },
-          { l: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30 } },
-          { l: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30 } },
-          { l: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30 } },
-          { l: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35 } }
+          // BLADES/SQUEEZE are set per type because they are what MAKES the
+          // type: SPIKE wants a five-blade straight-edged stop (ten rays, hard
+          // diffraction), ANAMO wants a rounded nine squeezed flat, IRIS wants a
+          // round six. Leaving them where the last type left them is how the
+          // selector stops meaning anything.
+          { l: 'IRIS', set: { type: 0, edge: 55, warmth: 34, drift: 30, blades: 25, squeeze: 0 } },
+          { l: 'ANAMO', set: { type: 1, edge: 60, warmth: 18, drift: 35, blades: 100, squeeze: 85 } },
+          { l: 'SPIKE', set: { type: 2, edge: 45, warmth: 26, drift: 45, blades: 0, squeeze: 0 } },
+          { l: 'RINGS', set: { type: 3, edge: 50, warmth: 42, drift: 30, blades: 50, squeeze: 0 } },
+          { l: 'EDGE', set: { type: 4, edge: 45, warmth: 72, drift: 30, blades: 50, squeeze: 0 } },
+          { l: 'VEIL', set: { type: 5, edge: 35, warmth: 44, drift: 30, blades: 50, squeeze: 0 } },
+          { l: 'PRISM', set: { type: 6, edge: 55, warmth: 50, drift: 35, blades: 50, squeeze: 15 } }
         ] as p (p.l)}
           {@const active = Math.round(params.type ?? 0) === p.set.type}
           <RackBtn
@@ -450,6 +455,20 @@
           {color}
           label="DRIFT"
           controlId="{moduleId}-drift"
+        />
+        <HSlider
+          value={params.blades ?? 25}
+          onChange={(v) => onUpdate('blades', v)}
+          {color}
+          label="BLADES"
+          controlId="{moduleId}-blades"
+        />
+        <HSlider
+          value={params.squeeze ?? 0}
+          onChange={(v) => onUpdate('squeeze', v)}
+          {color}
+          label="SQUEEZE"
+          controlId="{moduleId}-squeeze"
         />
         <HSlider
           value={params.freq ?? 45}
