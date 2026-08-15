@@ -1326,14 +1326,23 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
     // swings the outer ghosts clear across frame. The quickness is geometric,
     // not a speed setting.
     if (u.hasVideo > 0.5) {
-      let gv = (vec2f(0.5) - uv) * (0.30 + reach * 0.60);
-      for (var i = 1; i < 5; i = i + 1) {
+      // A ghost is the SOURCE, resampled along the vector through centre -- not
+      // a shape drawn at the sample point. An earlier version stood an aperture
+      // at c = uv + gv*i and measured the shaded pixel against it, but that
+      // offset is relative to the pixel doing the shading, so length(q - c) came
+      // out identical for every pixel on screen. The field was uniform, which
+      // over video means invisible.
+      let gv = (vec2f(0.5) - uv) * (0.22 + reach * 0.45);
+      for (var i = 1; i < 6; i = i + 1) {
         let fi = f32(i);
-        let suv = clamp(uv + gv * fi, vec2f(0.0), vec2f(1.0));
-        let lum = max(dot(sampleSource(suv), vec3f(0.2126, 0.7152, 0.0722)) - 0.52, 0.0);
-        let c = vec2f((suv.x - 0.5) * asp, suv.y - 0.5);
-        v = v + leakAperture(q, c, reach * (0.09 + fi * 0.05), 1.0, 6.0, 0.45)
-              * lum * (1.25 - fi * 0.18);
+        let suv = fract(uv + gv * fi);
+        let lum = max(dot(sampleSource(suv), vec3f(0.2126, 0.7152, 0.0722)) - 0.38, 0.0);
+        // Fade toward the frame edge, or fract() shows the wrap as a hard seam.
+        let w = pow(max(1.0 - length(suv - vec2f(0.5)) * 1.42, 0.0), 4.0);
+        // Aperture character: the iris polygon modulates the ghost by direction,
+        // so a six-blade stop reads faintly hexagonal instead of perfectly round.
+        let ap = apertureNgon(suv - vec2f(0.5), 6.0, 0.55);
+        v = v + lum * w * (1.30 - fi * 0.13) * (0.75 + 0.25 * ap);
       }
     } else {
       // No clip loaded: there is nothing to sample. Drawing a highlight on the
@@ -1365,15 +1374,23 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
     // or it reads as a painted line. The cool cast belongs to the lens COATING
     // rather than to the light, so the ramp supplies it, not this field.
     if (u.hasVideo > 0.5) {
-      let gv = (vec2f(0.5) - uv) * (0.22 + reach * 0.40);
-      for (var i = 1; i < 4; i = i + 1) {
-        let fi = f32(i);
-        let suv = clamp(uv + gv * fi, vec2f(0.0), vec2f(1.0));
-        let lum = max(dot(sampleSource(suv), vec3f(0.2126, 0.7152, 0.0722)) - 0.48, 0.0);
-        let c = vec2f((suv.x - 0.5) * asp, suv.y - 0.5);
-        v = v + leakAperture(q, c, reach * 0.10, 9.0 + reach * 6.0, 9.0, 0.90)
-              * lum * (1.40 - fi * 0.25);
+      // Same correction as IRIS: the streak is the picture smeared along one
+      // axis and kept where it is bright, not a bar drawn at a relative offset.
+      // Kept inside the middle half of the frame: at +/-0.30 the band spent much
+      // of its travel off the top or bottom edge, so the type read as "nothing
+      // happening" for most of the cycle.
+      let cy = 0.5 + 0.22 * sin(phase * 0.5 + seed);
+      let band = exp(-pow((uv.y - cy) / max(reach * 0.26, 0.014), 2.0));
+      var glare = 0.0;
+      for (var i = 0; i < 11; i = i + 1) {
+        let o = (f32(i) - 5.0) * (0.020 + reach * 0.055);
+        let s = sampleSource(clamp(uv + vec2f(o, 0.0), vec2f(0.0), vec2f(1.0)));
+        glare = glare + smoothstep(0.42, 0.95, dot(s, vec3f(0.2126, 0.7152, 0.0722)))
+              * (1.0 - abs(f32(i) - 5.0) / 6.5);
       }
+      // A floor under the glare: keyed purely off highlights the type renders
+      // nothing over a shot with no blown source in the flare's path.
+      v = band * (0.35 + clamp(glare * 0.75, 0.0, 2.0));
     } else {
       // Virtual source on the idle card, for the same reason as IRIS above.
       let lp = vec2f(0.5 + 0.28 * cos(phase * 0.44 + seed),
@@ -1627,12 +1644,21 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // never exposed, so the blacks go first and the highlights barely move. This
   // is also the only term that reads at all on a night shot, where multiplying
   // a near-black pixel by anything leaves it near-black.
-  wet = wet + body * (k * 0.42) * (vec3f(1.0) - wet);
+  // 0.42 was tuned against the old always-on wash, where the leak covered the
+  // frame permanently and a light touch was the only thing keeping it bearable.
+  // Now that FREQ makes it a passing event it has to actually register while it
+  // is there, and the (1 - wet) weighting already protects the highlights -- on
+  // a bright shot that term collapses on its own, which is why the effect was
+  // invisible over lit footage even at full MIX.
+  wet = wet + body * (k * 0.78) * (vec3f(1.0) - wet);
 
   // Core. Screened, and scaled by what is already bright so the leak blows out
   // where it crosses a highlight instead of ignoring the picture underneath.
   // pow keeps it off the weak fringe, so only the hot middle of the leak blows.
-  let coreK = pow(k, 2.1) * (0.35 + 0.90 * smoothstep(0.20, 1.0, sceneLum));
+  // pow 2.1 kept the blowout off everything but a saturated field, so the core
+  // -- the part that actually reads as light rather than as a grade -- almost
+  // never rendered. 1.5 still holds it off the weak fringe.
+  let coreK = pow(k, 1.5) * (0.45 + 1.00 * smoothstep(0.20, 1.0, sceneLum));
   let core = clamp(coreTint * coreK, vec3f(0.0), vec3f(1.0));
   wet = vec3f(1.0) - (vec3f(1.0) - clamp(wet, vec3f(0.0), vec3f(1.0))) * (vec3f(1.0) - core);
 
