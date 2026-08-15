@@ -142,10 +142,10 @@
           class="cg-mode"
           class:is-on={$advanceMode === mode.key}
           aria-checked={$advanceMode === mode.key}
+          title={mode.blurb}
           onclick={() => advanceMode.set(mode.key)}
         >
-          <span class="cg-mode-label">{mode.label}</span>
-          <span class="cg-mode-blurb">{mode.blurb}</span>
+          {mode.label}
         </button>
       {/each}
     </div>
@@ -271,7 +271,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    min-height: 44px;
+    min-height: 36px;
   }
   .cg-titles {
     display: flex;
@@ -297,14 +297,14 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    min-height: 44px;
-    padding: 0 12px;
-    border: 1px solid #23282e;
-    border-radius: 3px;
-    background: #131416;
-    color: #c8d2dc;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #1e2226;
+    border-radius: 2px;
+    background: #0f1215;
+    color: #9aabb8;
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.14em;
     cursor: pointer;
@@ -312,73 +312,70 @@
     -webkit-tap-highlight-color: transparent;
   }
   .cg-add:active:not(:disabled) {
-    background: #1c1f23;
+    background: #161a1d;
+    color: #dfe6ee;
   }
   .cg-add:disabled {
     opacity: 0.55;
     cursor: default;
   }
 
-  /* The set-level decision, so it sits above the tiles rather than inside them. */
+  /* ADVANCE — inline label + segmented control, no box. */
   .cg-advance {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 8px;
-    border: 1px solid #0d0e0f;
-    border-radius: 3px;
-    background: #0a0b0c;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: none;
+    background: transparent;
   }
   .cg-advance-label {
+    flex: 0 0 auto;
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.18em;
     color: #3f4653;
   }
   .cg-modes {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 4px;
+    display: flex;
+    flex: 1 1 auto;
   }
   .cg-mode {
+    position: relative;
+    flex: 1 1 0;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 3px;
-    min-height: 56px;
-    padding: 7px 8px;
-    border: 1px solid #16181b;
-    border-radius: 2px;
-    background: #131416;
-    color: #7d8794;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    padding: 0 6px;
+    margin-left: -1px;
+    border: 1px solid #1e2226;
+    background: #0f1215;
+    color: #5a6472;
     font-family: var(--font-ui);
-    text-align: left;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-align: center;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     transition:
-      background 0.15s,
-      border-color 0.15s,
-      color 0.15s;
+      background 0.1s,
+      color 0.1s;
+  }
+  .cg-mode:first-child {
+    margin-left: 0;
+    border-radius: 2px 0 0 2px;
+  }
+  .cg-mode:last-child {
+    border-radius: 0 2px 2px 0;
   }
   .cg-mode.is-on {
-    background: #161a1d;
-    border-color: #35e08a55;
-    color: #dfe6ee;
-  }
-  .cg-mode-label {
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.14em;
-  }
-  .cg-mode.is-on .cg-mode-label {
+    z-index: 1;
+    background: #111a14;
+    border-color: rgba(53, 224, 138, 0.35);
     color: #35e08a;
-  }
-  .cg-mode-blurb {
-    font-size: 11px;
-    line-height: 1.25;
-    letter-spacing: 0.02em;
-    color: #5a6472;
   }
 
   .cg-grid {
@@ -592,24 +589,25 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 7px;
-    width: 100%;
-    min-height: 52px;
+    gap: 6px;
+    height: 32px;
+    padding: 0 18px;
     margin-top: 2px;
-    border: 1px solid #35e08a55;
-    border-radius: 3px;
-    background: #16211b;
-    color: #35e08a;
+    border: 1px solid #1e2226;
+    border-radius: 2px;
+    background: #0f1215;
+    color: #9aabb8;
     font-family: var(--font-ui);
-    font-size: 13px;
+    font-size: 11px;
     font-weight: 500;
-    letter-spacing: 0.18em;
+    letter-spacing: 0.16em;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
   .cg-empty-cta:active:not(:disabled) {
-    background: #1b2a22;
+    background: #161a1d;
+    color: #dfe6ee;
   }
   .cg-empty-cta:disabled {
     opacity: 0.55;

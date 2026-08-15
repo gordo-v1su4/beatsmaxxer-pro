@@ -296,10 +296,10 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
-    /* The brief in three declarations: you can see the picture through it. */
-    background: rgba(12, 12, 12, 0.72);
-    backdrop-filter: blur(20px) saturate(1.2);
-    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    /* Frosted glass: dark enough to read controls, transparent enough to see the frame. */
+    background: rgba(8, 9, 10, 0.52);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
     color: #cfd4db;
     will-change: transform;
     transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
@@ -438,12 +438,12 @@
 
   .byp {
     flex: 0 0 auto;
-    min-width: 72px;
-    height: 44px;
-    padding: 0 12px;
+    min-width: 66px;
+    height: 26px;
+    padding: 0 10px;
     border: 1px solid #2a2e33;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.03);
+    border-radius: 2px;
+    background: transparent;
     color: #7b838f;
     font-family: var(--font-ui);
     font-size: 11px;
@@ -454,8 +454,8 @@
   }
 
   .byp.on {
-    border-color: #ef444488;
-    background: rgba(239, 68, 68, 0.14);
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(239, 68, 68, 0.1);
     color: #ef6b6b;
   }
 

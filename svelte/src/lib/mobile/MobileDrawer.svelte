@@ -439,58 +439,58 @@
   .drawer-head {
     flex: 0 0 auto;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 6px;
-    padding: 6px 6px 6px 10px;
+    padding: 0 6px 0 10px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     touch-action: none;
   }
 
   .drawer-tabs {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;
+    gap: 0;
     flex: 1 1 auto;
     min-width: 0;
   }
 
   .drawer-tab {
+    position: relative;
     flex: 1 1 0;
     min-width: 0;
-    min-height: 44px;
-    padding: 0 8px;
-    border: 1px solid transparent;
-    border-radius: 3px;
+    height: 36px;
+    padding: 0 8px 2px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
     background: transparent;
-    color: #5a6472;
+    color: #424c58;
     font-family: var(--font-ui);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.18em;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     transition:
-      background 0.15s,
       color 0.15s,
       border-color 0.15s;
   }
   .drawer-tab.is-on {
-    background: #131416;
-    border-color: #23282e;
-    color: #dfe6ee;
+    border-bottom-color: rgba(90, 159, 212, 0.65);
+    color: #c8d2dc;
   }
 
   .drawer-close {
     flex: 0 0 auto;
     display: grid;
     place-items: center;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     border: none;
     background: transparent;
-    color: #7d8794;
+    color: #424c58;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;

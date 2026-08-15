@@ -154,8 +154,10 @@
     flex-direction: column;
     gap: 7px;
     padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(180deg, #131416 0%, #0a0b0c 100%);
-    border-top: 1px solid #23262a;
+    background: rgba(8, 9, 10, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid #1a1d20;
     font-family: var(--font-ui);
   }
 
@@ -178,11 +180,7 @@
     gap: 10px;
   }
 
-  /*
-    Rectangular and small. It was a 52x48 slab, which on a phone reads as the
-    most important object on screen — it is not; the picture is. 46x30 is still
-    an easy target once the ::after expansion is counted.
-  */
+  /* Flat play button — easy target, no 3D. */
   .play {
     position: relative;
     flex: 0 0 auto;
@@ -190,15 +188,12 @@
     align-items: center;
     justify-content: center;
     width: 46px;
-    height: 30px;
+    height: 28px;
     padding: 0;
-    border: 1px solid;
-    border-color: #26292d #16181a #131416 #16181a;
+    border: 1px solid #23272c;
     border-radius: 2px;
-    background: linear-gradient(180deg, #202429 0%, #191c20 52%, #141619 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      inset 0 -2px 3px rgba(0, 0, 0, 0.5);
+    background: #181b1f;
+    box-shadow: none;
     color: #6d7784;
     cursor: pointer;
     touch-action: manipulation;
@@ -210,15 +205,13 @@
     inset: -8px -4px;
   }
   .play[data-playing='true'] {
-    border-color: #22c55e44 #16181a #131416 #16181a;
+    border-color: rgba(34, 197, 94, 0.4);
+    background: rgba(34, 197, 94, 0.1);
+    box-shadow: none;
     color: #22c55e;
-    box-shadow:
-      inset 0 2px 5px rgba(0, 0, 0, 0.6),
-      inset 0 0 10px rgba(34, 197, 94, 0.14),
-      0 0 8px rgba(34, 197, 94, 0.18);
   }
   .play:active {
-    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.7);
+    background: #14171a;
   }
 
   .beat {
@@ -267,15 +260,15 @@
     gap: 6px;
   }
 
+  /* Flat steppers — same proportions, no 3D. */
   .stepper {
     display: flex;
     align-items: stretch;
     height: 34px;
-    border: 1px solid;
-    border-color: #26292d #16181a #131416 #16181a;
+    border: 1px solid #1e2226;
     border-radius: 2px;
-    background: linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    background: #181b1f;
+    box-shadow: none;
     overflow: hidden;
     min-width: 0;
   }
@@ -295,8 +288,6 @@
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-  /* Steppers get pressed repeatedly, so the target reaches well past the paint
-     on the outer edges where the thumb actually lands. */
   .stepper button::after {
     content: '';
     position: absolute;
@@ -304,10 +295,10 @@
   }
   .stepper button:active {
     color: #d8e2ea;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.07);
   }
 
-  /* Recessed glass between the two keys. */
+  /* Readout well — slightly darker than the stepper body. */
   .cell {
     flex: 1 1 auto;
     min-width: 0;
@@ -316,10 +307,10 @@
     align-items: center;
     justify-content: center;
     gap: 1px;
-    border-left: 1px solid #0c0d0f;
-    border-right: 1px solid #0c0d0f;
-    background: linear-gradient(180deg, #080a0c, #0d1013 70%, #090b0d);
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.75);
+    border-left: 1px solid #13161a;
+    border-right: 1px solid #13161a;
+    background: #0f1215;
+    box-shadow: none;
   }
   .cell-label {
     font-size: 11px;
