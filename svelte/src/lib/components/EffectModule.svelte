@@ -88,7 +88,7 @@
   class="rack-module"
   data-bsp-module-id={mod.id}
   class:is-collapsed={collapsed}
-  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden;box-shadow:{isOnAir ? `inset 0 0 0 1px ${mod.accentColor}66, inset 0 0 18px ${mod.accentColor}14` : 'none'}"
+  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
     e.preventDefault();
     if (e.dataTransfer?.types.includes('Files')) {

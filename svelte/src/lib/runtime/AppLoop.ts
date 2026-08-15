@@ -162,7 +162,10 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
         // BLADES is sent as a real blade count, not 0-1: the shader needs the
         // integer to build the polygon and to derive the spike rule from it.
         aux3: 5 + Math.round(((p.blades ?? 50) / 100) * 4),
-        aux4: (p.squeeze ?? 0) / 100
+        aux4: (p.squeeze ?? 0) / 100,
+        // accent carries AUDIO here — LEAK never reads the slot for colour, the
+        // same reason TAPDELAY puts SENS on it, and every other word is taken.
+        accent: (p.audio ?? 40) / 100
       };
     case 'dutch':
       return { mix: p.mix, p0: p.tilt, p1: p.drift, p2: p.snap };

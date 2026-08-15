@@ -473,7 +473,8 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
       { param: 'blades', label: 'BLADES' },
       { param: 'squeeze', label: 'SQUEEZE' },
       { param: 'freq', label: 'FREQ' },
-      { param: 'hold', label: 'HOLD' }
+      { param: 'hold', label: 'HOLD' },
+      { param: 'audio', label: 'AUDIO' }
     ]
   },
   streak: {

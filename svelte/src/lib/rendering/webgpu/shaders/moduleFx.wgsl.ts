@@ -1477,23 +1477,35 @@ fn leakField(uv: vec2f, kind: f32, reach: f32, phase: f32, seed: f32, fog: f32) 
     v = v * (0.78 + 0.22 * leakStriation(uv + vec2f(seed), 1.5708, 30.0));
 
   } else if (kind < 5.5) {
-    // VEIL -- glare over the whole frame, pumped by the beat. Even a veil has
-    // structure: a flat one is indistinguishable from lowering the contrast,
-    // which is exactly what it used to look like.
+    // VEIL -- veiling glare: light scattered across the whole optic.
+    //
+    // This multiplied the warped fbm straight into the field, so the one type
+    // that ought to be the SMOOTHEST of the seven came out the cloudiest. Real
+    // veiling glare has no structure of its own -- it is a broad, nearly
+    // featureless lift that pools where the glass is most oblique, which is the
+    // corners. A single wide off-axis lobe drifts without boiling; noise here
+    // reads as smoke every time.
     let breathe = 0.45 + 0.55 * beatPulse(3.0);
     let edgeBias = smoothstep(0.05, 0.95, length(q / vec2f(asp, 1.0)) * 1.5);
+    let lc = vec2f(sin(phase * 0.16 + seed) * 0.22, cos(phase * 0.13 + seed) * 0.14);
+    let lobe = exp(-pow(length(q - lc) / 0.75, 2.0));
     // Floor plus reach rather than reach alone: scaled straight off the dial it
     // vanished entirely at low SIZE, so a third of the control did nothing.
-    v = breathe * (0.30 + reach * 1.05) * (0.28 + 0.72 * edgeBias) * (0.42 + 0.58 * fog);
+    v = breathe * (0.30 + reach * 1.05) * (0.30 + 0.70 * edgeBias) * (0.55 + 0.45 * lobe);
 
   } else {
-    // PRISM -- a soft blob, displaced per channel by the caller so the three
+    // PRISM -- a smooth blob, displaced per channel by the caller so the three
     // evaluations land in slightly different places. That displacement IS
     // chromatic aberration, so the overlap reads as spectrum rather than as
     // three tinted copies of one shape.
+    //
+    // The blob was being chewed by warp, which is a wavelength split drawn
+    // through fog: three tinted clouds instead of a fringe. A dispersing lens
+    // does not add texture, it only separates, so the shape stays clean and the
+    // colour comes entirely from the per-channel offset.
     let centre = vec2f(cos(phase * 0.37 + seed), sin(phase * 0.31 + seed)) * 0.30;
-    let d = length(q - centre) + warp * 0.26;
-    v = clamp(1.0 - smoothstep(0.0, reach * 1.25, d), 0.0, 1.0);
+    let d = length((q - centre) / vec2f(max(squeeze, 1.0), 1.0)) / max(reach * 1.25, 0.05);
+    v = exp(-d * d * 1.25);
   }
 
   return max(v, 0.0);
@@ -1540,6 +1552,20 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
     let a = clamp(1.0 - u.triggerAge / span, 0.0, 1.0);
     env = a * a;
   }
+
+  // AUDIO -- how hard the track drives the leak.
+  //
+  // Everything above is clocked off bars, and nothing in the module read the
+  // signal at all, which is why it looked deaf: it kept time with the grid but
+  // never with the music. bassAmp swells a pass and amplitude adds overall
+  // lift, so at full AUDIO the leak breathes on the low end and a kick pushes
+  // it hardest. At 0 the behaviour is exactly the bar-clocked envelope above.
+  //
+  // Rides on the accent slot, which LEAK does not otherwise use -- the same
+  // trick TAPDELAY uses for SENS, and the last free word in the uniform.
+  let react = clamp(u.accent, 0.0, 1.0);
+  let audio = clamp(u.bassAmp * 1.5 + u.amplitude * 0.6, 0.0, 1.0);
+  env = env * mix(1.0, 0.30 + 1.25 * audio, react);
 
   if (freq <= 0.001) { env = 0.0; }
   // Stopped, u.beat is frozen so the cycle cannot advance -- but the preview

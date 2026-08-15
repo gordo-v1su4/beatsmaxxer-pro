@@ -15,6 +15,10 @@
   }
   let { moduleId, params, onUpdate, color }: Props = $props();
 
+  /** Which page of LIGHT LEAK's controls is showing. Local UI state, not a
+      parameter: it must not travel with presets or the undo history. */
+  let leakTab = $state<'field' | 'lens' | 'time'>('field');
+
   const TRANSITION_PACK = [
     { l: 'WHP L', v: 0 }, { l: 'WHP R', v: 1 }, { l: 'PSH U', v: 2 }, { l: 'PSH D', v: 3 },
     { l: 'WIPE', v: 4 }, { l: 'ROLL', v: 5 }, { l: 'ZOOM', v: 6 }, { l: 'GLTC', v: 7 },
@@ -433,57 +437,90 @@
         {/each}
       </div>
     </Section>
+    <!-- Eight controls will not fit the slot height every other module lives
+         in, and letting this one grow taller breaks the rack baseline the mix
+         strip depends on. Three pages of at most three sliders keeps the
+         tallest state identical to the old EDGE/WARMTH/DRIFT stack, so LIGHT
+         LEAK occupies exactly the vertical space it always did.
+         The split is by what the control IS: the field's shape, the lens that
+         forms it, and when it fires. -->
     <Section label="FX" {color} noBorder>
       <div style="display:flex;flex-direction:column;gap:4px">
-        <HSlider
-          value={params.edge ?? 50}
-          onChange={(v) => onUpdate('edge', v)}
-          {color}
-          label="EDGE"
-          controlId="{moduleId}-edge"
-        />
-        <HSlider
-          value={params.warmth ?? 60}
-          onChange={(v) => onUpdate('warmth', v)}
-          {color}
-          label="WARMTH"
-          controlId="{moduleId}-warmth"
-        />
-        <HSlider
-          value={params.drift ?? 35}
-          onChange={(v) => onUpdate('drift', v)}
-          {color}
-          label="DRIFT"
-          controlId="{moduleId}-drift"
-        />
-        <HSlider
-          value={params.blades ?? 25}
-          onChange={(v) => onUpdate('blades', v)}
-          {color}
-          label="BLADES"
-          controlId="{moduleId}-blades"
-        />
-        <HSlider
-          value={params.squeeze ?? 0}
-          onChange={(v) => onUpdate('squeeze', v)}
-          {color}
-          label="SQUEEZE"
-          controlId="{moduleId}-squeeze"
-        />
-        <HSlider
-          value={params.freq ?? 45}
-          onChange={(v) => onUpdate('freq', v)}
-          {color}
-          label="FREQ"
-          controlId="{moduleId}-freq"
-        />
-        <HSlider
-          value={params.hold ?? 30}
-          onChange={(v) => onUpdate('hold', v)}
-          {color}
-          label="HOLD"
-          controlId="{moduleId}-hold"
-        />
+        <div style="display:flex;gap:2px">
+          {#each [
+            { k: 'field', l: 'FIELD' },
+            { k: 'lens', l: 'LENS' },
+            { k: 'time', l: 'TIME' }
+          ] as t (t.k)}
+            <RackBtn
+              label={t.l}
+              active={leakTab === t.k}
+              {color}
+              width={44}
+              onclick={() => (leakTab = t.k)}
+            />
+          {/each}
+        </div>
+        {#if leakTab === 'field'}
+          <HSlider
+            value={params.edge ?? 50}
+            onChange={(v) => onUpdate('edge', v)}
+            {color}
+            label="EDGE"
+            controlId="{moduleId}-edge"
+          />
+          <HSlider
+            value={params.warmth ?? 60}
+            onChange={(v) => onUpdate('warmth', v)}
+            {color}
+            label="WARMTH"
+            controlId="{moduleId}-warmth"
+          />
+          <HSlider
+            value={params.drift ?? 35}
+            onChange={(v) => onUpdate('drift', v)}
+            {color}
+            label="DRIFT"
+            controlId="{moduleId}-drift"
+          />
+        {:else if leakTab === 'lens'}
+          <HSlider
+            value={params.blades ?? 25}
+            onChange={(v) => onUpdate('blades', v)}
+            {color}
+            label="BLADES"
+            controlId="{moduleId}-blades"
+          />
+          <HSlider
+            value={params.squeeze ?? 0}
+            onChange={(v) => onUpdate('squeeze', v)}
+            {color}
+            label="SQUEEZE"
+            controlId="{moduleId}-squeeze"
+          />
+        {:else}
+          <HSlider
+            value={params.freq ?? 45}
+            onChange={(v) => onUpdate('freq', v)}
+            {color}
+            label="FREQ"
+            controlId="{moduleId}-freq"
+          />
+          <HSlider
+            value={params.hold ?? 30}
+            onChange={(v) => onUpdate('hold', v)}
+            {color}
+            label="HOLD"
+            controlId="{moduleId}-hold"
+          />
+          <HSlider
+            value={params.audio ?? 40}
+            onChange={(v) => onUpdate('audio', v)}
+            {color}
+            label="AUDIO"
+            controlId="{moduleId}-audio"
+          />
+        {/if}
       </div>
     </Section>
   </div>
