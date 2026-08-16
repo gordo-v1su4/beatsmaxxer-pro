@@ -46,6 +46,21 @@ export interface FrameContext {
   playing: boolean;
   amplitude: number;
   bassAmp: number;
+  /**
+   * Onset strength: positive spectral flux on the low end, fast attack and a
+   * quick decay. Distinct from bassAmp, which is a smoothed LEVEL and therefore
+   * cannot fire anything — it says how loud the low end is, never that a hit
+   * just landed. Effects that want to trigger on the music need this one.
+   */
+  onsetAmp?: number;
+  /**
+   * Low-end level normalised against a decaying running peak, so it spans 0..1
+   * regardless of how hot the track is mastered. Raw bassAmp measures around
+   * 0.02-0.13 on this engine, so effects scaling by it directly barely move.
+   */
+  bassNorm?: number;
+  /** High-band energy, for effects whose character should follow the top end. */
+  highAmp?: number;
   pitchSemitones?: number;
   feedbackMix?: number;
   timeline?: TimelineFrame;
@@ -356,11 +371,12 @@ export class WebGpuEngine {
     });
 
     const uniformBuffer = this.device.createBuffer({
-      // 36 f32/u32 words. The Uniforms struct fills 34 of them (aux3/aux4 were
-      // added for LEAK's BLADES and SQUEEZE); the pad keeps the size on a
-      // 16-byte boundary. Adding another member means growing this AND the
-      // Float32Array in encodeBinding, or the new field silently reads garbage.
-      size: 144,
+      // 40 f32/u32 words. The Uniforms struct fills 37 (aux3/aux4 for LEAK's
+      // BLADES and SQUEEZE, then onsetAmp/bassNorm/highAmp for audio drive);
+      // the pad keeps the size on a 16-byte boundary. Adding another member
+      // means growing this AND the Float32Array in encodeBinding, or the new
+      // field silently reads garbage.
+      size: 160,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
@@ -633,7 +649,7 @@ export class WebGpuEngine {
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
     const timeline = this.frameCtx.timeline;
-    const data = new Float32Array(36);
+    const data = new Float32Array(40);
     data[0] = timeline?.beatPosition ?? this.frameCtx.beat;
     data[1] = timeline?.beatPhase ?? this.frameCtx.beatPhase;
     data[2] = timeline?.bpm ?? this.frameCtx.bpm;
@@ -666,6 +682,9 @@ export class WebGpuEngine {
     data[31] = rp.feel ?? 0;
     data[32] = rp.aux3 ?? 0;
     data[33] = rp.aux4 ?? 0;
+    data[34] = this.frameCtx.onsetAmp ?? 0;
+    data[35] = this.frameCtx.bassNorm ?? 0;
+    data[36] = this.frameCtx.highAmp ?? 0;
     if (timeline) writeTimelineUniformData(data, timeline);
 
     let shaderHasVideo = hasVideo;

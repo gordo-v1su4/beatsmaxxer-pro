@@ -96,6 +96,44 @@ function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
   return ages;
 }
 
+/**
+ * Low-end onset envelope, rebuilt every frame and forwarded to every module.
+ *
+ * bassAmp is a smoothed level: it reports how loud the low end is, which is a
+ * different question from whether a hit just landed. Scaling an effect by it
+ * makes the effect breathe with the mix but never strike with it, and that is
+ * the whole reason audio-driven modules read as deaf.
+ *
+ * Positive flux only -- a kick is a RISE in low-end energy, and the fall
+ * afterwards carries no event. Attack is instant so the leak lands on the
+ * transient rather than after it; the 0.86 decay puts the tail at roughly a
+ * tenth of a second at 60fps, short enough to resolve sixteenths at club tempo.
+ */
+let bassOnset = 0;
+let bassPeak = 0.02;
+let lastBassNorm = 0;
+let bassNorm = 0;
+
+/**
+ * Measured on this engine with a real track: amplitude and bassAmp sit between
+ * roughly 0.02 and 0.13, NOT 0 to 1. Anything downstream that treats them as a
+ * normalised signal is quietly multiplying by about a tenth, which is the real
+ * reason audio-driven effects look deaf even with music playing.
+ *
+ * A fixed gain would just be tuned to one track, so the level is normalised
+ * against a slowly decaying running peak: loud and quiet material both end up
+ * using the full range, and the peak recovers over a few seconds when a track
+ * drops in level rather than latching on one transient forever.
+ */
+function updateBassOnset(bassAmp: number) {
+  bassPeak = Math.max(bassPeak * 0.9995, bassAmp, 0.01);
+  bassNorm = Math.min(1, bassAmp / bassPeak);
+  const rise = Math.max(0, bassNorm - lastBassNorm);
+  lastBassNorm = bassNorm;
+  bassOnset = Math.max(bassOnset * 0.86, Math.min(1, rise * 3.2));
+  return bassOnset;
+}
+
 /** Latest speedramp rate/phase, forwarded to the shader as aux1/aux2. */
 let lastSpeedRampAux = { aux1: 1, aux2: 0 };
 /** Authoritative TimeSampler accent event: aux1=pulse, aux2=LUM/RGB/OFF. */
@@ -411,6 +449,9 @@ export function startAppLoop() {
       playing: frame.playing,
       amplitude: state.amplitude,
       bassAmp: state.bassAmp,
+      onsetAmp: updateBassOnset(state.bassAmp),
+      bassNorm,
+      highAmp: state.highAmp,
       pitchSemitones: sound.keySemitones + sound.pitchSemitones,
       timeline: frame
     });

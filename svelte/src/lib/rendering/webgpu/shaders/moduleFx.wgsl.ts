@@ -60,6 +60,17 @@ struct Uniforms {
       properties of the lens rather than tuning knobs. */
   aux3: f32,
   aux4: f32,
+  /** Onset strength on the low end: positive flux, fast attack, quick decay.
+      bassAmp is a smoothed LEVEL and can only say how loud the bass is, never
+      that a hit just landed -- so anything that should FIRE on the music has to
+      read this instead. */
+  onsetAmp: f32,
+  /** Low-end level normalised against a decaying running peak, so it spans 0..1
+      whatever the track's mastering. Raw bassAmp measures about 0.02-0.13 on
+      this engine, so scaling by it directly barely moves anything. */
+  bassNorm: f32,
+  /** High-band energy, for character that should follow the top end. */
+  highAmp: f32,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
@@ -1555,17 +1566,29 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
 
   // AUDIO -- how hard the track drives the leak.
   //
-  // Everything above is clocked off bars, and nothing in the module read the
-  // signal at all, which is why it looked deaf: it kept time with the grid but
-  // never with the music. bassAmp swells a pass and amplitude adds overall
-  // lift, so at full AUDIO the leak breathes on the low end and a kick pushes
-  // it hardest. At 0 the behaviour is exactly the bar-clocked envelope above.
+  // The first version only SCALED this envelope by bassAmp, which is why it
+  // still did not follow the music: scaling cannot start anything. If the bar
+  // clock had the leak in its off phase, the loudest kick in the track
+  // multiplied zero and nothing happened. A leak that matches the music has to
+  // be able to FIRE on the music.
+  //
+  // So onsetAmp -- positive low-end flux, fast attack, quick decay -- is taken
+  // as an envelope in its own right and MAX'd with the bar-clocked one. Whether
+  // the hit arrives on the grid or off it, the leak strikes with it, and the
+  // internal clock becomes a floor rather than a gate.
   //
   // Rides on the accent slot, which LEAK does not otherwise use -- the same
-  // trick TAPDELAY uses for SENS, and the last free word in the uniform.
+  // trick TAPDELAY uses for SENS.
   let react = clamp(u.accent, 0.0, 1.0);
-  let audio = clamp(u.bassAmp * 1.5 + u.amplitude * 0.6, 0.0, 1.0);
-  env = env * mix(1.0, 0.30 + 1.25 * audio, react);
+  let hit = clamp(u.onsetAmp, 0.0, 1.0);
+  // Squared: a soft onset should stay soft, so only real transients blow out.
+  let strike = hit * hit * u.playing;
+  // Sustained level still swells a pass that is already open. bassNorm, not
+  // bassAmp: the raw figure peaks around 0.13 on this engine, so the previous
+  // version was scaling by roughly a tenth and the swell never showed.
+  let swell = clamp(u.bassNorm, 0.0, 1.0);
+  let driven = max(env * (0.30 + 1.10 * swell), strike);
+  env = mix(env, driven, react);
 
   if (freq <= 0.001) { env = 0.0; }
   // Stopped, u.beat is frozen so the cycle cannot advance -- but the preview
@@ -1706,7 +1729,11 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // pow 2.1 kept the blowout off everything but a saturated field, so the core
   // -- the part that actually reads as light rather than as a grade -- almost
   // never rendered. 1.5 still holds it off the weak fringe.
-  let coreK = pow(k, 1.5) * (0.45 + 1.00 * smoothstep(0.20, 1.0, sceneLum));
+  // The top end shapes the core rather than the drive: hats and cymbals put
+  // sparkle on the blowout without swelling the body, which is the split a leak
+  // wants -- the low end says WHEN, the high end says how hard it glints.
+  let coreK = pow(k, 1.5) * (0.45 + 1.00 * smoothstep(0.20, 1.0, sceneLum))
+            * (1.0 + react * clamp(u.highAmp, 0.0, 1.0) * 0.85);
   let core = clamp(coreTint * coreK, vec3f(0.0), vec3f(1.0));
   wet = vec3f(1.0) - (vec3f(1.0) - clamp(wet, vec3f(0.0), vec3f(1.0))) * (vec3f(1.0) - core);
 
