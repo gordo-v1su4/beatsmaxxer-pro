@@ -944,13 +944,34 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // frame would flicker mid-division, since nothing here holds state between
   // frames. At SENS 0 the gate is constant and this term disappears.
   let sens = clamp(u.accent, 0.0, 1.0);
-  let energy = clamp(u.bassAmp * 1.5 + u.amplitude * 0.5, 0.0, 1.0);
+  // bassNorm, not bassAmp. The raw figure measures about 0.02-0.13 on this
+  // engine rather than 0-1, so this expression sat near 0.1 whatever the track
+  // was doing: SENS became a fixed gate-shortener instead of a response to the
+  // song, which is the opposite of what the note above promises. Normalised
+  // against a running peak, quiet bars really do barely catch and loud ones
+  // really do lock for the full gate.
+  let energy = clamp(u.bassNorm * 0.85 + u.onsetAmp * 0.45, 0.0, 1.0);
   let drive = mix(1.0, energy, sens);
   let released = step(0.08 + gate * 0.92 * drive, prog);
 
+  // Never freeze a black frame.
+  //
+  // A clip presents a black frame or two as it wraps, and sampleSource reads the
+  // external texture with no freshness guard, so col is genuinely black for
+  // those frames. Capturing one locks it in for the REST of the division: a
+  // single-frame artifact at the loop point becomes a held black block, which
+  // is why STUTTER only shows this after a clip cycles.
+  //
+  // If the capture window lands on black, the previous held frame stays put and
+  // is what gets written back to the feedback, so the hold simply continues
+  // with the last good picture. The threshold is well below any real shadow
+  // detail -- this rejects true black, not a dark shot.
+  let capturedLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
+  let usable = step(0.012, capturedLum);
+
   // Off the division the previous output feeds straight back with no offset and
   // no decay, which is what makes it a hold instead of a trail.
-  let stutter = mix(frozen, col, max(capturing, released));
+  let stutter = mix(frozen, col, max(capturing * usable, released));
   return mix(col, stutter, hold * u.playing);
 }
 
