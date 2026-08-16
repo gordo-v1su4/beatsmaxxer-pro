@@ -962,12 +962,24 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // single-frame artifact at the loop point becomes a held black block, which
   // is why STUTTER only shows this after a clip cycles.
   //
+  // The test has to be FRAME-wide. A first attempt used this fragment's own
+  // luminance, which is a per-PIXEL question: on a night shot the dark pixels
+  // took the frozen path while the bright ones stayed live, shredding the
+  // picture into flashing patches. Nine taps across the frame approximate its
+  // overall brightness instead, and every fragment computes the same number, so
+  // the whole frame makes one decision.
+  //
   // If the capture window lands on black, the previous held frame stays put and
   // is what gets written back to the feedback, so the hold simply continues
-  // with the last good picture. The threshold is well below any real shadow
-  // detail -- this rejects true black, not a dark shot.
-  let capturedLum = dot(col, vec3f(0.2126, 0.7152, 0.0722));
-  let usable = step(0.012, capturedLum);
+  // with the last good picture. The threshold sits well below any real shadow
+  // detail -- it rejects true black, not a dark shot.
+  var frameLum = 0.0;
+  for (var i = 0; i < 9; i = i + 1) {
+    let gx = f32(i % 3) * 0.4 + 0.1;
+    let gy = floor(f32(i) / 3.0) * 0.4 + 0.1;
+    frameLum = frameLum + dot(sampleSource(vec2f(gx, gy)), vec3f(0.2126, 0.7152, 0.0722));
+  }
+  let usable = step(0.010, frameLum / 9.0);
 
   // Off the division the previous output feeds straight back with no offset and
   // no decay, which is what makes it a hold instead of a trail.
