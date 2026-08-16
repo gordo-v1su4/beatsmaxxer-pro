@@ -90,11 +90,25 @@ export function advanceFeedbackTo(
   const steps = Math.max(0, fixedStepIndex - fb.fixedStepIndex);
   if (steps > 0) fb.fixedStepIndex = fixedStepIndex;
   if (steps > 1) {
-    // Exact catch-up would require replaying every historical video/audio input.
-    // Reset instead of pretending one render pass advanced `steps` semantic frames.
-    fb.ping = 0;
+    // Exact catch-up would require replaying every historical video/audio input,
+    // so one render pass cannot honestly advance `steps` semantic frames. That
+    // is worth REPORTING, but it is not a reason to throw the picture away.
+    //
+    // This used to reset the pair and hand the caller a placeholder read view.
+    // The fixed-step clock runs faster than the render loop -- measured here at
+    // 2-3 steps per rendered frame -- so the branch was taken on essentially
+    // every frame, on every binding. Resetting ping to 0 each time meant the
+    // effect always wrote views[1] and always read views[0], so views[0] was
+    // never written and the shader's feedback stayed at its initial clear
+    // colour. Feedback was not degraded, it was switched off entirely, which is
+    // why STUTTER could not hold a frame and flashed the clear colour instead.
+    //
+    // Falling a render behind makes the feedback one render old rather than
+    // exactly one fixed step old. That is a timing inaccuracy; the previous
+    // output is still the best history available and is vastly better than a
+    // blank. Keep the ping-pong running and let `degraded` carry the caveat.
     return {
-      reset: true,
+      reset: false,
       steps: 1,
       degraded: true,
       skippedSteps: steps - 1
