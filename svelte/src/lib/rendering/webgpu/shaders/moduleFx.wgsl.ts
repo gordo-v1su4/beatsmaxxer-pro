@@ -952,7 +952,9 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // really do lock for the full gate.
   let energy = clamp(u.bassNorm * 0.85 + u.onsetAmp * 0.45, 0.0, 1.0);
   let drive = mix(1.0, energy, sens);
-  let released = step(0.08 + gate * 0.92 * drive, prog);
+  // HOLD scales the LENGTH of the held region rather than blending live video
+  // into it. See the note on the return below for why a blend cannot work here.
+  let released = step(0.08 + gate * 0.92 * drive * max(hold, 0.05), prog);
 
   // Never freeze a black frame.
   //
@@ -983,8 +985,21 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
 
   // Off the division the previous output feeds straight back with no offset and
   // no decay, which is what makes it a hold instead of a trail.
-  let stutter = mix(frozen, col, max(capturing * usable, released));
-  return mix(col, stutter, hold * u.playing);
+  //
+  // This pass's output IS what gets written to the feedback texture, so mixing
+  // live video into the held frame is a one-pole filter:
+  //   output_t = (1 - h) * live + h * output_{t-1}
+  // which is a temporal smear rather than a freeze. The old return blended by
+  // HOLD and did exactly that; it went unnoticed only because the feedback pair
+  // was being discarded every frame, and the moment that was repaired the
+  // module read as motion blur. A held frame has to be written back untouched
+  // or it decays a little more on every pass, so HOLD moved to the release
+  // threshold above and the composite here is a hard choice.
+  //
+  // Stopped, the picture passes through: prog is frozen then, so a held region
+  // would otherwise latch forever.
+  let live = max(max(capturing * usable, released), 1.0 - u.playing);
+  return mix(frozen, col, live);
 }
 
 /** Simpler-style slice sampler: the actual slice jump is a real video seek done
@@ -1613,14 +1628,18 @@ fn effectLeak(col: vec3f, uv: vec2f) -> vec3f {
   // Rides on the accent slot, which LEAK does not otherwise use -- the same
   // trick TAPDELAY uses for SENS.
   let react = clamp(u.accent, 0.0, 1.0);
+  // Not squared. Measured onset peaks were 0.32, so squaring put the strongest
+  // transient in the track at 0.10 -- the drive was arithmetically incapable of
+  // firing anything. The gain now lives upstream where the signal's real range
+  // is known, and this stays linear.
   let hit = clamp(u.onsetAmp, 0.0, 1.0);
-  // Squared: a soft onset should stay soft, so only real transients blow out.
-  let strike = hit * hit * u.playing;
-  // Sustained level still swells a pass that is already open. bassNorm, not
-  // bassAmp: the raw figure peaks around 0.13 on this engine, so the previous
-  // version was scaling by roughly a tenth and the swell never showed.
-  let swell = clamp(u.bassNorm, 0.0, 1.0);
-  let driven = max(env * (0.30 + 1.10 * swell), strike);
+  let strike = hit * u.playing;
+  // Sustained level swells a pass that is already open. bassNorm measures 0.72
+  // to 1.0 on real material -- the running peak keeps it pinned near the top --
+  // so using it raw is very nearly a constant. Expanding that band is what
+  // turns a level into a dynamic.
+  let swell = smoothstep(0.68, 1.0, clamp(u.bassNorm, 0.0, 1.0));
+  let driven = max(env * (0.45 + 0.95 * swell), strike);
   env = mix(env, driven, react);
 
   if (freq <= 0.001) { env = 0.0; }

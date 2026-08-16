@@ -146,6 +146,19 @@ export class AudioEngine implements IAudioEngine {
 
   async start() {
     if (this._starting) return;
+
+    // Nothing loaded means nothing to play. The tail of this method used to set
+    // _playing = true unconditionally, so PLAY on a fresh page started the beat
+    // clock with no track behind it: the transport read as running, every idle
+    // card animated, and every beat-driven module ran -- all against a silent
+    // grid. That also makes audio-reactive work impossible to judge, since the
+    // analyser is reporting zeroes while the rack looks alive.
+    //
+    // A decoded upload (mediaElement) is the only thing that can actually
+    // sound here, so refuse to start without one and leave the transport
+    // stopped until a track is loaded.
+    if (!this.mediaElement && !this._loadedUploadName) return;
+
     if (this._playing) {
       if (this.getTransportTime() >= 0.05) return;
       this.stop('restart-near-zero');

@@ -130,7 +130,11 @@ function updateBassOnset(bassAmp: number) {
   bassNorm = Math.min(1, bassAmp / bassPeak);
   const rise = Math.max(0, bassNorm - lastBassNorm);
   lastBassNorm = bassNorm;
-  bassOnset = Math.max(bassOnset * 0.86, Math.min(1, rise * 3.2));
+  // Gain measured, not guessed: normalised bass sits between about 0.72 and 1.0
+  // on real material, so a kick is a rise of roughly 0.1 and the old x3.2 put
+  // onset peaks at 0.32. Anything downstream expecting 0..1 was then working
+  // with a third of a signal. x10 puts a real transient at full scale.
+  bassOnset = Math.max(bassOnset * 0.86, Math.min(1, rise * 10));
   return bassOnset;
 }
 
