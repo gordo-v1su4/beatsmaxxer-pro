@@ -194,6 +194,9 @@
     >
       <div class="groove">
         <div class="fill" style="width:{value}%"></div>
+        {#each [25, 50, 75] as p (p)}
+          <div class="tick" style="left:{p}%"></div>
+        {/each}
       </div>
       <div
         class="thumb"
@@ -454,7 +457,12 @@
 
   /* Thin fader — matches the desktop HSlider proportions, scaled for touch. */
   .track {
-    --thumb: 12px;
+    /* 6px, matching the rack's 5px handle rather than the 12px block that was
+       here. The touch target is not this width -- .track::after grabs at 44px --
+       so a slim handle costs nothing on a phone and the two shells stop looking
+       like different instruments. --thumb also drives the position maths and
+       thumbWidth(), so the drawn width and the value under the finger agree. */
+    --thumb: 6px;
     position: relative;
     height: 26px;
     display: flex;
@@ -497,13 +505,23 @@
     );
   }
 
+  /* Quarter marks, same as the rack's track. */
+  .tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: #25282c;
+    pointer-events: none;
+  }
+
   /* Flat thin handle — no gradients, no grip marks. */
   .thumb {
     position: absolute;
     top: 50%;
     width: var(--thumb);
-    height: 16px;
-    margin-top: -8px;
+    height: 18px;
+    margin-top: -9px;
     transform: translateX(-50%);
     border-radius: 1px;
     border: 1px solid #333840;
@@ -529,11 +547,11 @@
   }
 
   .mix .track {
-    --thumb: 16px;
+    --thumb: 7px;
     height: 34px;
   }
   .mix .thumb {
-    height: 20px;
-    margin-top: -10px;
+    height: 22px;
+    margin-top: -11px;
   }
 </style>
