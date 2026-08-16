@@ -271,7 +271,7 @@ export async function dispatchUserGesture(session: CdpSession) {
 export async function navigateAndReady(
   session: CdpSession,
   url: string,
-  readyExpr = 'document.documentElement.dataset.bspQa === "1"',
+  readyExpr = 'document.documentElement.dataset.bmxQa === "1"',
   timeoutMs = 30_000
 ) {
   const startedAt = Date.now();

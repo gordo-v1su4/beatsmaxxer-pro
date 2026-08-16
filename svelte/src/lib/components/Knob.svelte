@@ -122,7 +122,7 @@
     ondblclick={() => runRackParamTransaction(() => onChange((max - min) / 2 + min))}
     role="slider"
     tabindex="0"
-    data-bsp-proof-id="control-knob-{knobId}"
+    data-bmx-proof-id="control-knob-{knobId}"
     aria-label={label ?? knobId}
     aria-valuenow={value}
     aria-valuemin={min}

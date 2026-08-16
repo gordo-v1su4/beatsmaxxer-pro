@@ -7,7 +7,7 @@ const CLIP_WAIT_MS = Number(process.env.CLIP_WAIT_MS ?? 45_000);
 async function waitForClips(session: CdpSession) {
   const snap = await evalPage(
     session,
-    `window.__BSP_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
+    `window.__BMX_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
     CLIP_WAIT_MS + 10_000
   );
   // NB: `undefined < 8` is false, so a missing/!resolved snapshot must be
@@ -27,16 +27,16 @@ await withChrome('verify-playback', 9600, async (s) => {
 
   await evalPage(
     s,
-    `window.__BSP_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
+    `window.__BMX_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
     CLIP_WAIT_MS + 10_000
-  ).catch(() => evalPage(s, 'window.__BSP_QA__?.snapshot?.()', 15_000));
+  ).catch(() => evalPage(s, 'window.__BMX_QA__?.snapshot?.()', 15_000));
 
   await Bun.sleep(500);
   await waitForClips(s);
 
   const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(
     s,
-    'window.__BSP_QA__?.snapshot?.()',
+    'window.__BMX_QA__?.snapshot?.()',
     15_000
   );
   await Bun.sleep(1500);
@@ -45,7 +45,7 @@ await withChrome('verify-playback', 9600, async (s) => {
     webgpu?: boolean;
     bpm?: number;
     modules?: Record<string, { currentTime?: number; hasReadyFrame?: boolean }>;
-  }>(s, 'window.__BSP_QA__?.snapshot?.()', 15_000);
+  }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
   let videoDelta = 0;
   for (const k of Object.keys(t1?.modules ?? {})) {

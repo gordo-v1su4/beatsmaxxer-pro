@@ -120,11 +120,16 @@ describe('module shader identity contract', () => {
 });
 
 describe('uniform buffer capacity', () => {
-  test('the Uniforms struct still fits the 128-byte buffer', () => {
-    // encodeBinding writes a Float32Array(32) into a 128-byte buffer, so the
-    // struct has exactly 32 words and no headroom. A member added past that
-    // reads garbage rather than failing loudly, which is a miserable bug to
-    // chase through a shader, so it is counted here instead.
+  test('the Uniforms struct still fits the 160-byte buffer', () => {
+    // encodeBinding writes a Float32Array(40) into a 160-byte buffer. A member
+    // added past the end reads garbage rather than failing loudly, which is a
+    // miserable bug to chase through a shader, so the count is asserted here.
+    //
+    // Grown from 32 words: aux3/aux4 carry LEAK's BLADES and SQUEEZE, and
+    // onsetAmp/bassNorm/highAmp carry the audio drive. The guard is the
+    // relationship, not the number -- the struct must fit the array, with the
+    // spare words left as 16-byte alignment padding.
+    const BUFFER_WORDS = 40;
     const struct = MODULE_FX_WGSL.slice(
       MODULE_FX_WGSL.indexOf('struct Uniforms {'),
       MODULE_FX_WGSL.indexOf('@group(0) @binding(0)')
@@ -132,6 +137,7 @@ describe('uniform buffer capacity', () => {
     const members = struct
       .split('\n')
       .filter((line) => /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*:\s*(f32|u32|i32),/.test(line));
-    expect(members.length).toBe(32);
+    expect(members.length).toBe(37);
+    expect(members.length).toBeLessThanOrEqual(BUFFER_WORDS);
   });
 });

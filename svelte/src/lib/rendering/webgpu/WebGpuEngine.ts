@@ -738,7 +738,7 @@ export class WebGpuEngine {
 
     // Per-frame render diagnostics: black previews are ambiguous from the
     // outside (no clip? external import failed? canvas sized 0? feedback stuck
-    // at 2x2 and upscaled?). Recording it here makes __BSP_QA__ answer that in
+    // at 2x2 and upscaled?). Recording it here makes __BMX_QA__ answer that in
     // one shot instead of a guessing round-trip.
     let bindGroup: GPUBindGroup;
     let pipeline = binding.idlePipeline;

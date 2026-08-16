@@ -49,7 +49,7 @@ svelte/src/
   lib/runtime/pgm/          Beat-quantized PGM director
   lib/modules/catalog.ts    FX module catalog (18 modules, drag-from-palette)
   lib/components/           TopBar, EffectModule, PgmRail, ModulePalette…
-  lib/qa/                   QA auto-load + window.__BSP_QA__ hooks
+  lib/qa/                   QA auto-load + window.__BMX_QA__ hooks
 docs/                       Architecture notes, hero screenshot
 ```
 

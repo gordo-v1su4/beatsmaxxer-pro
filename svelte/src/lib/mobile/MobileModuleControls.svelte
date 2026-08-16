@@ -181,7 +181,7 @@
     <div
       class="track"
       data-swipe-ignore
-      data-bsp-proof-id="mobile-slider-{moduleId}-{key}"
+      data-bmx-proof-id="mobile-slider-{moduleId}-{key}"
       role="slider"
       tabindex="0"
       aria-label={label}

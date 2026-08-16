@@ -66,7 +66,7 @@
     onpointerdown={onDown}
     onkeydown={onKeyDown}
     role="slider"
-    data-bsp-proof-id="control-macro-{controlId}"
+    data-bmx-proof-id="control-macro-{controlId}"
     aria-label="{title} macro"
     aria-valuemin="0"
     aria-valuemax="100"

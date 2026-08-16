@@ -12,11 +12,11 @@ interface Navigator {
 }
 
 interface Window {
-  __BSP_QA__?: {
-    snapshot: () => import('$lib/qa/bspQa').BspQaSnapshot;
-    waitForClips: (count?: number, timeoutMs?: number) => Promise<import('$lib/qa/bspQa').BspQaSnapshot>;
-    waitForPlaying: (timeoutMs?: number) => Promise<import('$lib/qa/bspQa').BspQaSnapshot>;
-    waitForUploadedTrackLoad: (afterGeneration: number, timeoutMs?: number) => Promise<import('$lib/qa/bspQa').BspQaSnapshot>;
+  __BMX_QA__?: {
+    snapshot: () => import('$lib/qa/bmxQa').BmxQaSnapshot;
+    waitForClips: (count?: number, timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
+    waitForPlaying: (timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
+    waitForUploadedTrackLoad: (afterGeneration: number, timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
     sampleCanvasPixel: (canvasId: string) => { r: number; g: number; b: number; w: number; h: number } | { method: 'webgpu-only' } | null;
     getEngine: () => unknown;
     eightVideoSnapshot: () => unknown;
@@ -28,5 +28,5 @@ interface Window {
     stressCatalogModule: (moduleId: string, preferredSlotIndex: number, settleMs?: number) => Promise<unknown>;
     realAudioSnapshot: () => unknown;
   };
-  __BSP_ERRS__?: string[];
+  __BMX_ERRS__?: string[];
 }

@@ -66,13 +66,13 @@ describe('CDP browser isolation', () => {
         result: { type: 'object', subtype: 'error', description: 'Error: decoded frame unavailable' },
         exceptionDetails: {
           text: 'Uncaught (in promise) Error: decoded frame unavailable',
-          exception: { description: 'Error: decoded frame unavailable\n    at attachClip (bspQa.ts:218:13)' }
+          exception: { description: 'Error: decoded frame unavailable\n    at attachClip (bmxQa.ts:218:13)' }
         }
       })
     } as unknown as CdpSession;
 
-    await expect(evalPage(session, 'window.__BSP_QA__.attachClip()', 8_000, 'fixture assignment'))
-      .rejects.toThrow('CDP evaluation "fixture assignment" failed: Error: decoded frame unavailable\n    at attachClip (bspQa.ts:218:13)');
+    await expect(evalPage(session, 'window.__BMX_QA__.attachClip()', 8_000, 'fixture assignment'))
+      .rejects.toThrow('CDP evaluation "fixture assignment" failed: Error: decoded frame unavailable\n    at attachClip (bmxQa.ts:218:13)');
   });
 
   it('retries a transient readiness evaluation stall within the overall deadline', async () => {

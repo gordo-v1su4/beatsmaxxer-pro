@@ -91,8 +91,8 @@ open 'http://localhost:5174/?qa=1&qaAutoplay=1'
 Debug hook in DevTools console:
 
 ```js
-window.__BSP_QA__.snapshot()
-await window.__BSP_QA__.waitForClips(8)
+window.__BMX_QA__.snapshot()
+await window.__BMX_QA__.waitForClips(8)
 ```
 
 ## From repo root

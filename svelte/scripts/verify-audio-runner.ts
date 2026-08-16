@@ -6,24 +6,24 @@ const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifac
 await withChrome('verify-audio', 9900, async (s) => {
   await navigateAndReady(s, QA_URL);
 
-  await evalPage(s, `window.__BSP_QA__?.waitForClips?.(8, 45000)`, 55_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForClips?.(8, 45000)`, 55_000);
 
   await dispatchUserGesture(s);
   for (let attempt = 0; attempt < 3; attempt++) {
     await dispatchUserGesture(s);
-    await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 25_000);
-    const playing = await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000);
+    await evalPage(s, `window.__BMX_QA__?.startTransport?.()`, 25_000);
+    const playing = await evalPage<boolean>(s, 'window.__BMX_QA__?.snapshot?.()?.playing', 10_000);
     if (playing) break;
     await Bun.sleep(500);
   }
-  await evalPage(s, `window.__BSP_QA__?.waitForPlaying?.(15000)`, 20_000);
-  if (!(await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000))) {
+  await evalPage(s, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000);
+  if (!(await evalPage<boolean>(s, 'window.__BMX_QA__?.snapshot?.()?.playing', 10_000))) {
     throw new Error('Transport never started');
   }
 
   await evalPage(
     s,
-    `window.__BSP_QA__?.waitForAnalysis?.('ready', 90000)`,
+    `window.__BMX_QA__?.waitForAnalysis?.('ready', 90000)`,
     95_000
   );
 
@@ -31,15 +31,15 @@ await withChrome('verify-audio', 9900, async (s) => {
     phaseDelta?: number;
     transportDelta?: number;
     playing?: boolean;
-  }>(s, `window.__BSP_QA__?.sampleBeatMotion?.(1500)`, 20_000);
+  }>(s, `window.__BMX_QA__?.sampleBeatMotion?.(1500)`, 20_000);
 
   const controls = await evalPage<{
     controlsApplied?: boolean;
     rateEvents?: number;
     after?: { soundTouch?: { tempo?: number; volume?: number } };
-  }>(s, `window.__BSP_QA__?.exerciseAudioControls?.()`, 15_000);
+  }>(s, `window.__BMX_QA__?.exerciseAudioControls?.()`, 15_000);
 
-  await evalPage(s, `window.__BSP_QA__?.stopTransport?.()`, 10_000);
+  await evalPage(s, `window.__BMX_QA__?.stopTransport?.()`, 10_000);
 
   const snap = await evalPage<{
     playing?: boolean;
@@ -51,7 +51,7 @@ await withChrome('verify-audio', 9900, async (s) => {
     usingUploadedTrack?: boolean;
     clipsLoaded?: number;
     amplitude?: number;
-  }>(s, 'window.__BSP_QA__?.snapshot?.()', 15_000);
+  }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
   const report = {
     passed:

@@ -7,8 +7,8 @@ DEV_URL="${DEV_URL:-http://127.0.0.1:5174/}"
 QA_URL="${QA_URL:-http://127.0.0.1:5174/?qa=1&qaAutoplay=1}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT/.artifacts}"
 
-BSP_DEV_PID=""
-BSP_DEV_STARTED=0
+BMX_DEV_PID=""
+BMX_DEV_STARTED=0
 
 ensure_qa_media() {
   bash "$ROOT/scripts/setup-qa-media.sh"
@@ -35,16 +35,16 @@ ensure_dev_server() {
   echo "[local] starting dev server on :5174 ..."
   cd "$ROOT"
   bun run dev --host 127.0.0.1 &
-  BSP_DEV_PID=$!
-  BSP_DEV_STARTED=1
+  BMX_DEV_PID=$!
+  BMX_DEV_STARTED=1
   wait_for_dev_server 80
   echo "[local] dev server ready"
 }
 
 cleanup_dev_server() {
-  if [[ "$BSP_DEV_STARTED" == "1" && -n "$BSP_DEV_PID" ]]; then
-    kill "$BSP_DEV_PID" 2>/dev/null || true
-    wait "$BSP_DEV_PID" 2>/dev/null || true
+  if [[ "$BMX_DEV_STARTED" == "1" && -n "$BMX_DEV_PID" ]]; then
+    kill "$BMX_DEV_PID" 2>/dev/null || true
+    wait "$BMX_DEV_PID" 2>/dev/null || true
   fi
 }
 

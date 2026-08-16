@@ -177,7 +177,7 @@
   class:landscape
   class:dragging
   data-state={$sheetState}
-  data-bsp-proof-id="mobile-module-sheet"
+  data-bmx-proof-id="mobile-module-sheet"
   bind:clientWidth={sheetW}
   bind:clientHeight={sheetH}
   style="--accent:{accent};transform:{transform}"

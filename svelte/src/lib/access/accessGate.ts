@@ -3,7 +3,7 @@
  * and the session cookie — so this only asks whether the lock screen should be
  * shown and forwards an attempt. Nothing here can unlock anything on its own.
  */
-const CACHE_KEY = 'bsp.access.state';
+const CACHE_KEY = 'bmx.access.state';
 
 export type AccessState = 'checking' | 'open' | 'locked';
 

@@ -307,7 +307,7 @@ describe('visual proof release gate', () => {
   });
 
   test('matrix retained-File attach awaits decoded PGM readiness instead of commit alone', async () => {
-    const source = await readFile('src/lib/qa/bspQa.ts', 'utf8');
+    const source = await readFile('src/lib/qa/bmxQa.ts', 'utf8');
     const attach = source.slice(source.indexOf('async attachVisualProofRealClipToModule'), source.indexOf('async releaseVisualProofRealClip'));
     expect(attach).toContain('while (performance.now() < deadline)');
     expect(attach).toContain('HTMLMediaElement.HAVE_CURRENT_DATA');
@@ -316,7 +316,7 @@ describe('visual proof release gate', () => {
   });
 
   test('deterministic shots await a post-seek decoded frame and exact subsequent PGM render', async () => {
-    const source = await readFile('src/lib/qa/bspQa.ts', 'utf8');
+    const source = await readFile('src/lib/qa/bmxQa.ts', 'utf8');
     const timeline = source.slice(source.indexOf('async setVisualProofTimelinePosition'), source.indexOf('/** Cycle PGM'));
     expect(timeline.indexOf('videoPool.seekModule')).toBeLessThan(timeline.lastIndexOf('audioTimeline.publishFrame'));
     expect(timeline).toContain('video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA');
@@ -349,7 +349,7 @@ describe('visual proof release gate', () => {
   test('SONG proof observes a new real local-only upload generation before sampling state', async () => {
     const [engine, qa, runner] = await Promise.all([
       readFile('src/lib/audio/AudioEngine.ts', 'utf8'),
-      readFile('src/lib/qa/bspQa.ts', 'utf8'),
+      readFile('src/lib/qa/bmxQa.ts', 'utf8'),
       readFile('scripts/capture-visual-proof-runner.ts', 'utf8')
     ]);
     const fileLoad = engine.slice(engine.indexOf('async loadAudioFile'), engine.indexOf('async loadAudioUrl'));

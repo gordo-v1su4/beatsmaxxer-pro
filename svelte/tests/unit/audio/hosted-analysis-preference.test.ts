@@ -40,11 +40,11 @@ describe('hosted analysis preference', () => {
     setHostedAnalysisPreference('analyze');
     setHostedAnalysisPreference('ask');
     expect(readHostedAnalysisPreference()).toBe('ask');
-    expect(globalThis.localStorage.getItem('bsp.hostedAnalysis.consent')).toBeNull();
+    expect(globalThis.localStorage.getItem('bmx.hostedAnalysis.consent')).toBeNull();
   });
 
   test('a corrupted stored value falls back to asking, never to uploading', () => {
-    globalThis.localStorage.setItem('bsp.hostedAnalysis.consent', 'yes-always-upload');
+    globalThis.localStorage.setItem('bmx.hostedAnalysis.consent', 'yes-always-upload');
     expect(readHostedAnalysisPreference()).toBe('ask');
   });
 

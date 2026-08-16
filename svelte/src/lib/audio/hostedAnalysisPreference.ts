@@ -4,7 +4,7 @@
  * modal every time. Only an explicit "remember" tick writes anything; an absent
  * or unreadable value means ask again, so the safe path is the default path.
  */
-const STORAGE_KEY = 'bsp.hostedAnalysis.consent';
+const STORAGE_KEY = 'bmx.hostedAnalysis.consent';
 
 export type HostedAnalysisPreference = 'ask' | 'analyze' | 'local';
 

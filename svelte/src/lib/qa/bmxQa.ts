@@ -16,7 +16,7 @@ import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
 import { getLatencySamples } from '$lib/qa/performance';
 
-export interface BspQaSnapshot {
+export interface BmxQaSnapshot {
   webgpu: boolean;
   beatPhase: number;
   beat: number;
@@ -78,7 +78,7 @@ export function visualProofSlotForModule(moduleId: string) {
   return `${row}-${Math.max(0, eligibleIndex) % 4}`;
 }
 
-function buildSnapshot(): BspQaSnapshot {
+function buildSnapshot(): BmxQaSnapshot {
   const moduleIds = [...new Set([...get(rackTop), ...get(rackBottom)])];
   const layers = get(videoLayers);
   const statuses = get(clipStatus);
@@ -86,7 +86,7 @@ function buildSnapshot(): BspQaSnapshot {
   const caps = get(capabilities);
   const st = audioEngine.getSoundTouchState();
 
-  const modules: BspQaSnapshot['modules'] = {};
+  const modules: BmxQaSnapshot['modules'] = {};
   for (const id of moduleIds) {
     const sourceId = currentRackSlotForModule(id);
     const v = sourceId ? videoPool.get(sourceId) : undefined;
@@ -134,7 +134,7 @@ function buildSnapshot(): BspQaSnapshot {
   };
 }
 
-export function installBspQaHook() {
+export function installBmxQaHook() {
   if (typeof window === 'undefined') return;
 
   const eightVideoElementIds = new WeakMap<HTMLVideoElement, string>();
@@ -212,7 +212,7 @@ export function installBspQaHook() {
     }
   }, { capture: true });
   const proofOverlay = document.createElement('div');
-  proofOverlay.dataset.bspRealMediaOverlay = 'true';
+  proofOverlay.dataset.bmxRealMediaOverlay = 'true';
   proofOverlay.style.cssText = 'display:none;position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:2147483647;padding:10px 16px;background:#05070aee;border:2px solid #22d3ee;color:#fff;font:700 15px/1.2 ui-monospace,monospace;letter-spacing:.04em;box-shadow:0 0 24px #22d3ee88;pointer-events:none';
   document.body.appendChild(proofOverlay);
 
@@ -1131,6 +1131,6 @@ export function installBspQaHook() {
     }
   };
 
-  (window as Window & { __BSP_QA__?: typeof api }).__BSP_QA__ = api;
-  document.documentElement.dataset.bspQa = '1';
+  (window as Window & { __BMX_QA__?: typeof api }).__BMX_QA__ = api;
+  document.documentElement.dataset.bmxQa = '1';
 }

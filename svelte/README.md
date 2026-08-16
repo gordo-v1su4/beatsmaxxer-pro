@@ -44,7 +44,7 @@ http://localhost:5174/?qa=1&qaAutoplay=1
 | Timing | One `AudioTimeline` based on `AudioContext.currentTime`; one `AppLoop` rAF |
 | Media | Eight stable slot-owned video elements; candidate prewarm, transactional replacement, explicit release |
 | Audio | Web Audio, SoundTouch worklet controls, optional consent-gated hosted rhythm analysis |
-| QA | `window.__BSP_QA__`, automated gates, and a separate physical headed release-proof gate |
+| QA | `window.__BMX_QA__`, automated gates, and a separate physical headed release-proof gate |
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for ownership and data flow.
 

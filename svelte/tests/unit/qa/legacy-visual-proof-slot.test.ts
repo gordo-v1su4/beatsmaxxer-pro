@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { listCatalog, canPlaceInRow } from '$lib/modules/catalog';
 import { RACK_SLOT_IDS } from '$lib/stores/rack';
-import { visualProofSlotForModule } from '$lib/qa/bspQa';
+import { visualProofSlotForModule } from '$lib/qa/bmxQa';
 
 describe('legacy visual-proof stable media slots', () => {
   test('maps every catalog module to a deterministic eligible stable slot', () => {

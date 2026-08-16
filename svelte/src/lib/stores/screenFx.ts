@@ -9,7 +9,7 @@ import { writable } from 'svelte/store';
  * to cut to. So the rack defaults off and the viewer defaults on, and both are
  * switchable from the top bar.
  */
-const STORAGE_KEY = 'bsp.screenfx.v1';
+const STORAGE_KEY = 'bmx.screenfx.v1';
 
 interface ScreenFxPrefs {
   viewer: boolean;

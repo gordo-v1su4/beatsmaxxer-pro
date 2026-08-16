@@ -3,7 +3,7 @@ name: Beatsmaxxer Ship Gate
 overview: The Svelte rewrite is not production-ready. Videos, shaders, and audio have not been proven in a real browser. This plan prioritizes a working video+audio pipeline with automated acceptance proof, then shader parity, UI cleanup, SoundTouch controls, and Vercel cutover only after gates pass.
 todos:
   - id: p0-video-pipeline
-    content: Fix VideoPool + WebGpuEngine video path; add per-module load status + __BSP_QA__ debug hook
+    content: Fix VideoPool + WebGpuEngine video path; add per-module load status + __BMX_QA__ debug hook
     status: completed
   - id: p0-browser-proof
     content: Port browser-playback + interaction acceptance scripts to svelte/; require PNG/JSON artifacts
@@ -116,7 +116,7 @@ flowchart LR
 
 - Commit and harden VideoPool fixes (blob CORS, 640×360 offscreen, `loadedmetadata` + `canplay`, explicit `video.load()`).
 - On clip upload (`[+page.svelte](svelte/src/routes/+page.svelte)` `setModuleVideo`, CLIP button, drag-drop): show **per-module status** (loading / ready / error) in patch bay or preview badge.
-- Expose debug hook on `window.__BSP_QA__` for acceptance scripts: `{ clipsLoaded, hasReadyFrame per module, webgpu, beatPhase }`.
+- Expose debug hook on `window.__BMX_QA__` for acceptance scripts: `{ clipsLoaded, hasReadyFrame per module, webgpu, beatPhase }`.
 - Ensure `[AppLoop](svelte/src/lib/runtime/AppLoop.ts)` always pushes params; video optional for idle, required for `hasVideo=1`.
 
 ### 1B Fix audio + Essentia on dev and production
@@ -235,7 +235,7 @@ The app is **not** done until ALL of these pass:
 ## Immediate next steps for implementing agent
 
 1. **Do not mark anything done** until `verify:playback` produces screenshots with real video frames.
-2. Commit uncommitted video-pipeline fixes; add `__BSP_QA__` debug API.
+2. Commit uncommitted video-pipeline fixes; add `__BMX_QA__` debug API.
 3. Port `[browser-playback-acceptance.ts](scripts/browser-playback-acceptance.ts)` to target Svelte dev server + WebGPU engine state.
 4. Fix whatever fails in that script first — that is the real backlog, not UI polish.
 5. Only then: shader port, SoundTouch top bar, preset panel removal, Vercel cutover.

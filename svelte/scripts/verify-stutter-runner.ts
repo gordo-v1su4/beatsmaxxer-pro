@@ -17,7 +17,7 @@ await withChrome('verify-stutter', 9800, async (s) => {
   }>(
     s,
     `(async () => {
-    const qa = window.__BSP_QA__;
+    const qa = window.__BMX_QA__;
     const deadline = Date.now() + ${MS};
     const deltas = [];
     let seeks = 0;

@@ -10,7 +10,7 @@ await withChrome('verify-interaction', 9700, async (s) => {
   const result = await evalPage<{ clicks: number; errors: string[] }>(
     s,
     `(() => {
-    window.__BSP_ERRS__ = [];
+    window.__BMX_ERRS__ = [];
     const errors = [];
     let clicks = 0;
     try {
@@ -23,7 +23,7 @@ await withChrome('verify-interaction', 9700, async (s) => {
         clicks++;
       }
     } catch (e) { errors.push(String(e)); }
-    return { clicks, errors: (window.__BSP_ERRS__ || []).concat(errors) };
+    return { clicks, errors: (window.__BMX_ERRS__ || []).concat(errors) };
   })()`,
     15_000
   );

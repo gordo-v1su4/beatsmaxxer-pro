@@ -76,7 +76,7 @@
     style="--accent:{color}"
     role="slider"
     tabindex="0"
-    data-bsp-proof-id="control-slider-{controlId}"
+    data-bmx-proof-id="control-slider-{controlId}"
     aria-label={ariaLabel ?? controlId}
     aria-valuemin="0"
     aria-valuemax="100"

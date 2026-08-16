@@ -83,20 +83,20 @@ async function installErrorCapture(session: CdpSession) {
   });
   await Promise.all([session.send('Page.enable'), session.send('Runtime.enable'), session.send('Log.enable'), session.send('Network.enable')]);
   await session.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
-      window.__BSP_PROOF_CONSOLE_ERRORS__ = [];
-      window.__BSP_PROOF_UNCAUGHT_ERRORS__ = [];
-      window.__BSP_PROOF_GPU_ERRORS__ = [];
-      window.__BSP_PROOF_GPU_PROVENANCE__ = null;
+      window.__BMX_PROOF_CONSOLE_ERRORS__ = [];
+      window.__BMX_PROOF_UNCAUGHT_ERRORS__ = [];
+      window.__BMX_PROOF_GPU_ERRORS__ = [];
+      window.__BMX_PROOF_GPU_PROVENANCE__ = null;
       const original = console.error.bind(console);
       console.error = (...args) => {
-        window.__BSP_PROOF_CONSOLE_ERRORS__.push(args.map(String).join(' '));
+        window.__BMX_PROOF_CONSOLE_ERRORS__.push(args.map(String).join(' '));
         original(...args);
       };
       addEventListener('error', (event) => {
-        window.__BSP_PROOF_UNCAUGHT_ERRORS__.push(String(event.error || event.message));
+        window.__BMX_PROOF_UNCAUGHT_ERRORS__.push(String(event.error || event.message));
       });
       addEventListener('unhandledrejection', (event) => {
-        window.__BSP_PROOF_UNCAUGHT_ERRORS__.push(String(event.reason));
+        window.__BMX_PROOF_UNCAUGHT_ERRORS__.push(String(event.reason));
       });
       if (navigator.gpu) {
         const originalRequestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
@@ -115,7 +115,7 @@ async function installErrorCapture(session: CdpSession) {
             const isFallbackAdapter = typeof adapterInfo?.isFallbackAdapter === 'boolean'
               ? adapterInfo.isFallbackAdapter
               : typeof adapter.isFallbackAdapter === 'boolean' ? adapter.isFallbackAdapter : null;
-            window.__BSP_PROOF_GPU_PROVENANCE__ = {
+            window.__BMX_PROOF_GPU_PROVENANCE__ = {
               api: 'WebGPU',
               provenanceSource: 'navigator.gpu.requestAdapter',
               adapterInfoAvailable: Boolean(adapterInfo),
@@ -133,14 +133,14 @@ async function installErrorCapture(session: CdpSession) {
             const originalRequestDevice = adapter.requestDevice.bind(adapter);
             adapter.requestDevice = async (...deviceArgs) => {
               const device = await originalRequestDevice(...deviceArgs);
-              window.__BSP_PROOF_GPU_PROVENANCE__ = {
-                ...window.__BSP_PROOF_GPU_PROVENANCE__,
+              window.__BMX_PROOF_GPU_PROVENANCE__ = {
+                ...window.__BMX_PROOF_GPU_PROVENANCE__,
                 deviceCreated: true,
                 deviceLabel: typeof device.label === 'string' ? device.label : '',
                 deviceFeatures: Array.from(device.features || []).map(String).sort()
               };
-              device.addEventListener('uncapturederror', event => window.__BSP_PROOF_GPU_ERRORS__.push(String(event.error?.message || event.error)));
-              device.lost.then(info => window.__BSP_PROOF_GPU_ERRORS__.push('device lost: ' + info.reason + ' ' + info.message));
+              device.addEventListener('uncapturederror', event => window.__BMX_PROOF_GPU_ERRORS__.push(String(event.error?.message || event.error)));
+              device.lost.then(info => window.__BMX_PROOF_GPU_ERRORS__.push('device lost: ' + info.reason + ' ' + info.message));
               return device;
             };
           }
@@ -157,7 +157,7 @@ async function discoverControls(session: CdpSession): Promise<BrowserControl[]> 
     (await evalPage<BrowserControl[]>(
       session,
       `(() => {
-        const selector = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[role="button"]:not([aria-disabled="true"]),[role="slider"]:not([aria-disabled="true"]),[data-bsp-mouse-control]';
+        const selector = 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[role="button"]:not([aria-disabled="true"]),[role="slider"]:not([aria-disabled="true"]),[data-bmx-mouse-control]';
         const seen = new Map();
         const controls = [];
         for (const element of document.querySelectorAll(selector)) {
@@ -167,18 +167,18 @@ async function discoverControls(session: CdpSession): Promise<BrowserControl[]> 
           if (element instanceof HTMLInputElement && element.type === 'hidden') continue;
           const kind = element.getAttribute('role') === 'slider' ? 'slider'
             : element instanceof HTMLButtonElement || element.getAttribute('role') === 'button' ? 'button'
-            : element instanceof HTMLSelectElement ? 'select' : element.hasAttribute('data-bsp-mouse-control') ? 'mouse' : 'input';
+            : element instanceof HTMLSelectElement ? 'select' : element.hasAttribute('data-bmx-mouse-control') ? 'mouse' : 'input';
           const label = (element.getAttribute('aria-label') || element.getAttribute('title') ||
             element.textContent || element.getAttribute('name') || element.getAttribute('type') || kind)
             .replace(/\\s+/g, ' ').trim();
-          const moduleId = element.closest('[data-bsp-module-id]')?.getAttribute('data-bsp-module-id');
-          const explicit = element.getAttribute('data-bsp-proof-id');
+          const moduleId = element.closest('[data-bmx-module-id]')?.getAttribute('data-bmx-module-id');
+          const explicit = element.getAttribute('data-bmx-proof-id');
           const base = (explicit || [moduleId, element.id || element.getAttribute('name') || label || kind].filter(Boolean).join(':'))
             .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || kind;
           const occurrence = (seen.get(base) || 0) + 1;
           seen.set(base, occurrence);
           const id = base + ':' + occurrence;
-          element.dataset.bspProofRuntimeId = id;
+          element.dataset.bmxProofRuntimeId = id;
           let fileInput = null;
           let fixtureKind = undefined;
           if (element instanceof HTMLButtonElement) {
@@ -198,7 +198,7 @@ async function discoverControls(session: CdpSession): Promise<BrowserControl[]> 
             }
           }
           const fileInputId = fileInput ? 'file:' + id : undefined;
-          if (fileInput) fileInput.dataset.bspProofFileId = fileInputId;
+          if (fileInput) fileInput.dataset.bmxProofFileId = fileInputId;
           controls.push({ id, label, kind, state: element.closest('[role="dialog"]') ? 'audio-consent' : 'base', fileInputId, fixtureKind, expectedOutcome: element.getAttribute('title') ||
             element.getAttribute('aria-label') || label });
         }
@@ -212,7 +212,7 @@ async function elementState(session: CdpSession, id: string) {
   return evalPage<Record<string, unknown>>(
     session,
     `(() => {
-      const element = document.querySelector('[data-bsp-proof-runtime-id="${id.replaceAll('"', '\\"')}"]');
+      const element = document.querySelector('[data-bmx-proof-runtime-id="${id.replaceAll('"', '\\"')}"]');
       if (!element) return { missing: true };
       const input = element instanceof HTMLInputElement ? element : null;
       return {
@@ -226,7 +226,7 @@ async function elementState(session: CdpSession, id: string) {
         className: element.className,
         dataset: { ...element.dataset },
         qa: (() => {
-          const snapshot = window.__BSP_QA__?.snapshot?.();
+          const snapshot = window.__BMX_QA__?.snapshot?.();
           if (!snapshot) return null;
           return {
             playing: snapshot.playing,
@@ -245,7 +245,7 @@ async function elementState(session: CdpSession, id: string) {
 }
 
 async function assignFixtureFile(session: CdpSession, control: BrowserControl, resolveAudioChoice = true) {
-  const selector = `[data-bsp-proof-file-id="${control.fileInputId}"]`;
+  const selector = `[data-bmx-proof-file-id="${control.fileInputId}"]`;
   const documentNode = await session.send('DOM.getDocument', { depth: -1, pierce: true }) as {
     root?: { nodeId?: number };
   };
@@ -292,7 +292,7 @@ async function exerciseControl(session: CdpSession, control: BrowserControl) {
   return evalPage<{ ok: boolean; error?: string }>(
     session,
     `(async () => {
-      const element = document.querySelector('[data-bsp-proof-runtime-id="${control.id.replaceAll('"', '\\"')}"]');
+      const element = document.querySelector('[data-bmx-proof-runtime-id="${control.id.replaceAll('"', '\\"')}"]');
       if (!element) return { ok: false, error: 'control became unreachable' };
       try {
         if (element instanceof HTMLInputElement && element.type === 'range') {
@@ -413,7 +413,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
   await exerciseControl(session, localOnly);
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
-  const audioPlayback = await evalPage<any>(session, `window.__BSP_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
+  const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
   if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== 'Redline (Remastered).mp3') {
     throw new Error('Redline did not remain bound to uploaded playback');
   }
@@ -427,7 +427,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const clipControl = controls.find((control) => control.fixtureKind === 'video' && control.id.includes('transition'));
   if (!clipControl?.fileInputId) throw new Error('visible Transition CLIP picker control is missing');
   console.log('[visual-proof] REAL VIDEO: selecting staged MP4s one at a time through the visible Transition CLIP picker');
-  const clipsSelector = `[data-bsp-proof-file-id="${clipControl.fileInputId}"]`;
+  const clipsSelector = `[data-bmx-proof-file-id="${clipControl.fileInputId}"]`;
   const documentNode = await session.send('DOM.getDocument', { depth: -1, pierce: true }) as { root?: { nodeId?: number } };
   const clipInput = await session.send('DOM.querySelector', { nodeId: documentNode.root?.nodeId, selector: clipsSelector }) as { nodeId?: number };
   if (!clipInput.nodeId) throw new Error('visible CLIP file input is unavailable');
@@ -441,30 +441,30 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const videoExercise: VisualProofReport['realMedia']['videoExercise'] = [];
   const realFirstFrames: ReturnType<typeof parsePngMetrics>[] = [];
   let maxSimultaneousDecoded = 0;
-  await evalPage(session, `window.__BSP_QA__?.focusVisualProofModule?.('transition')`);
+  await evalPage(session, `window.__BMX_QA__?.focusVisualProofModule?.('transition')`);
   for (let index = 0; index < REAL_MEDIA_VIDEO_NAMES.length; index++) {
     const fileName = REAL_MEDIA_VIDEO_NAMES[index]!;
     console.log(`[visual-proof] REAL VIDEO ${index + 1}/13: ${fileName} — UI load, live motion/cadence, then full release`);
-    await evalPage(session, `window.__BSP_QA__?.showVisualProofRealVideoProgress?.(${index + 1}, 13, ${JSON.stringify(fileName)})`);
-    const selectionBefore = await evalPage<{ generation: number }>(session, `window.__BSP_QA__?.visualProofRealMediaSelectionState?.()`);
+    await evalPage(session, `window.__BMX_QA__?.showVisualProofRealVideoProgress?.(${index + 1}, 13, ${JSON.stringify(fileName)})`);
+    const selectionBefore = await evalPage<{ generation: number }>(session, `window.__BMX_QA__?.visualProofRealMediaSelectionState?.()`);
     await session.send('DOM.setFileInputFiles', { nodeId: clipInput.nodeId, files: [resolve(FIXED_VISUAL_PROOF_FIXTURE.root, FIXED_VISUAL_PROOF_FIXTURE.clips[index]!)] });
     const capturedSelection = await evalPage<{ generation: number; name: string; size: number; sha256: string }>(session,
-      `window.__BSP_QA__?.waitForVisualProofRealMediaSelection?.(${selectionBefore.generation}, ${JSON.stringify(fileName)}, 5000)`, 10_000,
+      `window.__BMX_QA__?.waitForVisualProofRealMediaSelection?.(${selectionBefore.generation}, ${JSON.stringify(fileName)}, 5000)`, 10_000,
       `retain capture-phase selected File: ${fileName}`);
-    await evalPage(session, `window.__BSP_QA__?.waitForVisualProofClip?.('transition', ${JSON.stringify(fileName)}, 30000)`, 35_000);
+    await evalPage(session, `window.__BMX_QA__?.waitForVisualProofClip?.('transition', ${JSON.stringify(fileName)}, 30000)`, 35_000);
     await evalPage(session, `new Promise(resolve => setTimeout(resolve, 300))`);
-    const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BSP_QA__?.readVisualProofLiveClip?.()`);
+    const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BMX_QA__?.readVisualProofLiveClip?.()`);
     const selected = firstTimeline;
     const firstScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-a.png`;
     const firstShot = await capturePng(session, firstScreenshot, '[data-canvas-id="pgm"]');
-    const cadence = await evalPage<any>(session, `window.__BSP_QA__?.sampleVisualProofFrameCadence?.(1100)`, 5_000, `observe motion for ${fileName}`);
+    const cadence = await evalPage<any>(session, `window.__BMX_QA__?.sampleVisualProofFrameCadence?.(1100)`, 5_000, `observe motion for ${fileName}`);
     const secondTimeline = cadence.after as LiveClipReading;
     const secondScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-b.png`;
     const secondShot = await capturePng(session, secondScreenshot, '[data-canvas-id="pgm"]');
     const [firstPng, secondPng] = await Promise.all([readFile(firstScreenshot), readFile(secondScreenshot)]).then(([a, b]) => [parsePngMetrics(a), parsePngMetrics(b)] as const);
     const metadata = mediaByName.get(fileName)!;
     realFirstFrames.push(firstPng);
-    const release = await evalPage<any>(session, `window.__BSP_QA__?.releaseVisualProofRealClip?.('transition', ${JSON.stringify(selected.currentSrc)})`, 15_000, `release real clip ${fileName}`);
+    const release = await evalPage<any>(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.('transition', ${JSON.stringify(selected.currentSrc)})`, 15_000, `release real clip ${fileName}`);
     maxSimultaneousDecoded = Math.max(maxSimultaneousDecoded, 1 + Number(release.decodedCount));
     const exercise: VisualProofReport['realMedia']['videoExercise'][number] = {
       fileName, relativePath: metadata.relativePath, sha256: metadata.sha256, size: metadata.size,
@@ -492,7 +492,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     if (phaseBlockers.length) throw new Error(`Real-video phase failed before matrix: ${phaseBlockers.join('; ')}`);
     videoExercise.push(exercise);
   }
-  await evalPage(session, `window.__BSP_QA__?.hideVisualProofRealVideoProgress?.()`);
+  await evalPage(session, `window.__BMX_QA__?.hideVisualProofRealVideoProgress?.()`);
   const adjacentCrossFileDifferenceRatios = realFirstFrames.slice(1).map((frame, index) => pixelDifferenceRatio(realFirstFrames[index]!, frame));
   if (new Set(videoExercise.map((entry) => entry.currentSrc)).size !== REAL_MEDIA_VIDEO_NAMES.length ||
       new Set(videoExercise.map((entry) => entry.firstContentHash)).size < 10 ||
@@ -500,8 +500,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     throw new Error('Real-video phase failed before matrix: PGM sources or screenshots were reused across files');
   }
   console.log('[visual-proof] REAL MEDIA: all MP4s visibly exercised; centrally pausing before deterministic effect matrix');
-  await evalPage(session, `window.__BSP_QA__?.stopTransport?.()`);
-  const pausedDiagnostics = await evalPage<any>(session, `window.__BSP_QA__?.getEngine?.().audioEngine.getProofPlaybackDiagnostics()`);
+  await evalPage(session, `window.__BMX_QA__?.stopTransport?.()`);
+  const pausedDiagnostics = await evalPage<any>(session, `window.__BMX_QA__?.getEngine?.().audioEngine.getProofPlaybackDiagnostics()`);
   const matrixAssignments: Record<string, { fileName: string; sha256: string }> = {};
   const manifestControls = [...controls, ...consentControls.filter((control) => !controls.some((base) => base.id === control.id))];
   const manifest = buildVisualProofManifest(manifestControls);
@@ -520,17 +520,17 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       if (item.kind !== 'control') {
         const moduleId = item.subjectId.split(':')[0]!;
         if (moduleId !== activeMatrixModule) {
-          if (activeMatrixModule) await evalPage(session, `window.__BSP_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
-          const binding = await evalPage<any>(session, `window.__BSP_QA__?.attachVisualProofRealClipToModule?.(${JSON.stringify(moduleId)})`, 30_000,
+          if (activeMatrixModule) await evalPage(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
+          const binding = await evalPage<any>(session, `window.__BMX_QA__?.attachVisualProofRealClipToModule?.(${JSON.stringify(moduleId)})`, 30_000,
             `serial matrix clip attach: ${moduleId}`);
           const metadata = mediaByName.get(binding.fileName)!;
           matrixAssignments[moduleId] = { fileName: binding.fileName, sha256: metadata.sha256 };
           activeMatrixModule = moduleId;
           maxSimultaneousDecoded = Math.max(maxSimultaneousDecoded,
-            await evalPage<number>(session, `window.__BSP_QA__?.realMediaDecodedCount?.()`));
+            await evalPage<number>(session, `window.__BMX_QA__?.realMediaDecodedCount?.()`));
         }
       }
-      await evalPage(session, `window.__BSP_QA__?.resetVisualProofUiState?.()`, 15_000);
+      await evalPage(session, `window.__BMX_QA__?.resetVisualProofUiState?.()`, 15_000);
       let currentControls = await discoverControls(session);
 
       let beforeState: unknown;
@@ -540,12 +540,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       const isControl = item.kind === 'control';
       if (isControl) {
         if (activeMatrixModule && activeMatrixModule !== 'transition') {
-          await evalPage(session, `window.__BSP_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
+          await evalPage(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
           activeMatrixModule = null;
         }
-        await evalPage(session, `window.__BSP_QA__?.restoreVisualProofRack?.()`, 15_000);
+        await evalPage(session, `window.__BMX_QA__?.restoreVisualProofRack?.()`, 15_000);
         if (!activeMatrixModule) {
-          await evalPage(session, `window.__BSP_QA__?.attachVisualProofRealClipToModule?.('transition')`, 30_000);
+          await evalPage(session, `window.__BMX_QA__?.attachVisualProofRealClipToModule?.('transition')`, 30_000);
           activeMatrixModule = 'transition';
         }
         if (item.controlState === 'audio-consent') {
@@ -558,16 +558,16 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         if (!control) throw new Error('discovered control is no longer in the inventory');
         const isPlayControl = control.label.replace(/\s+/g, ' ').trim().toUpperCase() === 'PLAY';
         const uploadedTrackLoadGeneration = control.fixtureKind === 'audio'
-          ? await evalPage<number>(session, `window.__BSP_QA__?.snapshot?.().uploadedTrackLoadGeneration ?? -1`)
+          ? await evalPage<number>(session, `window.__BMX_QA__?.snapshot?.().uploadedTrackLoadGeneration ?? -1`)
           : null;
-        const timeline = await evalPage<TimelineReading>(session, `window.__BSP_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
+        const timeline = await evalPage<TimelineReading>(session, `window.__BMX_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
         if (!timeline) throw new Error('shared timeline hook is unavailable');
         if (timeline.source !== 'AudioContext.currentTime') throw new Error(`invalid timeline source: ${timeline.source}`);
         timelineSource = timeline.source;
         beforeState = await elementState(session, control.id);
         const beforeShot = await capturePng(session, beforePath);
         if (control.fixtureKind === 'video' || control.fixtureKind === 'clips') {
-          await evalPage(session, `window.__BSP_QA__?.releaseAllVisualProofClips?.()`, 30_000);
+          await evalPage(session, `window.__BMX_QA__?.releaseAllVisualProofClips?.()`, 30_000);
           activeMatrixModule = null;
         }
         const action = await exerciseControl(session, control);
@@ -576,7 +576,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         if (uploadedTrackLoadGeneration !== null && actionOk) {
           const upload = await evalPage<{ uploadedTrackLoadGeneration: number }>(
             session,
-            `window.__BSP_QA__?.waitForUploadedTrackLoad?.(${uploadedTrackLoadGeneration}, 10000)`,
+            `window.__BMX_QA__?.waitForUploadedTrackLoad?.(${uploadedTrackLoadGeneration}, 10000)`,
             15_000,
             'observe SONG local-only load'
           );
@@ -587,7 +587,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         if (isPlayControl && actionOk) {
           const playback = await evalPage<{ playing: boolean }>(
             session,
-            `window.__BSP_QA__?.waitForPlaying?.(10000)`,
+            `window.__BMX_QA__?.waitForPlaying?.(10000)`,
             15_000,
             'observe PLAY transport start'
           );
@@ -614,19 +614,19 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
           timeline: { ...timeline, source: timeline.source }
         });
         if (isPlayControl) {
-          await evalPage(session, `window.__BSP_QA__?.stopTransport?.()`, 15_000, 'restore paused transport after PLAY proof');
+          await evalPage(session, `window.__BMX_QA__?.stopTransport?.()`, 15_000, 'restore paused transport after PLAY proof');
         }
         if (control.fixtureKind === 'video' || control.fixtureKind === 'clips') {
-          await evalPage(session, `window.__BSP_QA__?.releaseAllVisualProofClips?.()`, 30_000);
+          await evalPage(session, `window.__BMX_QA__?.releaseAllVisualProofClips?.()`, 30_000);
         }
       } else {
-        beforeState = await evalPage(session, `window.__BSP_QA__?.prepareVisualProofBaseline?.(${JSON.stringify(item.id)})`, 15_000);
-        const beforeTimeline = await evalPage<TimelineReading>(session, `window.__BSP_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
+        beforeState = await evalPage(session, `window.__BMX_QA__?.prepareVisualProofBaseline?.(${JSON.stringify(item.id)})`, 15_000);
+        const beforeTimeline = await evalPage<TimelineReading>(session, `window.__BMX_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
         if (!beforeTimeline || beforeTimeline.source !== 'AudioContext.currentTime') throw new Error('baseline timeline hook is unavailable');
         const beforeShot = await capturePng(session, beforePath, '[data-canvas-id="pgm"]');
-        afterState = await evalPage(session, `window.__BSP_QA__?.applyVisualProofItem?.(${JSON.stringify(item.id)})`, 15_000);
+        afterState = await evalPage(session, `window.__BMX_QA__?.applyVisualProofItem?.(${JSON.stringify(item.id)})`, 15_000);
         if (!afterState) throw new Error('module/preset/shader QA action returned no state');
-        const timeline = await evalPage<TimelineReading>(session, `window.__BSP_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
+        const timeline = await evalPage<TimelineReading>(session, `window.__BMX_QA__?.setVisualProofTimelinePosition?.(${position})`, 15_000);
         if (!timeline) throw new Error('shared timeline hook is unavailable');
         if (timeline.source !== 'AudioContext.currentTime') throw new Error(`invalid timeline source: ${timeline.source}`);
         timelineSource = timeline.source;
@@ -681,12 +681,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         });
       }
     } catch (error) {
-      await evalPage(session, `window.__BSP_QA__?.releaseAllVisualProofClips?.()`, 30_000).catch(() => null);
+      await evalPage(session, `window.__BMX_QA__?.releaseAllVisualProofClips?.()`, 30_000).catch(() => null);
       throw new Error(`Effect matrix failed fast at ${item.id}: ${String(error)}`);
     }
   }
 
-  if (activeMatrixModule) await evalPage(session, `window.__BSP_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
+  if (activeMatrixModule) await evalPage(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.(${JSON.stringify(activeMatrixModule)})`, 15_000);
 
   const cdpVersion = await session.send('Browser.getVersion') as {
     product?: string; revision?: string; userAgent?: string;
@@ -700,14 +700,14 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const errors = await evalPage<{ consoleErrors: string[]; uncaughtErrors: string[]; gpuErrors: string[] }>(
     session,
     `({
-      consoleErrors: window.__BSP_PROOF_CONSOLE_ERRORS__ || [],
-      uncaughtErrors: window.__BSP_PROOF_UNCAUGHT_ERRORS__ || [],
-      gpuErrors: window.__BSP_PROOF_GPU_ERRORS__ || []
+      consoleErrors: window.__BMX_PROOF_CONSOLE_ERRORS__ || [],
+      uncaughtErrors: window.__BMX_PROOF_UNCAUGHT_ERRORS__ || [],
+      gpuErrors: window.__BMX_PROOF_GPU_ERRORS__ || []
     })`
   );
   const gpu = await evalPage<VisualProofReport['environment']['gpu']>(
     session,
-    'window.__BSP_PROOF_GPU_PROVENANCE__',
+    'window.__BMX_PROOF_GPU_PROVENANCE__',
     10_000,
     'WebGPU adapter/device provenance'
   );

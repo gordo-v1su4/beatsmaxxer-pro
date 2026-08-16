@@ -320,7 +320,7 @@ export function buildVisualProofManifest(controls: AdvertisedControl[]): VisualP
     viewport: clone(FIXED_VISUAL_PROOF_VIEWPORT),
     timelinePositionsSeconds: [...FIXED_VISUAL_PROOF_TIMELINE_POSITIONS],
     controlInventory: {
-      selector: 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[role="button"]:not([aria-disabled="true"]),[role="slider"]:not([aria-disabled="true"]),[data-bsp-mouse-control]',
+      selector: 'button:not([disabled]),input:not([disabled]),select:not([disabled]),[role="button"]:not([aria-disabled="true"]),[role="slider"]:not([aria-disabled="true"]),[data-bmx-mouse-control]',
       states: ['base', 'audio-consent'],
       discoveredCount: controls.length,
       includedCount: controls.length

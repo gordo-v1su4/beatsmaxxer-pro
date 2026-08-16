@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export const ACCESS_COOKIE_NAME = "bsp_access";
+export const ACCESS_COOKIE_NAME = "bmx_access";
 export const ACCESS_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Failed attempts allowed per instance before it stops answering for a while. */
 export const ACCESS_MAX_ATTEMPTS = 10;
@@ -27,7 +27,7 @@ export function isAccessGateEnabled(config: AccessGateConfig) {
 
 /** Signing key is derived from the PIN, so rotating the PIN ends every session. */
 function signingKey(pin: string) {
-  return createHmac("sha256", "bsp.access.v1").update(pin).digest();
+  return createHmac("sha256", "bmx.access.v1").update(pin).digest();
 }
 
 function sign(expiresAtMs: number, pin: string) {
@@ -59,8 +59,8 @@ export function isCorrectPin(candidate: unknown, config: AccessGateConfig) {
 
 /** Compares by digest so unequal lengths do not short-circuit and leak size. */
 function constantTimeEquals(a: string, b: string) {
-  const left = createHmac("sha256", "bsp.compare").update(a).digest();
-  const right = createHmac("sha256", "bsp.compare").update(b).digest();
+  const left = createHmac("sha256", "bmx.compare").update(a).digest();
+  const right = createHmac("sha256", "bmx.compare").update(b).digest();
   return timingSafeEqual(left, right);
 }
 

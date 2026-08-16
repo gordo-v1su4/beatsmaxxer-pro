@@ -8,7 +8,7 @@ await withChrome('verify-cloud-smoke', 9601, async (session) => {
 
   const loaded = await evalPage(
     session,
-    `window.__BSP_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
+    `window.__BMX_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
     CLIP_WAIT_MS + 10_000
   );
   const clipsLoaded = (loaded as { clipsLoaded?: number } | null)?.clipsLoaded;
@@ -18,15 +18,15 @@ await withChrome('verify-cloud-smoke', 9601, async (session) => {
 
   await evalPage(
     session,
-    `window.__BSP_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
+    `window.__BMX_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
     CLIP_WAIT_MS + 10_000
   ).catch(async () => {
-    await evalPage(session, 'window.__BSP_QA__?.snapshot?.()', 15_000);
+    await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000);
   });
 
   await Bun.sleep(2000);
 
-  const snap = (await evalPage(session, 'window.__BSP_QA__?.snapshot?.()', 15_000)) as {
+  const snap = (await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as {
     clipsLoaded?: number;
     playing?: boolean;
     modules?: Record<string, { currentTime?: number }>;
@@ -35,7 +35,7 @@ await withChrome('verify-cloud-smoke', 9601, async (session) => {
   let maxDelta = 0;
   const t0 = snap?.modules ?? {};
   await Bun.sleep(1500);
-  const t1 = ((await evalPage(session, 'window.__BSP_QA__?.snapshot?.()', 15_000)) as typeof snap)
+  const t1 = ((await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as typeof snap)
     ?.modules ?? {};
   for (const key of Object.keys(t1)) {
     const delta = (t1[key]?.currentTime ?? 0) - (t0[key]?.currentTime ?? 0);

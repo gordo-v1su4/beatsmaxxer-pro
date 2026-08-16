@@ -28,7 +28,7 @@
   import { pgmDirector } from '$lib/runtime/pgm/PgmDirector';
   import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
-  import { installBspQaHook } from '$lib/qa/bspQa';
+  import { installBmxQaHook } from '$lib/qa/bmxQa';
   import { fxHold } from '$lib/stores/rack';
   import { topRowCompact, bottomRowCompact, viewMode } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
@@ -101,7 +101,7 @@
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
-    installBspQaHook();
+    installBmxQaHook();
 
     // Every app load begins unheld. With no song playing, the beat-driven cards
     // remain static; playback advances them on the authoritative audio timeline.

@@ -5,16 +5,16 @@ const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifac
 
 await withChrome('verify-beat', 9950, async (s) => {
   await navigateAndReady(s, QA_URL);
-  await evalPage(s, `window.__BSP_QA__?.waitForClips?.(8, 45000)`, 55_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForClips?.(8, 45000)`, 55_000);
   await dispatchUserGesture(s);
   for (let attempt = 0; attempt < 3; attempt++) {
-    await evalPage(s, `window.__BSP_QA__?.startTransport?.()`, 25_000);
-    const playing = await evalPage<boolean>(s, 'window.__BSP_QA__?.snapshot?.()?.playing', 10_000);
+    await evalPage(s, `window.__BMX_QA__?.startTransport?.()`, 25_000);
+    const playing = await evalPage<boolean>(s, 'window.__BMX_QA__?.snapshot?.()?.playing', 10_000);
     if (playing) break;
     await dispatchUserGesture(s);
     await Bun.sleep(500);
   }
-  await evalPage(s, `window.__BSP_QA__?.waitForPlaying?.(15000)`, 20_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000);
 
   const metrics = await evalPage<{
     beatPhase0: number;
@@ -27,7 +27,7 @@ await withChrome('verify-beat', 9950, async (s) => {
   }>(
     s,
     `(async () => {
-    const qa = window.__BSP_QA__;
+    const qa = window.__BMX_QA__;
     let a = qa.snapshot();
     const deadline = Date.now() + 4000;
     let b = a;

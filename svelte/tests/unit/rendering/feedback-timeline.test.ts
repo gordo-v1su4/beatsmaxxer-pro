@@ -58,8 +58,14 @@ describe('timeline feedback advancement', () => {
     expect(advanceFeedbackTo(fb, 2, 10)).toEqual({
       reset: false, steps: 0, degraded: false, skippedSteps: 0
     });
+    // Skipping semantic frames still advances exactly one render step -- that is
+    // what this test guards -- but it no longer resets. Reset makes the caller
+    // bind a placeholder instead of real history, and since the fixed-step clock
+    // outruns the render loop this branch is taken almost every frame, which
+    // disabled feedback entirely rather than degrading it. `degraded` carries
+    // the caveat; the picture is kept.
     expect(advanceFeedbackTo(fb, 2, 13)).toEqual({
-      reset: true, steps: 1, degraded: true, skippedSteps: 2
+      reset: false, steps: 1, degraded: true, skippedSteps: 2
     });
     expect(fb.ping).toBe(0);
   });

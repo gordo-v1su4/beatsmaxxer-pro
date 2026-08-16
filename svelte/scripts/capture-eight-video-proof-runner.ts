@@ -43,7 +43,7 @@ async function installCapture(session: CdpSession) {
   });
   await Promise.all([session.send('Page.enable'), session.send('Runtime.enable'), session.send('Log.enable'), session.send('Network.enable')]);
   await session.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
-    window.__BSP_EIGHT_GPU__ = null; window.__BSP_EIGHT_GPU_ERRORS__ = [];
+    window.__BMX_EIGHT_GPU__ = null; window.__BMX_EIGHT_GPU_ERRORS__ = [];
     if (!navigator.gpu) return;
     const requestAdapter = navigator.gpu.requestAdapter.bind(navigator.gpu);
     navigator.gpu.requestAdapter = async (...args) => {
@@ -51,14 +51,14 @@ async function installCapture(session: CdpSession) {
       if (!adapter) return adapter;
       const info = adapter.info || {};
       const identity = [info.vendor, info.architecture, info.device, info.description].join(' ');
-      window.__BSP_EIGHT_GPU__ = { vendor: info.vendor || '', architecture: info.architecture || '', device: info.device || '',
+      window.__BMX_EIGHT_GPU__ = { vendor: info.vendor || '', architecture: info.architecture || '', device: info.device || '',
         description: info.description || '', isFallbackAdapter: typeof info.isFallbackAdapter === 'boolean' ? info.isFallbackAdapter : null,
         softwareRenderer: /swiftshader|llvmpipe|software/i.test(identity), deviceCreated: false };
       const requestDevice = adapter.requestDevice.bind(adapter);
       adapter.requestDevice = async (...deviceArgs) => {
-        const device = await requestDevice(...deviceArgs); window.__BSP_EIGHT_GPU__.deviceCreated = true;
-        device.addEventListener('uncapturederror', event => window.__BSP_EIGHT_GPU_ERRORS__.push(String(event.error?.message || event.error)));
-        device.lost.then(info => window.__BSP_EIGHT_GPU_ERRORS__.push('device lost: ' + info.message));
+        const device = await requestDevice(...deviceArgs); window.__BMX_EIGHT_GPU__.deviceCreated = true;
+        device.addEventListener('uncapturederror', event => window.__BMX_EIGHT_GPU_ERRORS__.push(String(event.error?.message || event.error)));
+        device.lost.then(info => window.__BMX_EIGHT_GPU_ERRORS__.push('device lost: ' + info.message));
         return device;
       };
       return adapter;
@@ -97,7 +97,7 @@ async function capture() {
 
   return withChrome('eight-video-proof', 10_200, async (session) => {
     const protocol = await installCapture(session);
-    await navigateAndReady(session, QA_URL, 'document.documentElement?.dataset.bspQa === "1"');
+    await navigateAndReady(session, QA_URL, 'document.documentElement?.dataset.bmxQa === "1"');
     const version = await session.send('Browser.getVersion') as { product?: string; userAgent?: string };
     const command = await session.send('Browser.getBrowserCommandLine') as { arguments?: string[] };
 
@@ -105,14 +105,14 @@ async function capture() {
     await Bun.sleep(100);
     const analyzeClicked = await evalPage<boolean>(session, `(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent?.trim().toUpperCase() === 'ANALYZE'); if (!b) return false; b.click(); return true; })()`);
     if (!analyzeClicked) throw new Error('SONG -> ANALYZE choice was unavailable');
-    await evalPage(session, `window.__BSP_QA__?.waitForAnalysis?.('ready', 90000)`, 95_000, 'wait for consented Essentia analysis');
+    await evalPage(session, `window.__BMX_QA__?.waitForAnalysis?.('ready', 90000)`, 95_000, 'wait for consented Essentia analysis');
     await setFiles(session, '.topbar-shell input[type="file"][multiple]', videoPaths);
-    await evalPage(session, `window.__BSP_QA__?.prepareEightVideoBenchmark?.(60000)`, 70_000, 'prepare eight concurrent rack videos');
+    await evalPage(session, `window.__BMX_QA__?.prepareEightVideoBenchmark?.(60000)`, 70_000, 'prepare eight concurrent rack videos');
 
     await Bun.sleep(EIGHT_VIDEO_WARMUP_MS);
-    const first = await evalPage<Snapshot>(session, 'window.__BSP_QA__?.eightVideoSnapshot?.()');
+    const first = await evalPage<Snapshot>(session, 'window.__BMX_QA__?.eightVideoSnapshot?.()');
     if (!first) throw new Error('Initial eight-video snapshot unavailable');
-    const firstAudio = await evalPage<any>(session, 'window.__BSP_QA__?.realAudioSnapshot?.()');
+    const firstAudio = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
     const firstPaths = new Map<string, string>();
     for (const slot of first.slots) {
       const path = `${OUTPUT_DIR}/${slot.moduleId}-first.png`; firstPaths.set(slot.moduleId, path);
@@ -123,8 +123,8 @@ async function capture() {
     let rmsPeak = Number(firstAudio?.rms ?? 0), amplitudePeak = Number(firstAudio?.amplitude ?? 0);
     const observationStart = performance.now();
     while (performance.now() - observationStart < EIGHT_VIDEO_OBSERVATION_MS) {
-      const snapshot = await evalPage<Snapshot>(session, 'window.__BSP_QA__?.eightVideoSnapshot?.()');
-      const audio = await evalPage<any>(session, 'window.__BSP_QA__?.realAudioSnapshot?.()');
+      const snapshot = await evalPage<Snapshot>(session, 'window.__BMX_QA__?.eightVideoSnapshot?.()');
+      const audio = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
       if (!snapshot) throw new Error('Eight-video observation snapshot unavailable');
       if (snapshot.timelineGeneration !== first.timelineGeneration || audio?.playing !== true || audio?.mediaPaused === true) {
         throw new Error(`Shared transport changed during observation: ${JSON.stringify({
@@ -144,8 +144,8 @@ async function capture() {
       await Bun.sleep(1_000);
     }
     const observationMs = performance.now() - observationStart;
-    const last = await evalPage<Snapshot>(session, 'window.__BSP_QA__?.eightVideoSnapshot?.()');
-    const lastAudio = await evalPage<any>(session, 'window.__BSP_QA__?.realAudioSnapshot?.()');
+    const last = await evalPage<Snapshot>(session, 'window.__BMX_QA__?.eightVideoSnapshot?.()');
+    const lastAudio = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
     if (!last) throw new Error('Final eight-video snapshot unavailable');
     samples.push({ elapsedMs: observationMs, decoderCount: last.decoderCount, documentVideoCount: last.documentVideoCount,
       timelineGeneration: last.timelineGeneration, timelineFrameId: last.timelineFrameId,
@@ -164,18 +164,18 @@ async function capture() {
     }
     const pgmCuts = [] as EightVideoProofReport['pgmCuts'];
     for (const slot of last.slots) {
-      const cut = await evalPage<any>(session, `window.__BSP_QA__?.cutEightVideoPgm?.(${JSON.stringify(slot.moduleId)}, 300)`);
+      const cut = await evalPage<any>(session, `window.__BMX_QA__?.cutEightVideoPgm?.(${JSON.stringify(slot.moduleId)}, 300)`);
       if (!cut) throw new Error(`PGM cut diagnostics unavailable: ${slot.moduleId}`);
       pgmCuts.push(cut);
     }
-    const catalog = await evalPage<CatalogHotSwapStressEvidence['catalog']>(session, 'window.__BSP_QA__?.catalogHotSwapCatalog?.()');
-    const baseline = await evalPage<CatalogHotSwapStressEvidence['baseline']>(session, 'window.__BSP_QA__?.catalogHotSwapBaseline?.()');
+    const catalog = await evalPage<CatalogHotSwapStressEvidence['catalog']>(session, 'window.__BMX_QA__?.catalogHotSwapCatalog?.()');
+    const baseline = await evalPage<CatalogHotSwapStressEvidence['baseline']>(session, 'window.__BMX_QA__?.catalogHotSwapBaseline?.()');
     if (!catalog?.length || !baseline) throw new Error('Runtime catalog hot-swap discovery/baseline unavailable');
     const hotSwapSteps: CatalogHotSwapStressEvidence['steps'] = [];
     for (const [index, item] of catalog.entries()) {
       const raw = await evalPage<Omit<CatalogHotSwapStressEvidence['steps'][number], 'index' | 'screenshot'>>(
         session,
-        `window.__BSP_QA__?.stressCatalogModule?.(${JSON.stringify(item.moduleId)}, ${index % 4}, 1100)`,
+        `window.__BMX_QA__?.stressCatalogModule?.(${JSON.stringify(item.moduleId)}, ${index % 4}, 1100)`,
         15_000,
         `stress catalog module ${item.moduleId}`
       );
@@ -199,8 +199,8 @@ async function capture() {
       baseline,
       steps: hotSwapSteps
     };
-    const gpu = await evalPage<any>(session, 'window.__BSP_EIGHT_GPU__');
-    protocol.errors.gpu.push(...((await evalPage<string[]>(session, 'window.__BSP_EIGHT_GPU_ERRORS__')) ?? []));
+    const gpu = await evalPage<any>(session, 'window.__BMX_EIGHT_GPU__');
+    protocol.errors.gpu.push(...((await evalPage<string[]>(session, 'window.__BMX_EIGHT_GPU_ERRORS__')) ?? []));
     const report: EightVideoProofReport = {
       schemaVersion: 1, capturedAt: new Date().toISOString(), provenance: { sourceDigest, buildDigest },
       warmupMs: EIGHT_VIDEO_WARMUP_MS, observationMs, environment: { browserProduct: version.product ?? '', userAgent: version.userAgent ?? '',

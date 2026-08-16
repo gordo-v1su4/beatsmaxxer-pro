@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { visualProofExpectedMediaTime } from '$lib/qa/bspQa';
+import { visualProofExpectedMediaTime } from '$lib/qa/bmxQa';
 
 describe('TimeSampler visual-proof media target', () => {
   test('uses the scheduler-owned source timestamp for TimeSampler', () => {
