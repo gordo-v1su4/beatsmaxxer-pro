@@ -76,6 +76,7 @@ export interface TimeSamplerConfig {
   };
   sourceDurationSeconds: number;
   sourceKey: string;
+  triggerKey?: string;
   /** Rack groove from the PGM rail: 0 straight, 1 swing, 2 dotted. */
   feel?: 0 | 1 | 2;
   midiNotes?: Array<{ time: number; note: number; velocity: number }>;

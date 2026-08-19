@@ -37,15 +37,21 @@ import {
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
 import {
+  analysisBeatGrid,
+  beatAt,
+  triggerMidiModule,
+  triggerSource
+} from '$lib/stores/triggerLane';
+import {
   firingNotes,
   firingTimes,
-  midiPartPosition,
+  lastTriggerTime,
   moduleTriggerSource,
-  triggerAgeBeats
 } from '$lib/stores/midiTrigger';
 import { grooveSegment } from '$lib/runtime/groove';
 import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
+import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
 import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
@@ -65,14 +71,13 @@ const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
  * loaded part or the DENSITY dial changes, so the cache is keyed on both and the
  * per-frame cost drops to one binary search.
  */
-const midiFiringCache = new Map<string, { key: string; times: number[] }>();
+const midiFiringCache = new Map<string, { layer: MidiLayer | null; density: number; times: number[] }>();
 
 function firingTimesFor(moduleId: string, layer: MidiLayer | null, density: number): number[] {
-  const key = `${layer?.identity ?? ''}:${density.toFixed(3)}`;
   const hit = midiFiringCache.get(moduleId);
-  if (hit && hit.key === key) return hit.times;
+  if (hit && hit.layer === layer && hit.density === density) return hit.times;
   const times = firingTimes(layer, density);
-  midiFiringCache.set(moduleId, { key, times });
+  midiFiringCache.set(moduleId, { layer, density, times });
   return times;
 }
 
@@ -105,10 +110,18 @@ function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
     if (!layer) continue;
     const density = (params[id]?.density ?? 100) / 100;
     const times = firingTimesFor(id, layer, density);
-    ages[id] = triggerAgeBeats(
-      times,
-      midiPartPosition(frame.positionSeconds, layer.duration),
-      frame.bpm
+    const triggerTime = lastTriggerTime(times, frame.positionSeconds);
+    if (triggerTime === null) {
+      ages[id] = -1;
+      continue;
+    }
+    // Source time already advances at playbackRate. Using display BPM here as
+    // well would apply tempo twice (2x playback became a 4x MIDI envelope).
+    // Compare positions on the same hosted/fallback beat grid instead.
+    const sourceBpm = frame.bpm / Math.max(0.01, frame.playbackRate);
+    ages[id] = Math.max(
+      0,
+      frame.beatPosition - beatAt(triggerTime, get(analysisBeatGrid), sourceBpm)
     );
   }
   return ages;
@@ -408,21 +421,56 @@ function configureTimeSampler() {
   const params = get(moduleParams);
   const tsParams = params.timesampler ?? {};
   const timeSamplerSlot = currentRackSlotForModule('timesampler');
-  // The per-module source selector is authoritative. Loading a part selects
-  // MIDI; removing it selects audio. Keep original note objects so runtime,
-  // rack and Arrange share the exact same DENS-filtered identity.
-  const tsSource = get(moduleTriggerSource).timesampler ?? 'audio';
-  const tsLayer = get(midiLayers).timesampler ?? null;
-  const tsNotes = midiNotesForTriggerSource(
-    tsSource,
-    tsLayer,
-    (tsParams.density ?? 100) / 100
-  );
-  const tsMidi = tsNotes && tsLayer ? { ...tsLayer, notes: tsNotes } : null;
+  const tsMidi = (() => {
+    // A file attached to the TIMESAMPLER card is the first authority. Loading
+    // it selects MIDI; removing it returns this source to audio/onsets.
+    const cardSource = get(moduleTriggerSource).timesampler ?? 'audio';
+    const cardLayer = get(midiLayers).timesampler ?? null;
+    const density = (tsParams.density ?? 100) / 100;
+    if (cardLayer) {
+      const cardNotes = midiNotesForTriggerSource(cardSource, cardLayer, density);
+      return cardNotes
+        ? {
+            notes: cardNotes,
+            duration: cardLayer.duration,
+            triggerKey: `card:${cardLayer.identity ?? cardLayer.name}:${density}`
+          }
+        : null;
+    }
+
+    // Preserve the older explicit arranger-stem route when no card MIDI is
+    // selected. It is independently user-selected, never inferred merely from
+    // a file's presence.
+    if (get(triggerSource) !== 'midi') return null;
+    const channel = get(activeChannel);
+    if (channel) {
+      const channelLayer: MidiLayer = {
+        identity: channel.identity,
+        name: channel.name,
+        notes: channel.notes ?? channel.onsets.map((time) => ({ time, note: 60, velocity: 100 })),
+        duration: channel.duration
+      };
+      return {
+        notes: firingNotes(channelLayer, density).map(({ note }) => note),
+        duration: channelLayer.duration,
+        triggerKey: `stem:${channel.id}:${density}`
+      };
+    }
+    const selectedLayer = get(midiLayers)[get(triggerMidiModule) ?? 'timesampler'] ?? null;
+    const selectedNotes = midiNotesForTriggerSource('midi', selectedLayer, density);
+    return selectedNotes && selectedLayer
+      ? {
+          notes: selectedNotes,
+          duration: selectedLayer.duration,
+          triggerKey: `layer:${selectedLayer.identity ?? selectedLayer.name}:${density}`
+        }
+      : null;
+  })();
   const tsDuration = timeSamplerSlot ? videoPool.getDuration(timeSamplerSlot) || 120 : 120;
   audioEngine.configureTimeSampler({
     sourceDurationSeconds: tsDuration,
     sourceKey: timeSamplerSlot ?? 'timesampler-off-rack',
+    triggerKey: tsMidi?.triggerKey ?? 'audio',
     controls: {
       mode: tsParams.mode,
       size: tsParams.size,

@@ -704,6 +704,8 @@ export class AudioEngine implements IAudioEngine {
       controls: config.controls,
       sourceDurationSeconds: config.sourceDurationSeconds,
       sourceKey: config.sourceKey,
+      triggerKey: config.triggerKey,
+      feel: config.feel,
       midiNotes: config.midiNotes,
       midiDurationSeconds: config.midiDurationSeconds,
       onsetSensitivity: config.onsetSensitivity,
@@ -1001,33 +1003,6 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisError =
       error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
-    void this.seedFallbackBpmFromPlayback();
-  }
-
-  /** Kick onset BPM estimation without waiting for the user to press play. */
-  private async seedFallbackBpmFromPlayback() {
-    if (!this.ctx || !this.mediaElement || this._analysisStatus !== "fallback") return;
-    try {
-      await this.mediaElement.play();
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-      if (this._analysisStatus !== "fallback" || this.beatGrid.length >= 2) return;
-      if (this._bpm !== DEFAULT_BPM || this._bpmLocked) return;
-      this.onsetHistory = [];
-      this.prevEnergy = 0;
-      this.bassEma = 0.08;
-      for (let i = 0; i < 120; i++) {
-        const timelineFrame = audioTimeline.getLastFrame();
-        if (timelineFrame) this.tick(timelineFrame);
-        await new Promise((resolve) => setTimeout(resolve, 16));
-        if (this.beatGrid.length >= 4 || this._bpm !== DEFAULT_BPM) break;
-      }
-    } catch {
-      // Local-only playback may stay blocked until a user gesture — realtime path still works once playing.
-    } finally {
-      if (this.mediaElement && !this._playing) {
-        this.mediaElement.pause();
-      }
-    }
   }
 }
 

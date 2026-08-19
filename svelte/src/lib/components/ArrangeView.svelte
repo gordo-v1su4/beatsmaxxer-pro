@@ -3,8 +3,19 @@
   import { getModuleDef } from '$lib/modules/catalog';
   import { sequencerArmed } from '$lib/stores/sequencer';
   import { transportDisplay } from '$lib/stores/transportDisplay';
-  import { rackTop, rackBottom, moduleParams, MAX_RACK_SLOTS_PER_ROW } from '$lib/stores/rack';
-  import { firingTimes, noteIsHighlighted } from '$lib/stores/midiTrigger';
+  import {
+    rackTop,
+    rackBottom,
+    moduleParams,
+    midiLayers,
+    MAX_RACK_SLOTS_PER_ROW
+  } from '$lib/stores/rack';
+  import {
+    firingTimes,
+    moduleTriggerSource,
+    noteIsHighlighted,
+    setModuleTriggerSource
+  } from '$lib/stores/midiTrigger';
   import {
     activeChannelId,
     addMidiChannels,
@@ -67,6 +78,19 @@
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
     const step = scale.startStep + fraction * scale.totalSteps;
     audioEngine.seek(stepSeconds(step, $analysisBeatGrid, $transportDisplay.bpm || 120));
+  }
+
+  function seekAtKeyboard(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const step = Math.min(totalSteps, Math.max(0, playStep));
+    audioEngine.seek(stepSeconds(step, $analysisBeatGrid, $transportDisplay.bpm || 120));
+  }
+
+  function paintAtKeyboard(event: KeyboardEvent, slotIndex: number) {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    toggleCut(Math.round(Math.min(totalSteps, Math.max(0, playStep))), slotIndex);
   }
 
   function slotInfo(slotIndex: number) {
@@ -150,7 +174,7 @@
   );
   const channelTicks = $derived(
     $midiChannels.map((channel) => {
-      const density = channel.moduleId ? ($moduleParams[channel.moduleId]?.density ?? 100) / 100 : 1;
+      const density = 1;
       const times = channel.notes
         ? firingTimes({ name: channel.name, notes: channel.notes, duration: channel.duration }, density)
         : channel.onsets;
@@ -168,6 +192,31 @@
           )
         }))
       };
+    })
+  );
+  const moduleMidiTicks = $derived(
+    Object.entries($midiLayers).flatMap(([moduleId, layer]) => {
+      if (!layer) return [];
+      const module = getModuleDef(moduleId);
+      const density = ($moduleParams[moduleId]?.density ?? 100) / 100;
+      const times = firingTimes(layer, density);
+      const source = $moduleTriggerSource[moduleId] ?? 'audio';
+      return [{
+        moduleId,
+        layer,
+        module,
+        density,
+        source,
+        ticks: times.map((time) => ({
+          left: pct(stepAtSeconds(time)),
+          active: noteIsHighlighted(
+            time,
+            $transportDisplay.time,
+            layer.duration,
+            $transportDisplay.playing
+          )
+        }))
+      }];
     })
   );
   /** Cuts grouped per slot lane. */
@@ -275,7 +324,7 @@
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
-      <div class="arr-track arr-sections" role="presentation" onclick={seekAt}>
+      <div class="arr-track arr-sections" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
         {#each $arrangement as section, i (section.id)}
           {@const on = i === $activeSectionIndex}
           <button
@@ -301,7 +350,7 @@
     <!-- Bar ruler. Every 4 bars gets a number; the rest are hairlines. -->
     <div class="arr-row arr-row-ruler">
       <span class="arr-gutter"></span>
-      <div class="arr-track arr-ruler" role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
+      <div class="arr-track arr-ruler" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
         {#each Array(Math.max(0, Math.ceil(totalBars / 4))) as _, i (i)}
           <span class="arr-bar" style="left:{pct(i * 4 * ARRANGEMENT_STEPS)}%">{i * 4 + 1}</span>
         {/each}
@@ -326,10 +375,10 @@
         <div
           class="arr-track arr-lane"
           role="button"
-          tabindex="-1"
+          tabindex="0"
           onclick={(e) => paintAt(e, slotIndex)}
-          onkeydown={() => {}}
-          title="Click to place a cut on {info?.name ?? slotName(slotIndex)}"
+          onkeydown={(event) => paintAtKeyboard(event, slotIndex)}
+          title="Click to place a cut on {info?.name ?? slotName(slotIndex)}; Enter or Space places one at the playhead"
         >
           {#each $arrangement as section, i (section.id)}
             <span
@@ -353,7 +402,7 @@
          enters in the last third reads as entering in the last third. -->
     <div class="arr-row arr-row-chan">
       <span class="arr-gutter arr-gutter-chan">AUDIO</span>
-      <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
+      <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
         {#each audioTicks as left, i (i)}
           <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
         {/each}
@@ -370,6 +419,40 @@
       </div>
     </div>
 
+    {#each moduleMidiTicks as { moduleId, layer, module, density, source, ticks } (moduleId)}
+      <div
+        class="arr-row arr-row-chan arr-row-module-midi"
+        data-active={source === 'midi'}
+        data-midi-module={moduleId}
+        data-midi-identity={layer.identity ?? layer.name}
+        data-midi-kept={ticks.length}
+        data-midi-total={layer.notes.length}
+        data-midi-density={Math.round(density * 100)}
+      >
+        <button
+          type="button"
+          class="arr-gutter arr-gutter-chan arr-gutter-module-midi"
+          onclick={() => setModuleTriggerSource(moduleId, source === 'midi' ? 'audio' : 'midi')}
+          title="{module?.name ?? moduleId}: {ticks.length}/{layer.notes.length} notes at {Math.round(density * 100)}% density — click to use {source === 'midi' ? 'audio' : 'MIDI'}"
+        >
+          <span class="arr-chan-dot" style="background:{module?.accentColor ?? '#7aa2ff'}"></span>
+          {module?.shortName ?? moduleId}
+          <small>{source === 'midi' ? 'MIDI' : 'AUD'} · {ticks.length}/{layer.notes.length}</small>
+        </button>
+        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="{layer.name} — click to seek; Enter or Space seeks to the playhead">
+          {#each ticks as tick, i (i)}
+            <span
+              class="arr-tick arr-tick-module"
+              class:is-hit={tick.active}
+              data-active={tick.active}
+              style="left:{tick.left}%;background:{module?.accentColor ?? '#7aa2ff'};color:{module?.accentColor ?? '#7aa2ff'}"
+            ></span>
+          {/each}
+          <span class="arr-midi-count">{layer.name}</span>
+        </div>
+      </div>
+    {/each}
+
     {#each channelTicks as { channel, ticks, density, keptCount } (channel.id)}
       <div class="arr-row arr-row-chan">
         <button
@@ -381,9 +464,9 @@
         >
           <span class="arr-chan-dot" style="background:{channel.color}"></span>
           {channel.name}
-          {#if channel.moduleId}<small>{keptCount}/{channel.noteCount} · {Math.round(density * 100)}%</small>{/if}
+          <small>{keptCount}/{channel.noteCount}</small>
         </button>
-        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
+        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
           {#each ticks as tick, i (i)}
             <span
               class="arr-tick"

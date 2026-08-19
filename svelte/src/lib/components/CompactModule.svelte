@@ -27,6 +27,7 @@
   import { COMPACT_CONTROLS, primaryTolerance } from '$lib/mobile/moduleControlSpecs';
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
   import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
+  import { moduleMidiContract } from '$lib/modules/midiContracts';
 
   interface Props {
     mod: ModuleDefinition;
@@ -69,6 +70,10 @@
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
 
   const spec = $derived(COMPACT_CONTROLS[mod.id]);
+  const midiContract = $derived(moduleMidiContract(mod.id));
+  const midiBehavior = $derived(
+    midiContract.timingClass === 'none' ? undefined : midiContract.timingClass
+  );
 
   /** Half the closest gap between this module's own preset values. A fixed
    * tolerance lit up neighbouring buttons once a module had enough presets to
@@ -76,12 +81,12 @@
   const activeTolerance = $derived(primaryTolerance(spec?.buttons ?? [], spec?.primary ?? ''));
 
   function applyVideoFiles(files: File[]) {
+    const midi = files.find((file) => /\.midi?$/i.test(file.name));
+    if (midi && midiBehavior) onMidiUpload?.(midi);
     const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
     else if (clips[0] && onVideoUpload) onVideoUpload(clips[0]);
-    const midi = files.find((file) => /\.midi?$/i.test(file.name));
-    if (midi) onMidiUpload?.(midi);
   }
 </script>
 
@@ -141,7 +146,7 @@
         (e.target as HTMLInputElement).value = '';
       }}
     />
-    {#if mod.midiControl}
+    {#if midiBehavior}
       <input
         bind:this={midiInput}
         type="file"
@@ -194,12 +199,12 @@
     <Screw />
   </div>
 
-  {#if !collapsed && mod.midiControl && midiLayer}
+  {#if !collapsed && midiBehavior && midiLayer}
     <MidiTimeline
       color={mod.accentColor}
       {midiLayer}
       moduleId={mod.id}
-      behavior={mod.midiControl}
+      behavior={midiBehavior}
       source={$moduleTriggerSource[mod.id] ?? 'audio'}
       onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
       density={params.density ?? 100}

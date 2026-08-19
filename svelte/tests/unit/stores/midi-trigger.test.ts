@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   firingNotes,
   firingTimes,
-  midiPartPosition,
+  lastTriggerTime,
   noteFires,
   noteIsHighlighted,
   triggerAgeBeats
@@ -71,6 +71,12 @@ describe('MIDI trigger source', () => {
     expect(firingTimes(null, 1)).toEqual([]);
   });
 
+  test('finds the most recent kept note in absolute song time', () => {
+    expect(lastTriggerTime([0.25, 1, 3], 0.1)).toBeNull();
+    expect(lastTriggerTime([0.25, 1, 3], 1)).toBe(1);
+    expect(lastTriggerTime([0.25, 1, 3], 20)).toBe(3);
+  });
+
   test('falls back to 120bpm rather than dividing by zero', () => {
     expect(Number.isFinite(triggerAgeBeats([0], 1, 0))).toBe(true);
     expect(triggerAgeBeats([0], 1, 0)).toBeCloseTo(2, 5);
@@ -82,12 +88,10 @@ describe('MIDI trigger source', () => {
     expect(times).toEqual([...times].sort((a, b) => a - b));
   });
 
-  test('seek and loop map onto the same MIDI part while pause suppresses highlights', () => {
-    expect(midiPartPosition(2.25, 2)).toBeCloseTo(0.25);
-    expect(midiPartPosition(2, 2)).toBe(2);
-    expect(midiPartPosition(0.25, 2)).toBeCloseTo(0.25);
-    expect(noteIsHighlighted(0.25, 2.25, 2, true)).toBe(true);
-    expect(noteIsHighlighted(0.25, 2.25, 2, false)).toBe(false);
+  test('uses absolute song time and pause suppresses highlights', () => {
+    expect(noteIsHighlighted(0.25, 0.25, 2, true)).toBe(true);
+    expect(noteIsHighlighted(0.25, 2.25, 2, true)).toBe(false);
+    expect(noteIsHighlighted(0.25, 0.25, 2, false)).toBe(false);
   });
 
   test('the canonical subset preserves original note identity for every consumer', () => {

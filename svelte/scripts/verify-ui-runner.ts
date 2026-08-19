@@ -22,12 +22,12 @@ await withChrome('verify-ui', 9500, async (s) => {
     `(() => {
       const labels = ["BEATSURFING", "PGM SOURCE", "TRANSITION"];
       const text = document.body.innerText;
-      const pgm = document.querySelector(".side-panels");
+      const pgm = document.querySelector("[data-bmx-pgm-rail]");
       const rack = document.querySelector(".bottom-rack-row");
       const pgmBottom = pgm?.getBoundingClientRect().bottom ?? Number.NaN;
       const rackBottom = rack?.getBoundingClientRect().bottom ?? Number.NaN;
       const baselineDelta = Math.abs(pgmBottom - rackBottom);
-      const ok = labels.every((t) => text.includes(t)) && baselineDelta <= 1;
+      const ok = labels.every((t) => text.includes(t)) && baselineDelta < 0.01;
       return {
         ok,
         labels: labels.filter((t) => text.includes(t)),

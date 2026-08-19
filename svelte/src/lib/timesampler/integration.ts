@@ -26,6 +26,8 @@ export interface LiveTimeSamplerInput {
   controls: TimeSamplerControlParams;
   sourceDurationSeconds: number;
   sourceKey?: string;
+  /** Trigger route identity, independent of the owned video source. */
+  triggerKey?: string;
   midiNotes?: readonly { time: number }[];
   midiDurationSeconds?: number;
   onsetSensitivity?: number;
@@ -112,26 +114,15 @@ function nextMidiNoteTime(
   notes: readonly { time: number }[],
   previousSeconds: number,
   currentSeconds: number,
-  loopDurationSeconds: number,
 ): number | null {
-  if (
-    notes.length === 0 ||
-    loopDurationSeconds <= 0 ||
-    currentSeconds <= previousSeconds
-  ) {
+  if (notes.length === 0 || currentSeconds <= previousSeconds) {
     return null;
   }
 
   let earliest = Number.POSITIVE_INFINITY;
   for (const { time } of notes) {
-    const normalized =
-      ((time % loopDurationSeconds) + loopDurationSeconds) %
-      loopDurationSeconds;
-    const cycle =
-      Math.floor((previousSeconds - normalized) / loopDurationSeconds) + 1;
-    const candidate = normalized + cycle * loopDurationSeconds;
-    if (candidate <= currentSeconds && candidate < earliest) {
-      earliest = candidate;
+    if (time > previousSeconds && time <= currentSeconds && time < earliest) {
+      earliest = time;
     }
   }
 
@@ -238,6 +229,12 @@ export class LiveScheduleRuntime<T = string> {
       this.accent = null;
       this.lastTriggerScanSeconds = null;
       this.lastTriggerGeneration = null;
+    } else if (input.triggerKey !== this.timeSamplerInput.triggerKey) {
+      // Swapping AUDIO/MIDI, the part, or DENS must re-arm scanning without
+      // throwing away the sampler's video slice ownership.
+      this.accent = null;
+      this.lastTriggerScanSeconds = null;
+      this.lastTriggerGeneration = null;
     }
     this.timeSamplerInput = { ...input };
   }
@@ -263,23 +260,16 @@ export class LiveScheduleRuntime<T = string> {
     this.lastTriggerGeneration = transport.discontinuityGeneration;
     this.lastTriggerScanSeconds = transport.transportSeconds;
 
-    if (input.bypassed || previousSeconds === null) {
+    if (!transport.playing || input.bypassed || previousSeconds === null) {
       return [];
     }
 
     const notes = input.midiNotes ?? [];
     if (notes.length > 0) {
-      const lastNote = notes[notes.length - 1]?.time ?? 0;
-      const loopDuration = Math.max(
-        input.midiDurationSeconds ?? 0,
-        lastNote + 0.05,
-        0.25,
-      );
       const noteTime = nextMidiNoteTime(
         notes,
         previousSeconds,
         transport.transportSeconds,
-        loopDuration,
       );
       return noteTime === null
         ? []
@@ -288,7 +278,7 @@ export class LiveScheduleRuntime<T = string> {
 
     const threshold =
       0.08 + (1 - (input.onsetSensitivity ?? 0.5)) * 1.1;
-    return transport.playing && onsetStrength > threshold
+    return onsetStrength > threshold
       ? [
           {
             type: "onset-trigger",

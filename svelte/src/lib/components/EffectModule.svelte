@@ -30,7 +30,7 @@
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
-  import { MIDI_TIMING_CONTRACTS } from '$lib/modules/midiContracts';
+  import { moduleMidiContract } from '$lib/modules/midiContracts';
 
   interface Props {
     mod: ModuleDefinition;
@@ -73,15 +73,18 @@
   const td = $derived($transportDisplay);
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
   const clipEntry = $derived($clipStatusStore[mediaSlotId ?? slotCanvasId]);
-  const midiContract = $derived(MIDI_TIMING_CONTRACTS[mod.id]);
+  const midiContract = $derived(moduleMidiContract(mod.id));
+  const midiBehavior = $derived(
+    midiContract.timingClass === 'none' ? undefined : midiContract.timingClass
+  );
 
   function applyVideoFiles(files: File[]) {
+    const midi = files.find((f) => /\.midi?$/i.test(f.name));
+    if (midi && midiBehavior && onMidiUpload) onMidiUpload(midi);
     const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
     else if (clips[0] && onVideoUpload) onVideoUpload(clips[0]);
-    const midi = files.find((f) => /\.midi?$/i.test(f.name));
-    if (midi && onMidiUpload) onMidiUpload(midi);
   }
 </script>
 
@@ -161,18 +164,18 @@
         }}
         onSetVideos={onVideosUpload}
         {midiLayer}
-        midiSupported={mod.midiControl !== undefined}
+        midiSupported={midiBehavior !== undefined}
         midiReason={midiContract?.consumer ?? 'No timing contract'}
-        onSetMidi={mod.midiControl
+        onSetMidi={midiBehavior
           ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
           : undefined}
       />
-      {#if midiLayer && mod.midiControl}
+      {#if midiLayer && midiBehavior}
         <MidiTimeline
           color={mod.accentColor}
           {midiLayer}
           moduleId={mod.id}
-          behavior={mod.midiControl}
+          behavior={midiBehavior}
           source={$moduleTriggerSource[mod.id] ?? 'audio'}
           onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
           density={params.density ?? 100}

@@ -1,6 +1,6 @@
 # MIDI control contracts
 
-MIDI is module-owned and opt-in by file load. Loading a supported module's file selects `MIDI`; removing it selects `AUD`. `DENS` deterministically keeps or drops the same indexed notes in the rack, runtime, and Arrange profile. Velocity biases that keep/drop decision toward accents; it never changes effect amplitude. Paused transport never displays a hit, seek recomputes from the new transport position, and the part repeats at its own duration.
+MIDI is module-owned and opt-in by file load. Loading a supported module's file selects `MIDI`; removing it selects `AUD`. `DENS` deterministically keeps or drops the same indexed notes in the rack, runtime, and Arrange profile. Velocity biases that keep/drop decision toward accents; it never changes effect amplitude. Paused transport never displays a hit, seek recomputes from the new transport position, and notes stay at absolute song time. A song-level loop naturally returns both transport and MIDI to the beginning; a short MIDI file never silently repeats inside a longer song.
 
 All supported rows use the physical acceptance scenario `redline.wav` + `lead-vocal-and trupmets.mid`: the rack filename, selected source, active hit, note count, and density must match the Arrange lane published from the exact same parsed notes array.
 

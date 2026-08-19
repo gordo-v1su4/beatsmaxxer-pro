@@ -39,12 +39,8 @@
   } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
-  import { moduleAcceptsMidi } from '$lib/modules/midiProfiles';
+  import { supportsModuleMidi } from '$lib/modules/midiContracts';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import {
-    registerModuleMidiChannel,
-    removeModuleMidiChannel
-  } from '$lib/stores/midiChannels';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
@@ -190,7 +186,7 @@
   }
 
   async function setModuleMidi(id: string, file: File) {
-    if (!moduleAcceptsMidi(id)) {
+    if (!supportsModuleMidi(id)) {
       console.warn(`[midi] ${id} has no meaningful MIDI consumer; ${file.name} was not attached.`);
       return;
     }
@@ -204,7 +200,6 @@
         duration: data.duration
       };
       midiLayers.update((layers) => ({ ...layers, [id]: layer }));
-      registerModuleMidiChannel(id, layer);
       setModuleTriggerSource(id, 'midi');
     } catch (err) {
       console.error('Failed to parse MIDI file:', err);
@@ -213,7 +208,6 @@
 
   function clearModuleMidi(id: string) {
     midiLayers.update((layers) => ({ ...layers, [id]: null }));
-    removeModuleMidiChannel(id);
     // Hand the module back to the track. Leaving it on 'midi' with no part
     // loaded would silently stop it reacting to anything at all, and the only
     // control that could undo that has just been removed from the UI along with

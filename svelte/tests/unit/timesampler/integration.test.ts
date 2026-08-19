@@ -239,6 +239,51 @@ describe("live TimeSampler integration", () => {
     expect(boundary.timeSampler.jumpReason).toBe("forced");
     expect(boundary.timeSampler.activeSlice).toBe(2);
   });
+
+  test("paused MIDI transport never emits a catch-up trigger", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      triggerKey: "part-a:1",
+      midiNotes: [{ time: 0.6 }],
+    });
+
+    runtime.generatedTriggerEvents(transport(0), 0);
+    expect(runtime.generatedTriggerEvents(transport(2, {
+      transportSeconds: 1,
+      playing: false,
+    }), 0)).toEqual([]);
+    expect(runtime.generatedTriggerEvents(transport(2.2, {
+      transportSeconds: 1.1,
+      playing: true,
+    }), 0)).toEqual([]);
+  });
+
+  test("changing only the MIDI trigger route re-arms scanning without dropping the video frame", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      sourceKey: "clip-a",
+      triggerKey: "part-a:1",
+      midiNotes: [{ time: 0.6 }],
+    });
+    runtime.advance(transport(0), []);
+    const before = runtime.getFrame();
+    runtime.generatedTriggerEvents(transport(0), 0);
+
+    runtime.configureTimeSampler({
+      controls: CONTROLS,
+      sourceDurationSeconds: 8,
+      sourceKey: "clip-a",
+      triggerKey: "part-b:0.4",
+      midiNotes: [{ time: 0.7 }],
+    });
+
+    expect(runtime.getFrame()).toBe(before);
+    expect(runtime.generatedTriggerEvents(transport(2, { transportSeconds: 1 }), 0)).toEqual([]);
+  });
 });
 
 describe("central deterministic PGM schedule", () => {

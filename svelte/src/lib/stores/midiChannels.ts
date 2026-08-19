@@ -25,7 +25,8 @@ export interface MidiChannel {
   color: string;
   /** Rack imports retain this exact parsed note-array identity. */
   notes?: MidiLayer['notes'];
-  moduleId?: string;
+  /** Stable display identity; parsed notes remain the runtime identity. */
+  identity?: string;
 }
 
 /**
@@ -97,12 +98,14 @@ export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
       const onsets = collapseToOnsets(times);
       added.push({
         id: `midi-${channelSeq++}`,
+        identity: `${file.name}:${file.size}:${file.lastModified}`,
         name: channelNameFromFile(file.name),
         onsets,
         noteCount: data.notes.length,
         duration: data.duration,
         firstOnset: onsets[0] ?? 0,
-        color: CHANNEL_COLORS[channelSeq % CHANNEL_COLORS.length]
+        color: CHANNEL_COLORS[channelSeq % CHANNEL_COLORS.length],
+        notes: data.notes
       });
     } catch (error) {
       console.error(`[midi] failed to parse ${file.name}:`, error);
@@ -114,30 +117,6 @@ export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
   // after an import and reads as a failed parse.
   if (get(activeChannelId) === null) activeChannelId.set(added[0].id);
   return added;
-}
-
-/** Publish one rack import to Arrange without parsing or copying it again. */
-export function registerModuleMidiChannel(moduleId: string, layer: MidiLayer): MidiChannel {
-  const onsets = collapseToOnsets(layer.notes.map((note) => note.time));
-  const channel: MidiChannel = {
-    id: `module-${moduleId}`,
-    name: channelNameFromFile(layer.name),
-    onsets,
-    noteCount: layer.notes.length,
-    duration: layer.duration,
-    firstOnset: onsets[0] ?? 0,
-    color: CHANNEL_COLORS[channelSeq++ % CHANNEL_COLORS.length],
-    notes: layer.notes,
-    moduleId
-  };
-  midiChannels.update((list) => [...list.filter((item) => item.moduleId !== moduleId), channel]);
-  activeChannelId.set(channel.id);
-  return channel;
-}
-
-export function removeModuleMidiChannel(moduleId: string) {
-  const channel = get(midiChannels).find((item) => item.moduleId === moduleId);
-  if (channel) removeMidiChannel(channel.id);
 }
 
 export function removeMidiChannel(id: string) {

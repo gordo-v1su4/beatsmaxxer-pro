@@ -83,21 +83,29 @@ export function triggerAgeBeats(
   return ((seconds - times[lo]) * safeBpm) / 60;
 }
 
-/** Map the audio transport onto a repeating MIDI part without mutating either. */
-export function midiPartPosition(seconds: number, duration: number): number {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
-  if (!Number.isFinite(duration) || duration <= 0) return seconds;
-  const position = seconds % duration;
-  return position === 0 ? duration : position;
+/** Most recent kept note at or before the absolute song position. */
+export function lastTriggerTime(
+  times: readonly number[],
+  seconds: number
+): number | null {
+  if (times.length === 0 || seconds < times[0]) return null;
+  let lo = 0;
+  let hi = times.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (times[mid] <= seconds) lo = mid;
+    else hi = mid - 1;
+  }
+  return times[lo] ?? null;
 }
 
-/** Visual hits obey transport state and use the same repeating part position. */
+/** Visual hits use absolute song time and always clear while stopped. */
 export function noteIsHighlighted(
   noteSeconds: number,
   transportSeconds: number,
-  duration: number,
+  _duration: number,
   playing: boolean,
   windowSeconds = 0.05
 ): boolean {
-  return playing && Math.abs(noteSeconds - midiPartPosition(transportSeconds, duration)) < windowSeconds;
+  return playing && Math.abs(noteSeconds - transportSeconds) < windowSeconds;
 }

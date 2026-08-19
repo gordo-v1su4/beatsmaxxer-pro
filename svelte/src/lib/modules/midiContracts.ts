@@ -44,5 +44,11 @@ export const MIDI_TIMING_CONTRACTS = {
 } as const satisfies Record<string, MidiTimingContract>;
 
 export function supportsModuleMidi(moduleId: string): boolean {
-  return MIDI_TIMING_CONTRACTS[moduleId]?.timingClass !== 'none';
+  const timingClass = (MIDI_TIMING_CONTRACTS as Record<string, MidiTimingContract>)[moduleId]?.timingClass;
+  return timingClass === 'trigger' || timingClass === 'modulation';
+}
+
+export function moduleMidiContract(moduleId: string): MidiTimingContract {
+  return (MIDI_TIMING_CONTRACTS as Record<string, MidiTimingContract>)[moduleId]
+    ?? none('Unknown module; no MIDI event consumer is available.');
 }
