@@ -458,7 +458,7 @@
               active={leakTab === t.k}
               {color}
               width={44}
-              onclick={() => (leakTab = t.k)}
+              onclick={() => (leakTab = t.k as typeof leakTab)}
             />
           {/each}
         </div>

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { MODULE_CATALOG, catalogIds } from '$lib/modules/catalog';
 import { MODULE_PRESETS } from '$lib/modules/presets';
 import {
+  MODULE_FX_IDLE_WGSL,
   MODULE_FX_WGSL,
   SHADER_EFFECT_MODE
 } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
@@ -101,6 +102,42 @@ describe('module shader identity contract', () => {
       expect(source).toContain('u.p1');
       expect(source).toContain('u.p2');
     }
+  });
+
+  test('runs the real requested film effects over the idle test-card source', () => {
+    const requestedFilmEffects = [
+      ['Anamorphic', 9],
+      ['Grain', 10],
+      ['Leak', 11],
+      ['Halation', 13],
+      ['Vhs', 15]
+    ] as const;
+
+    expect(MODULE_FX_IDLE_WGSL).toContain('col = testCard(uv);');
+    expect(MODULE_FX_IDLE_WGSL).toContain('let dry = sampleSource(uv);');
+    for (const [effect, mode] of requestedFilmEffects) {
+      expect(MODULE_FX_IDLE_WGSL).toContain(`mode == ${mode}.0) { wet = effect${effect}(dry, uv); }`);
+    }
+    expect(MODULE_FX_IDLE_WGSL).toContain('let rgb = mix(dry, wet, m)');
+  });
+
+  test('keeps requested idle cards as effect inputs rather than pre-rendered outputs', () => {
+    const idleGraphic = MODULE_FX_WGSL.match(/fn idleGraphic\([^]*?\n\}/)?.[0];
+    expect(idleGraphic).toBeDefined();
+
+    for (const mode of [9, 10, 13, 15]) {
+      const branch = idleGraphic?.match(
+        new RegExp(`mode == ${mode}\\.0\\) \\{([^]*?)(?=\\n  \\} else if|\\n  \\} else \\{)`)
+      )?.[1];
+      expect(branch, `idle mode ${mode}`).toContain('idlePictureSubject');
+    }
+
+    const leakBranch = idleGraphic?.match(
+      /mode == 11\.0\) \{([^]*?)(?=\n  \} else if)/
+    )?.[1];
+    expect(leakBranch).toBeDefined();
+    const leakCode = leakBranch?.replace(/\/\/.*$/gm, '');
+    expect(leakCode).not.toMatch(/leakField|effectLeak|ghost|flareLine|scanline|vhsNoise/);
   });
 
   test('uses shared deterministic uniforms and clamps final output', () => {

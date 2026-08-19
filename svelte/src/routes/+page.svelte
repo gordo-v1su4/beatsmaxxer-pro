@@ -39,6 +39,7 @@
   } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
+  import { moduleAcceptsMidi } from '$lib/modules/midiProfiles';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
@@ -185,6 +186,10 @@
   }
 
   async function setModuleMidi(id: string, file: File) {
+    if (!moduleAcceptsMidi(id)) {
+      console.warn(`[midi] ${id} has no meaningful MIDI consumer; ${file.name} was not attached.`);
+      return;
+    }
     try {
       const buffer = await file.arrayBuffer();
       const data = parseMidi(buffer);
