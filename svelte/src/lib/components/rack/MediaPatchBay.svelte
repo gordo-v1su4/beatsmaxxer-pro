@@ -42,7 +42,7 @@
   });
 
   let videoInput: HTMLInputElement;
-  let midiInput: HTMLInputElement;
+  let midiInput = $state<HTMLInputElement>();
 
   function uploadStyle(active: boolean) {
     return `height:16px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'}`;
@@ -102,13 +102,14 @@
     </button>
   {/if}
 
-  <div style="width:1px;height:14px;background:#1a1d22;flex-shrink:0"></div>
-
-  <input bind:this={midiInput} type="file" accept=".mid,.midi" class="hidden" onchange={onMidiChange} />
-  <button type="button" style={uploadStyle(!!midiLayer)} onclick={() => midiInput?.click()}>
-    MIDI
-  </button>
-  {#if midiLayer}
+  {#if onSetMidi}
+    <div style="width:1px;height:14px;background:#1a1d22;flex-shrink:0"></div>
+    <input bind:this={midiInput} type="file" accept=".mid,.midi" class="hidden" onchange={onMidiChange} />
+    <button type="button" style={uploadStyle(!!midiLayer)} onclick={() => midiInput?.click()}>
+      MIDI
+    </button>
+  {/if}
+  {#if midiLayer && onSetMidi}
     <span
       style="font-family:var(--font-mono);font-size:7px;color:{color};max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
       title={midiLayer.name}

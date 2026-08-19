@@ -157,13 +157,16 @@
         }}
         onSetVideos={onVideosUpload}
         {midiLayer}
-        onSetMidi={(file) => (file ? onMidiUpload?.(file) : onClearMidi?.())}
+        onSetMidi={mod.midiControl
+          ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
+          : undefined}
       />
-      {#if midiLayer}
+      {#if midiLayer && mod.midiControl}
         <MidiTimeline
           color={mod.accentColor}
           {midiLayer}
           moduleId={mod.id}
+          behavior={mod.midiControl}
           source={$moduleTriggerSource[mod.id] ?? 'audio'}
           onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
           density={params.density ?? 100}

@@ -79,3 +79,22 @@ export function triggerAgeBeats(
   const safeBpm = bpm > 0 ? bpm : 120;
   return ((seconds - times[lo]) * safeBpm) / 60;
 }
+
+/** Map the audio transport onto a repeating MIDI part without mutating either. */
+export function midiPartPosition(seconds: number, duration: number): number {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  if (!Number.isFinite(duration) || duration <= 0) return seconds;
+  const position = seconds % duration;
+  return position === 0 ? duration : position;
+}
+
+/** Visual hits obey transport state and use the same repeating part position. */
+export function noteIsHighlighted(
+  noteSeconds: number,
+  transportSeconds: number,
+  duration: number,
+  playing: boolean,
+  windowSeconds = 0.05
+): boolean {
+  return playing && Math.abs(noteSeconds - midiPartPosition(transportSeconds, duration)) < windowSeconds;
+}

@@ -16,6 +16,8 @@ export interface ModuleDefinition extends ModuleConfig {
   /** WGSL shader registry key */
   shaderKey?: string;
   description?: string;
+  /** Notes either fire an event or modulate an otherwise continuous effect. */
+  midiControl?: 'trigger' | 'modulation';
 }
 
 const defs: ModuleDefinition[] = [
@@ -28,6 +30,7 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'transition',
     description: '16 beat-synced transition moves',
+    midiControl: 'trigger',
     params: {
       type: 0, interval: 36, duration: 40, amount: 60, trig: 0,
       mix: 100, in_: 80, out: 75
@@ -61,6 +64,7 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'tapdelay',
     description: 'Holds a frame on the beat division',
+    midiControl: 'trigger',
     params: {
       // time = LEN, feedback = HOLD, feel = grid, gate = how much of the
       // division the freeze occupies. The old type/velCrv/end/start/
@@ -79,6 +83,7 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'timesampler',
     description: 'Slice sampler jumps',
+    midiControl: 'trigger',
     params: {
       // loops was 2, so every slice retriggered twice before advancing — which
       // is a stutter, and made the sampler read as the same effect as TAPDELAY.
@@ -97,6 +102,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'punch',
     description: 'Crash zoom punch',
+    midiControl: 'trigger',
     params: { dir: 50, amt: 60, snap: 55, mix: 100 }
   },
   {
@@ -109,6 +115,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'shake',
     description: 'Handheld camera shake',
+    midiControl: 'modulation',
     params: { hand: 40, impact: 55, sway: 30, mix: 100 }
   },
   {
@@ -121,6 +128,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'orbit',
     description: 'Slow orbital drift',
+    midiControl: 'modulation',
     params: { spd: 35, drift: 50, nudge: 40, mix: 100 }
   },
   {
@@ -168,6 +176,7 @@ const defs: ModuleDefinition[] = [
     category: 'film',
     shaderKey: 'leak',
     description: 'Iris ghosts, anamorphic, spikes, rings, edge fog, veil, prism',
+    midiControl: 'trigger',
     // `type` selects the leak geometry, not a tint. It is read as a discrete
     // index by the shader, so the preset values below sit exactly on 0..6.
     // freq = how often a pass fires (0 is off entirely), hold = how long one
@@ -190,6 +199,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'dutch',
     description: 'Tilted horizon drift',
+    midiControl: 'modulation',
     params: { tilt: 45, drift: 40, snap: 30, mix: 100 }
   },
   {
@@ -217,6 +227,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'bulge',
     description: 'Pinch to bulge, on or off the beat',
+    midiControl: 'modulation',
     // amount is signed around 50 now: below pinches, above bulges. 50 is
     // neutral, so the default sits slightly bulged rather than at one extreme.
     params: { amount: 65, center: 50, falloff: 55, beat: 0, mix: 75 }
@@ -231,6 +242,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'vhs',
     description: 'Tape wave, tracking, chroma + beat glitch',
+    midiControl: 'modulation',
     params: { tracking: 35, chroma: 45, noise: 30, beat: 40, mix: 60 }
   },
   {
@@ -254,6 +266,7 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'streak',
     description: 'Directional velocity streaks',
+    midiControl: 'modulation',
     params: { length: 50, angle: 35, decay: 45, mix: 60, in_: 80, out: 70 }
   },
   {
@@ -266,6 +279,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'mirror',
     description: 'Reflection folds: mirror planes, slabs, boxes',
+    midiControl: 'modulation',
     params: { fold: 0, offset: 50, spin: 50, beat: 40, mix: 100 }
   },
   {
@@ -278,6 +292,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'lens',
     description: 'Fisheye to tele-crush glass + beat pump',
+    midiControl: 'modulation',
     params: { amount: 75, zoom: 50, edge: 45, beat: 30, mix: 100 }
   }
 ];

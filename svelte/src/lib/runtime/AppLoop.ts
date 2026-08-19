@@ -37,7 +37,12 @@ import {
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
 import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
-import { firingTimes, moduleTriggerSource, triggerAgeBeats } from '$lib/stores/midiTrigger';
+import {
+  firingTimes,
+  midiPartPosition,
+  moduleTriggerSource,
+  triggerAgeBeats
+} from '$lib/stores/midiTrigger';
 import { grooveSegment } from '$lib/runtime/groove';
 import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
@@ -91,7 +96,11 @@ function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
     if (!layer) continue;
     const density = (params[id]?.density ?? 100) / 100;
     const times = firingTimesFor(id, layer, density);
-    ages[id] = triggerAgeBeats(times, frame.positionSeconds, frame.bpm);
+    ages[id] = triggerAgeBeats(
+      times,
+      midiPartPosition(frame.positionSeconds, layer.duration),
+      frame.bpm
+    );
   }
   return ages;
 }
@@ -396,6 +405,21 @@ function configureTimeSampler() {
    * would be a lie if the module's own attached file quietly kept priority.
    */
   const tsMidi = (() => {
+    const cardSource = get(moduleTriggerSource).timesampler ?? 'audio';
+    if (cardSource === 'midi') {
+      const layer = get(midiLayers).timesampler;
+      if (!layer) return null;
+      const density = (tsParams.density ?? 100) / 100;
+      return {
+        name: layer.name,
+        notes: firingTimesFor('timesampler', layer, density).map((time) => ({
+          time,
+          note: 60,
+          velocity: 100
+        })),
+        duration: layer.duration
+      };
+    }
     if (get(triggerSource) !== 'midi') return null;
     const channel = get(activeChannel);
     if (channel) {

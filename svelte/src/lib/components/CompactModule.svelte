@@ -2,6 +2,7 @@
   import { Film, Upload, X } from '@lucide/svelte';
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import type { VideoLayer } from '$lib/engine/contracts';
+  import type { MidiLayer } from '$lib/stores/rack';
   import { parseAccentColor } from '$lib/modules/registry';
   import { presetsForModule } from '$lib/modules/presets';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
@@ -24,16 +25,21 @@
   // size, so it moved somewhere both surfaces import from — the values are
   // unchanged, and a new variant now lands on both at once.
   import { COMPACT_CONTROLS, primaryTolerance } from '$lib/mobile/moduleControlSpecs';
+  import MidiTimeline from '$lib/components/MidiTimeline.svelte';
+  import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
 
   interface Props {
     mod: ModuleDefinition;
     params: Record<string, number>;
     canvasId?: string;
     videoLayer?: VideoLayer | null;
+    midiLayer?: MidiLayer | null;
     isOnAir?: boolean;
     onVideoUpload?: (file: File) => void;
     onVideosUpload?: (files: File[]) => void;
     onClearVideo?: () => void;
+    onMidiUpload?: (file: File) => void;
+    onClearMidi?: () => void;
     onHeaderPointerDown?: (e: PointerEvent) => void;
   }
 
@@ -42,16 +48,20 @@
     params,
     canvasId,
     videoLayer = null,
+    midiLayer = null,
     isOnAir = false,
     onVideoUpload,
     onVideosUpload,
     onClearVideo,
+    onMidiUpload,
+    onClearMidi,
     onHeaderPointerDown
   }: Props = $props();
 
   let dragOver = $state(false);
   let dragDepth = $state(0);
   let fileInput: HTMLInputElement;
+  let midiInput = $state<HTMLInputElement>();
 
   const color = $derived(parseAccentColor(mod.accentColor));
   const slotCanvasId = $derived(canvasId ?? mod.id);
@@ -70,6 +80,8 @@
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
     else if (clips[0] && onVideoUpload) onVideoUpload(clips[0]);
+    const midi = files.find((file) => /\.midi?$/i.test(file.name));
+    if (midi) onMidiUpload?.(midi);
   }
 </script>
 
@@ -129,6 +141,26 @@
         (e.target as HTMLInputElement).value = '';
       }}
     />
+    {#if mod.midiControl}
+      <input
+        bind:this={midiInput}
+        type="file"
+        accept=".mid,.midi"
+        class="hidden"
+        onchange={(e) => {
+          const input = e.currentTarget;
+          const file = input.files?.[0];
+          if (file) onMidiUpload?.(file);
+          input.value = '';
+        }}
+      />
+      <button
+        type="button"
+        onclick={() => midiInput?.click()}
+        title={midiLayer ? midiLayer.name : 'Load MIDI part'}
+        style="height:14px;padding-inline:4px;background:linear-gradient(180deg,#191d22,#121519);border:1px solid {midiLayer ? mod.accentColor + '55' : '#1a1d22'};border-radius:2px;cursor:pointer;color:{midiLayer ? mod.accentColor : '#445060'};font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.08em"
+      >MIDI</button>
+    {/if}
     <button
       type="button"
       onclick={() => fileInput?.click()}
@@ -161,6 +193,20 @@
     <HeaderBtn label="B" active={$bypassed[mod.id]} activeColor="#ef4444" onclick={() => toggleBypass(mod.id)} />
     <Screw />
   </div>
+
+  {#if !collapsed && mod.midiControl && midiLayer}
+    <MidiTimeline
+      color={mod.accentColor}
+      {midiLayer}
+      moduleId={mod.id}
+      behavior={mod.midiControl}
+      source={$moduleTriggerSource[mod.id] ?? 'audio'}
+      onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
+      density={params.density ?? 100}
+      onDensityChange={(value) => updateParam(mod.id, 'density', Math.round(value))}
+      {onClearMidi}
+    />
+  {/if}
 
   <div class="module-preview">
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />

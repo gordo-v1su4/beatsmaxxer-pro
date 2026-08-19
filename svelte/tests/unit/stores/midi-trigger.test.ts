@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { firingTimes, noteFires, triggerAgeBeats } from '$lib/stores/midiTrigger';
+import {
+  firingTimes,
+  midiPartPosition,
+  noteFires,
+  noteIsHighlighted,
+  triggerAgeBeats
+} from '$lib/stores/midiTrigger';
 import type { MidiLayer } from '$lib/stores/rack';
 
 function layer(times: number[], velocity = 100): MidiLayer {
@@ -73,5 +79,13 @@ describe('MIDI trigger source', () => {
     const part = layer([3, 0, 2, 1]);
     const times = firingTimes(part, 1);
     expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+
+  test('seek and loop map onto the same MIDI part while pause suppresses highlights', () => {
+    expect(midiPartPosition(2.25, 2)).toBeCloseTo(0.25);
+    expect(midiPartPosition(2, 2)).toBe(2);
+    expect(midiPartPosition(0.25, 2)).toBeCloseTo(0.25);
+    expect(noteIsHighlighted(0.25, 2.25, 2, true)).toBe(true);
+    expect(noteIsHighlighted(0.25, 2.25, 2, false)).toBe(false);
   });
 });

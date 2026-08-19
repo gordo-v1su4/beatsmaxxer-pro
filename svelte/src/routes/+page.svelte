@@ -41,6 +41,10 @@
   import { parseMidi } from '$lib/audio/MidiParser';
   import { moduleAcceptsMidi } from '$lib/modules/midiProfiles';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
+  import {
+    registerModuleMidiChannel,
+    removeModuleMidiChannel
+  } from '$lib/stores/midiChannels';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
@@ -193,10 +197,10 @@
     try {
       const buffer = await file.arrayBuffer();
       const data = parseMidi(buffer);
-      midiLayers.update((layers) => ({
-        ...layers,
-        [id]: { name: file.name, notes: data.notes, duration: data.duration }
-      }));
+      const layer = { name: file.name, notes: data.notes, duration: data.duration };
+      midiLayers.update((layers) => ({ ...layers, [id]: layer }));
+      registerModuleMidiChannel(id, layer);
+      setModuleTriggerSource(id, 'midi');
     } catch (err) {
       console.error('Failed to parse MIDI file:', err);
     }
@@ -204,6 +208,7 @@
 
   function clearModuleMidi(id: string) {
     midiLayers.update((layers) => ({ ...layers, [id]: null }));
+    removeModuleMidiChannel(id);
     // Hand the module back to the track. Leaving it on 'midi' with no part
     // loaded would silently stop it reacting to anything at all, and the only
     // control that could undo that has just been removed from the UI along with
@@ -333,6 +338,8 @@
             onVideoUpload={(f) => setSlotVideo(`bottom-${i}`, f)}
             onVideosUpload={(files) => loadClipsFromModule(`bottom-${i}`, files)}
             onClearVideo={() => clearSlotVideo(`bottom-${i}`)}
+            onMidiUpload={(f) => setModuleMidi(moduleId, f)}
+            onClearMidi={() => clearModuleMidi(moduleId)}
           />
         {/each}
         {#each Array(MAX_RACK_SLOTS_PER_ROW - $rackBottom.length) as _, offset (`bottom-empty-${offset}`)}

@@ -3,7 +3,8 @@
   import { getModuleDef } from '$lib/modules/catalog';
   import { sequencerArmed } from '$lib/stores/sequencer';
   import { transportDisplay } from '$lib/stores/transportDisplay';
-  import { rackTop, rackBottom, MAX_RACK_SLOTS_PER_ROW } from '$lib/stores/rack';
+  import { rackTop, rackBottom, moduleParams, MAX_RACK_SLOTS_PER_ROW } from '$lib/stores/rack';
+  import { firingTimes, noteIsHighlighted } from '$lib/stores/midiTrigger';
   import {
     activeChannelId,
     addMidiChannels,
@@ -116,7 +117,26 @@
   const analysisEndPct = $derived(audioTicks.length > 0 ? audioTicks[audioTicks.length - 1] : 0);
   const analysisTruncated = $derived(audioTicks.length > 0 && analysisEndPct < 92);
   const channelTicks = $derived(
-    $midiChannels.map((channel) => ({ channel, ticks: bucketTicks(channel.onsets) }))
+    $midiChannels.map((channel) => {
+      const density = channel.moduleId ? ($moduleParams[channel.moduleId]?.density ?? 100) / 100 : 1;
+      const times = channel.notes
+        ? firingTimes({ name: channel.name, notes: channel.notes, duration: channel.duration }, density)
+        : channel.onsets;
+      return {
+        channel,
+        density,
+        keptCount: times.length,
+        ticks: times.map((time) => ({
+          left: pct(stepAtSeconds(time)),
+          active: noteIsHighlighted(
+            time,
+            $transportDisplay.time,
+            channel.duration,
+            $transportDisplay.playing
+          )
+        }))
+      };
+    })
   );
 
   /** Cuts grouped per slot lane. */
@@ -312,21 +332,27 @@
       </div>
     </div>
 
-    {#each channelTicks as { channel, ticks } (channel.id)}
+    {#each channelTicks as { channel, ticks, density, keptCount } (channel.id)}
       <div class="arr-row arr-row-chan">
         <button
           type="button"
           class="arr-gutter arr-gutter-chan arr-gutter-midi"
           data-active={$activeChannelId === channel.id}
           onclick={() => activeChannelId.set(channel.id)}
-          title="{channel.name} — {channel.onsets.length} hits from {channel.noteCount} notes"
+          title="{channel.name} — {keptCount}/{channel.noteCount} notes fire at {Math.round(density * 100)}% density"
         >
           <span class="arr-chan-dot" style="background:{channel.color}"></span>
           {channel.name}
+          {#if channel.moduleId}<small>{keptCount}/{channel.noteCount} · {Math.round(density * 100)}%</small>{/if}
         </button>
         <div class="arr-track arr-chan">
-          {#each ticks as left, i (i)}
-            <span class="arr-tick" style="left:{left}%;background:{channel.color}"></span>
+          {#each ticks as tick, i (i)}
+            <span
+              class="arr-tick"
+              class:arr-tick-active={tick.active}
+              data-active={tick.active}
+              style="left:{tick.left}%;background:{channel.color}"
+            ></span>
           {/each}
           <button
             type="button"
@@ -350,6 +376,17 @@
 </section>
 
 <style>
+  .arr-gutter-chan small {
+    display: block;
+    font-size: 5.5px;
+    color: #52606d;
+  }
+
+  .arr-tick-active {
+    width: 2px !important;
+    box-shadow: 0 0 7px currentColor;
+    opacity: 1 !important;
+  }
   .arrange {
     --arr-gutter-w: 74px;
     flex: 1;

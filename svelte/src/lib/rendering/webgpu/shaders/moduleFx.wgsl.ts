@@ -846,11 +846,16 @@ fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
   // On the rack groove, not a plain modulo. This ran straight through a swung
   // song no matter what the PGM rail said, so the one module whose entire job is
   // arriving on the beat arrived on the wrong one.
-  let seg = grooveSegment(u.beat, intervalBeats);
-  let beatInCycle = u.beat - seg.x;
+  var seg = grooveSegment(u.beat, intervalBeats);
+  var beatInCycle = u.beat - seg.x;
   // The move keeps its own length and lands ON the boundary, so a short swing
   // segment shortens the gap before the move rather than squashing the move.
-  let start = max(seg.y - durBeats, 0.0);
+  var start = max(seg.y - durBeats, 0.0);
+  if (u.triggerAge >= 0.0) {
+    beatInCycle = u.triggerAge;
+    start = 0.0;
+    seg.y = durBeats;
+  }
   if (beatInCycle < start) { return col; }
 
   let p = clamp((beatInCycle - start) / max(seg.y - start, 0.0001), 0.0, 1.0);
@@ -924,7 +929,10 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // short, long. Swing was not slightly off, it was a different rhythm.
   let stutterSeg = grooveSegmentFeel(u.beat, len, feel);
   let seg = stutterSeg.y;
-  let prog = clamp((u.beat - stutterSeg.x) / max(stutterSeg.y, 0.0001), 0.0, 1.0);
+  var prog = clamp((u.beat - stutterSeg.x) / max(stutterSeg.y, 0.0001), 0.0, 1.0);
+  if (u.triggerAge >= 0.0) {
+    prog = u.triggerAge / max(len, 0.0001);
+  }
 
   // Capture window: wide enough to survive a dropped frame at any sane division,
   // narrow enough that the held frame is the one on the beat and not a later one.

@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { MidiLayer } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
-  import { noteFires, type ModuleTriggerSource } from '$lib/stores/midiTrigger';
+  import {
+    noteFires,
+    noteIsHighlighted,
+    type ModuleTriggerSource
+  } from '$lib/stores/midiTrigger';
   import { analyseMidiTiming, formatMidiTiming } from '$lib/stores/midiTiming';
   import { analysisBeatGrid } from '$lib/stores/triggerLane';
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
@@ -17,6 +21,8 @@
     /** 0-100. What share of the part's notes actually fire. */
     density?: number;
     onDensityChange?: (value: number) => void;
+    behavior?: 'trigger' | 'modulation';
+    onClearMidi?: () => void;
   }
 
   let {
@@ -26,7 +32,9 @@
     source = 'audio',
     onSourceChange,
     density = 100,
-    onDensityChange
+    onDensityChange,
+    behavior = 'trigger',
+    onClearMidi
   }: Props = $props();
 
   const td = $derived($transportDisplay);
@@ -57,7 +65,7 @@
 </script>
 
 <div class="midi-trigger-bar">
-  <span class="midi-trigger-label">TRIG</span>
+  <span class="midi-trigger-label">{behavior === 'trigger' ? 'HIT SRC' : 'MOD SRC'}</span>
   <!-- Two buttons rather than one toggle: the exclusivity is the point, so both
        options stay visible and which one is live is never in doubt. -->
   <RackBtn
@@ -87,6 +95,9 @@
   <span class="midi-trigger-value" style="opacity:{active ? 1 : 0.35}">
     {Math.round(density)}%
   </span>
+  {#if onClearMidi}
+    <button class="midi-clear" type="button" onclick={onClearMidi} title="Remove MIDI and return to audio">×</button>
+  {/if}
 </div>
 
 <!-- Its own line, not squeezed into the control row: sharing that row shrank the
@@ -120,7 +131,7 @@
     {@const pct = ((note.time - windowStart) / windowSize) * 100}
     {@const fires = !active || noteFires(index, note.velocity, density / 100)}
     {@const opacity = Math.min(1, note.velocity / 127)}
-    {@const glow = Math.abs(note.time - td.time) < 0.05 && fires}
+    {@const glow = noteIsHighlighted(note.time, td.time, midiLayer.duration, td.playing) && fires}
     <!-- Notes DENSITY drops are drawn faint rather than hidden, so turning the
          dial shows which hits were thinned out instead of silently shortening
          the lane. -->
@@ -194,5 +205,17 @@
     width: 22px;
     text-align: right;
     flex-shrink: 0;
+  }
+
+  .midi-clear {
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: 1px solid #342020;
+    border-radius: 2px;
+    background: #1b1212;
+    color: #c46b6b;
+    cursor: pointer;
+    line-height: 11px;
   }
 </style>
