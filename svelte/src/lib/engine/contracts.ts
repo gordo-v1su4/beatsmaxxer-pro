@@ -37,6 +37,8 @@ export interface AudioEngineState {
   usingUploadedTrack: boolean;
   analysisStatus: AnalysisStatus;
   analysisConfidence: number | null;
+  /** Duration of the bounded excerpt actually analysed, not the full song. */
+  analysisDuration: number;
   analysisError: string | null;
   /**
    * Bumped whenever a new onset list lands. The list itself is thousands of
@@ -59,6 +61,7 @@ export interface IAudioEngine {
   getLiveScheduleFrame(): LiveScheduleFrame | null;
   setBPM(bpm: number): void;
   unlockBPM(): void;
+  seek(seconds: number): void;
   tapTempo(): void;
 }
 

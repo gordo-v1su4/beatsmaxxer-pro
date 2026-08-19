@@ -64,7 +64,14 @@
   const timingLabel = $derived(formatMidiTiming(timing));
 </script>
 
-<div class="midi-trigger-bar">
+<div
+  class="midi-trigger-bar"
+  data-midi-identity={midiLayer.identity ?? midiLayer.name}
+  data-midi-source={source}
+  data-midi-kept={midiLayer.notes.filter((note, index) => noteFires(index, note.velocity, density / 100)).length}
+  data-midi-total={midiLayer.notes.length}
+  data-midi-density={Math.round(density)}
+>
   <span class="midi-trigger-label">{behavior === 'trigger' ? 'HIT SRC' : 'MOD SRC'}</span>
   <!-- Two buttons rather than one toggle: the exclusivity is the point, so both
        options stay visible and which one is live is never in doubt. -->

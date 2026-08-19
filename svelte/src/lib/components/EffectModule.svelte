@@ -30,6 +30,7 @@
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
+  import { MIDI_TIMING_CONTRACTS } from '$lib/modules/midiContracts';
 
   interface Props {
     mod: ModuleDefinition;
@@ -72,6 +73,7 @@
   const td = $derived($transportDisplay);
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
   const clipEntry = $derived($clipStatusStore[mediaSlotId ?? slotCanvasId]);
+  const midiContract = $derived(MIDI_TIMING_CONTRACTS[mod.id]);
 
   function applyVideoFiles(files: File[]) {
     const clips = files.filter(isVideoFile);
@@ -87,6 +89,8 @@
 <div
   class="rack-module"
   data-bmx-module-id={mod.id}
+  data-midi-source={$moduleTriggerSource[mod.id] ?? 'audio'}
+  data-midi-identity={midiLayer?.identity ?? ''}
   class:is-collapsed={collapsed}
   style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
@@ -157,6 +161,8 @@
         }}
         onSetVideos={onVideosUpload}
         {midiLayer}
+        midiSupported={mod.midiControl !== undefined}
+        midiReason={midiContract?.consumer ?? 'No timing contract'}
         onSetMidi={mod.midiControl
           ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
           : undefined}

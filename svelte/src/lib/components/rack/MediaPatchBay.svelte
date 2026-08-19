@@ -14,6 +14,8 @@
     onSetVideos?: (files: File[]) => void;
     midiLayer?: MidiLayer | null;
     onSetMidi?: (file: File | null) => void;
+    midiSupported?: boolean;
+    midiReason?: string;
   }
   let {
     color,
@@ -24,7 +26,9 @@
     onSetVideo,
     onSetVideos,
     midiLayer = null,
-    onSetMidi
+    onSetMidi,
+    midiSupported = false,
+    midiReason = 'This effect has no MIDI event consumer.'
   }: Props = $props();
 
   const statusLabel = $derived.by(() => {
@@ -102,14 +106,17 @@
     </button>
   {/if}
 
-  {#if onSetMidi}
-    <div style="width:1px;height:14px;background:#1a1d22;flex-shrink:0"></div>
+  <div style="width:1px;height:14px;background:#1a1d22;flex-shrink:0"></div>
+
+  {#if midiSupported}
     <input bind:this={midiInput} type="file" accept=".mid,.midi" class="hidden" onchange={onMidiChange} />
-    <button type="button" style={uploadStyle(!!midiLayer)} onclick={() => midiInput?.click()}>
+    <button type="button" style={uploadStyle(!!midiLayer)} onclick={() => midiInput?.click()} title={midiReason}>
       MIDI
     </button>
+  {:else}
+    <span title={midiReason} style="font:6px var(--font-ui);letter-spacing:.08em;color:#3f4850">NO MIDI</span>
   {/if}
-  {#if midiLayer && onSetMidi}
+  {#if midiSupported && midiLayer}
     <span
       style="font-family:var(--font-mono);font-size:7px;color:{color};max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
       title={midiLayer.name}

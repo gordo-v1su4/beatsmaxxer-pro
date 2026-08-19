@@ -48,6 +48,7 @@ import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
 import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
+import { moduleAcceptsMidi } from '$lib/modules/timingContracts';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
 let running = false;
@@ -68,7 +69,7 @@ const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
 const midiFiringCache = new Map<string, { key: string; times: number[] }>();
 
 function firingTimesFor(moduleId: string, layer: MidiLayer | null, density: number): number[] {
-  const key = `${layer?.name ?? ''}:${layer?.notes.length ?? 0}:${density.toFixed(3)}`;
+  const key = `${layer?.identity ?? ''}:${density.toFixed(3)}`;
   const hit = midiFiringCache.get(moduleId);
   if (hit && hit.key === key) return hit.times;
   const times = firingTimes(layer, density);
@@ -91,7 +92,7 @@ function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
   const layers = get(midiLayers);
   const params = get(moduleParams);
   for (const id of ids) {
-    if (sources[id] !== 'midi') continue;
+    if (sources[id] !== 'midi' || !moduleAcceptsMidi(id)) continue;
     const layer = layers[id];
     if (!layer) continue;
     const density = (params[id]?.density ?? 100) / 100;

@@ -13,6 +13,13 @@
     removeMidiChannel
   } from '$lib/stores/midiChannels';
   import { analysisBeatGrid, analysisOnsets } from '$lib/stores/triggerLane';
+  import { audioEngine } from '$lib/audio';
+  import {
+    arrangementTimelineScale,
+    secondsStep,
+    stepPercent,
+    stepSeconds
+  } from '$lib/arrangement/timelineScale';
   import {
     ARRANGEMENT_STEPS,
     activeSectionIndex,
@@ -31,17 +38,35 @@
   let midiInput = $state<HTMLInputElement>();
   /** Which slot a click on empty track paints. */
   let paintSlot = $state(0);
+  let zoom = $state(1);
 
   const slotCount = $derived($rackTop.length + $rackBottom.length);
   const totalSteps = $derived($arrangementTotalSteps);
   const totalBars = $derived(totalSteps / ARRANGEMENT_STEPS);
+  const scale = $derived(arrangementTimelineScale(
+    totalSteps,
+    $transportDisplay.duration,
+    $analysisBeatGrid,
+    $transportDisplay.bpm || 120
+  ));
 
   /** Absolute sixteenth the transport is on — the whole view's x cursor. */
-  const playStep = $derived(Math.max(0, Math.floor($transportDisplay.beat * 4)));
-  const playFraction = $derived(totalSteps > 0 ? (playStep % totalSteps) / totalSteps : 0);
+  const playStep = $derived(secondsStep(
+    $transportDisplay.time,
+    $analysisBeatGrid,
+    $transportDisplay.bpm || 120
+  ));
 
   function pct(step: number) {
-    return totalSteps > 0 ? (step / totalSteps) * 100 : 0;
+    return stepPercent(step, scale);
+  }
+
+  function seekAt(event: MouseEvent) {
+    const track = event.currentTarget as HTMLElement;
+    const rect = track.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const step = scale.startStep + fraction * scale.totalSteps;
+    audioEngine.seek(stepSeconds(step, $analysisBeatGrid, $transportDisplay.bpm || 120));
   }
 
   function slotInfo(slotIndex: number) {
@@ -114,8 +139,15 @@
    * simply runs out of hits partway across. That looked like a broken lane;
    * marking the uncovered span says it is missing data, not a missing feature.
    */
-  const analysisEndPct = $derived(audioTicks.length > 0 ? audioTicks[audioTicks.length - 1] : 0);
-  const analysisTruncated = $derived(audioTicks.length > 0 && analysisEndPct < 92);
+  const analysisEndPct = $derived(
+    $transportDisplay.analysisDuration > 0
+      ? pct(secondsStep($transportDisplay.analysisDuration, $analysisBeatGrid, $transportDisplay.bpm || 120))
+      : 0
+  );
+  const analysisTruncated = $derived(
+    $transportDisplay.analysisDuration > 0 &&
+    $transportDisplay.duration > $transportDisplay.analysisDuration + 1
+  );
   const channelTicks = $derived(
     $midiChannels.map((channel) => {
       const density = channel.moduleId ? ($moduleParams[channel.moduleId]?.density ?? 100) / 100 : 1;
@@ -138,7 +170,6 @@
       };
     })
   );
-
   /** Cuts grouped per slot lane. */
   const cutsBySlot = $derived.by(() => {
     const lanes: Array<Array<{ step: number }>> = Array.from({ length: slotCount }, () => []);
@@ -161,6 +192,12 @@
   <header class="arr-head">
     <span class="arr-title">ARRANGEMENT</span>
     <span class="arr-sub">{totalBars} BARS · {$cuts.length} CUTS</span>
+
+    <span class="arr-zoom" role="group" aria-label="Timeline zoom">
+      <button type="button" class="arr-btn" onclick={() => (zoom = Math.max(1, zoom - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
+      <span>{zoom.toFixed(1)}×</span>
+      <button type="button" class="arr-btn" onclick={() => (zoom = Math.min(8, zoom + 0.5))} disabled={zoom >= 8} aria-label="Zoom in">+</button>
+    </span>
 
     <button
       type="button"
@@ -234,10 +271,11 @@
   </header>
 
   <div class="arr-scroll">
+   <div class="arr-canvas" style="width:{zoom * 100}%">
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
-      <div class="arr-track arr-sections">
+      <div class="arr-track arr-sections" role="presentation" onclick={seekAt}>
         {#each $arrangement as section, i (section.id)}
           {@const on = i === $activeSectionIndex}
           <button
@@ -247,7 +285,7 @@
             style="flex-grow:{section.bars};{on
               ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
               : ''}"
-            onclick={() => selectSection(i)}
+            onclick={(event) => { event.stopPropagation(); selectSection(i); audioEngine.seek(stepSeconds($sectionStarts[i] * ARRANGEMENT_STEPS, $analysisBeatGrid, $transportDisplay.bpm || 120)); }}
             title="{section.name} — {section.bars} bars, from bar {$sectionStarts[i] + 1}"
           >
             <span class="arr-section-tick" style="background:{section.hue}"></span>
@@ -263,7 +301,7 @@
     <!-- Bar ruler. Every 4 bars gets a number; the rest are hairlines. -->
     <div class="arr-row arr-row-ruler">
       <span class="arr-gutter"></span>
-      <div class="arr-track arr-ruler">
+      <div class="arr-track arr-ruler" role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
         {#each Array(Math.max(0, Math.ceil(totalBars / 4))) as _, i (i)}
           <span class="arr-bar" style="left:{pct(i * 4 * ARRANGEMENT_STEPS)}%">{i * 4 + 1}</span>
         {/each}
@@ -315,7 +353,7 @@
          enters in the last third reads as entering in the last third. -->
     <div class="arr-row arr-row-chan">
       <span class="arr-gutter arr-gutter-chan">AUDIO</span>
-      <div class="arr-track arr-chan" data-empty={audioTicks.length === 0}>
+      <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
         {#each audioTicks as left, i (i)}
           <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
         {/each}
@@ -345,7 +383,7 @@
           {channel.name}
           {#if channel.moduleId}<small>{keptCount}/{channel.noteCount} · {Math.round(density * 100)}%</small>{/if}
         </button>
-        <div class="arr-track arr-chan">
+        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={() => {}} title="Click to seek">
           {#each ticks as tick, i (i)}
             <span
               class="arr-tick"
@@ -357,7 +395,7 @@
           <button
             type="button"
             class="arr-chan-remove"
-            onclick={() => removeMidiChannel(channel.id)}
+            onclick={(event) => { event.stopPropagation(); removeMidiChannel(channel.id); }}
             aria-label="Remove {channel.name}"
           ><X size={9} /></button>
         </div>
@@ -371,7 +409,8 @@
     {/if}
 
     <!-- One playhead for the whole view, over every lane at once. -->
-    <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + {playFraction} * (100% - var(--arr-gutter-w)))"></span>
+    <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {pct(playStep) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
+   </div>
   </div>
 </section>
 
@@ -484,11 +523,27 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
+    overflow: auto;
     padding: 6px 10px 12px;
   }
+
+  .arr-canvas {
+    position: relative;
+    min-width: 100%;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .arr-zoom {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: #6d8288;
+    font: 7px var(--font-mono);
+  }
+  .arr-zoom .arr-btn { min-width: 18px; padding: 0; justify-content: center; }
+  .arr-btn:disabled { opacity: 0.3; }
 
   .arr-row {
     display: flex;
@@ -532,6 +587,10 @@
     font-weight: 500;
     letter-spacing: 0.12em;
     color: #33383f;
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: #0a0b0c;
   }
 
   .arr-gutter-slot {
@@ -707,6 +766,17 @@
   .arr-tick-audio {
     background: #55696e;
   }
+  .arr-row-module-midi[data-active='false'] { opacity: 0.48; }
+  .arr-gutter-module-midi { color: #809298; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .arr-tick-module.is-hit { width: 3px; opacity: 1; box-shadow: 0 0 7px currentColor; }
+  .arr-midi-count {
+    position: sticky;
+    left: calc(var(--arr-gutter-w) + 10px);
+    padding: 0 3px;
+    font: 6.5px var(--font-mono);
+    color: #526168;
+    background: rgba(10, 11, 12, 0.8);
+  }
   .arr-chan-empty {
     position: absolute;
     inset: 0 auto 0 4px;
@@ -761,6 +831,15 @@
     background: #35e08a;
     box-shadow: 0 0 6px #35e08a;
     pointer-events: none;
-    transition: left 0.12s linear;
+    transition: left 0.08s linear;
+    z-index: 2;
+  }
+
+  @media (max-width: 1200px) {
+    .arr-head { height: auto; min-height: 38px; flex-wrap: wrap; padding-block: 5px; }
+    .arr-paint { order: 3; width: 100%; margin-left: 0; overflow-x: auto; }
+    .arr-btn-load { margin-left: 0; }
+    .arrange { --arr-gutter-w: 64px; }
+    .arr-scroll { padding-inline: 6px; }
   }
 </style>

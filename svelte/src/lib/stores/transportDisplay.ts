@@ -11,6 +11,7 @@ export interface TransportDisplay {
   beat: number;
   beatPhase: number;
   time: number;
+  duration: number;
   playing: boolean;
   amplitude: number;
   bassAmp: number;
@@ -19,6 +20,7 @@ export interface TransportDisplay {
   usingUploadedTrack: boolean;
   analysisStatus: AnalysisStatus;
   analysisConfidence: number | null;
+  analysisDuration: number;
   analysisError: string | null;
 }
 
@@ -28,6 +30,7 @@ export const transportDisplay = writable<TransportDisplay>({
   beat: 0,
   beatPhase: 0,
   time: 0,
+  duration: 0,
   playing: false,
   amplitude: 0,
   bassAmp: 0,
@@ -36,6 +39,7 @@ export const transportDisplay = writable<TransportDisplay>({
   usingUploadedTrack: false,
   analysisStatus: 'idle',
   analysisConfidence: null,
+  analysisDuration: 0,
   analysisError: null
 });
 
@@ -51,6 +55,7 @@ export function startTransportPoll() {
       beat: s.beat,
       beatPhase: s.beatPhase,
       time: s.time,
+      duration: s.duration,
       playing: s.playing,
       amplitude: s.amplitude,
       bassAmp: s.bassAmp,
@@ -59,6 +64,7 @@ export function startTransportPoll() {
       usingUploadedTrack: s.usingUploadedTrack,
       analysisStatus: s.analysisStatus,
       analysisConfidence: s.analysisConfidence,
+      analysisDuration: s.analysisDuration,
       analysisError: s.analysisError
     });
     transportBpm.set(s.bpm);

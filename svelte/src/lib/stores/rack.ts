@@ -14,6 +14,8 @@ import type { DragPayload, RackRow } from '$lib/stores/drag';
 import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
 
 export interface MidiLayer {
+  /** Stable identity shared by rack, runtime, and arranger for this parse. */
+  identity?: string;
   name: string;
   /**
    * `beat` is the note's position on the file's own musical grid

@@ -108,6 +108,7 @@ export class AudioEngine implements IAudioEngine {
   private _bpmLocked = false;
   private _analysisStatus: AudioEngineState["analysisStatus"] = "idle";
   private _analysisConfidence: number | null = null;
+  private _analysisDuration = 0;
   private _analysisError: string | null = null;
   private tapTimes: number[] = [];
   private _volume = 0.72;
@@ -373,6 +374,7 @@ export class AudioEngine implements IAudioEngine {
     audioTimeline.configureSource({ id: null, positionSeconds: 0 });
     this._analysisStatus = "idle";
     this._analysisConfidence = null;
+    this._analysisDuration = 0;
     this._analysisError = null;
   }
 
@@ -492,6 +494,7 @@ export class AudioEngine implements IAudioEngine {
     this.onsetCooldown = 0;
     this._analysisStatus = hostedAnalysisRequested ? "analyzing" : "fallback";
     this._analysisConfidence = null;
+    this._analysisDuration = 0;
     this._analysisError = hostedAnalysisRequested
       ? null
       : "Local-only mode — hosted rhythm analysis was not requested.";
@@ -615,9 +618,17 @@ export class AudioEngine implements IAudioEngine {
       usingUploadedTrack: this._usingUploadedTrack,
       analysisStatus: this._analysisStatus,
       analysisConfidence: this._analysisConfidence,
+      analysisDuration: this._analysisDuration,
       analysisError: this._analysisError,
       analysisOnsetGeneration: this._analysisOnsetGeneration,
     };
+  }
+
+  /** Seek the active song; its media events re-anchor the sole AudioTimeline. */
+  seek(seconds: number) {
+    const media = this.mediaElement;
+    if (!media || !Number.isFinite(media.duration) || media.duration <= 0) return;
+    media.currentTime = Math.max(0, Math.min(media.duration, seconds));
   }
 
   /** Onset times in transport seconds. Empty unless hosted analysis succeeded. */
@@ -967,6 +978,7 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = Number.isFinite(analysis.confidence)
       ? analysis.confidence
       : null;
+    this._analysisDuration = analysis.duration;
     this._analysisError = null;
     this.syncSoundTouch();
   }
@@ -980,6 +992,7 @@ export class AudioEngine implements IAudioEngine {
 
   private applyRealtimeFallback(error: unknown) {
     this.beatGrid = [];
+    this._analysisDuration = 0;
     this.setAnalysisOnsets([]);
     this.transportClock.setBeatGrid([], this._bpm, this.getTransportTime());
     audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);

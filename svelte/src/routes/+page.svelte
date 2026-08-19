@@ -197,7 +197,12 @@
     try {
       const buffer = await file.arrayBuffer();
       const data = parseMidi(buffer);
-      const layer = { name: file.name, notes: data.notes, duration: data.duration };
+      const layer = {
+        identity: `${file.name}:${file.size}:${file.lastModified}`,
+        name: file.name,
+        notes: data.notes,
+        duration: data.duration
+      };
       midiLayers.update((layers) => ({ ...layers, [id]: layer }));
       registerModuleMidiChannel(id, layer);
       setModuleTriggerSource(id, 'midi');
