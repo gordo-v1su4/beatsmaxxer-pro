@@ -148,17 +148,10 @@ export class AudioEngine implements IAudioEngine {
   async start() {
     if (this._starting) return;
 
-    // Nothing loaded means nothing to play. The tail of this method used to set
-    // _playing = true unconditionally, so PLAY on a fresh page started the beat
-    // clock with no track behind it: the transport read as running, every idle
-    // card animated, and every beat-driven module ran -- all against a silent
-    // grid. That also makes audio-reactive work impossible to judge, since the
-    // analyser is reporting zeroes while the rack looks alive.
-    //
-    // A decoded upload (mediaElement) is the only thing that can actually
-    // sound here, so refuse to start without one and leave the transport
-    // stopped until a track is loaded.
-    if (!this.mediaElement && !this._loadedUploadName) return;
+    // A decoded upload is the only playable source. Never let a missing or
+    // failed upload fall through to a synthetic clock that makes the rack look
+    // active while the song remains silent.
+    if (!this._usingUploadedTrack || !this.mediaElement) return;
 
     if (this._playing) {
       if (this.getTransportTime() >= 0.05) return;
@@ -180,17 +173,15 @@ export class AudioEngine implements IAudioEngine {
      * so every video kept moving and reacting while the song sat paused — it
      * looked like an audio bug in the track, not a lost gesture.
      *
-     * The promise is captured here and awaited in the same place as before, so
-     * the stall detection and the fallback are unchanged.
+     * Capture this one invocation and await that exact promise after context
+     * setup. Calling play() again would no longer be inside the original
+     * gesture on Safari/iOS.
      */
     let pendingPlay: Promise<void> | null = null;
-    if (this._usingUploadedTrack && this.mediaElement) {
-      try {
-        this.mediaElement.currentTime = 0;
-        pendingPlay = this.mediaElement.play();
-      } catch {
-        pendingPlay = null;
-      }
+    try {
+      pendingPlay = this.mediaElement.play();
+    } catch {
+      pendingPlay = null;
     }
 
     try {
@@ -205,74 +196,27 @@ export class AudioEngine implements IAudioEngine {
         }
       }
 
-      let useUploadedPlayback = this._usingUploadedTrack && Boolean(this.mediaElement);
-
-      if (useUploadedPlayback && this.mediaElement) {
-        this.uploadedPlaybackValidated = false;
-        this.mediaElement.currentTime = 0;
-        try {
-          await Promise.race([
-            this.mediaElement.play(),
-            new Promise<void>((_, reject) =>
-              setTimeout(() => reject(new Error("media play timeout")), 4_000)
-            ),
-          ]);
-          const t0 = this.mediaElement.currentTime;
-          await new Promise((r) => setTimeout(r, 800));
-          if (
-            this.mediaElement.paused ||
-            this.mediaElement.currentTime - t0 < 0.01
-          ) {
-            throw new Error("media playback stalled");
-          }
-        } catch {
-          useUploadedPlayback = false;
-          this.mediaElement.pause();
-        }
-      }
-
-      if (useUploadedPlayback && this.mediaElement) {
-        this.uploadedPlaybackValidated = true;
-        this._playing = true;
-        audioTimeline.play(this.mediaElement.currentTime);
-        audioTimeline.publishFrame();
-        this.onsetHistory = [];
-        this.prevEnergy = 0;
-        this.bassEma = 0.08;
-        this.onsetCooldown = 0;
-
-        await new Promise((r) => setTimeout(r, 600));
-        if (this.getTransportTime() >= 0.05) return;
-
+      this.uploadedPlaybackValidated = false;
+      if (!pendingPlay) {
         this._playing = false;
         audioTimeline.pause();
         audioTimeline.publishFrame();
+        return;
+      }
+
+      try {
+        await pendingPlay;
+      } catch {
         this.mediaElement.pause();
-        useUploadedPlayback = false;
+        this._playing = false;
+        audioTimeline.pause();
+        audioTimeline.publishFrame();
+        return;
       }
 
-      if (this.ctx.state === "suspended") {
-        try {
-          await this.ctx.resume();
-        } catch {
-          /* gesture may still be required */
-        }
-      }
-
-      if (this.sourceNode) {
-        try {
-          this.sourceNode.stop();
-        } catch {
-          /* already stopped */
-        }
-        this.sourceNode.disconnect();
-        this.sourceNode = null;
-      }
-
-      this._usingUploadedTrack = false;
-      this._trackName = this._loadedUploadName ?? "";
+      this.uploadedPlaybackValidated = true;
       this._playing = true;
-      audioTimeline.play(0);
+      audioTimeline.play(this.mediaElement.currentTime);
       audioTimeline.publishFrame();
       this.onsetHistory = [];
       this.prevEnergy = 0;
