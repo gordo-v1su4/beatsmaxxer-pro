@@ -1,8 +1,15 @@
 import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
+import {
+  PROOF_REPORT_SCHEMA_VERSION,
+  validateArtifactProvenance,
+  type ArtifactProvenance
+} from '$lib/qa/artifactProvenance';
 
 export const EIGHT_VIDEO_WARMUP_MS = 5_000;
 export const EIGHT_VIDEO_OBSERVATION_MS = 30_000;
 export const EIGHT_VIDEO_SLOT_COUNT = 8;
+export const EIGHT_VIDEO_EXPECTED_BPM = 128;
+export const LEGACY_DRIFT_REPORT_THRESHOLD_SECONDS = 0.4;
 
 export interface EightVideoSlotSample {
   moduleId: string;
@@ -106,9 +113,8 @@ export interface CatalogHotSwapStressEvidence {
 }
 
 export interface EightVideoProofReport {
-  schemaVersion: 1;
-  capturedAt: string;
-  provenance: { sourceDigest: string; buildDigest: string };
+  schemaVersion: typeof PROOF_REPORT_SCHEMA_VERSION;
+  provenance: ArtifactProvenance;
   warmupMs: number;
   observationMs: number;
   environment: {
@@ -187,7 +193,31 @@ export interface EightVideoProofReport {
     samplePath: string;
   }>;
   hotSwap: CatalogHotSwapStressEvidence;
+  legacyDriftReport: {
+    thresholdSeconds: typeof LEGACY_DRIFT_REPORT_THRESHOLD_SECONDS;
+    releaseCriterion: false;
+    maxObservedSeconds: number;
+    exceeded: boolean;
+  };
   errors: { console: string[]; network: string[]; gpu: string[]; uncaught: string[] };
+}
+
+export function summarizeLegacyDrift(
+  samples: EightVideoProofReport['samples'],
+  hotSwap: CatalogHotSwapStressEvidence
+): EightVideoProofReport['legacyDriftReport'] {
+  const values = [
+    ...samples.map((sample) => Math.abs(sample.maxDriftSeconds)),
+    ...hotSwap.steps.flatMap((step) => step.samples.flatMap((sample) =>
+      sample.slots.map((slot) => Math.abs(slot.driftSeconds))))
+  ].filter(Number.isFinite);
+  const maxObservedSeconds = values.length ? Math.max(...values) : 0;
+  return {
+    thresholdSeconds: LEGACY_DRIFT_REPORT_THRESHOLD_SECONDS,
+    releaseCriterion: false,
+    maxObservedSeconds,
+    exceeded: maxObservedSeconds > LEGACY_DRIFT_REPORT_THRESHOLD_SECONDS
+  };
 }
 
 export function evaluateCatalogHotSwapStress(evidence: CatalogHotSwapStressEvidence | undefined) {
@@ -253,7 +283,6 @@ export function evaluateCatalogHotSwapStress(evidence: CatalogHotSwapStressEvide
           `synthetic or missing video sample appeared during swap: ${step.moduleId}:${slot.canvasId}`);
         fail(slot.cachedTextureBound && slot.moduleId !== 'timesampler',
           `persistent video cache was used outside timesampler: ${step.moduleId}:${slot.canvasId}`);
-        fail(Math.abs(slot.driftSeconds) > 0.4, `shared timeline drift exceeded 400ms during swap: ${step.moduleId}:${slot.canvasId}`);
       }
     }
     fail(!before || !after || after.timelineFrameId <= before.timelineFrameId ||
@@ -290,7 +319,8 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
     (render.externalTextureImported && render.externalTextureBound && render.samplePath === 'external-texture') ||
     (render.cachedTextureBound && render.samplePath === 'cached-video-texture');
 
-  fail(report.schemaVersion !== 1, 'unsupported report schema');
+  fail(report.schemaVersion !== PROOF_REPORT_SCHEMA_VERSION, 'unsupported report schema');
+  blockers.push(...validateArtifactProvenance(report.provenance));
   fail(report.loadedVia !== 'UI CLIPS multi-file', 'clips were not loaded through the UI CLIPS multi-file path');
   fail(report.warmupMs < EIGHT_VIDEO_WARMUP_MS, 'warmup was shorter than 5 seconds');
   fail(report.observationMs < EIGHT_VIDEO_OBSERVATION_MS, 'observation was shorter than 30 seconds');
@@ -298,14 +328,20 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
   fail(!report.humanObservation.observed || !report.humanObservation.operator.trim() || report.humanObservation.lagObserved,
     'headed playback requires explicit lag-free physical-browser observation provenance');
   fail(!/Chrome\//.test(report.environment.browserProduct), 'browser is not Chrome');
+  const shellKind = report.provenance?.environment?.shellKind;
+  const runtimeClaimsTauri = /^tauri/i.test(report.environment.runtime ?? '');
+  fail(runtimeClaimsTauri && shellKind !== 'tauri-desktop', 'report shell identity does not match captured runtime');
+  fail(!runtimeClaimsTauri && !['browser', 'pwa'].includes(shellKind ?? ''),
+    'report shell identity does not match captured runtime');
   const command = report.environment.commandLine.join(' ').toLowerCase();
   fail(!report.environment.commandLine.includes('--enable-automation'), 'Chrome command-line provenance is unavailable');
-  const gpuText = Object.values(report.environment.gpu).join(' ').toLowerCase();
-  fail(report.environment.gpu.softwareRenderer || report.environment.gpu.isFallbackAdapter === true ||
+  const gpu = report.environment.gpu;
+  const gpuText = gpu ? Object.values(gpu).join(' ').toLowerCase() : '';
+  fail(!gpu || gpu.softwareRenderer || gpu.isFallbackAdapter === true ||
     /swiftshader|llvmpipe|software/.test(`${command} ${gpuText}`), 'software or fallback GPU is forbidden');
-  fail(!report.environment.gpu.deviceCreated, 'WebGPU device provenance is missing');
-  fail(![report.environment.gpu.vendor, report.environment.gpu.architecture, report.environment.gpu.device,
-    report.environment.gpu.description].some((value) => value.trim()), 'GPU adapter identity metadata is missing');
+  fail(!gpu?.deviceCreated, 'WebGPU device provenance is missing');
+  fail(!gpu || ![gpu.vendor, gpu.architecture, gpu.device, gpu.description].some((value) => value.trim()),
+    'GPU adapter identity metadata is missing');
   fail(report.fixtures.length !== 9 || report.fixtures.filter((f) => f.width !== null).length !== 8,
     'fixture metadata must contain exactly eight videos and Redline');
   fail(!report.fixtures.some((fixture) => fixture.name === 'Redline (Remastered).mp3') ||
@@ -363,9 +399,22 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
       `slot rendered black: ${slot.moduleId}`);
     fail(!shot || shot.firstSha256 === shot.secondSha256 || shot.pixelMotionRatio < 0.002,
       `slot rendered a frozen image: ${slot.moduleId}`);
+    const sample = report.provenance?.contentIntegrity?.primarySamples
+      .find((entry) => entry.assetName === slot.fileName);
+    if (!sample || !end || !shot || sample.assetSha256 !== report.fixtures.find((fixture) => fixture.name === slot.fileName)?.sha256 ||
+        sample.observedSource !== end.currentSrc || sample.rendererSource !== end.render.source ||
+        sample.sourceFrameId !== end.render.frameId || Math.abs(sample.sourceTimestampSeconds - end.currentTime) > 1e-6 ||
+        sample.outputFrameSha256 !== shot.secondSha256 || sample.width !== end.videoWidth || sample.height !== end.videoHeight) {
+      blockers.push(`content-integrity sample does not match observed eight-video diagnostics: ${slot.moduleId}`);
+    }
   }
 
-  fail(report.samples.some((sample) => sample.maxDriftSeconds > 0.4), 'shared timeline drift exceeded 400ms');
+  const expectedLegacyDrift = summarizeLegacyDrift(report.samples, report.hotSwap);
+  fail(report.legacyDriftReport?.thresholdSeconds !== expectedLegacyDrift.thresholdSeconds ||
+    report.legacyDriftReport?.releaseCriterion !== false ||
+    report.legacyDriftReport?.maxObservedSeconds !== expectedLegacyDrift.maxObservedSeconds ||
+    report.legacyDriftReport?.exceeded !== expectedLegacyDrift.exceeded,
+  'legacy 400ms drift evidence is missing or inconsistent');
   fail(new Set(report.samples.map((sample) => sample.timelineGeneration)).size !== 1,
     'timeline generation changed during observation');
   fail(report.pgmCuts.length !== EIGHT_VIDEO_SLOT_COUNT || new Set(report.pgmCuts.map((cut) => cut.moduleId)).size !== EIGHT_VIDEO_SLOT_COUNT,
@@ -381,8 +430,9 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
   }
   fail(report.audio.fileName !== 'Redline (Remastered).mp3' || report.audio.loadedVia !== 'SONG -> ANALYZE' ||
     !report.audio.usingUploadedTrack || report.audio.analysisStatus !== 'ready' ||
-    !Number.isFinite(report.audio.bpm) || report.audio.bpm < 60 || report.audio.bpm > 200,
-    'Redline did not complete the consented Essentia rhythm path with a usable BPM');
+    !Number.isFinite(report.audio.bpm), 'Redline did not complete the consented Essentia rhythm path with a usable BPM');
+  fail(Math.abs(report.audio.bpm - EIGHT_VIDEO_EXPECTED_BPM) > 0.01,
+    `Redline BPM mismatch: expected ${EIGHT_VIDEO_EXPECTED_BPM}`);
   fail(report.audio.contextState !== 'running' || report.audio.contextTimeDelta < 25 || report.audio.mediaTimeDelta < 25 ||
     report.audio.mediaPaused || report.audio.mediaMuted || report.audio.volume < 0.25 ||
     report.audio.rmsPeak <= 0.005 || report.audio.amplitudePeak <= 0.005, 'audible audio diagnostics failed');

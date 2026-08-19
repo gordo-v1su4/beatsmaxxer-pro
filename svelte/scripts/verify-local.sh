@@ -63,10 +63,11 @@ run_gate "verify:stutter" env STUTTER_MS="${STUTTER_MS:-8000}" bun scripts/verif
 run_gate "verify:audio" bun scripts/verify-audio-runner.ts
 run_gate "verify:beat" bun scripts/verify-beat-runner.ts
 run_gate "verify:visual-proof (required release gate)" bun scripts/verify-visual-proof-runner.ts
+run_gate "verify:eight-video-proof (required release gate)" bun scripts/verify-eight-video-proof-runner.ts
 
 echo ""
 echo "══════════════════════════════════════════"
-echo " ✓ All local and physical-browser visual-proof gates passed"
+echo " ✓ All local and required current physical-browser proof gates passed"
 echo " Artifacts: $ARTIFACT_DIR/"
 echo "══════════════════════════════════════════"
 echo ""

@@ -16,6 +16,15 @@ function sha256(bytes: Uint8Array) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+async function gitCommit(root: string) {
+  const child = Bun.spawn(['git', 'rev-parse', 'HEAD'], {
+    cwd: resolve(root, '..'), stdout: 'pipe', stderr: 'pipe'
+  });
+  const [text, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  if (exitCode !== 0) throw new Error('git rev-parse HEAD failed');
+  return text.trim();
+}
+
 export async function verifyHotSwapScreenshotEvidence(report: EightVideoProofReport) {
   const blockers: string[] = [];
   for (const step of report.hotSwap?.steps ?? []) {
@@ -35,11 +44,23 @@ export async function verifyHotSwapScreenshotEvidence(report: EightVideoProofRep
 export async function verifyEightVideoProof(path = REPORT_PATH) {
   const report = JSON.parse(await readFile(path, 'utf8')) as EightVideoProofReport;
   const blockers = [...evaluateEightVideoProof(report).blockers];
+  if (!report.provenance?.source || !report.provenance.build || !report.provenance.dependencyLock ||
+      !report.provenance.contentIntegrity) {
+    throw new Error(`Eight-video proof failed:\n- ${[...new Set(blockers.length ? blockers : ['artifact provenance is missing or invalid'])].join('\n- ')}`);
+  }
   const [sourceDigest, buildDigest] = await Promise.all([
     computeVisualProofSourceDigest(), computeVisualProofBuildDigest()
   ]);
-  if (report.provenance.sourceDigest !== sourceDigest) blockers.push('source digest does not match captured source');
-  if (report.provenance.buildDigest !== buildDigest) blockers.push('build digest does not match captured build');
+  if (report.provenance.source.digest !== sourceDigest) blockers.push('source digest does not match captured source');
+  if (report.provenance.build.digest !== buildDigest || report.provenance.build.id !== buildDigest) {
+    blockers.push('build digest does not match captured build');
+  }
+  if (report.provenance.source.commit !== await gitCommit(process.cwd())) {
+    blockers.push('source commit does not match captured source');
+  }
+  if (report.provenance.dependencyLock.sha256 !== sha256(await readFile('bun.lock'))) {
+    blockers.push('dependency lock does not match captured source');
+  }
 
   const actualFixtures = await realMediaFileMetadata(report.fixtures.map((fixture) => fixture.relativePath));
   for (const fixture of report.fixtures) {
@@ -61,6 +82,13 @@ export async function verifyEightVideoProof(path = REPORT_PATH) {
       second.nonBlackPixelRatio !== screenshot.secondNonBlackPixelRatio ||
       pixelDifferenceRatio(first, second) !== screenshot.pixelMotionRatio) {
       blockers.push(`screenshot metrics mismatch: ${screenshot.moduleId}`);
+    }
+    const slot = report.samples.at(-1)?.slots.find((entry) => entry.moduleId === screenshot.moduleId);
+    const integritySample = slot
+      ? report.provenance.contentIntegrity.primarySamples.find((sample) => sample.assetName === slot.fileName)
+      : undefined;
+    if (!integritySample || integritySample.outputFrameSha256 !== sha256(secondBytes)) {
+      blockers.push(`content-integrity output frame hash mismatch: ${screenshot.moduleId}`);
     }
   }
   blockers.push(...await verifyHotSwapScreenshotEvidence(report));

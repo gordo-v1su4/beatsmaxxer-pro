@@ -17,6 +17,7 @@ import { verifyVisualProof } from '../../../scripts/verify-visual-proof-runner';
 import { realMediaFileMetadata } from '../../../scripts/visual-proof-verification';
 import { MODULE_PRESETS } from '$lib/modules/presets';
 import { catalogIds } from '$lib/modules/catalog';
+import { createArtifactProvenance } from '$lib/qa/artifactProvenance';
 
 /** Derived, not hardcoded. These totals were literals, so adding presets to a
  *  single module failed two unrelated release-gate tests with a bare number
@@ -74,9 +75,48 @@ function completeReport(): VisualProofReport {
       intendedParameterDelta: { mix: { before: 50, after: 75 } }, clipSha256: '1'.repeat(64), currentSrc: 'blob:real-video'
     } })
   }));
+  const videoExercise = REAL_MEDIA_VIDEO_NAMES.map((fileName, index) => ({
+    fileName, relativePath: `../.artifacts/real-media/videos/${fileName}`, sha256: '1'.repeat(64), size: 1000,
+    selectedFileSha256: '1'.repeat(64), selectedFileSize: 1000,
+    currentSrc: `blob:video-${index}`, pgmModule: 'transition', bindingId: 'pgm', videoWidth: 1920, videoHeight: 1080, durationSeconds: 10,
+    readyState: 4, hasVideo: true, externalTextureImported: true, externalTextureBound: true,
+    samplePath: 'external-texture', rendererSource: `blob:video-${index}`, rendererDimensions: '1920x1080', rendererFrameId: index + 1,
+    videoSize: '1920x1080',
+    firstTimelineSeconds: 1, secondTimelineSeconds: 2, firstMediaTimeSeconds: 1, secondMediaTimeSeconds: 2,
+    firstCentralFrameId: index * 2 + 1, secondCentralFrameId: index * 2 + 2,
+    firstScreenshot: `.artifacts/visual-proof/real-${index}-a.png`, secondScreenshot: `.artifacts/visual-proof/real-${index}-b.png`,
+    firstContentHash: `a${index}`, secondContentHash: `b${index}`, nonBlackPixelRatio: 0.75, pixelMotionRatio: 0.2,
+    sampleCount: 65, p95IntervalMs: 17, maxIntervalMs: 17, droppedFrames: 0, stalledFrames: 0, released: true, previousSourceUnbound: true,
+    frameIntervalsMs: Array(65).fill(17)
+  }));
+  const provenance = createArtifactProvenance({
+    captureId: '12345678-1234-4234-8234-123456789abc',
+    capturedAt: new Date().toISOString(),
+    source: { commit: 'e'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
+    build: { id: 'd'.repeat(64), digest: 'd'.repeat(64), profile: 'production' },
+    dependencyLock: { path: 'bun.lock', sha256: 'f'.repeat(64) },
+    environment: {
+      shellKind: 'browser', sourceBackend: 'html-video',
+      frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', releaseEvidence: true, webgpuAvailable: true,
+      runtime: { name: 'Chrome', version: '128.0.0.0', userAgent: 'Mozilla Chrome/128.0.0.0' },
+      device: { operatingSystem: 'darwin', architecture: 'arm64', model: 'Apple M3 Pro', gpuIdentity: 'apple common-3 Apple M3 Pro Metal' }
+    },
+    capabilities: { webgpu: 'passed', mediaAdvance: 'passed', bpmMatch: 'passed', primarySamples: 'passed', contentIntegrity: 'passed' },
+    contentIntegrity: {
+      algorithm: 'sha256', requiredPrimarySampleCount: videoExercise.length,
+      assets: videoExercise.map((clip) => ({ name: clip.fileName, sha256: clip.sha256, size: clip.size })),
+      primarySamples: videoExercise.map((clip, index) => ({
+        assetName: clip.fileName, assetSha256: clip.sha256, observedSource: clip.currentSrc,
+        rendererSource: clip.rendererSource, sourceBackend: 'html-video',
+        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', sourceFrameId: clip.rendererFrameId,
+        sourceTimestampSeconds: clip.secondMediaTimeSeconds, outputFrameSha256: String((index % 9) + 1).repeat(64),
+        width: clip.videoWidth, height: clip.videoHeight
+      }))
+    }
+  });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifest,
     environment: {
       browserName: 'Chrome',
@@ -103,8 +143,7 @@ function completeReport(): VisualProofReport {
       statement: 'Human-observed headed browser; this attestation is not machine-verifiable.'
     },
     provenance: {
-      sourceDigest: 'a'.repeat(64), buildDigest: 'd'.repeat(64), catalogDigest: 'b'.repeat(64), controlInventoryDigest: 'c'.repeat(64),
-      captureNonce: '12345678-1234-1234-1234-123456789abc', capturedAt: '2026-08-01T12:00:00.000Z',
+      ...provenance, catalogDigest: 'b'.repeat(64), controlInventoryDigest: 'c'.repeat(64),
       fixtureFiles: [
         ...REAL_MEDIA_VIDEO_NAMES.map((name) => ({ relativePath: `../.artifacts/real-media/videos/${name}`, name, kind: 'video' as const,
           size: 1000, sha256: '1'.repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mov,mp4' })),
@@ -114,24 +153,12 @@ function completeReport(): VisualProofReport {
     },
     realMedia: {
       selectedVia: 'CLIP', assignedVia: 'serial QA target helper from one selected File object',
-      videoExercise: REAL_MEDIA_VIDEO_NAMES.map((fileName, index) => ({
-        fileName, relativePath: `../.artifacts/real-media/videos/${fileName}`, sha256: '1'.repeat(64), size: 1000,
-        selectedFileSha256: '1'.repeat(64), selectedFileSize: 1000,
-        currentSrc: `blob:video-${index}`, pgmModule: 'transition', bindingId: 'pgm', videoWidth: 1920, videoHeight: 1080, durationSeconds: 10,
-        readyState: 4, hasVideo: true, externalTextureImported: true, externalTextureBound: true,
-        samplePath: 'external-texture', rendererSource: `blob:video-${index}`, rendererDimensions: '1920x1080', rendererFrameId: index + 1,
-        videoSize: '1920x1080',
-        firstTimelineSeconds: 1, secondTimelineSeconds: 2, firstMediaTimeSeconds: 1, secondMediaTimeSeconds: 2,
-        firstCentralFrameId: index * 2 + 1, secondCentralFrameId: index * 2 + 2,
-        firstScreenshot: `.artifacts/visual-proof/real-${index}-a.png`, secondScreenshot: `.artifacts/visual-proof/real-${index}-b.png`,
-        firstContentHash: `a${index}`, secondContentHash: `b${index}`, nonBlackPixelRatio: 0.75, pixelMotionRatio: 0.2,
-        sampleCount: 65, p95IntervalMs: 17, maxIntervalMs: 17, droppedFrames: 0, stalledFrames: 0, released: true, previousSourceUnbound: true,
-        frameIntervalsMs: Array(65).fill(17)
-      })),
+      videoExercise,
       audioExercise: { fileName: 'Redline (Remastered).mp3', relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3',
         sha256: '2'.repeat(64), size: 1000, loadedVia: 'SONG -> LOCAL ONLY', volume: 0.72, observationDurationMs: 3000,
         contextStateBefore: 'running', contextStateAfter: 'running', contextTimeBefore: 1, contextTimeAfter: 4,
-        mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false },
+        mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false,
+        expectedBpm: 128, detectedBpm: 128 },
       assignments: Object.fromEntries(manifest.items.filter((item) => item.kind === 'module')
         .map((item) => [item.subjectId, { fileName: REAL_MEDIA_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
       noNetwork: { requests: [], externalRequests: [] }, pausedBeforeEffectMatrix: true, maxSimultaneousDecoded: 1,
@@ -177,6 +204,58 @@ describe('visual proof release gate', () => {
     const result = evaluateVisualProofReport(completeReport());
 
     expect(result).toEqual({ passed: true, blockers: [] });
+  });
+
+  test('fails closed on missing or stale shared provenance', async () => {
+    const missing = completeReport();
+    (missing as { provenance?: VisualProofReport['provenance'] }).provenance = undefined;
+    expect(evaluateVisualProofReport(missing).blockers).toContain('artifact provenance is missing or has an unsupported schema');
+    expect(await verifyVisualProof(missing)).toContain('artifact provenance is missing or has an unsupported schema');
+
+    const stale = completeReport();
+    stale.provenance.capturedAt = '2020-01-01T00:00:00.000Z';
+    stale.provenance.freshness.expiresAt = '2020-01-02T00:00:00.000Z';
+    expect(evaluateVisualProofReport(stale).blockers).toContain('artifact provenance is stale');
+  });
+
+  test('fails closed on zero media advance and BPM mismatch', () => {
+    const value = completeReport();
+    value.realMedia.videoExercise[0]!.secondMediaTimeSeconds = value.realMedia.videoExercise[0]!.firstMediaTimeSeconds;
+    value.realMedia.audioExercise.detectedBpm = 127;
+    const blockers = evaluateVisualProofReport(value).blockers;
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain('Redline BPM mismatch: expected 128');
+  });
+
+  test('fails closed on missing primary samples and content-integrity mismatch', () => {
+    const value = completeReport();
+    value.provenance.contentIntegrity.primarySamples = [];
+    expect(evaluateVisualProofReport(value).blockers).toContain('primary content-integrity samples are missing');
+
+    const mismatched = completeReport();
+    mismatched.provenance.contentIntegrity.primarySamples[0]!.rendererSource = 'blob:wrong';
+    const blockers = evaluateVisualProofReport(mismatched).blockers;
+    expect(blockers).toContain(`content-integrity source diagnostics mismatch: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`content-integrity sample does not match observed visual diagnostics: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+  });
+
+  test('fails closed on shell/backend mismatch or test-synthetic release evidence', () => {
+    const mismatch = completeReport();
+    mismatch.provenance.environment.shellKind = 'tauri-desktop';
+    expect(evaluateVisualProofReport(mismatch).blockers).toContain('report shell identity does not match the headed browser capture');
+
+    const backendMismatch = completeReport();
+    backendMismatch.provenance.environment.frameProducer = 'test-synthetic';
+    expect(evaluateVisualProofReport(backendMismatch).blockers).toContain('shell/source-backend frame producer mismatch');
+
+    const synthetic = completeReport();
+    synthetic.provenance.environment.sourceBackend = 'test-synthetic';
+    synthetic.provenance.environment.frameProducer = 'test-synthetic';
+    synthetic.provenance.contentIntegrity.primarySamples.forEach((sample) => {
+      sample.sourceBackend = 'test-synthetic';
+      sample.frameProducer = 'test-synthetic';
+    });
+    expect(evaluateVisualProofReport(synthetic).blockers).toContain('test-synthetic backend cannot be release evidence');
   });
 
   test('accepts headed CDP provenance from an automated Chrome using a native hardware adapter', () => {

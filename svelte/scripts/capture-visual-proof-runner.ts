@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
@@ -14,10 +15,22 @@ import {
   type VisualProofEvidence,
   type VisualProofReport
 } from '../src/lib/qa/visualProof.ts';
+import { createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
 
 const QA_URL = 'http://127.0.0.1:5174/?qaProof=1';
 const OUTPUT_DIR = '.artifacts/visual-proof';
 const REPORT_PATH = `${OUTPUT_DIR}/report.json`;
+
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+async function gitText(...args: string[]) {
+  const process = Bun.spawn(['git', ...args], { cwd: '..', stdout: 'pipe', stderr: 'pipe' });
+  const [text, exitCode] = await Promise.all([new Response(process.stdout).text(), process.exited]);
+  if (exitCode !== 0) throw new Error(`git ${args.join(' ')} failed`);
+  return text.trim();
+}
+
+const status = (passed: boolean): ProofCapabilityStatus => passed ? 'passed' : 'failed';
 
 if (process.env.HEADLESS === '1') {
   throw new Error('Physical-browser proof capture refuses HEADLESS=1');
@@ -414,6 +427,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   await exerciseControl(session, localOnly);
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
   const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
+  const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
   if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== 'Redline (Remastered).mp3') {
     throw new Error('Redline did not remain bound to uploaded playback');
   }
@@ -713,8 +727,73 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   );
   if (!gpu) captureErrors.push('WebGPU adapter/device provenance was not captured from navigator.gpu.requestAdapter');
 
+  const [sourceDigest, buildDigest, sourceCommit, dirtyStatus, lockBytes] = await Promise.all([
+    computeVisualProofSourceDigest(),
+    computeVisualProofBuildDigest(),
+    gitText('rev-parse', 'HEAD'),
+    gitText('status', '--porcelain', '--untracked-files=normal'),
+    readFile('bun.lock')
+  ]);
+  const capturedAt = new Date().toISOString();
+  const contentAssets = videoExercise.map((clip) => ({ name: clip.fileName, sha256: clip.sha256, size: clip.size }));
+  const primarySamples = await Promise.all(videoExercise.map(async (clip) => ({
+    assetName: clip.fileName,
+    assetSha256: clip.sha256,
+    observedSource: clip.currentSrc,
+    rendererSource: clip.rendererSource ?? '',
+    sourceBackend: 'html-video' as const,
+    frameProducer: 'HTMLVideoElement.copyExternalImageToTexture' as const,
+    sourceFrameId: clip.rendererFrameId ?? 0,
+    sourceTimestampSeconds: clip.secondMediaTimeSeconds,
+    outputFrameSha256: sha256(await readFile(clip.secondScreenshot)),
+    width: clip.videoWidth,
+    height: clip.videoHeight
+  })));
+  const detectedBpm = Number(audioSnapshot?.bpm ?? 0);
+  const mediaAdvanced = videoExercise.every((clip) => clip.secondMediaTimeSeconds !== clip.firstMediaTimeSeconds);
+  const contentIntegrityPassed = primarySamples.length === videoExercise.length && primarySamples.every((sample) =>
+    sample.rendererSource === sample.observedSource && sample.sourceFrameId > 0 && /^[0-9a-f]{64}$/.test(sample.outputFrameSha256));
+  const artifactProvenance = createArtifactProvenance({
+    captureId: crypto.randomUUID(),
+    capturedAt,
+    source: { commit: sourceCommit, digest: sourceDigest, workingTreeDirty: dirtyStatus.length > 0 },
+    build: { id: buildDigest, digest: buildDigest, profile: 'production' },
+    dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
+    environment: {
+      shellKind: 'browser',
+      sourceBackend: 'html-video',
+      frameProducer: 'HTMLVideoElement.copyExternalImageToTexture',
+      releaseEvidence: true,
+      webgpuAvailable: gpu?.deviceCreated === true,
+      runtime: {
+        name: cdpVersion.product?.split('/')[0] ?? '',
+        version: cdpVersion.product?.split('/')[1] ?? '',
+        userAgent: cdpVersion.userAgent ?? ''
+      },
+      device: {
+        operatingSystem: process.platform,
+        architecture: process.arch,
+        model: [gpu?.vendor, gpu?.device].filter(Boolean).join(' ') || 'unknown',
+        gpuIdentity: [gpu?.vendor, gpu?.architecture, gpu?.device, gpu?.description].filter(Boolean).join(' ')
+      }
+    },
+    capabilities: {
+      webgpu: status(gpu?.deviceCreated === true),
+      mediaAdvance: status(mediaAdvanced),
+      bpmMatch: status(Math.abs(detectedBpm - 128) <= 0.01),
+      primarySamples: status(primarySamples.length === videoExercise.length),
+      contentIntegrity: status(contentIntegrityPassed)
+    },
+    contentIntegrity: {
+      algorithm: 'sha256',
+      requiredPrimarySampleCount: videoExercise.length,
+      assets: contentAssets,
+      primarySamples
+    }
+  });
+
   const report: VisualProofReport = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifest,
     environment: {
       browserName: cdpVersion.product?.split('/')[0] ?? 'unknown',
@@ -740,12 +819,9 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       statement: 'Human-observed headed browser; this attestation is not machine-verifiable.'
     },
     provenance: {
-      sourceDigest: await computeVisualProofSourceDigest(),
-      buildDigest: await computeVisualProofBuildDigest(),
+      ...artifactProvenance,
       catalogDigest: digestJson(manifest.items.filter((item) => item.kind !== 'control')),
       controlInventoryDigest: digestJson(manifest.items.filter((item) => item.kind === 'control')),
-      captureNonce: crypto.randomUUID(),
-      capturedAt: new Date().toISOString(),
       fixtureFiles: mediaMetadata
     },
     realMedia: {
@@ -764,7 +840,9 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         mediaTimeBefore: audioPlayback.before.mediaCurrentTime, mediaTimeAfter: audioPlayback.after.mediaCurrentTime,
         rmsPeak: audioPlayback.rmsPeak, amplitudePeak: audioPlayback.amplitudePeak,
         currentSrc: audioPlayback.after.currentSrc, mediaPaused: audioPlayback.after.mediaPaused,
-        mediaMuted: audioPlayback.after.mediaMuted
+        mediaMuted: audioPlayback.after.mediaMuted,
+        expectedBpm: 128,
+        detectedBpm
       },
       assignments: matrixAssignments,
       noNetwork: {

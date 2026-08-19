@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { EIGHT_VIDEO_OBSERVATION_MS, EIGHT_VIDEO_WARMUP_MS, evaluateCatalogHotSwapStress, evaluateEightVideoProof, type EightVideoProofReport } from '$lib/qa/eightVideoProof';
+import { EIGHT_VIDEO_OBSERVATION_MS, EIGHT_VIDEO_WARMUP_MS, evaluateCatalogHotSwapStress, evaluateEightVideoProof, summarizeLegacyDrift, type EightVideoProofReport } from '$lib/qa/eightVideoProof';
 import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
+import { createArtifactProvenance } from '$lib/qa/artifactProvenance';
 
 function report(): EightVideoProofReport {
   const slots = Array.from({ length: 8 }, (_, index) => ({
@@ -63,32 +64,64 @@ function report(): EightVideoProofReport {
       };
     })
   };
+  const fixtures = [
+    ...Array.from({ length: 8 }, (_, index) => ({ relativePath: `../.artifacts/real-media/videos/video-${index}.mp4`, name: `video-${index}.mp4`,
+      size: 1000, sha256: String(index + 1).repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mp4' })),
+    { relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3', name: 'Redline (Remastered).mp3', size: 1000,
+      sha256: 'f'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['mp3'], formatName: 'mp3' }
+  ];
+  const samples: EightVideoProofReport['samples'] = Array.from({ length: 31 }, (_, sampleIndex) => ({
+    elapsedMs: sampleIndex * 1_000, decoderCount: 8, documentVideoCount: 8,
+    timelineGeneration: 4, timelineFrameId: sampleIndex * 30 + 1, transportSeconds: sampleIndex + 1, maxDriftSeconds: 0.03,
+    slots: slots.map((slot) => ({ ...slot, currentTime: (slot.currentTime + sampleIndex) % slot.duration,
+      totalVideoFrames: 30 + sampleIndex * 30, render: { ...slot.render, frameId: sampleIndex * 30 + 1,
+        renderCount: slot.render.renderCount + sampleIndex * 24, skippedRenderCount: sampleIndex * 36 } }))
+  }));
+  const screenshots: EightVideoProofReport['screenshots'] = slots.map((slot, index) => ({
+    moduleId: slot.moduleId, firstPath: `first-${index}.png`, secondPath: `second-${index}.png`,
+    firstSha256: 'a'.repeat(63) + index, secondSha256: String(index + 1).repeat(64), firstNonBlackPixelRatio: 0.7,
+    secondNonBlackPixelRatio: 0.7, pixelMotionRatio: 0.2
+  }));
+  const lastSlots = samples.at(-1)!.slots;
+  const provenance = createArtifactProvenance({
+    captureId: '12345678-1234-4234-8234-123456789abc', capturedAt: new Date().toISOString(),
+    source: { commit: 'c'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
+    build: { id: 'b'.repeat(64), digest: 'b'.repeat(64), profile: 'production' },
+    dependencyLock: { path: 'bun.lock', sha256: 'd'.repeat(64) },
+    environment: {
+      shellKind: 'browser', sourceBackend: 'html-video',
+      frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', releaseEvidence: true, webgpuAvailable: true,
+      runtime: { name: 'Chrome', version: '128.0', userAgent: 'Chrome' },
+      device: { operatingSystem: 'darwin', architecture: 'arm64', model: 'Apple M3', gpuIdentity: 'apple metal M3 native' }
+    },
+    capabilities: { webgpu: 'passed', mediaAdvance: 'passed', bpmMatch: 'passed', primarySamples: 'passed', contentIntegrity: 'passed' },
+    contentIntegrity: {
+      algorithm: 'sha256', requiredPrimarySampleCount: 8,
+      assets: fixtures.slice(0, 8).map((fixture) => ({ name: fixture.name, sha256: fixture.sha256, size: fixture.size })),
+      primarySamples: lastSlots.map((slot, index) => ({
+        assetName: slot.fileName, assetSha256: fixtures[index]!.sha256, observedSource: slot.currentSrc,
+        rendererSource: slot.render.source!, sourceBackend: 'html-video',
+        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', sourceFrameId: slot.render.frameId!,
+        sourceTimestampSeconds: slot.currentTime, outputFrameSha256: screenshots[index]!.secondSha256,
+        width: slot.videoWidth, height: slot.videoHeight
+      }))
+    }
+  });
   return {
-    schemaVersion: 1, capturedAt: new Date().toISOString(), provenance: { sourceDigest: 'a'.repeat(64), buildDigest: 'b'.repeat(64) },
+    schemaVersion: 2, provenance,
     warmupMs: EIGHT_VIDEO_WARMUP_MS, observationMs: EIGHT_VIDEO_OBSERVATION_MS,
     environment: { browserProduct: 'Chrome/128.0', userAgent: 'Chrome', headless: false, commandLine: ['chrome', '--enable-automation'],
       gpu: { vendor: 'apple', architecture: 'metal', device: 'M3', description: 'native', isFallbackAdapter: false,
         softwareRenderer: false, deviceCreated: true } },
-    humanObservation: { observed: true, operator: 'QA Operator', lagObserved: false }, fixtures: [
-      ...Array.from({ length: 8 }, (_, index) => ({ relativePath: `../.artifacts/real-media/videos/video-${index}.mp4`, name: `video-${index}.mp4`,
-        size: 1000, sha256: String(index + 1).repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mp4' })),
-      { relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3', name: 'Redline (Remastered).mp3', size: 1000,
-        sha256: 'f'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['mp3'], formatName: 'mp3' }
-    ],
+    humanObservation: { observed: true, operator: 'QA Operator', lagObserved: false }, fixtures,
     loadedVia: 'UI CLIPS multi-file',
     audio: { fileName: 'Redline (Remastered).mp3', loadedVia: 'SONG -> ANALYZE', usingUploadedTrack: true,
-      analysisStatus: 'ready', analysisConfidence: 0.9, bpm: 133,
+      analysisStatus: 'ready', analysisConfidence: 0.9, bpm: 128,
       contextState: 'running', contextTimeDelta: 30, mediaTimeDelta: 30, mediaPaused: false, mediaMuted: false,
       volume: 0.72, rmsPeak: 0.1, amplitudePeak: 0.1 },
     decoderCount: 8,
-    samples: Array.from({ length: 31 }, (_, sampleIndex) => ({ elapsedMs: sampleIndex * 1_000, decoderCount: 8, documentVideoCount: 8,
-      timelineGeneration: 4, timelineFrameId: sampleIndex * 30 + 1, transportSeconds: sampleIndex + 1, maxDriftSeconds: 0.03,
-      slots: slots.map((slot) => ({ ...slot, currentTime: (slot.currentTime + sampleIndex) % slot.duration,
-        totalVideoFrames: 30 + sampleIndex * 30, render: { ...slot.render, frameId: sampleIndex * 30 + 1,
-          renderCount: slot.render.renderCount + sampleIndex * 24, skippedRenderCount: sampleIndex * 36 } })) })),
-    screenshots: slots.map((slot, index) => ({ moduleId: slot.moduleId, firstPath: `first-${index}.png`, secondPath: `second-${index}.png`,
-      firstSha256: `first-${index}`, secondSha256: `second-${index}`, firstNonBlackPixelRatio: 0.7,
-      secondNonBlackPixelRatio: 0.7, pixelMotionRatio: 0.2 })),
+    samples,
+    screenshots,
     pgmCuts: slots.map((slot) => ({ moduleId: slot.moduleId, decoderCount: 8, documentVideoCount: 8, selectedElementIdentity: slot.elementIdentity,
       pgmElementIdentity: slot.elementIdentity, selectedSourceId: `slot-${slot.moduleId}`, rendererSourceId: `slot-${slot.moduleId}`,
       selectedCurrentSrc: slot.currentSrc, rendererSource: slot.currentSrc,
@@ -96,6 +129,7 @@ function report(): EightVideoProofReport {
       cachedTextureBound: false, samplePath: 'external-texture' })),
     networkRequests: ['http://127.0.0.1:5174/', 'http://127.0.0.1:5174/__api/analyze/rhythm'],
     hotSwap,
+    legacyDriftReport: summarizeLegacyDrift(samples, hotSwap),
     errors: { console: [], network: [], gpu: [], uncaught: [] }
   };
 }
@@ -105,9 +139,81 @@ describe('eight-video research benchmark gate', () => {
     expect(evaluateEightVideoProof(report())).toEqual({ passed: true, blockers: [] });
   });
 
-  test('records optional desktop runtime label without changing web gate rules', () => {
+  test('fails closed on missing or stale shared provenance', () => {
+    const missing = report();
+    (missing as { provenance?: EightVideoProofReport['provenance'] }).provenance = undefined;
+    expect(evaluateEightVideoProof(missing).blockers).toContain('artifact provenance is missing or has an unsupported schema');
+
+    const stale = report();
+    stale.provenance.capturedAt = '2020-01-01T00:00:00.000Z';
+    stale.provenance.freshness.expiresAt = '2020-01-02T00:00:00.000Z';
+    expect(evaluateEightVideoProof(stale).blockers).toContain('artifact provenance is stale');
+  });
+
+  test('fails closed on zero media advance and exact BPM mismatch', () => {
+    const value = report();
+    for (const sample of value.samples) sample.slots[0]!.currentTime = 1;
+    value.samples.at(-1)!.slots[0]!.totalVideoFrames = value.samples[0]!.slots[0]!.totalVideoFrames;
+    value.audio.bpm = 127;
+    const blockers = evaluateEightVideoProof(value).blockers;
+    expect(blockers).toContain('slot did not play concurrently: module-0');
+    expect(blockers).toContain('Redline BPM mismatch: expected 128');
+  });
+
+  test('fails closed when WebGPU is false or unavailable', () => {
+    const value = report();
+    (value.environment as { gpu?: EightVideoProofReport['environment']['gpu'] }).gpu = undefined;
+    value.provenance.environment.webgpuAvailable = false;
+    value.provenance.capabilities.webgpu = 'failed';
+    const blockers = evaluateEightVideoProof(value);
+    expect(blockers.blockers).toContain('WebGPU is false or unavailable in captured provenance');
+    expect(blockers.blockers).toContain('WebGPU device provenance is missing');
+  });
+
+  test('fails closed on missing primary samples and content-integrity mismatch', () => {
+    const missing = report();
+    missing.provenance.contentIntegrity.primarySamples = [];
+    expect(evaluateEightVideoProof(missing).blockers).toContain('primary content-integrity samples are missing');
+
+    const mismatched = report();
+    mismatched.provenance.contentIntegrity.primarySamples[0]!.rendererSource = 'blob:wrong';
+    const blockers = evaluateEightVideoProof(mismatched).blockers;
+    expect(blockers).toContain('content-integrity source diagnostics mismatch: video-0.mp4');
+    expect(blockers).toContain('content-integrity sample does not match observed eight-video diagnostics: module-0');
+  });
+
+  test('fails closed on shell/backend mismatch or test-synthetic release evidence', () => {
+    const mismatch = report();
+    mismatch.environment.runtime = 'tauri-macos-native';
+    expect(evaluateEightVideoProof(mismatch).blockers).toContain('report shell identity does not match captured runtime');
+
+    const backendMismatch = report();
+    backendMismatch.provenance.environment.frameProducer = 'test-synthetic';
+    expect(evaluateEightVideoProof(backendMismatch).blockers).toContain('shell/source-backend frame producer mismatch');
+
+    const synthetic = report();
+    synthetic.provenance.environment.sourceBackend = 'test-synthetic';
+    synthetic.provenance.environment.frameProducer = 'test-synthetic';
+    synthetic.provenance.contentIntegrity.primarySamples.forEach((sample) => {
+      sample.sourceBackend = 'test-synthetic';
+      sample.frameProducer = 'test-synthetic';
+    });
+    expect(evaluateEightVideoProof(synthetic).blockers).toContain('test-synthetic backend cannot be release evidence');
+  });
+
+  test('reports legacy drift without using 400ms as a release pass criterion', () => {
+    const value = report();
+    value.samples[1]!.maxDriftSeconds = 0.5;
+    value.legacyDriftReport = summarizeLegacyDrift(value.samples, value.hotSwap);
+    expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
+    expect(value.legacyDriftReport).toMatchObject({ exceeded: true, releaseCriterion: false });
+  });
+
+  test('accepts an explicit tauri-desktop shell only when runtime and HTML-video backend agree', () => {
     const value = report();
     value.environment.runtime = 'tauri-macos-native';
+    value.provenance.environment.shellKind = 'tauri-desktop';
+    value.provenance.environment.runtime = { name: 'Tauri WebView', version: '2.0', userAgent: 'WebView2' };
     expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
   });
 
@@ -235,11 +341,11 @@ describe('all-catalog hot-swap stress gate', () => {
     expect(blockers).toContain('timeline generation changed during catalog hot swaps');
   });
 
-  test('rejects slot drift above 400ms', () => {
+  test('keeps the old 400ms drift threshold as report-only legacy evidence', () => {
     const value = report().hotSwap;
     value.steps[0]!.samples[1]!.slots[0]!.driftSeconds = 0.401;
     const blockers = evaluateCatalogHotSwapStress(value).blockers;
-    expect(blockers).toContain('shared timeline drift exceeded 400ms during swap: transition:top-0');
+    expect(blockers).not.toContain('shared timeline drift exceeded 400ms during swap: transition:top-0');
   });
 
   test('rejects a stalled decoded slot through a swap', () => {

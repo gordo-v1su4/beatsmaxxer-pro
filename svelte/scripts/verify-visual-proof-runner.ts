@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { FIXED_VISUAL_PROOF_FIXTURE, evaluateVisualProofReport, type VisualProofReport } from '../src/lib/qa/visualProof.ts';
@@ -12,17 +13,45 @@ import {
 
 const REPORT_PATH = process.env.VISUAL_PROOF_REPORT ?? '.artifacts/visual-proof/report.json';
 const MAX_MEDIA_TOLERANCE_SECONDS = 2 / 30;
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+async function gitCommit(root: string) {
+  const child = Bun.spawn(['git', 'rev-parse', 'HEAD'], {
+    cwd: resolve(root, '..'), stdout: 'pipe', stderr: 'pipe'
+  });
+  const [text, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  if (exitCode !== 0) throw new Error('git rev-parse HEAD failed');
+  return text.trim();
+}
 
 export async function verifyVisualProof(report: VisualProofReport, root = process.cwd()) {
   const blockers = [...evaluateVisualProofReport(report).blockers];
+  if (!report.provenance?.source || !report.provenance.build || !report.provenance.dependencyLock ||
+      !report.provenance.contentIntegrity || !Array.isArray(report.provenance.fixtureFiles)) {
+    return [...new Set(blockers.length ? blockers : ['artifact provenance is missing or invalid'])];
+  }
   if (process.env.PHYSICAL_BROWSER_OBSERVED !== '1' || process.env.PHYSICAL_BROWSER_OPERATOR?.trim() !== report.humanObservationAttestation.operator) {
     blockers.push('human observation attestation was not independently supplied to verification');
   }
   const sourceDigest = await computeVisualProofSourceDigest(root);
-  if (sourceDigest !== report.provenance.sourceDigest) blockers.push('source/build digest changed after capture');
+  if (sourceDigest !== report.provenance.source.digest) blockers.push('source digest changed after capture');
+  try {
+    if (await gitCommit(root) !== report.provenance.source.commit) blockers.push('source commit changed after capture');
+  } catch (error) {
+    blockers.push(`source commit unavailable during verification: ${String(error)}`);
+  }
+  try {
+    if (sha256(await readFile(resolve(root, 'bun.lock'))) !== report.provenance.dependencyLock.sha256) {
+      blockers.push('dependency lock changed after capture');
+    }
+  } catch (error) {
+    blockers.push(`dependency lock unavailable during verification: ${String(error)}`);
+  }
   try {
     const buildDigest = await computeVisualProofBuildDigest(root);
-    if (buildDigest !== report.provenance.buildDigest) blockers.push('production build digest changed after capture');
+    if (buildDigest !== report.provenance.build.digest || buildDigest !== report.provenance.build.id) {
+      blockers.push('production build digest changed after capture');
+    }
   } catch (error) {
     blockers.push(`production build unavailable during verification: ${String(error)}`);
   }
@@ -51,14 +80,20 @@ export async function verifyVisualProof(report: VisualProofReport, root = proces
       blockers.push(`real MP4 binding does not match verifier metadata: ${clip.fileName}`);
     }
     try {
-      const [first, second] = await Promise.all([
+      const [firstBytes, secondBytes] = await Promise.all([
         readFile(resolve(root, clip.firstScreenshot)), readFile(resolve(root, clip.secondScreenshot))
-      ]).then(([a, b]) => [parsePngMetrics(a), parsePngMetrics(b)] as const);
+      ]);
+      const [first, second] = [parsePngMetrics(firstBytes), parsePngMetrics(secondBytes)];
       verifiedRealFirstFrames.push(first);
       if (first.contentHash !== clip.firstContentHash || second.contentHash !== clip.secondContentHash ||
           Math.abs(pixelDifferenceRatio(first, second) - clip.pixelMotionRatio) > 1e-9 ||
           pixelDifferenceRatio(first, second) <= 0.01) {
         blockers.push(`real MP4 screenshots do not prove substantive motion: ${clip.fileName}`);
+      }
+      const integritySample = report.provenance.contentIntegrity.primarySamples
+        .find((sample) => sample.assetName === clip.fileName);
+      if (!integritySample || integritySample.outputFrameSha256 !== sha256(secondBytes)) {
+        blockers.push(`content-integrity output frame hash mismatch: ${clip.fileName}`);
       }
     } catch (error) {
       blockers.push(`invalid real MP4 screenshot evidence: ${clip.fileName}: ${String(error)}`);

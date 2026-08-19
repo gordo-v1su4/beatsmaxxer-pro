@@ -3,7 +3,15 @@ import { mkdir, readdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
 import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
-import { EIGHT_VIDEO_OBSERVATION_MS, EIGHT_VIDEO_WARMUP_MS, type CatalogHotSwapStressEvidence, type EightVideoProofReport } from '../src/lib/qa/eightVideoProof.ts';
+import {
+  EIGHT_VIDEO_EXPECTED_BPM,
+  EIGHT_VIDEO_OBSERVATION_MS,
+  EIGHT_VIDEO_WARMUP_MS,
+  summarizeLegacyDrift,
+  type CatalogHotSwapStressEvidence,
+  type EightVideoProofReport
+} from '../src/lib/qa/eightVideoProof.ts';
+import { createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qaProof=1';
 const OUTPUT_DIR = '.artifacts/eight-video-proof';
@@ -19,6 +27,14 @@ type Snapshot = { decoderCount: number; documentVideoCount: number; timelineGene
   transportSeconds: number; maxDriftSeconds: number; slots: Array<any> };
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const status = (passed: boolean): ProofCapabilityStatus => passed ? 'passed' : 'failed';
+
+async function gitText(...args: string[]) {
+  const child = Bun.spawn(['git', ...args], { cwd: '..', stdout: 'pipe', stderr: 'pipe' });
+  const [text, exitCode] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+  if (exitCode !== 0) throw new Error(`git ${args.join(' ')} failed`);
+  return text.trim();
+}
 
 async function installCapture(session: CdpSession) {
   const errors = { console: [] as string[], network: [] as string[], gpu: [] as string[], uncaught: [] as string[] };
@@ -201,8 +217,80 @@ async function capture() {
     };
     const gpu = await evalPage<any>(session, 'window.__BMX_EIGHT_GPU__');
     protocol.errors.gpu.push(...((await evalPage<string[]>(session, 'window.__BMX_EIGHT_GPU_ERRORS__')) ?? []));
+    const [sourceCommit, dirtyStatus, lockBytes] = await Promise.all([
+      gitText('rev-parse', 'HEAD'),
+      gitText('status', '--porcelain', '--untracked-files=normal'),
+      Bun.file('bun.lock').bytes()
+    ]);
+    const capturedAt = new Date().toISOString();
+    const fixtureByName = new Map(fixtures.map((fixture) => [fixture.name, fixture]));
+    const screenshotByModule = new Map(screenshots.map((screenshot) => [screenshot.moduleId, screenshot]));
+    const firstByModule = new Map(first.slots.map((slot: any) => [slot.moduleId, slot]));
+    const primarySamples = last.slots.map((slot: any) => {
+      const fixture = fixtureByName.get(slot.fileName);
+      const screenshot = screenshotByModule.get(slot.moduleId);
+      return {
+        assetName: slot.fileName,
+        assetSha256: fixture?.sha256 ?? '',
+        observedSource: slot.currentSrc,
+        rendererSource: slot.render?.source ?? '',
+        sourceBackend: 'html-video' as const,
+        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture' as const,
+        sourceFrameId: slot.render?.frameId ?? 0,
+        sourceTimestampSeconds: slot.currentTime,
+        outputFrameSha256: screenshot?.secondSha256 ?? '',
+        width: slot.videoWidth,
+        height: slot.videoHeight
+      };
+    });
+    const videoFixtures = fixtures.filter((fixture) => fixture.width !== null);
+    const mediaAdvanced = last.slots.every((slot: any) => {
+      const initial = firstByModule.get(slot.moduleId) as any;
+      return initial && slot.totalVideoFrames > initial.totalVideoFrames;
+    });
+    const contentIntegrityPassed = primarySamples.length === 8 && primarySamples.every((sample) =>
+      /^[0-9a-f]{64}$/.test(sample.assetSha256) && /^[0-9a-f]{64}$/.test(sample.outputFrameSha256) &&
+      sample.observedSource === sample.rendererSource && sample.sourceFrameId > 0);
+    const artifactProvenance = createArtifactProvenance({
+      captureId: crypto.randomUUID(),
+      capturedAt,
+      source: { commit: sourceCommit, digest: sourceDigest, workingTreeDirty: dirtyStatus.length > 0 },
+      build: { id: buildDigest, digest: buildDigest, profile: 'production' },
+      dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
+      environment: {
+        shellKind: 'browser',
+        sourceBackend: 'html-video',
+        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture',
+        releaseEvidence: true,
+        webgpuAvailable: gpu?.deviceCreated === true,
+        runtime: {
+          name: version.product?.split('/')[0] ?? '',
+          version: version.product?.split('/')[1] ?? '',
+          userAgent: version.userAgent ?? ''
+        },
+        device: {
+          operatingSystem: process.platform,
+          architecture: process.arch,
+          model: [gpu?.vendor, gpu?.device].filter(Boolean).join(' ') || 'unknown',
+          gpuIdentity: [gpu?.vendor, gpu?.architecture, gpu?.device, gpu?.description].filter(Boolean).join(' ')
+        }
+      },
+      capabilities: {
+        webgpu: status(gpu?.deviceCreated === true),
+        mediaAdvance: status(mediaAdvanced),
+        bpmMatch: status(Math.abs(Number(lastAudio?.bpm ?? 0) - EIGHT_VIDEO_EXPECTED_BPM) <= 0.01),
+        primarySamples: status(primarySamples.length === 8),
+        contentIntegrity: status(contentIntegrityPassed)
+      },
+      contentIntegrity: {
+        algorithm: 'sha256',
+        requiredPrimarySampleCount: 8,
+        assets: videoFixtures.map((fixture) => ({ name: fixture.name, sha256: fixture.sha256, size: fixture.size })),
+        primarySamples
+      }
+    });
     const report: EightVideoProofReport = {
-      schemaVersion: 1, capturedAt: new Date().toISOString(), provenance: { sourceDigest, buildDigest },
+      schemaVersion: 2, provenance: artifactProvenance,
       warmupMs: EIGHT_VIDEO_WARMUP_MS, observationMs, environment: { browserProduct: version.product ?? '', userAgent: version.userAgent ?? '',
         headless: false, commandLine: command.arguments ?? [], gpu }, fixtures, loadedVia: 'UI CLIPS multi-file',
       humanObservation: { observed: process.env.PHYSICAL_BROWSER_OBSERVED === '1', operator: process.env.PHYSICAL_BROWSER_OPERATOR ?? '',
@@ -213,7 +301,9 @@ async function capture() {
         contextState: String(lastAudio?.contextState ?? ''), contextTimeDelta: Number(lastAudio?.contextCurrentTime ?? 0) - Number(firstAudio?.contextCurrentTime ?? 0),
         mediaTimeDelta: Number(lastAudio?.mediaCurrentTime ?? 0) - Number(firstAudio?.mediaCurrentTime ?? 0), mediaPaused: !!lastAudio?.mediaPaused,
         mediaMuted: !!lastAudio?.mediaMuted, volume: Number(lastAudio?.volume ?? 0), rmsPeak, amplitudePeak },
-      decoderCount: last.decoderCount, samples, screenshots, pgmCuts, hotSwap, networkRequests: protocol.requests, errors: protocol.errors
+      decoderCount: last.decoderCount, samples, screenshots, pgmCuts, hotSwap,
+      legacyDriftReport: summarizeLegacyDrift(samples, hotSwap),
+      networkRequests: protocol.requests, errors: protocol.errors
     };
     await Bun.write(`${OUTPUT_DIR}/report.json`, JSON.stringify(report, null, 2));
     return report;
