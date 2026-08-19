@@ -158,7 +158,7 @@ function completeReport(): VisualProofReport {
         sha256: '2'.repeat(64), size: 1000, loadedVia: 'SONG -> LOCAL ONLY', volume: 0.72, observationDurationMs: 3000,
         contextStateBefore: 'running', contextStateAfter: 'running', contextTimeBefore: 1, contextTimeAfter: 4,
         mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false,
-        expectedBpm: 128, detectedBpm: 128 },
+        expectedBpm: 125, detectedBpm: 125 },
       assignments: Object.fromEntries(manifest.items.filter((item) => item.kind === 'module')
         .map((item) => [item.subjectId, { fileName: REAL_MEDIA_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
       noNetwork: { requests: [], externalRequests: [] }, pausedBeforeEffectMatrix: true, maxSimultaneousDecoded: 1,
@@ -218,13 +218,21 @@ describe('visual proof release gate', () => {
     expect(evaluateVisualProofReport(stale).blockers).toContain('artifact provenance is stale');
   });
 
+  test('accepts authoritative 125 BPM and rejects stale 128 BPM evidence', () => {
+    expect(evaluateVisualProofReport(completeReport()).passed).toBe(true);
+    const stale = completeReport();
+    stale.realMedia.audioExercise.expectedBpm = 128;
+    stale.realMedia.audioExercise.detectedBpm = 128;
+    expect(evaluateVisualProofReport(stale).blockers).toContain('Redline BPM mismatch: expected 125');
+  });
+
   test('fails closed on zero media advance and BPM mismatch', () => {
     const value = completeReport();
     value.realMedia.videoExercise[0]!.secondMediaTimeSeconds = value.realMedia.videoExercise[0]!.firstMediaTimeSeconds;
     value.realMedia.audioExercise.detectedBpm = 127;
     const blockers = evaluateVisualProofReport(value).blockers;
     expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
-    expect(blockers).toContain('Redline BPM mismatch: expected 128');
+    expect(blockers).toContain('Redline BPM mismatch: expected 125');
   });
 
   test('fails closed on missing primary samples and content-integrity mismatch', () => {

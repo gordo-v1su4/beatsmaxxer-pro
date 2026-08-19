@@ -116,7 +116,7 @@ function report(): EightVideoProofReport {
     humanObservation: { observed: true, operator: 'QA Operator', lagObserved: false }, fixtures,
     loadedVia: 'UI CLIPS multi-file',
     audio: { fileName: 'Redline (Remastered).mp3', loadedVia: 'SONG -> ANALYZE', usingUploadedTrack: true,
-      analysisStatus: 'ready', analysisConfidence: 0.9, bpm: 128,
+      analysisStatus: 'ready', analysisConfidence: 0.9, bpm: 125,
       contextState: 'running', contextTimeDelta: 30, mediaTimeDelta: 30, mediaPaused: false, mediaMuted: false,
       volume: 0.72, rmsPeak: 0.1, amplitudePeak: 0.1 },
     decoderCount: 8,
@@ -150,6 +150,13 @@ describe('eight-video research benchmark gate', () => {
     expect(evaluateEightVideoProof(stale).blockers).toContain('artifact provenance is stale');
   });
 
+  test('accepts authoritative 125 BPM and rejects stale 128 BPM evidence', () => {
+    expect(evaluateEightVideoProof(report()).passed).toBe(true);
+    const stale = report();
+    stale.audio.bpm = 128;
+    expect(evaluateEightVideoProof(stale).blockers).toContain('Redline BPM mismatch: expected 125');
+  });
+
   test('fails closed on zero media advance and exact BPM mismatch', () => {
     const value = report();
     for (const sample of value.samples) sample.slots[0]!.currentTime = 1;
@@ -157,7 +164,7 @@ describe('eight-video research benchmark gate', () => {
     value.audio.bpm = 127;
     const blockers = evaluateEightVideoProof(value).blockers;
     expect(blockers).toContain('slot did not play concurrently: module-0');
-    expect(blockers).toContain('Redline BPM mismatch: expected 128');
+    expect(blockers).toContain('Redline BPM mismatch: expected 125');
   });
 
   test('fails closed when WebGPU is false or unavailable', () => {

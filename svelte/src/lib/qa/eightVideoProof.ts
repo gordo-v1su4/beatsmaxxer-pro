@@ -1,6 +1,7 @@
 import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
 import {
   PROOF_REPORT_SCHEMA_VERSION,
+  REDLINE_EXPECTED_BPM,
   validateArtifactProvenance,
   type ArtifactProvenance
 } from '$lib/qa/artifactProvenance';
@@ -8,7 +9,6 @@ import {
 export const EIGHT_VIDEO_WARMUP_MS = 5_000;
 export const EIGHT_VIDEO_OBSERVATION_MS = 30_000;
 export const EIGHT_VIDEO_SLOT_COUNT = 8;
-export const EIGHT_VIDEO_EXPECTED_BPM = 128;
 export const LEGACY_DRIFT_REPORT_THRESHOLD_SECONDS = 0.4;
 
 export interface EightVideoSlotSample {
@@ -431,8 +431,8 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
   fail(report.audio.fileName !== 'Redline (Remastered).mp3' || report.audio.loadedVia !== 'SONG -> ANALYZE' ||
     !report.audio.usingUploadedTrack || report.audio.analysisStatus !== 'ready' ||
     !Number.isFinite(report.audio.bpm), 'Redline did not complete the consented Essentia rhythm path with a usable BPM');
-  fail(Math.abs(report.audio.bpm - EIGHT_VIDEO_EXPECTED_BPM) > 0.01,
-    `Redline BPM mismatch: expected ${EIGHT_VIDEO_EXPECTED_BPM}`);
+  fail(Math.abs(report.audio.bpm - REDLINE_EXPECTED_BPM) > 0.01,
+    `Redline BPM mismatch: expected ${REDLINE_EXPECTED_BPM}`);
   fail(report.audio.contextState !== 'running' || report.audio.contextTimeDelta < 25 || report.audio.mediaTimeDelta < 25 ||
     report.audio.mediaPaused || report.audio.mediaMuted || report.audio.volume < 0.25 ||
     report.audio.rmsPeak <= 0.005 || report.audio.amplitudePeak <= 0.005, 'audible audio diagnostics failed');

@@ -3,11 +3,10 @@ import { MODULE_PRESETS } from '$lib/modules/presets';
 import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 import {
   PROOF_REPORT_SCHEMA_VERSION,
+  REDLINE_EXPECTED_BPM,
   validateArtifactProvenance,
   type ArtifactProvenance
 } from '$lib/qa/artifactProvenance';
-
-export const EXPECTED_REDLINE_BPM = 128;
 
 export const REAL_MEDIA_VIDEO_NAMES = [
   'hf_20260715_204952_1521dea1-55e8-4838-a74c-2afbb212e243.mp4',
@@ -443,9 +442,9 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
       audio.rmsPeak <= 0.005 || audio.amplitudePeak <= 0.005) {
     blockers.push('real Redline audio was not audibly played through SONG -> LOCAL ONLY');
   }
-  if (!audio || audio.expectedBpm !== EXPECTED_REDLINE_BPM ||
+  if (!audio || audio.expectedBpm !== REDLINE_EXPECTED_BPM ||
       !Number.isFinite(audio.detectedBpm) || Math.abs(audio.detectedBpm - audio.expectedBpm) > 0.01) {
-    blockers.push(`Redline BPM mismatch: expected ${EXPECTED_REDLINE_BPM}`);
+    blockers.push(`Redline BPM mismatch: expected ${REDLINE_EXPECTED_BPM}`);
   }
   if (!report.realMedia?.pausedBeforeEffectMatrix) blockers.push('transport was not centrally paused before deterministic effect capture');
   if (report.realMedia?.noNetwork?.externalRequests?.length ||

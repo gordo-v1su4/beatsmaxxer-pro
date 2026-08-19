@@ -15,7 +15,7 @@ import {
   type VisualProofEvidence,
   type VisualProofReport
 } from '../src/lib/qa/visualProof.ts';
-import { createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
+import { REDLINE_EXPECTED_BPM, createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
 
 const QA_URL = 'http://127.0.0.1:5174/?qaProof=1';
 const OUTPUT_DIR = '.artifacts/visual-proof';
@@ -780,7 +780,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     capabilities: {
       webgpu: status(gpu?.deviceCreated === true),
       mediaAdvance: status(mediaAdvanced),
-      bpmMatch: status(Math.abs(detectedBpm - 128) <= 0.01),
+      bpmMatch: status(Math.abs(detectedBpm - REDLINE_EXPECTED_BPM) <= 0.01),
       primarySamples: status(primarySamples.length === videoExercise.length),
       contentIntegrity: status(contentIntegrityPassed)
     },
@@ -841,7 +841,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         rmsPeak: audioPlayback.rmsPeak, amplitudePeak: audioPlayback.amplitudePeak,
         currentSrc: audioPlayback.after.currentSrc, mediaPaused: audioPlayback.after.mediaPaused,
         mediaMuted: audioPlayback.after.mediaMuted,
-        expectedBpm: 128,
+        expectedBpm: REDLINE_EXPECTED_BPM,
         detectedBpm
       },
       assignments: matrixAssignments,

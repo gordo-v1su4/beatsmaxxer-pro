@@ -4,14 +4,13 @@ import { resolve } from 'node:path';
 import { evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
 import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
 import {
-  EIGHT_VIDEO_EXPECTED_BPM,
   EIGHT_VIDEO_OBSERVATION_MS,
   EIGHT_VIDEO_WARMUP_MS,
   summarizeLegacyDrift,
   type CatalogHotSwapStressEvidence,
   type EightVideoProofReport
 } from '../src/lib/qa/eightVideoProof.ts';
-import { createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
+import { REDLINE_EXPECTED_BPM, createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qaProof=1';
 const OUTPUT_DIR = '.artifacts/eight-video-proof';
@@ -278,7 +277,7 @@ async function capture() {
       capabilities: {
         webgpu: status(gpu?.deviceCreated === true),
         mediaAdvance: status(mediaAdvanced),
-        bpmMatch: status(Math.abs(Number(lastAudio?.bpm ?? 0) - EIGHT_VIDEO_EXPECTED_BPM) <= 0.01),
+        bpmMatch: status(Math.abs(Number(lastAudio?.bpm ?? 0) - REDLINE_EXPECTED_BPM) <= 0.01),
         primarySamples: status(primarySamples.length === 8),
         contentIntegrity: status(contentIntegrityPassed)
       },

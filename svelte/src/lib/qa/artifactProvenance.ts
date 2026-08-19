@@ -3,6 +3,7 @@ export const PROOF_REPORT_SCHEMA_VERSION = 2 as const;
 export const PROOF_FRESHNESS_POLICY_ID = 'release-proof-24h.v1' as const;
 export const PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 export const PROOF_MAX_FUTURE_SKEW_MS = 5 * 60 * 1_000;
+export const REDLINE_EXPECTED_BPM = 125;
 
 export type ProofShellKind = 'browser' | 'pwa' | 'tauri-desktop' | 'tauri-mobile';
 export type ProofSourceBackend = 'html-video' | 'test-synthetic' | 'unsupported';
