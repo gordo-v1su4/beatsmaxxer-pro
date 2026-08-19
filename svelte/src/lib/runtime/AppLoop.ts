@@ -285,6 +285,18 @@ export function timeSamplerAccentUniforms(
 }
 
 /**
+ * TimeSampler retains its last slice while stopped so playback can resume its
+ * scheduler state. The video actuator must still follow the stopped transport
+ * position, otherwise that retained slice overwrites STOP's zero seek.
+ */
+export function timeSamplerVideoTarget(
+  frame: Pick<TimelineFrame, 'playing' | 'positionSeconds'>,
+  sourceTimestampSeconds: number
+) {
+  return frame.playing ? sourceTimestampSeconds : frame.positionSeconds;
+}
+
+/**
  * Walk the arrangement. A section owns a bar count, so the playhead leaving its
  * last bar hands over to the next one — and, when auto-bank is on, rebuilds the
  * rack from that section's bank so the chorus plays through different effects
@@ -378,7 +390,7 @@ function syncControlledVideos(
     const ts = live.timeSampler;
     videoPool.syncControlledModule(
       timeSamplerSlot,
-      ts.sourceTimestampSeconds,
+      timeSamplerVideoTarget(frame, ts.sourceTimestampSeconds),
       ts.targetPlaybackRate,
       frame,
       ts.jumpGeneration

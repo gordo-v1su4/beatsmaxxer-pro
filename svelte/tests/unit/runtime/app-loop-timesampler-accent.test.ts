@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { midiNotesForTriggerSource, timeSamplerAccentUniforms } from '$lib/runtime/AppLoop';
+import {
+  midiNotesForTriggerSource,
+  timeSamplerAccentUniforms,
+  timeSamplerVideoTarget,
+} from '$lib/runtime/AppLoop';
 import { firingNotes } from '$lib/stores/midiTrigger';
 import { MODULE_FX_WGSL } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 import type { TimelineFrame } from '$lib/transport';
@@ -38,6 +42,13 @@ describe('TimeSampler authoritative accent uniforms', () => {
     expect(body).toContain('u.aux2 < 0.5');
     expect(body).not.toContain('jumpBeats');
     expect(body).not.toContain('floor(u.beat');
+  });
+});
+
+describe('TimeSampler stopped video target', () => {
+  test('uses live slice time during playback and transport zero after STOP', () => {
+    expect(timeSamplerVideoTarget(frame(4, true), 2.706)).toBe(2.706);
+    expect(timeSamplerVideoTarget(frame(0, false), 2.706)).toBe(0);
   });
 });
 
