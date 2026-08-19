@@ -159,6 +159,7 @@ export class AudioEngine implements IAudioEngine {
       this.stop('restart-near-zero');
     }
     const mediaElement = this.mediaElement;
+    const audioContext = this.ctx;
     const startGeneration = ++this.playbackStartGeneration;
     this.activePlaybackStartGeneration = startGeneration;
     this.uploadedPlaybackValidated = false;
@@ -182,64 +183,45 @@ export class AudioEngine implements IAudioEngine {
      * so every video kept moving and reacting while the song sat paused — it
      * looked like an audio bug in the track, not a lost gesture.
      *
-     * Capture this one invocation and await that exact promise after context
-     * setup. Calling play() again would no longer be inside the original
-     * gesture on Safari/iOS.
+     * Capture the one play invocation and any required context resume before
+     * the first await. Calling either again would no longer be inside the
+     * original gesture on Safari/iOS.
      */
-    let pendingPlay: Promise<void> | null = null;
-    try {
-      pendingPlay = mediaElement.play();
-    } catch {
-      pendingPlay = null;
-    }
+    const pendingPlay = this.gestureAttempt(() => mediaElement.play());
+    const pendingResume = audioContext?.state === "suspended"
+      ? this.gestureAttempt(() => audioContext.resume())
+      : Promise.resolve(audioContext?.state === "running");
 
     try {
-      await this.ensureContext();
-      if (!this.ctx) return;
-
-      if (!isCurrentStart()) {
-        if (pendingPlay) {
-          try {
-            await pendingPlay;
-          } catch {
-            // A cancelled play commonly rejects after pause/disposal.
-          }
-        }
-        this.pauseCancelledStartElement(mediaElement);
-        return;
-      }
-
-      if (this.ctx.state === "suspended") {
-        try {
-          await this.ctx.resume();
-        } catch {
-          // Autoplay policy may block resume until a user gesture.
-        }
-      }
-
-      if (!pendingPlay) {
-        this._playing = false;
-        audioTimeline.pause();
-        audioTimeline.publishFrame();
-        return;
-      }
-
+      let contextSetupSucceeded = true;
       try {
-        await pendingPlay;
+        await this.ensureContext();
       } catch {
-        if (!isCurrentStart()) {
-          this.pauseCancelledStartElement(mediaElement);
-          return;
-        }
-        mediaElement.pause();
-        this._playing = false;
-        audioTimeline.pause();
-        audioTimeline.publishFrame();
+        contextSetupSucceeded = false;
+      }
+      const currentAfterContextSetup =
+        contextSetupSucceeded &&
+        isCurrentStart() &&
+        this.ctx === audioContext;
+
+      const [playAccepted, resumeAccepted] = await Promise.all([
+        pendingPlay,
+        pendingResume,
+      ]);
+
+      if (!isCurrentStart() || this.ctx !== audioContext) {
+        this.pauseCancelledStartElement(mediaElement);
         return;
       }
 
-      if (!isCurrentStart()) {
-        this.pauseCancelledStartElement(mediaElement);
+      if (
+        !currentAfterContextSetup ||
+        !playAccepted ||
+        !resumeAccepted ||
+        !audioContext ||
+        audioContext.state !== "running"
+      ) {
+        this.rejectCurrentPlaybackStart(mediaElement);
         return;
       }
 
@@ -502,6 +484,25 @@ export class AudioEngine implements IAudioEngine {
     this.playbackStartGeneration += 1;
     this.activePlaybackStartGeneration = null;
     this.uploadedPlaybackValidated = false;
+  }
+
+  private gestureAttempt(attempt: () => Promise<void>): Promise<boolean> {
+    try {
+      return attempt().then(
+        () => true,
+        () => false,
+      );
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+
+  private rejectCurrentPlaybackStart(mediaElement: HTMLAudioElement) {
+    mediaElement.pause();
+    this.uploadedPlaybackValidated = false;
+    this._playing = false;
+    audioTimeline.pause();
+    audioTimeline.publishFrame();
   }
 
   private pauseCancelledStartElement(mediaElement: HTMLAudioElement) {

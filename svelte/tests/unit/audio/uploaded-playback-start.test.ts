@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { AudioEngine } from '$lib/audio/AudioEngine';
 
 interface StartInternals {
-  ctx: { state: AudioContextState; resume: () => Promise<void> };
+  ctx: { state: AudioContextState; resume: () => Promise<void> } | null;
   mediaElement: HTMLAudioElement | null;
   _loadedUploadName: string;
   _trackName: string;
@@ -79,6 +79,62 @@ describe('uploaded playback startup', () => {
     });
   });
 
+  test('fails closed when context setup throws after gesture-time play', async () => {
+    const { engine, media } = createHarness(async () => {});
+    const internals = engine as unknown as StartInternals;
+    internals.ensureContext = vi.fn(async () => {
+      throw new Error('context setup failed');
+    });
+
+    await expect(engine.start()).resolves.toBeUndefined();
+
+    expect(media.play).toHaveBeenCalledOnce();
+    expect(media.pause).toHaveBeenCalledOnce();
+    expect(engine.getState().playing).toBe(false);
+  });
+
+  test('fails closed when context setup leaves no current audio context', async () => {
+    const { engine, media } = createHarness(async () => {});
+    const internals = engine as unknown as StartInternals;
+    internals.ctx = null;
+
+    await expect(engine.start()).resolves.toBeUndefined();
+
+    expect(media.play).toHaveBeenCalledOnce();
+    expect(media.pause).toHaveBeenCalledOnce();
+    expect(engine.getState().playing).toBe(false);
+  });
+
+  test('invokes suspended-context resume inside the gesture and fails closed on rejection', async () => {
+    const { engine, media } = createHarness(async () => {});
+    const internals = engine as unknown as StartInternals;
+    const resume = vi.fn(async () => {
+      throw new DOMException('resume rejected', 'NotAllowedError');
+    });
+    internals.ctx = { state: 'suspended', resume };
+
+    const starting = engine.start();
+    expect(media.play).toHaveBeenCalledOnce();
+    expect(resume).toHaveBeenCalledOnce();
+    await starting;
+
+    expect(media.pause).toHaveBeenCalledOnce();
+    expect(engine.getState().playing).toBe(false);
+  });
+
+  test('fails closed when resume resolves but the captured context stays suspended', async () => {
+    const { engine, media } = createHarness(async () => {});
+    const internals = engine as unknown as StartInternals;
+    const resume = vi.fn(async () => {});
+    internals.ctx = { state: 'suspended', resume };
+
+    await expect(engine.start()).resolves.toBeUndefined();
+
+    expect(resume).toHaveBeenCalledOnce();
+    expect(media.pause).toHaveBeenCalledOnce();
+    expect(engine.getState().playing).toBe(false);
+  });
+
   test('stop invalidates a pending play before it can activate the timeline', async () => {
     const pending = deferred();
     const { engine, media } = createHarness(() => pending.promise);
@@ -113,6 +169,39 @@ describe('uploaded playback startup', () => {
     await starting;
 
     expect(oldMedia.play).toHaveBeenCalledOnce();
+    expect(oldMedia.pause).toHaveBeenCalled();
+    expect(newMedia.pause).not.toHaveBeenCalled();
+    expect(engine.getState()).toMatchObject({
+      playing: false,
+      usingUploadedTrack: true,
+      trackName: 'replacement.wav',
+    });
+  });
+
+  test('replacement during pending resume pauses only the old media element', async () => {
+    const pendingResume = deferred();
+    const { engine, media: oldMedia } = createHarness(async () => {});
+    const internals = engine as unknown as StartInternals;
+    const context = { state: 'suspended' as AudioContextState, resume: vi.fn(() => pendingResume.promise) };
+    const newMedia = mediaElement(async () => {}, 0);
+    internals.ctx = context;
+    internals.gainNode = {} as GainNode;
+    internals.disposeMediaElement = vi.fn(() => {
+      internals.mediaElement = null;
+    });
+    internals.attachMediaElement = vi.fn((_url, trackName) => {
+      internals.mediaElement = newMedia;
+      internals._trackName = trackName;
+    });
+
+    const starting = engine.start();
+    expect(oldMedia.play).toHaveBeenCalledOnce();
+    expect(context.resume).toHaveBeenCalledOnce();
+    await engine.loadAudioUrl('replacement.wav', 'replacement.wav');
+    context.state = 'running';
+    pendingResume.resolve();
+    await starting;
+
     expect(oldMedia.pause).toHaveBeenCalled();
     expect(newMedia.pause).not.toHaveBeenCalled();
     expect(engine.getState()).toMatchObject({
