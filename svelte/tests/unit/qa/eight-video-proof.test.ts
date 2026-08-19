@@ -2,10 +2,11 @@ import { describe, expect, test } from 'vitest';
 import { EIGHT_VIDEO_OBSERVATION_MS, EIGHT_VIDEO_WARMUP_MS, evaluateCatalogHotSwapStress, evaluateEightVideoProof, summarizeLegacyDrift, type EightVideoProofReport } from '$lib/qa/eightVideoProof';
 import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
 import { createArtifactProvenance } from '$lib/qa/artifactProvenance';
+import { REDLINE_AUDIO_NAME, REDLINE_AUDIO_SOURCE_PATH, REDLINE_VIDEO_NAMES, REDLINE_VIDEO_SOURCE_PATHS } from '$lib/qa/redlineProofMedia';
 
 function report(): EightVideoProofReport {
   const slots = Array.from({ length: 8 }, (_, index) => ({
-    moduleId: `module-${index}`, fileName: `video-${index}.mp4`, elementIdentity: `element-${index}`,
+    moduleId: `module-${index}`, fileName: REDLINE_VIDEO_NAMES[index]!, elementIdentity: `element-${index}`,
     currentSrc: `blob:video-${index}`, readyState: 4, paused: false, currentTime: 1,
     videoWidth: 1920, videoHeight: 1080, duration: 10, totalVideoFrames: 30, droppedVideoFrames: 0,
     render: { source: `blob:video-${index}`, externalTextureImported: true, externalTextureBound: true,
@@ -65,10 +66,10 @@ function report(): EightVideoProofReport {
     })
   };
   const fixtures = [
-    ...Array.from({ length: 8 }, (_, index) => ({ relativePath: `../.artifacts/real-media/videos/video-${index}.mp4`, name: `video-${index}.mp4`,
+    ...Array.from({ length: 8 }, (_, index) => ({ relativePath: REDLINE_VIDEO_SOURCE_PATHS[index]!, name: REDLINE_VIDEO_NAMES[index]!,
       size: 1000, sha256: String(index + 1).repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mp4' })),
-    { relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3', name: 'Redline (Remastered).mp3', size: 1000,
-      sha256: 'f'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['mp3'], formatName: 'mp3' }
+    { relativePath: REDLINE_AUDIO_SOURCE_PATH, name: REDLINE_AUDIO_NAME, size: 1000,
+      sha256: 'f'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['pcm_s24le'], formatName: 'wav' }
   ];
   const samples: EightVideoProofReport['samples'] = Array.from({ length: 31 }, (_, sampleIndex) => ({
     elapsedMs: sampleIndex * 1_000, decoderCount: 8, documentVideoCount: 8,
@@ -87,6 +88,7 @@ function report(): EightVideoProofReport {
     captureId: '12345678-1234-4234-8234-123456789abc', capturedAt: new Date().toISOString(),
     source: { commit: 'c'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
     build: { id: 'b'.repeat(64), digest: 'b'.repeat(64), profile: 'production' },
+    server: { kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'b'.repeat(64) },
     dependencyLock: { path: 'bun.lock', sha256: 'd'.repeat(64) },
     environment: {
       shellKind: 'browser', sourceBackend: 'html-video',
@@ -115,7 +117,7 @@ function report(): EightVideoProofReport {
         softwareRenderer: false, deviceCreated: true } },
     humanObservation: { observed: true, operator: 'QA Operator', lagObserved: false }, fixtures,
     loadedVia: 'UI CLIPS multi-file',
-    audio: { fileName: 'Redline (Remastered).mp3', loadedVia: 'SONG -> ANALYZE', usingUploadedTrack: true,
+    audio: { fileName: REDLINE_AUDIO_NAME, loadedVia: 'SONG -> ANALYZE', usingUploadedTrack: true,
       analysisStatus: 'ready', analysisConfidence: 0.9, bpm: 125,
       contextState: 'running', contextTimeDelta: 30, mediaTimeDelta: 30, mediaPaused: false, mediaMuted: false,
       volume: 0.72, rmsPeak: 0.1, amplitudePeak: 0.1 },
@@ -127,7 +129,7 @@ function report(): EightVideoProofReport {
       selectedCurrentSrc: slot.currentSrc, rendererSource: slot.currentSrc,
       externalTextureImported: true, externalTextureBound: true, cachedTextureUploaded: false,
       cachedTextureBound: false, samplePath: 'external-texture' })),
-    networkRequests: ['http://127.0.0.1:5174/', 'http://127.0.0.1:5174/__api/analyze/rhythm'],
+    networkRequests: ['http://127.0.0.1:5194/', 'http://127.0.0.1:5194/__api/analyze/rhythm'],
     hotSwap,
     legacyDriftReport: summarizeLegacyDrift(samples, hotSwap),
     errors: { console: [], network: [], gpu: [], uncaught: [] }
@@ -185,7 +187,7 @@ describe('eight-video research benchmark gate', () => {
     const mismatched = report();
     mismatched.provenance.contentIntegrity.primarySamples[0]!.rendererSource = 'blob:wrong';
     const blockers = evaluateEightVideoProof(mismatched).blockers;
-    expect(blockers).toContain('content-integrity source diagnostics mismatch: video-0.mp4');
+    expect(blockers).toContain(`content-integrity source diagnostics mismatch: ${REDLINE_VIDEO_NAMES[0]}`);
     expect(blockers).toContain('content-integrity sample does not match observed eight-video diagnostics: module-0');
   });
 
@@ -221,6 +223,7 @@ describe('eight-video research benchmark gate', () => {
     value.environment.runtime = 'tauri-macos-native';
     value.provenance.environment.shellKind = 'tauri-desktop';
     value.provenance.environment.runtime = { name: 'Tauri WebView', version: '2.0', userAgent: 'WebView2' };
+    value.provenance.server = { kind: 'tauri-bundled-static', origin: 'http://tauri.localhost', buildDigest: value.provenance.build.digest };
     expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
   });
 
@@ -258,7 +261,7 @@ describe('eight-video research benchmark gate', () => {
     const value = report();
     value.audio.analysisStatus = 'local';
     value.audio.bpm = 0;
-    value.networkRequests = ['http://127.0.0.1:5174/'];
+    value.networkRequests = ['http://127.0.0.1:5194/'];
     const blockers = evaluateEightVideoProof(value).blockers;
     expect(blockers).toContain('Redline did not complete the consented Essentia rhythm path with a usable BPM');
     expect(blockers).toContain('expected exactly one same-origin Essentia rhythm analysis request');
@@ -272,7 +275,7 @@ describe('eight-video research benchmark gate', () => {
     sample.render.externalTextureBound = false;
     sample.render.cachedTextureBound = true;
     sample.render.samplePath = 'cached-video-texture';
-    value.networkRequests.push('http://127.0.0.1:5174/src/lib/audio/prepareAnalysisUpload.ts');
+    value.networkRequests.push('http://127.0.0.1:5194/src/lib/audio/prepareAnalysisUpload.ts');
     expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
   });
 });

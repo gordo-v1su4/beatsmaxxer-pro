@@ -5,6 +5,7 @@ import {
   validateArtifactProvenance,
   type ArtifactProvenance
 } from '$lib/qa/artifactProvenance';
+import { REDLINE_AUDIO_NAME, REDLINE_VIDEO_NAMES, REDLINE_VIDEO_SOURCE_PATHS } from '$lib/qa/redlineProofMedia';
 
 export const EIGHT_VIDEO_WARMUP_MS = 5_000;
 export const EIGHT_VIDEO_OBSERVATION_MS = 30_000;
@@ -344,7 +345,12 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
     'GPU adapter identity metadata is missing');
   fail(report.fixtures.length !== 9 || report.fixtures.filter((f) => f.width !== null).length !== 8,
     'fixture metadata must contain exactly eight videos and Redline');
-  fail(!report.fixtures.some((fixture) => fixture.name === 'Redline (Remastered).mp3') ||
+  const expectedVideoNames = REDLINE_VIDEO_NAMES.slice(0, EIGHT_VIDEO_SLOT_COUNT);
+  const videoFixtures = report.fixtures.filter((fixture) => fixture.width !== null);
+  fail(JSON.stringify(videoFixtures.map((fixture) => fixture.name)) !== JSON.stringify(expectedVideoNames) ||
+    JSON.stringify(videoFixtures.map((fixture) => fixture.relativePath)) !== JSON.stringify(REDLINE_VIDEO_SOURCE_PATHS.slice(0, EIGHT_VIDEO_SLOT_COUNT)),
+  'eight-video fixtures do not match the authoritative Redline manifest');
+  fail(!report.fixtures.some((fixture) => fixture.name === REDLINE_AUDIO_NAME) ||
     report.fixtures.some((fixture) => fixture.size < 1 || fixture.durationSeconds <= 0 || fixture.codecs.length === 0 ||
       (fixture.width !== null && (fixture.width < 1 || (fixture.height ?? 0) < 1))), 'fixture codec metadata is incomplete');
   fail(new Set(report.fixtures.map((f) => f.sha256)).size !== report.fixtures.length, 'fixtures are not distinct');
@@ -428,7 +434,7 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
       (cut.cachedTextureBound && cut.samplePath === 'cached-video-texture')),
       `PGM video texture path failed: ${cut.moduleId}`);
   }
-  fail(report.audio.fileName !== 'Redline (Remastered).mp3' || report.audio.loadedVia !== 'SONG -> ANALYZE' ||
+  fail(report.audio.fileName !== REDLINE_AUDIO_NAME || report.audio.loadedVia !== 'SONG -> ANALYZE' ||
     !report.audio.usingUploadedTrack || report.audio.analysisStatus !== 'ready' ||
     !Number.isFinite(report.audio.bpm), 'Redline did not complete the consented Essentia rhythm path with a usable BPM');
   fail(Math.abs(report.audio.bpm - REDLINE_EXPECTED_BPM) > 0.01,

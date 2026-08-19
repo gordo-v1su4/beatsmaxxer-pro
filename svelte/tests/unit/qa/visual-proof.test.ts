@@ -4,7 +4,6 @@ import {
   FIXED_VISUAL_PROOF_FIXTURE,
   FIXED_VISUAL_PROOF_TIMELINE_POSITIONS,
   FIXED_VISUAL_PROOF_VIEWPORT,
-  REAL_MEDIA_VIDEO_NAMES,
   buildVisualProofManifest,
   evaluateVisualProofReport,
   retainSerialVisualProofSelection,
@@ -13,6 +12,13 @@ import {
   validateVisualProofRealVideoExercise,
   type VisualProofReport
 } from '$lib/qa/visualProof';
+import {
+  REDLINE_AUDIO_NAME,
+  REDLINE_AUDIO_SOURCE_PATH,
+  REDLINE_MIDI_SOURCE_PATHS,
+  REDLINE_VIDEO_NAMES,
+  REDLINE_VIDEO_SOURCE_PATHS
+} from '$lib/qa/redlineProofMedia';
 import { verifyVisualProof } from '../../../scripts/verify-visual-proof-runner';
 import { realMediaFileMetadata } from '../../../scripts/visual-proof-verification';
 import { MODULE_PRESETS } from '$lib/modules/presets';
@@ -63,20 +69,20 @@ function completeReport(): VisualProofReport {
       expectedMediaTimeSeconds: FIXED_VISUAL_PROOF_TIMELINE_POSITIONS[index % FIXED_VISUAL_PROOF_TIMELINE_POSITIONS.length],
       actualMediaTimeSeconds: FIXED_VISUAL_PROOF_TIMELINE_POSITIONS[index % FIXED_VISUAL_PROOF_TIMELINE_POSITIONS.length] + 0.01,
       mediaTimeToleranceSeconds: 2 / 30,
-      fixtureClipName: REAL_MEDIA_VIDEO_NAMES[0], currentSrc: 'blob:real-video',
+      fixtureClipName: REDLINE_VIDEO_NAMES[0], currentSrc: 'blob:real-video',
       videoWidth: 1920, videoHeight: 1080, durationSeconds: 10, rendererHasVideo: true,
       bindingId: 'pgm', externalTextureImported: true, externalTextureBound: true, samplePath: 'external-texture',
       rendererSource: 'blob:real-video', rendererDimensions: '1920x1080', rendererFrameId: 42
     },
     ...(item.kind === 'control' ? {} : { configuration: {
-      moduleId: item.subjectId.split(':')[0], fixtureClipName: REAL_MEDIA_VIDEO_NAMES[0],
+      moduleId: item.subjectId.split(':')[0], fixtureClipName: REDLINE_VIDEO_NAMES[0],
       beforeBypassed: true, afterBypassed: false,
       beforeParams: { mix: 50 }, afterParams: { mix: 75 },
       intendedParameterDelta: { mix: { before: 50, after: 75 } }, clipSha256: '1'.repeat(64), currentSrc: 'blob:real-video'
     } })
   }));
-  const videoExercise = REAL_MEDIA_VIDEO_NAMES.map((fileName, index) => ({
-    fileName, relativePath: `../.artifacts/real-media/videos/${fileName}`, sha256: '1'.repeat(64), size: 1000,
+  const videoExercise = REDLINE_VIDEO_NAMES.map((fileName, index) => ({
+    fileName, relativePath: REDLINE_VIDEO_SOURCE_PATHS[index]!, sha256: '1'.repeat(64), size: 1000,
     selectedFileSha256: '1'.repeat(64), selectedFileSize: 1000,
     currentSrc: `blob:video-${index}`, pgmModule: 'transition', bindingId: 'pgm', videoWidth: 1920, videoHeight: 1080, durationSeconds: 10,
     readyState: 4, hasVideo: true, externalTextureImported: true, externalTextureBound: true,
@@ -94,6 +100,7 @@ function completeReport(): VisualProofReport {
     capturedAt: new Date().toISOString(),
     source: { commit: 'e'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
     build: { id: 'd'.repeat(64), digest: 'd'.repeat(64), profile: 'production' },
+    server: { kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'd'.repeat(64) },
     dependencyLock: { path: 'bun.lock', sha256: 'f'.repeat(64) },
     environment: {
       shellKind: 'browser', sourceBackend: 'html-video',
@@ -145,22 +152,22 @@ function completeReport(): VisualProofReport {
     provenance: {
       ...provenance, catalogDigest: 'b'.repeat(64), controlInventoryDigest: 'c'.repeat(64),
       fixtureFiles: [
-        ...REAL_MEDIA_VIDEO_NAMES.map((name) => ({ relativePath: `../.artifacts/real-media/videos/${name}`, name, kind: 'video' as const,
+        ...REDLINE_VIDEO_NAMES.map((name, index) => ({ relativePath: REDLINE_VIDEO_SOURCE_PATHS[index]!, name, kind: 'video' as const,
           size: 1000, sha256: '1'.repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mov,mp4' })),
-        { relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3', name: 'Redline (Remastered).mp3', kind: 'audio' as const,
-          size: 1000, sha256: '2'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['mjpeg', 'mp3'], formatName: 'mp3' }
+        { relativePath: REDLINE_AUDIO_SOURCE_PATH, name: REDLINE_AUDIO_NAME, kind: 'audio' as const,
+          size: 1000, sha256: '2'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['pcm_s24le'], formatName: 'wav' }
       ]
     },
     realMedia: {
       selectedVia: 'CLIP', assignedVia: 'serial QA target helper from one selected File object',
       videoExercise,
-      audioExercise: { fileName: 'Redline (Remastered).mp3', relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3',
+      audioExercise: { fileName: REDLINE_AUDIO_NAME, relativePath: REDLINE_AUDIO_SOURCE_PATH,
         sha256: '2'.repeat(64), size: 1000, loadedVia: 'SONG -> LOCAL ONLY', volume: 0.72, observationDurationMs: 3000,
         contextStateBefore: 'running', contextStateAfter: 'running', contextTimeBefore: 1, contextTimeAfter: 4,
         mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false,
         expectedBpm: 125, detectedBpm: 125 },
       assignments: Object.fromEntries(manifest.items.filter((item) => item.kind === 'module')
-        .map((item) => [item.subjectId, { fileName: REAL_MEDIA_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
+        .map((item) => [item.subjectId, { fileName: REDLINE_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
       noNetwork: { requests: [], externalRequests: [] }, pausedBeforeEffectMatrix: true, maxSimultaneousDecoded: 1,
       adjacentCrossFileDifferenceRatios: Array(12).fill(0.2)
     },
@@ -174,8 +181,18 @@ function completeReport(): VisualProofReport {
 }
 
 describe('visual proof release gate', () => {
+  test('uses only manifest-backed repo Redline media and actual MIDI stems', () => {
+    expect(FIXED_VISUAL_PROOF_FIXTURE.source).toBe('tests/fixtures/media/manifest.json');
+    expect(FIXED_VISUAL_PROOF_FIXTURE.clips).toHaveLength(13);
+    expect(FIXED_VISUAL_PROOF_FIXTURE.midi).toHaveLength(7);
+    expect([...REDLINE_VIDEO_SOURCE_PATHS, REDLINE_AUDIO_SOURCE_PATH, ...REDLINE_MIDI_SOURCE_PATHS]
+      .every((path) => path.startsWith('../docs/test_media/redline-media/'))).toBe(true);
+    expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('.artifacts/real-media');
+    expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('qa.mid');
+  });
+
   test('capture-phase retention survives the normal UI handler clearing its file input', () => {
-    const selected = { name: REAL_MEDIA_VIDEO_NAMES[0], size: 123 };
+    const selected = { name: REDLINE_VIDEO_NAMES[0], size: 123 };
     const input = { files: [selected] as Array<typeof selected>, value: '/fake/path/video.mp4' };
     const retained = retainSerialVisualProofSelection(input.files);
     input.value = '';
@@ -186,7 +203,7 @@ describe('visual proof release gate', () => {
   });
 
   test('ignores empty follow-up changes without erasing a valid captured selection', () => {
-    const selected = { name: REAL_MEDIA_VIDEO_NAMES[0], size: 123 };
+    const selected = { name: REDLINE_VIDEO_NAMES[0], size: 123 };
     const initial = { generation: 0, files: [] as Array<typeof selected>, error: '' };
     const captured = reduceSerialVisualProofSelection(initial, [selected]);
     const afterUiClear = reduceSerialVisualProofSelection(captured, []);
@@ -231,7 +248,7 @@ describe('visual proof release gate', () => {
     value.realMedia.videoExercise[0]!.secondMediaTimeSeconds = value.realMedia.videoExercise[0]!.firstMediaTimeSeconds;
     value.realMedia.audioExercise.detectedBpm = 127;
     const blockers = evaluateVisualProofReport(value).blockers;
-    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
     expect(blockers).toContain('Redline BPM mismatch: expected 125');
   });
 
@@ -243,8 +260,8 @@ describe('visual proof release gate', () => {
     const mismatched = completeReport();
     mismatched.provenance.contentIntegrity.primarySamples[0]!.rendererSource = 'blob:wrong';
     const blockers = evaluateVisualProofReport(mismatched).blockers;
-    expect(blockers).toContain(`content-integrity source diagnostics mismatch: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
-    expect(blockers).toContain(`content-integrity sample does not match observed visual diagnostics: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`content-integrity source diagnostics mismatch: ${REDLINE_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`content-integrity sample does not match observed visual diagnostics: ${REDLINE_VIDEO_NAMES[0]}`);
   });
 
   test('fails closed on shell/backend mismatch or test-synthetic release evidence', () => {
@@ -334,7 +351,7 @@ describe('visual proof release gate', () => {
       'explicit, separately identified human observation attestation is required'
     );
     expect(evaluateVisualProofReport(report).blockers).toContain(
-      `real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`
+      `real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`
     );
   });
 
@@ -344,7 +361,7 @@ describe('visual proof release gate', () => {
     report.realMedia.videoExercise[0]!.released = false;
     const blockers = evaluateVisualProofReport(report).blockers;
     expect(blockers).toContain('real-media proof decoded more than one video at a time');
-    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
   });
 
   test('rejects copied/test-card video instead of the WebGPU external-texture path', () => {
@@ -353,7 +370,7 @@ describe('visual proof release gate', () => {
     report.realMedia.videoExercise[0]!.samplePath = 'test-card';
     report.evidence[0]!.timeline.externalTextureBound = false;
     const blockers = evaluateVisualProofReport(report).blockers;
-    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
     expect(blockers).toContain(`fixed fixture media is not synchronized within tolerance: ${report.evidence[0]!.itemId}`);
   });
 
@@ -389,7 +406,7 @@ describe('visual proof release gate', () => {
         if (blockers.length) throw new Error(blockers.join('; '));
       }
       matrixStarted = true;
-    }).toThrow(REAL_MEDIA_VIDEO_NAMES[5]);
+    }).toThrow(REDLINE_VIDEO_NAMES[5]);
     expect(matrixStarted).toBe(false);
   });
 
@@ -585,14 +602,14 @@ describe('visual proof release gate', () => {
     const report = completeReport();
     report.realMedia.audioExercise.mediaMuted = true;
     report.realMedia.audioExercise.rmsPeak = 0;
-    report.realMedia.noNetwork.requests.push('http://127.0.0.1:5174/__api/analyze/rhythm');
+    report.realMedia.noNetwork.requests.push('http://127.0.0.1:5194/__api/analyze/rhythm');
     const blockers = evaluateVisualProofReport(report).blockers;
     expect(blockers).toContain('real Redline audio was not audibly played through SONG -> LOCAL ONLY');
     expect(blockers).toContain('network analysis/upload traffic occurred during the real-media phase');
   });
 
   test('classifies Redline as audio despite its embedded cover-art video stream', async () => {
-    const audioPath = `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`;
+    const audioPath = REDLINE_AUDIO_SOURCE_PATH;
     const { access } = await import('node:fs/promises');
     try {
       await access(audioPath);

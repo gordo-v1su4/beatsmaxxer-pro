@@ -1,4 +1,4 @@
-export const ARTIFACT_PROVENANCE_SCHEMA_VERSION = 1 as const;
+export const ARTIFACT_PROVENANCE_SCHEMA_VERSION = 2 as const;
 export const PROOF_REPORT_SCHEMA_VERSION = 2 as const;
 export const PROOF_FRESHNESS_POLICY_ID = 'release-proof-24h.v1' as const;
 export const PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -54,6 +54,11 @@ export interface ArtifactProvenance {
     id: string;
     digest: string;
     profile: 'production' | 'release-equivalent-diagnostic';
+  };
+  server: {
+    kind: 'vite-production-preview' | 'tauri-bundled-static';
+    origin: string;
+    buildDigest: string;
   };
   dependencyLock: {
     path: 'bun.lock';
@@ -127,6 +132,14 @@ export function validateArtifactProvenance(
   fail(!isSha256(provenance.build?.id) || provenance.build.id !== provenance.build.digest,
     'build identity is missing or does not match the captured build digest');
   fail(!isSha256(provenance.build?.digest), 'build digest identity is missing or invalid');
+  fail(!provenance.server || !['vite-production-preview', 'tauri-bundled-static'].includes(provenance.server.kind) ||
+    !isHttpOrigin(provenance.server.origin) || provenance.server.buildDigest !== provenance.build?.digest,
+  'release server identity is missing or does not match the captured build');
+  fail(provenance.environment?.shellKind === 'browser' &&
+    (provenance.build?.profile !== 'production' || provenance.server?.kind !== 'vite-production-preview'),
+  'browser release evidence was not served from the captured production preview');
+  fail(provenance.environment?.shellKind === 'tauri-desktop' && provenance.server?.kind !== 'tauri-bundled-static',
+    'desktop release evidence was not served from its bundled static build');
   fail(provenance.dependencyLock?.path !== 'bun.lock' || !isSha256(provenance.dependencyLock?.sha256),
     'dependency lock identity is missing or invalid');
   fail(!Number.isFinite(capturedAtMs), 'artifact capture time is missing or invalid');
@@ -202,4 +215,14 @@ export function validateArtifactProvenance(
 
 export function isSha256(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value);
+}
+
+function isHttpOrigin(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:', 'tauri:'].includes(url.protocol) && url.origin === value;
+  } catch {
+    return false;
+  }
 }

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { FIXED_VISUAL_PROOF_FIXTURE, evaluateVisualProofReport, type VisualProofReport } from '../src/lib/qa/visualProof.ts';
+import { REDLINE_AUDIO_SOURCE_PATH, REDLINE_VIDEO_SOURCE_PATHS } from '../src/lib/qa/redlineProofMedia.ts';
 import {
   computeVisualProofSourceDigest,
   computeVisualProofBuildDigest,
@@ -61,8 +62,8 @@ export async function verifyVisualProof(report: VisualProofReport, root = proces
   if (digestJson(controls) !== report.provenance.controlInventoryDigest) blockers.push('control inventory digest mismatch');
   try {
     const currentFixtureFiles = await realMediaFileMetadata([
-      ...FIXED_VISUAL_PROOF_FIXTURE.clips.map((name) => `${FIXED_VISUAL_PROOF_FIXTURE.root}/${name}`),
-      `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`
+      ...REDLINE_VIDEO_SOURCE_PATHS,
+      REDLINE_AUDIO_SOURCE_PATH
     ], root);
     if (JSON.stringify(currentFixtureFiles) !== JSON.stringify(report.provenance.fixtureFiles)) blockers.push('fixture hashes, sizes, or metadata changed after capture');
   } catch (error) {

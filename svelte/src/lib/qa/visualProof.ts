@@ -7,30 +7,19 @@ import {
   validateArtifactProvenance,
   type ArtifactProvenance
 } from '$lib/qa/artifactProvenance';
-
-export const REAL_MEDIA_VIDEO_NAMES = [
-  'hf_20260715_204952_1521dea1-55e8-4838-a74c-2afbb212e243.mp4',
-  'hf_20260717_235926_b1805436-f918-4add-b83c-f497810c29ea.mp4',
-  'hf_20260715_165127_8bb294ab-8a6d-4851-b877-27465d118317.mp4',
-  'hf_20260718_013335_1eec6ac9-d3fa-4655-a555-21db5a3f95bd.mp4',
-  'hf_20260717_195142_815a3b96-f6e2-4a85-a161-b45df1edae6c.mp4',
-  'hf_20260718_023309_41f04f84-709e-43c7-bb30-6e0c24b8bc21.mp4',
-  'hf_20260716_210852_f5d98eac-eb0a-4e77-be16-65dc75da0308.mp4',
-  'hf_20260718_061437_6ac38dee-9f5a-4e0d-a8d7-fa094f5eacf6.mp4',
-  'hf_20260716_175809_a346b9ad-b8e8-44be-81e0-6fe71985a646.mp4',
-  'hf_20260715_201526_024d1160-e1cf-478a-8c02-5eb43d077bb7.mp4',
-  'hf_20260715_194141_0245c9a1-d272-4a13-a828-2a1600612252.mp4',
-  'hf_20260726_020851_cd23322f-b749-4bd3-b284-eca8e6eabd66.mp4',
-  'hf_20260718_041459_a54159b7-e02c-4ae0-9739-f3589080db4a.mp4'
-] as const;
+import {
+  REDLINE_AUDIO_NAME,
+  REDLINE_AUDIO_VIRTUAL_PATH,
+  REDLINE_MIDI_VIRTUAL_PATHS,
+  REDLINE_VIDEO_NAMES,
+  REDLINE_VIDEO_VIRTUAL_PATHS
+} from '$lib/qa/redlineProofMedia';
 
 export const FIXED_VISUAL_PROOF_FIXTURE = {
-  root: '../.artifacts/real-media',
-  audio: 'audio/Redline (Remastered).mp3',
-  midi: 'tests/fixtures/media/qa.mid',
-  clips: [
-    ...REAL_MEDIA_VIDEO_NAMES.map((name) => `videos/${name}`)
-  ]
+  source: 'tests/fixtures/media/manifest.json',
+  audio: REDLINE_AUDIO_VIRTUAL_PATH,
+  midi: [...REDLINE_MIDI_VIRTUAL_PATHS],
+  clips: [...REDLINE_VIDEO_VIRTUAL_PATHS]
 };
 
 export const FIXED_VISUAL_PROOF_VIEWPORT = {
@@ -408,15 +397,15 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   if (!same(report.manifest.fixture, FIXED_VISUAL_PROOF_FIXTURE)) {
     blockers.push('proof manifest fixture is not the fixed QA fixture');
   }
-  if (report.realMedia?.videoExercise?.length !== REAL_MEDIA_VIDEO_NAMES.length ||
-      !same(report.realMedia.videoExercise.map((entry) => entry.fileName), [...REAL_MEDIA_VIDEO_NAMES])) {
+  if (report.realMedia?.videoExercise?.length !== REDLINE_VIDEO_NAMES.length ||
+      !same(report.realMedia.videoExercise.map((entry) => entry.fileName), [...REDLINE_VIDEO_NAMES])) {
     blockers.push('real-media phase must exercise every staged MP4 in manifest order');
   } else {
     const uniqueSources = new Set(report.realMedia.videoExercise.map((entry) => entry.currentSrc));
     const uniqueFirstFrames = new Set(report.realMedia.videoExercise.map((entry) => entry.firstContentHash));
     const crossFileRatios = report.realMedia.adjacentCrossFileDifferenceRatios ?? [];
-    if (uniqueSources.size !== REAL_MEDIA_VIDEO_NAMES.length || uniqueFirstFrames.size < 10 ||
-        crossFileRatios.length !== REAL_MEDIA_VIDEO_NAMES.length - 1 || crossFileRatios.filter((ratio) => ratio > 0.01).length < 8) {
+    if (uniqueSources.size !== REDLINE_VIDEO_NAMES.length || uniqueFirstFrames.size < 10 ||
+        crossFileRatios.length !== REDLINE_VIDEO_NAMES.length - 1 || crossFileRatios.filter((ratio) => ratio > 0.01).length < 8) {
       blockers.push('real-video sequence reused the same PGM source or screenshot content');
     }
     for (const clip of report.realMedia.videoExercise) {
@@ -435,7 +424,7 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
     blockers.push('real MP4s were not selected serially through the actual CLIP UI path');
   }
   const audio = report.realMedia?.audioExercise;
-  if (!audio || audio.fileName !== 'Redline (Remastered).mp3' || audio.loadedVia !== 'SONG -> LOCAL ONLY' ||
+  if (!audio || audio.fileName !== REDLINE_AUDIO_NAME || audio.loadedVia !== 'SONG -> LOCAL ONLY' ||
       !audio.currentSrc.startsWith('blob:') || audio.volume < 0.25 || audio.observationDurationMs < 2500 ||
       audio.contextStateAfter !== 'running' || audio.contextTimeAfter - audio.contextTimeBefore < 2 ||
       audio.mediaTimeAfter - audio.mediaTimeBefore < 2 || audio.mediaPaused || audio.mediaMuted ||
@@ -580,7 +569,7 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
       }
       if (
         !timeline.fixtureClipName ||
-        !REAL_MEDIA_VIDEO_NAMES.includes(timeline.fixtureClipName as typeof REAL_MEDIA_VIDEO_NAMES[number]) ||
+        !REDLINE_VIDEO_NAMES.includes(timeline.fixtureClipName) ||
         !timeline.currentSrc?.startsWith('blob:') || timeline.videoWidth < 1 || timeline.videoHeight < 1 ||
         timeline.durationSeconds <= 0 || timeline.rendererHasVideo !== true ||
         timeline.externalTextureImported !== true || timeline.externalTextureBound !== true ||

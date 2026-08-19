@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 source "$ROOT/scripts/lib/common.sh"
-trap cleanup_dev_server EXIT
+trap cleanup_production_preview EXIT
 
 if [[ "${HEADLESS:-0}" == "1" ]]; then
   echo "Physical-browser visual proof cannot run headless." >&2
@@ -20,24 +20,14 @@ if [[ "${PHYSICAL_BROWSER_LAG_OBSERVED:-}" != "0" ]]; then
 fi
 
 export HEADLESS=0
-REAL_MEDIA_ROOT="$ROOT/../.artifacts/real-media"
-if [[ ! -f "$REAL_MEDIA_ROOT/audio/Redline (Remastered).mp3" ]]; then
-  echo "Missing staged real audio: $REAL_MEDIA_ROOT/audio/Redline (Remastered).mp3" >&2
-  exit 1
-fi
-real_video_count="$(find "$REAL_MEDIA_ROOT/videos" -maxdepth 1 -type f -name '*.mp4' | wc -l | tr -d ' ')"
-if [[ "$real_video_count" != "13" ]]; then
-  echo "Physical proof requires exactly 13 staged real MP4 files; found $real_video_count" >&2
-  exit 1
-fi
 command -v ffprobe >/dev/null || { echo 'ffprobe is required to verify real-media metadata.' >&2; exit 1; }
-ensure_qa_media
+bun scripts/verify-redline-proof-media.ts
 ensure_artifacts_dir
 printf '%s\n' '[visual-proof] creating source-bound production build'
 bun run build
 cleanup_stale_test_chrome
-ensure_dev_server
-export QA_URL ARTIFACT_DIR
+ensure_production_preview
+export QA_URL PROOF_SERVER_ORIGIN ARTIFACT_DIR
 
 bun scripts/capture-visual-proof-runner.ts
 bun scripts/verify-visual-proof-runner.ts

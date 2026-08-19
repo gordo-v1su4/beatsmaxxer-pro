@@ -9,6 +9,8 @@ ARTIFACT_DIR="${ARTIFACT_DIR:-$ROOT/.artifacts}"
 
 BMX_DEV_PID=""
 BMX_DEV_STARTED=0
+BMX_PROOF_PID=""
+BMX_PROOF_STARTED=0
 
 ensure_qa_media() {
   bash "$ROOT/scripts/setup-qa-media.sh"
@@ -45,6 +47,44 @@ cleanup_dev_server() {
   if [[ "$BMX_DEV_STARTED" == "1" && -n "$BMX_DEV_PID" ]]; then
     kill "$BMX_DEV_PID" 2>/dev/null || true
     wait "$BMX_DEV_PID" 2>/dev/null || true
+  fi
+}
+
+wait_for_production_preview() {
+  local tries="${1:-80}"
+  for _ in $(seq 1 "$tries"); do
+    if [[ -n "$BMX_PROOF_PID" ]] && ! kill -0 "$BMX_PROOF_PID" 2>/dev/null; then
+      echo "Production preview exited before becoming ready." >&2
+      return 1
+    fi
+    if curl -sf "$PROOF_SERVER_ORIGIN" >/dev/null 2>&1; then return 0; fi
+    sleep 0.25
+  done
+  echo "Timed out waiting for production preview at $PROOF_SERVER_ORIGIN" >&2
+  return 1
+}
+
+ensure_production_preview() {
+  local proof_port="${PROOF_PORT:-5194}"
+  export PROOF_SERVER_ORIGIN="http://127.0.0.1:${proof_port}"
+  export PROOF_SERVER_KIND="vite-production-preview"
+  export QA_URL="${PROOF_SERVER_ORIGIN}/?qaProof=1"
+  if curl -sf "$PROOF_SERVER_ORIGIN" >/dev/null 2>&1; then
+    echo "Refusing release capture: port ${proof_port} is already serving an unowned process." >&2
+    return 1
+  fi
+  echo "[proof] starting strict production preview on :${proof_port} ..."
+  bun run preview --host 127.0.0.1 --port "$proof_port" --strictPort &
+  BMX_PROOF_PID=$!
+  BMX_PROOF_STARTED=1
+  wait_for_production_preview
+  echo "[proof] production preview ready at $PROOF_SERVER_ORIGIN"
+}
+
+cleanup_production_preview() {
+  if [[ "$BMX_PROOF_STARTED" == "1" && -n "$BMX_PROOF_PID" ]]; then
+    kill "$BMX_PROOF_PID" 2>/dev/null || true
+    wait "$BMX_PROOF_PID" 2>/dev/null || true
   fi
 }
 
