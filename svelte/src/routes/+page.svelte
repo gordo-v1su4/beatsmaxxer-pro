@@ -30,7 +30,13 @@
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
   import { installBmxQaHook } from '$lib/qa/bmxQa';
   import { fxHold } from '$lib/stores/rack';
-  import { topRowCompact, bottomRowCompact, viewMode } from '$lib/stores/rackUi';
+  import {
+    topRowCompact,
+    bottomRowCompact,
+    viewMode,
+    fxLibOpen,
+    pgmRailOpen
+  } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
   import { parseMidi } from '$lib/audio/MidiParser';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
@@ -267,7 +273,14 @@
        other worse, so ARRANGE replaces the workspace rather than docking under
        it. The engine keeps running underneath either way. -->
   <div class="rack-workspace" style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
-    <div class="side-panels" style="display:flex;flex-shrink:0">
+    <div
+      class="side-panels"
+      style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
+        ? 'var(--fx-lib-width)'
+        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$pgmRailOpen
+        ? 'var(--pgm-rail-width)'
+        : 'var(--pgm-rail-collapsed)'})"
+    >
       <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={rackModules} />

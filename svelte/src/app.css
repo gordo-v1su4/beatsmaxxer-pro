@@ -188,6 +188,24 @@ input[type='range']::-moz-range-thumb {
 	background: var(--rack-bg);
 }
 
+/* On the desktop rack, the module rows define the performance surface's
+   bottom edge. Do not stretch the workspace to fill a taller viewport: that
+   makes the side rails continue below the last module row. */
+@media (min-width: 961px) {
+	.rack-workspace {
+		flex: 0 0 auto;
+	}
+
+	.side-panels {
+		/* Let the rack column set the shared row height. The PGM list then uses
+		   its existing internal scroller instead of making the rail taller. */
+		contain: size;
+		height: auto;
+		min-height: 0;
+		overflow: hidden;
+	}
+}
+
 .rack-main {
 	flex: 1;
 	display: flex;
