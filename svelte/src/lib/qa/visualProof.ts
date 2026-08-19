@@ -355,6 +355,9 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   ) {
     blockers.push('browser identity must come from a headed CDP browser session');
   }
+  if (report.environment.browserCommandLine.some((arg) => arg === '--autoplay-policy=no-user-gesture-required')) {
+    blockers.push('release proof must use a visible PLAY gesture without an autoplay-policy bypass');
+  }
   if (
     !gpu ||
     gpu.api !== 'WebGPU' ||

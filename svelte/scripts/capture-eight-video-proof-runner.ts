@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
-import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
+import { dispatchVisibleButtonClick, evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
+import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, parsePngMetrics, pixelDifferenceRatio, readProductionPreviewIdentity, realMediaFileMetadata } from './visual-proof-verification.ts';
 import {
   EIGHT_VIDEO_OBSERVATION_MS,
   EIGHT_VIDEO_WARMUP_MS,
@@ -116,8 +116,9 @@ async function capture() {
   const videoPaths = REDLINE_VIDEO_SOURCE_PATHS.slice(0, 8);
   if (videoPaths.length !== 8) throw new Error(`Expected eight manifest-backed MP4s; found ${videoPaths.length}`);
   const fixturePaths = [...videoPaths, AUDIO_PATH];
-  const [fixtures, sourceDigest, buildDigest] = await Promise.all([
-    realMediaFileMetadata(fixturePaths), computeVisualProofSourceDigest(), computeVisualProofBuildDigest()
+  const [fixtures, sourceDigest, buildDigest, previewIdentity] = await Promise.all([
+    realMediaFileMetadata(fixturePaths), computeVisualProofSourceDigest(), computeVisualProofBuildDigest(),
+    readProductionPreviewIdentity(new URL(QA_URL).origin)
   ]);
 
   return withChrome('eight-video-proof', 10_200, async (session) => {
@@ -132,7 +133,8 @@ async function capture() {
     if (!analyzeClicked) throw new Error('SONG -> ANALYZE choice was unavailable');
     await evalPage(session, `window.__BMX_QA__?.waitForAnalysis?.('ready', 90000)`, 95_000, 'wait for consented Essentia analysis');
     await setFiles(session, '.topbar-shell input[type="file"][multiple]', videoPaths);
-    await evalPage(session, `window.__BMX_QA__?.startTransport?.()`, 15_000, 'explicitly start transport');
+    await dispatchVisibleButtonClick(session, 'PLAY');
+    await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
     await evalPage(session, `window.__BMX_QA__?.prepareEightVideoBenchmark?.(60000)`, 70_000, 'prepare eight concurrent rack videos');
 
     await Bun.sleep(EIGHT_VIDEO_WARMUP_MS);
@@ -269,7 +271,8 @@ async function capture() {
       server: {
         kind: 'vite-production-preview',
         origin: new URL(QA_URL).origin,
-        buildDigest
+        buildDigest,
+        ...previewIdentity
       },
       dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
       environment: {

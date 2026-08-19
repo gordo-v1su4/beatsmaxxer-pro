@@ -20,6 +20,7 @@ if [[ "${PHYSICAL_BROWSER_LAG_OBSERVED:-}" != "0" ]]; then
 fi
 
 export HEADLESS=0
+unset QA_AUTOPLAY_BYPASS
 command -v ffprobe >/dev/null || { echo 'ffprobe is required to verify real-media metadata.' >&2; exit 1; }
 bun scripts/verify-redline-proof-media.ts
 ensure_artifacts_dir

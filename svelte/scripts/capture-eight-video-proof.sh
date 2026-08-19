@@ -10,6 +10,7 @@ trap cleanup_production_preview EXIT
 command -v ffprobe >/dev/null || { echo 'ffprobe is required.' >&2; exit 1; }
 bun scripts/verify-redline-proof-media.ts
 export HEADLESS=0
+unset QA_AUTOPLAY_BYPASS
 bun run build
 ensure_production_preview
 bun scripts/capture-eight-video-proof-runner.ts

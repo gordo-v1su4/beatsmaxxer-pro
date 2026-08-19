@@ -335,6 +335,8 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
   fail(!runtimeClaimsTauri && !['browser', 'pwa'].includes(shellKind ?? ''),
     'report shell identity does not match captured runtime');
   const command = report.environment.commandLine.join(' ').toLowerCase();
+  fail(command.includes('--autoplay-policy=no-user-gesture-required'),
+    'release proof must use a visible PLAY gesture without an autoplay-policy bypass');
   fail(!report.environment.commandLine.includes('--enable-automation'), 'Chrome command-line provenance is unavailable');
   const gpu = report.environment.gpu;
   const gpuText = gpu ? Object.values(gpu).join(' ').toLowerCase() : '';

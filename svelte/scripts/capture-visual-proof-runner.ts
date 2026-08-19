@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
-import { evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
+import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, readProductionPreviewIdentity, realMediaFileMetadata } from './visual-proof-verification.ts';
+import { dispatchVisibleButtonClick, evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
 import {
   FIXED_VISUAL_PROOF_FIXTURE,
   FIXED_VISUAL_PROOF_TIMELINE_POSITIONS,
@@ -439,7 +439,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
   await exerciseControl(session, localOnly);
-  await evalPage(session, `window.__BMX_QA__?.startTransport?.()`, 15_000, 'explicitly start transport');
+  await dispatchVisibleButtonClick(session, 'PLAY');
+  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
   const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
   const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
@@ -599,7 +600,9 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
           await evalPage(session, `window.__BMX_QA__?.releaseAllVisualProofClips?.()`, 30_000);
           activeMatrixModule = null;
         }
-        const action = await exerciseControl(session, control);
+        const action = isPlayControl
+          ? await dispatchVisibleButtonClick(session, 'PLAY').then(() => ({ ok: true }))
+          : await exerciseControl(session, control);
         actionOk = Boolean(action?.ok);
         actionError = action?.error;
         if (uploadedTrackLoadGeneration !== null && actionOk) {
@@ -742,12 +745,13 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   );
   if (!gpu) captureErrors.push('WebGPU adapter/device provenance was not captured from navigator.gpu.requestAdapter');
 
-  const [sourceDigest, buildDigest, sourceCommit, dirtyStatus, lockBytes] = await Promise.all([
+  const [sourceDigest, buildDigest, sourceCommit, dirtyStatus, lockBytes, previewIdentity] = await Promise.all([
     computeVisualProofSourceDigest(),
     computeVisualProofBuildDigest(),
     gitText('rev-parse', 'HEAD'),
     gitText('status', '--porcelain', '--untracked-files=normal'),
-    readFile('bun.lock')
+    readFile('bun.lock'),
+    readProductionPreviewIdentity(new URL(QA_URL).origin)
   ]);
   const capturedAt = new Date().toISOString();
   const contentAssets = videoExercise.map((clip) => ({ name: clip.fileName, sha256: clip.sha256, size: clip.size }));
@@ -776,7 +780,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       server: {
         kind: 'vite-production-preview',
         origin: new URL(QA_URL).origin,
-        buildDigest
+        buildDigest,
+        ...previewIdentity
       },
     dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
     environment: {

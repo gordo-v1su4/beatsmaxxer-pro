@@ -115,6 +115,47 @@ export function digestJson(value: unknown) {
   return hasher.digest('hex');
 }
 
+export interface ProductionPreviewIdentity {
+  versionPath: '/_app/version.json';
+  version: string;
+  versionSha256: string;
+}
+
+export async function readLocalProductionBuildIdentity(root = process.cwd()): Promise<ProductionPreviewIdentity> {
+  const versionPath = '/_app/version.json' as const;
+  const localBytes = await readFile(resolve(root, 'build/_app/version.json'));
+  let version = '';
+  try {
+    const parsed = JSON.parse(localBytes.toString('utf8')) as { version?: unknown };
+    version = typeof parsed.version === 'string' ? parsed.version : '';
+  } catch {
+    // Reported below as an invalid production build identity.
+  }
+  if (!version) throw new Error('local production version identity is missing or invalid');
+  return {
+    versionPath,
+    version,
+    versionSha256: createHash('sha256').update(localBytes).digest('hex')
+  };
+}
+
+/** Bind proof to bytes fetched from the running preview, not caller-provided environment claims. */
+export async function readProductionPreviewIdentity(
+  origin: string,
+  root = process.cwd(),
+  fetcher: typeof fetch = fetch
+): Promise<ProductionPreviewIdentity> {
+  const localIdentity = await readLocalProductionBuildIdentity(root);
+  const localBytes = await readFile(resolve(root, 'build/_app/version.json'));
+  const response = await fetcher(new URL(localIdentity.versionPath, origin), { cache: 'no-store' });
+  if (!response.ok) throw new Error(`served production version is missing: ${response.status}`);
+  const servedBytes = new Uint8Array(await response.arrayBuffer());
+  if (!Buffer.from(servedBytes).equals(localBytes)) {
+    throw new Error('served production version does not match local build/_app/version.json');
+  }
+  return localIdentity;
+}
+
 export async function fixtureFileMetadata(names: string[], root = process.cwd()) {
   return Promise.all(names.map(async (name) => {
     const bytes = await readFile(resolve(root, 'tests/fixtures/media', name));

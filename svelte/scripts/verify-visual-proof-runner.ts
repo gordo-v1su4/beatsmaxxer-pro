@@ -8,6 +8,7 @@ import {
   computeVisualProofBuildDigest,
   digestJson,
   realMediaFileMetadata,
+  readLocalProductionBuildIdentity,
   parsePngMetrics,
   pixelDifferenceRatio
 } from './visual-proof-verification.ts';
@@ -55,6 +56,16 @@ export async function verifyVisualProof(report: VisualProofReport, root = proces
     }
   } catch (error) {
     blockers.push(`production build unavailable during verification: ${String(error)}`);
+  }
+  try {
+    const localBuild = await readLocalProductionBuildIdentity(root);
+    if (localBuild.versionPath !== report.provenance.server.versionPath ||
+      localBuild.version !== report.provenance.server.version ||
+      localBuild.versionSha256 !== report.provenance.server.versionSha256) {
+      blockers.push('served production build identity changed after capture');
+    }
+  } catch (error) {
+    blockers.push(`local production build identity unavailable during verification: ${String(error)}`);
   }
   const catalog = report.manifest.items.filter((item) => item.kind !== 'control');
   const controls = report.manifest.items.filter((item) => item.kind === 'control');

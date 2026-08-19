@@ -208,7 +208,8 @@ export function chromeLaunchArgs(
   chrome: string,
   debugPort: number,
   userDataDir: string,
-  headed = process.env.HEADLESS !== '1'
+  headed = process.env.HEADLESS !== '1',
+  allowAutoplayBypass = process.env.QA_AUTOPLAY_BYPASS === '1'
 ) {
   return [
     chrome,
@@ -228,10 +229,7 @@ export function chromeLaunchArgs(
     // Chrome was launched as an automation session. This does not make the
     // browser headless or select a GPU backend.
     '--enable-automation',
-    // Without this the QA autoload's audioEngine.start() is blocked for lack of
-    // a user gesture; the clip load then unwinds and the rack falls back to a
-    // partially loaded state (observed: 8 clips ready, then down to 2).
-    '--autoplay-policy=no-user-gesture-required',
+    ...(allowAutoplayBypass ? ['--autoplay-policy=no-user-gesture-required'] : []),
     // default window was 774x441, which cropped every module preview out of the
     // screenshot artifact — a "proof" PNG that could not show a rendered frame
     '--window-size=1680,1050',
@@ -239,6 +237,28 @@ export function chromeLaunchArgs(
     `--user-data-dir=${userDataDir}`,
     'about:blank'
   ];
+}
+
+/** Click a visible labeled button through CDP input so browser gesture policy is genuinely exercised. */
+export async function dispatchVisibleButtonClick(session: CdpSession, label: string) {
+  const rect = await evalPage<{ x: number; y: number }>(session, `(() => {
+    const target = ${JSON.stringify(label.trim().toUpperCase())};
+    const button = [...document.querySelectorAll('button')].find((candidate) => {
+      const text = (candidate.textContent || '').replace(/\\s+/g, ' ').trim().toUpperCase();
+      const bounds = candidate.getBoundingClientRect();
+      return text === target && !candidate.disabled && bounds.width > 0 && bounds.height > 0;
+    });
+    if (!button) return null;
+    const bounds = button.getBoundingClientRect();
+    return { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 };
+  })()`, 10_000, `locate visible ${label} button`);
+  if (!rect) throw new Error(`Visible ${label} button is unavailable`);
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: rect.x, y: rect.y, button: 'left', clickCount: 1
+  });
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: rect.x, y: rect.y, button: 'left', clickCount: 1
+  });
 }
 
 export function spawnChrome(

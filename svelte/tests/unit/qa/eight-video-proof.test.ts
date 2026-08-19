@@ -88,7 +88,10 @@ function report(): EightVideoProofReport {
     captureId: '12345678-1234-4234-8234-123456789abc', capturedAt: new Date().toISOString(),
     source: { commit: 'c'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
     build: { id: 'b'.repeat(64), digest: 'b'.repeat(64), profile: 'production' },
-    server: { kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'b'.repeat(64) },
+    server: {
+      kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'b'.repeat(64),
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    },
     dependencyLock: { path: 'bun.lock', sha256: 'd'.repeat(64) },
     environment: {
       shellKind: 'browser', sourceBackend: 'html-video',
@@ -137,6 +140,12 @@ function report(): EightVideoProofReport {
 }
 
 describe('eight-video research benchmark gate', () => {
+  test('rejects autoplay-policy bypass in release evidence', () => {
+    const value = report();
+    value.environment.commandLine.push('--autoplay-policy=no-user-gesture-required');
+    expect(evaluateEightVideoProof(value).blockers)
+      .toContain('release proof must use a visible PLAY gesture without an autoplay-policy bypass');
+  });
   test('accepts simultaneous native eight-decoder evidence', () => {
     expect(evaluateEightVideoProof(report())).toEqual({ passed: true, blockers: [] });
   });
@@ -223,7 +232,10 @@ describe('eight-video research benchmark gate', () => {
     value.environment.runtime = 'tauri-macos-native';
     value.provenance.environment.shellKind = 'tauri-desktop';
     value.provenance.environment.runtime = { name: 'Tauri WebView', version: '2.0', userAgent: 'WebView2' };
-    value.provenance.server = { kind: 'tauri-bundled-static', origin: 'http://tauri.localhost', buildDigest: value.provenance.build.digest };
+    value.provenance.server = {
+      kind: 'tauri-bundled-static', origin: 'http://tauri.localhost', buildDigest: value.provenance.build.digest,
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    };
     expect(evaluateEightVideoProof(value)).toEqual({ passed: true, blockers: [] });
   });
 

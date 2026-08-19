@@ -1,4 +1,4 @@
-export const ARTIFACT_PROVENANCE_SCHEMA_VERSION = 2 as const;
+export const ARTIFACT_PROVENANCE_SCHEMA_VERSION = 3 as const;
 export const PROOF_REPORT_SCHEMA_VERSION = 2 as const;
 export const PROOF_FRESHNESS_POLICY_ID = 'release-proof-24h.v1' as const;
 export const PROOF_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
@@ -59,6 +59,9 @@ export interface ArtifactProvenance {
     kind: 'vite-production-preview' | 'tauri-bundled-static';
     origin: string;
     buildDigest: string;
+    versionPath: '/_app/version.json';
+    version: string;
+    versionSha256: string;
   };
   dependencyLock: {
     path: 'bun.lock';
@@ -133,7 +136,9 @@ export function validateArtifactProvenance(
     'build identity is missing or does not match the captured build digest');
   fail(!isSha256(provenance.build?.digest), 'build digest identity is missing or invalid');
   fail(!provenance.server || !['vite-production-preview', 'tauri-bundled-static'].includes(provenance.server.kind) ||
-    !isHttpOrigin(provenance.server.origin) || provenance.server.buildDigest !== provenance.build?.digest,
+    !isHttpOrigin(provenance.server.origin) || provenance.server.buildDigest !== provenance.build?.digest ||
+    provenance.server.versionPath !== '/_app/version.json' || !provenance.server.version.trim() ||
+    !isSha256(provenance.server.versionSha256),
   'release server identity is missing or does not match the captured build');
   fail(provenance.environment?.shellKind === 'browser' &&
     (provenance.build?.profile !== 'production' || provenance.server?.kind !== 'vite-production-preview'),

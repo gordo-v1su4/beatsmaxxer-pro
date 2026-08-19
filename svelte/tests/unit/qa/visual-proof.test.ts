@@ -100,7 +100,10 @@ function completeReport(): VisualProofReport {
     capturedAt: new Date().toISOString(),
     source: { commit: 'e'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
     build: { id: 'd'.repeat(64), digest: 'd'.repeat(64), profile: 'production' },
-    server: { kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'd'.repeat(64) },
+    server: {
+      kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'd'.repeat(64),
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    },
     dependencyLock: { path: 'bun.lock', sha256: 'f'.repeat(64) },
     environment: {
       shellKind: 'browser', sourceBackend: 'html-video',
@@ -444,10 +447,19 @@ describe('visual proof release gate', () => {
     const restore = controlProof.indexOf('stopTransport?.()');
 
     expect(controlProof).toContain("control.label.replace(/\\s+/g, ' ').trim().toUpperCase() === 'PLAY'");
+    expect(controlProof).toContain("dispatchVisibleButtonClick(session, 'PLAY')");
+    expect(controlProof).not.toContain('startTransport');
     expect(click).toBeLessThan(playback);
     expect(playback).toBeLessThan(afterState);
     expect(afterState).toBeLessThan(evidence);
     expect(evidence).toBeLessThan(restore);
+  });
+
+  test('rejects autoplay-policy bypass in release evidence', () => {
+    const report = completeReport();
+    report.environment.browserCommandLine.push('--autoplay-policy=no-user-gesture-required');
+    expect(evaluateVisualProofReport(report).blockers)
+      .toContain('release proof must use a visible PLAY gesture without an autoplay-policy bypass');
   });
 
   test('SONG proof observes a new real local-only upload generation before sampling state', async () => {

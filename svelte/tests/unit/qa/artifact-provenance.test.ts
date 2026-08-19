@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'vitest';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   PROOF_MAX_AGE_MS,
   createArtifactProvenance,
   validateArtifactProvenance,
   type ArtifactProvenance
 } from '$lib/qa/artifactProvenance';
+import { readProductionPreviewIdentity } from '../../../scripts/visual-proof-verification';
 
 function validProvenance(): ArtifactProvenance {
   return createArtifactProvenance({
@@ -13,7 +16,10 @@ function validProvenance(): ArtifactProvenance {
     capturedAt: new Date().toISOString(),
     source: { commit: 'a'.repeat(40), digest: 'b'.repeat(64), workingTreeDirty: false },
     build: { id: 'c'.repeat(64), digest: 'c'.repeat(64), profile: 'production' },
-    server: { kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'c'.repeat(64) },
+    server: {
+      kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'c'.repeat(64),
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    },
     dependencyLock: { path: 'bun.lock', sha256: 'd'.repeat(64) },
     environment: {
       shellKind: 'browser', sourceBackend: 'html-video',
@@ -106,12 +112,43 @@ describe('shared release-proof artifact provenance', () => {
     const mismatched = validProvenance();
     mismatched.server.buildDigest = '0'.repeat(64);
     expect(validateArtifactProvenance(mismatched)).toContain('release server identity is missing or does not match the captured build');
+
+    const wrongKind = validProvenance();
+    wrongKind.server.kind = 'vite-development-server' as never;
+    expect(validateArtifactProvenance(wrongKind)).toContain('browser release evidence was not served from the captured production preview');
+  });
+
+  test('binds the running production preview to the exact local version bytes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'bmx-proof-version-'));
+    const bytes = '{"version":"current-build"}\n';
+    await mkdir(join(root, 'build/_app'), { recursive: true });
+    await writeFile(join(root, 'build/_app/version.json'), bytes);
+    try {
+      const matchingFetch = async () => new Response(bytes, { status: 200 });
+      const identity = await readProductionPreviewIdentity('http://127.0.0.1:5194', root, matchingFetch as typeof fetch);
+      expect(identity.version).toBe('current-build');
+      expect(identity.versionPath).toBe('/_app/version.json');
+      expect(identity.versionSha256).toMatch(/^[a-f0-9]{64}$/);
+
+      const staleFetch = async () => new Response('{"version":"old-build"}\n', { status: 200 });
+      await expect(readProductionPreviewIdentity('http://127.0.0.1:5194', root, staleFetch as typeof fetch))
+        .rejects.toThrow('does not match local build/_app/version.json');
+
+      const missingFetch = async () => new Response('missing', { status: 404 });
+      await expect(readProductionPreviewIdentity('http://127.0.0.1:5194', root, missingFetch as typeof fetch))
+        .rejects.toThrow('served production version is missing: 404');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   test('records tauri-desktop truth as HTMLVideoElement to copyExternalImageToTexture', () => {
     const value = validProvenance();
     value.environment.shellKind = 'tauri-desktop';
-    value.server = { kind: 'tauri-bundled-static', origin: 'http://tauri.localhost', buildDigest: value.build.digest };
+    value.server = {
+      kind: 'tauri-bundled-static', origin: 'http://tauri.localhost', buildDigest: value.build.digest,
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    };
     value.environment.runtime = { name: 'Tauri WebView', version: '2.0', userAgent: 'WebView2' };
     expect(validateArtifactProvenance(value)).toEqual([]);
   });
@@ -130,6 +167,7 @@ describe('shared release-proof artifact provenance', () => {
       expect(script).toContain('ensure_production_preview');
       expect(script).not.toContain('ensure_dev_server');
       expect(script).not.toContain('qaAutoplay');
+      expect(script).toContain('unset QA_AUTOPLAY_BYPASS');
       expect(script.indexOf('bun run build')).toBeLessThan(script.indexOf('ensure_production_preview'));
     }
     const common = await readFile('scripts/lib/common.sh', 'utf8');
