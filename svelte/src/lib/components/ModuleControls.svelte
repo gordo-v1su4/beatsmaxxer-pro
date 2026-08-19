@@ -18,6 +18,11 @@
   /** Which page of LIGHT LEAK's controls is showing. Local UI state, not a
       parameter: it must not travel with presets or the undo history. */
   let leakTab = $state<'field' | 'lens' | 'time'>('field');
+  const LEAK_TABS = [
+    { k: 'field', l: 'FIELD' },
+    { k: 'lens', l: 'LENS' },
+    { k: 'time', l: 'TIME' }
+  ] as const;
 
   const TRANSITION_PACK = [
     { l: 'WHP L', v: 0 }, { l: 'WHP R', v: 1 }, { l: 'PSH U', v: 2 }, { l: 'PSH D', v: 3 },
@@ -447,11 +452,7 @@
     <Section label="FX" {color} noBorder>
       <div style="display:flex;flex-direction:column;gap:4px">
         <div style="display:flex;gap:2px">
-          {#each [
-            { k: 'field', l: 'FIELD' },
-            { k: 'lens', l: 'LENS' },
-            { k: 'time', l: 'TIME' }
-          ] as t (t.k)}
+          {#each LEAK_TABS as t (t.k)}
             <RackBtn
               label={t.l}
               active={leakTab === t.k}
