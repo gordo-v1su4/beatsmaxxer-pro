@@ -67,6 +67,7 @@ export interface LiveScheduleFrame<T> {
 export interface LiveTimeSamplerAccent {
   generation: number;
   mode: TimeSamplerAccentMode;
+  transportSeconds: number;
   presentationTimeSeconds: number;
 }
 
@@ -322,6 +323,7 @@ export class LiveScheduleRuntime<T = string> {
       this.accent = {
         generation: timeSampler.accent.generation,
         mode: timeSampler.accent.mode,
+        transportSeconds: timeSampler.accent.transportSeconds,
         presentationTimeSeconds:
           timeSampler.accent.presentationTimeSeconds,
       };
@@ -332,6 +334,7 @@ export class LiveScheduleRuntime<T = string> {
           this.timeSamplerInput.controls,
           this.timeSamplerInput.sourceDurationSeconds,
         ).accentMode,
+        transportSeconds: transport.transportSeconds,
         presentationTimeSeconds: transport.presentationTimeSeconds,
       };
     }

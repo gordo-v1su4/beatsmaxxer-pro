@@ -47,13 +47,16 @@ export function noteFires(index: number, velocity: number, density: number): boo
 
 /** Note times, in seconds, that survive DENSITY. Sorted ascending. */
 export function firingTimes(layer: MidiLayer | null, density: number): number[] {
+  return firingNotes(layer, density).map(({ note }) => note.time);
+}
+
+/** The canonical kept subset, retaining original indexes for UI identity. */
+export function firingNotes(layer: MidiLayer | null, density: number) {
   if (!layer) return [];
-  const out: number[] = [];
-  for (let i = 0; i < layer.notes.length; i++) {
-    const n = layer.notes[i];
-    if (noteFires(i, n.velocity, density)) out.push(n.time);
-  }
-  return out.sort((a, b) => a - b);
+  return layer.notes
+    .map((note, index) => ({ note, index }))
+    .filter(({ note, index }) => noteFires(index, note.velocity, density))
+    .sort((a, b) => a.note.time - b.note.time || a.index - b.index);
 }
 
 /**

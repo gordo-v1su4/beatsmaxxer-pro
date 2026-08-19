@@ -36,8 +36,8 @@ import {
   cuts,
   moduleForSlotIndex
 } from '$lib/stores/arrangement';
-import { triggerMidiModule, triggerSource } from '$lib/stores/triggerLane';
 import {
+  firingNotes,
   firingTimes,
   midiPartPosition,
   moduleTriggerSource,
@@ -46,9 +46,8 @@ import {
 import { grooveSegment } from '$lib/runtime/groove';
 import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
-import { activeChannel } from '$lib/stores/midiChannels';
 import { getModuleDef } from '$lib/modules/catalog';
-import { moduleAcceptsMidi } from '$lib/modules/timingContracts';
+import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
 let running = false;
@@ -77,6 +76,15 @@ function firingTimesFor(moduleId: string, layer: MidiLayer | null, density: numb
   return times;
 }
 
+export function midiNotesForTriggerSource(
+  source: 'audio' | 'midi',
+  layer: MidiLayer | null,
+  density: number
+) {
+  if (source !== 'midi' || !layer) return null;
+  return firingNotes(layer, density).map(({ note }) => note);
+}
+
 /**
  * How far into its last MIDI note each module is, in beats.
  *
@@ -92,7 +100,7 @@ function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
   const layers = get(midiLayers);
   const params = get(moduleParams);
   for (const id of ids) {
-    if (sources[id] !== 'midi' || !moduleAcceptsMidi(id)) continue;
+    if (sources[id] !== 'midi' || !supportsModuleMidi(id)) continue;
     const layer = layers[id];
     if (!layer) continue;
     const density = (params[id]?.density ?? 100) / 100;
@@ -248,10 +256,14 @@ function paramsForGpu(moduleId: string, params: Record<string, number>) {
 
 export function timeSamplerAccentUniforms(
   frame: TimelineFrame,
-  accent: { mode: number; presentationTimeSeconds: number } | null | undefined
+  accent: { mode: number; transportSeconds: number } | null | undefined
 ) {
   if (!frame.playing || !accent) return { aux1: 0, aux2: 2 };
-  const ageSeconds = frame.positionSeconds - accent.presentationTimeSeconds;
+  // Both values must share the transport domain. The old subtraction compared
+  // song position with the AudioContext presentation clock; depending on when
+  // playback started or was sought, LUM/RGB could be permanently "future" or
+  // already expired, which is the intermittent luminance report.
+  const ageSeconds = frame.positionSeconds - accent.transportSeconds;
   const mode = Math.max(0, Math.min(2, Math.round(accent.mode)));
   if (!Number.isFinite(ageSeconds) || ageSeconds < 0 || ageSeconds > 0.5 || mode === 2) {
     return { aux1: 0, aux2: mode };
@@ -396,45 +408,17 @@ function configureTimeSampler() {
   const params = get(moduleParams);
   const tsParams = params.timesampler ?? {};
   const timeSamplerSlot = currentRackSlotForModule('timesampler');
-  /**
-   * Which part drives the triggers. A MIDI layer used to win simply by existing,
-   * which made loading one an irreversible decision — there was no way back to
-   * onset triggering short of clearing the file. The source is now chosen.
-   *
-   * A stem channel wins over the per-module layer when one is selected: picking
-   * DRUMS in the arrangement is a statement about what fires the rack, and it
-   * would be a lie if the module's own attached file quietly kept priority.
-   */
-  const tsMidi = (() => {
-    const cardSource = get(moduleTriggerSource).timesampler ?? 'audio';
-    if (cardSource === 'midi') {
-      const layer = get(midiLayers).timesampler;
-      if (!layer) return null;
-      const density = (tsParams.density ?? 100) / 100;
-      return {
-        name: layer.name,
-        notes: firingTimesFor('timesampler', layer, density).map((time) => ({
-          time,
-          note: 60,
-          velocity: 100
-        })),
-        duration: layer.duration
-      };
-    }
-    if (get(triggerSource) !== 'midi') return null;
-    const channel = get(activeChannel);
-    if (channel) {
-      return {
-        name: channel.name,
-        // Onsets, not notes: the reducer only reads `time`, and the collapsed
-        // list is what the arrangement lane is drawing. Pitch is irrelevant to
-        // a trigger, so a constant carries no meaning either way.
-        notes: channel.onsets.map((time) => ({ time, note: 60, velocity: 100 })),
-        duration: channel.duration
-      };
-    }
-    return get(midiLayers)[get(triggerMidiModule) ?? 'timesampler'] ?? null;
-  })();
+  // The per-module source selector is authoritative. Loading a part selects
+  // MIDI; removing it selects audio. Keep original note objects so runtime,
+  // rack and Arrange share the exact same DENS-filtered identity.
+  const tsSource = get(moduleTriggerSource).timesampler ?? 'audio';
+  const tsLayer = get(midiLayers).timesampler ?? null;
+  const tsNotes = midiNotesForTriggerSource(
+    tsSource,
+    tsLayer,
+    (tsParams.density ?? 100) / 100
+  );
+  const tsMidi = tsNotes && tsLayer ? { ...tsLayer, notes: tsNotes } : null;
   const tsDuration = timeSamplerSlot ? videoPool.getDuration(timeSamplerSlot) || 120 : 120;
   audioEngine.configureTimeSampler({
     sourceDurationSeconds: tsDuration,

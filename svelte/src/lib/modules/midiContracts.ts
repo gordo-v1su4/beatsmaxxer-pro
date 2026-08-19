@@ -42,3 +42,7 @@ export const MIDI_TIMING_CONTRACTS = {
   mirror: driven('modulation', 'Each kept note gates the BEAT fold motion; fold/offset/spin remain continuous.'),
   lens: driven('modulation', 'Each kept note gates the BEAT glass amount; zoom and edge remain continuous.')
 } as const satisfies Record<string, MidiTimingContract>;
+
+export function supportsModuleMidi(moduleId: string): boolean {
+  return MIDI_TIMING_CONTRACTS[moduleId]?.timingClass !== 'none';
+}

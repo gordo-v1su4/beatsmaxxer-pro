@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  firingNotes,
   firingTimes,
   midiPartPosition,
   noteFires,
@@ -87,5 +88,12 @@ describe('MIDI trigger source', () => {
     expect(midiPartPosition(0.25, 2)).toBeCloseTo(0.25);
     expect(noteIsHighlighted(0.25, 2.25, 2, true)).toBe(true);
     expect(noteIsHighlighted(0.25, 2.25, 2, false)).toBe(false);
+  });
+
+  test('the canonical subset preserves original note identity for every consumer', () => {
+    const part = layer([3, 0, 2, 1]);
+    const kept = firingNotes(part, 0.6);
+    expect(kept.map(({ note }) => note.time)).toEqual(firingTimes(part, 0.6));
+    expect(kept.every(({ note, index }) => note === part.notes[index])).toBe(true);
   });
 });

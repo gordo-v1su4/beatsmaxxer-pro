@@ -23,15 +23,15 @@ function presetsFor(id: string): ModulePreset[] {
       ];
     case 'tapdelay':
       return [
-        { n: '1', title: 'Swung triplets', set: { type: 1, time: 50, velCrv: 50, feel: 1, scratchMode: 0, scratchDepth: 35, end: 65, mix: 70, feedback: 55 } },
-        { n: '2', title: 'Dotted pong', set: { type: 1, time: 30, velCrv: 75, feel: 2, scratchMode: 2, scratchDepth: 60, end: 55, mix: 75, feedback: 65 } },
-        { n: '3', title: 'Chaos stutter', set: { type: 1, time: 70, velCrv: 100, feel: 0, scratchMode: 3, scratchDepth: 80, end: 75, mix: 85, feedback: 70 } }
+        { n: '1', title: 'Swung triplet hold', set: { time: 50, feedback: 55, feel: 1, gate: 72, sens: 20, mix: 72 } },
+        { n: '2', title: 'Dotted gated stab', set: { time: 30, feedback: 72, feel: 2, gate: 38, sens: 45, mix: 82 } },
+        { n: '3', title: 'Hard sixteenth lock', set: { time: 70, feedback: 92, feel: 0, gate: 100, sens: 70, mix: 100 } }
       ];
     case 'timesampler':
       return [
-        { n: '1', title: 'Bar march — 8 slices', set: { mode: 0, size: 90, slices: 8, loops: 2, accent: 0, chance: 40, rate: 43, mix: 70 } },
-        { n: '2', title: 'Pong halves', set: { mode: 2, size: 70, slices: 16, loops: 2, accent: 1, chance: 55, rate: 43, mix: 75 } },
-        { n: '3', title: 'Juggle random', set: { mode: 3, size: 50, slices: 32, loops: 4, accent: 0, chance: 75, rate: 50, mix: 85 } }
+        { n: '1', title: 'Bar march — eight unique slices', set: { mode: 0, size: 90, slices: 8, loops: 1, accent: 0, chance: 40, rate: 43, mix: 72 } },
+        { n: '2', title: 'Pong halves — chroma landings', set: { mode: 2, size: 70, slices: 16, loops: 1, accent: 1, chance: 55, rate: 43, mix: 78 } },
+        { n: '3', title: 'Random juggle — fast teleports', set: { mode: 3, size: 50, slices: 32, loops: 1, accent: 0, chance: 75, rate: 62, mix: 90 } }
       ];
     case 'punch':
       return [

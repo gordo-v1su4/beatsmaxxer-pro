@@ -93,6 +93,7 @@ export interface LiveScheduleFrame {
   };
   accent: {
     mode: number;
+    transportSeconds: number;
     presentationTimeSeconds: number;
   } | null;
 }

@@ -734,6 +734,7 @@ export class AudioEngine implements IAudioEngine {
       accent: frame.accent
         ? {
             mode: ACCENT_MODE_INDEX[frame.accent.mode],
+            transportSeconds: frame.accent.transportSeconds,
             presentationTimeSeconds: frame.accent.presentationTimeSeconds,
           }
         : null,
