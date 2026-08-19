@@ -5,8 +5,14 @@ import { activeRackSlotIds } from '$lib/stores/rack';
 import { isTauriRuntime } from '$lib/platform/runtime';
 
 export interface QaManifest {
+  bundle?: string;
+  sourceRoot?: string;
   clips?: string[];
   audio?: string;
+  audios?: string[];
+  stems?: string[];
+  midi?: string;
+  midis?: string[];
 }
 
 export async function loadQaMediaFromManifest(manifest: QaManifest) {
