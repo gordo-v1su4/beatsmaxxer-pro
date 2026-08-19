@@ -236,25 +236,12 @@
 <div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
 <LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} />
 <!--
-  No PIN on the phone. The phone shell is the public face of this thing — it
-  says on arrival that it is a stripped-down representation and points at the
-  desktop for the real rack — and a lock screen in front of a showcase is a
-  contradiction.
-
-  This costs nothing in protection, which is the only reason it is safe to do.
-  The gate's server half is untouched: `/api/analyze` still requires the signed
-  cookie, and its policy comment is right that the cookie is the one control a
-  request cannot assert its way past. What makes the phone a special case is
-  that hosted analysis is the *only* thing that check guards, and the phone
-  never asks for it — mobile song loads deliberately run local realtime
-  analysis. So the surface being opened here needs no server at all.
-
-  If hosted analysis ever reaches the phone, this decision has to be revisited
-  along with it, not quietly inherited.
+  One deployment gate for both shells. Mobile can request hosted analysis, and
+  the protected proxy requires the same signed cookie as desktop. AccessGate
+  remains invisible when the endpoint reports an open deployment, so local
+  development keeps its fail-open behavior without a route-specific bypass.
 -->
-{#if !$isMobileShell}
-  <AccessGate />
-{/if}
+<AccessGate />
 <CapabilityGate state={$capabilities} />
 
 <!--
