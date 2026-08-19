@@ -1,8 +1,16 @@
 import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
+import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { activeRackSlotIds } from '$lib/stores/rack';
+import { activeRackSlotIds, rackBottom, rackTop } from '$lib/stores/rack';
+import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
 import { isTauriRuntime } from '$lib/platform/runtime';
+import { get } from 'svelte/store';
+
+export interface QaMidiAssignment {
+  moduleId: string;
+  file: string;
+}
 
 export interface QaManifest {
   bundle?: string;
@@ -13,6 +21,60 @@ export interface QaManifest {
   stems?: string[];
   midi?: string;
   midis?: string[];
+  midiAssignments?: QaMidiAssignment[];
+}
+
+export function validateQaMidiAssignments(
+  manifest: QaManifest,
+  activeModuleIds = [...get(rackTop), ...get(rackBottom)]
+): QaMidiAssignment[] {
+  const assignments = manifest.midiAssignments ?? [];
+  if (assignments.length === 0) return assignments;
+  if (assignments.length !== 7) {
+    throw new Error(`QA MIDI manifest must assign exactly 7 stems; found ${assignments.length}`);
+  }
+  const moduleIds = assignments.map(({ moduleId }) => moduleId);
+  const files = assignments.map(({ file }) => file);
+  if (new Set(moduleIds).size !== assignments.length) {
+    throw new Error('QA MIDI manifest assigns more than one stem to a module');
+  }
+  if (new Set(files).size !== assignments.length) {
+    throw new Error('QA MIDI manifest assigns one stem more than once');
+  }
+  const midiInventory = new Set(manifest.midis ?? []);
+  const activeModules = new Set(activeModuleIds);
+  for (const assignment of assignments) {
+    if (!midiInventory.has(assignment.file)) {
+      throw new Error(`QA MIDI assignment is not inventoried: ${assignment.file}`);
+    }
+    if (!activeModules.has(assignment.moduleId)) {
+      throw new Error(`QA MIDI assignment targets inactive rack module: ${assignment.moduleId}`);
+    }
+    if (!supportsModuleMidi(assignment.moduleId)) {
+      throw new Error(`QA MIDI assignment targets unsupported module: ${assignment.moduleId}`);
+    }
+  }
+  return assignments;
+}
+
+/** Load the rack-bound MIDI parts without registering duplicate free stem lanes. */
+export async function loadQaMidiAssignments(manifest: QaManifest): Promise<void> {
+  const assignments = validateQaMidiAssignments(manifest);
+  const files = await Promise.all(assignments.map(async (assignment) => {
+    const response = await fetch(`/qa-media/${assignment.file}`);
+    if (!response.ok) {
+      throw new Error(`MIDI fetch failed for ${assignment.moduleId}: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const name = assignment.file.split('/').at(-1) ?? assignment.file;
+    return {
+      assignment,
+      file: new File([blob], name, { type: blob.type || 'audio/midi' })
+    };
+  }));
+  for (const { assignment, file } of files) {
+    await attachModuleMidiFile(assignment.moduleId, file);
+  }
 }
 
 export async function loadQaMediaFromManifest(manifest: QaManifest) {
@@ -63,6 +125,14 @@ export async function loadQaMediaFromManifest(manifest: QaManifest) {
       errors.push(`audio: ${msg}`);
       console.error('[QA] audio load failed:', err);
     }
+  }
+
+  try {
+    await loadQaMidiAssignments(manifest);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    errors.push(`MIDI: ${msg}`);
+    console.error('[QA] MIDI load failed:', err);
   }
 
   if (errors.length > 0) {

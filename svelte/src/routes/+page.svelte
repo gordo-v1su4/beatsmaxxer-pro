@@ -38,8 +38,8 @@
     pgmRailOpen
   } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
-  import { parseMidi } from '$lib/audio/MidiParser';
   import { supportsModuleMidi } from '$lib/modules/midiContracts';
+  import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
@@ -191,16 +191,7 @@
       return;
     }
     try {
-      const buffer = await file.arrayBuffer();
-      const data = parseMidi(buffer);
-      const layer = {
-        identity: `${file.name}:${file.size}:${file.lastModified}`,
-        name: file.name,
-        notes: data.notes,
-        duration: data.duration
-      };
-      midiLayers.update((layers) => ({ ...layers, [id]: layer }));
-      setModuleTriggerSource(id, 'midi');
+      await attachModuleMidiFile(id, file);
     } catch (err) {
       console.error('Failed to parse MIDI file:', err);
     }

@@ -41,5 +41,35 @@
     "redline/Redline (Remastered) Stems/Redline (Remastered) (Percussion).mid",
     "redline/Redline (Remastered) Stems/Redline (Remastered) (Synth).mid",
     "redline/Redline (Remastered) Stems/Redline (Remastered) (Vocals).mid"
+  ],
+  "midiAssignments": [
+    {
+      "moduleId": "transition",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Backing Vocals).mid"
+    },
+    {
+      "moduleId": "shake",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Bass).mid"
+    },
+    {
+      "moduleId": "punch",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Drums).mid"
+    },
+    {
+      "moduleId": "leak",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (FX).mid"
+    },
+    {
+      "moduleId": "tapdelay",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Percussion).mid"
+    },
+    {
+      "moduleId": "mirror",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Synth).mid"
+    },
+    {
+      "moduleId": "timesampler",
+      "file": "redline/Redline (Remastered) Stems/Redline (Remastered) (Vocals).mid"
+    }
   ]
 }
