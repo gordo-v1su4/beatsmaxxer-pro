@@ -95,7 +95,6 @@ export async function loadStageClip(clip: LibraryClip): Promise<boolean> {
     if (result?.status !== 'success') return false;
     stageClipId.set(clip.id);
     videoPool.tick(true);
-    if (!audioEngine.getState().playing) await audioEngine.start();
     return true;
   } finally {
     stageLoading.set(false);
@@ -193,11 +192,11 @@ export function startMobileClipAdvance(): () => void {
  * advance modes all have nothing to act on. Pulling the manifest into the
  * library instead gives the phone the same starting state a real import would.
  */
-export async function seedMobileQaClips(max = 6) {
+export async function seedMobileQaClips() {
   const res = await fetch('/qa-media/manifest.json');
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   const manifest = (await res.json()) as { clips?: string[]; audio?: string };
-  const names = (manifest.clips ?? []).slice(0, max);
+  const names = manifest.clips ?? [];
 
   const files = await Promise.all(
     names.map(async (name) => {
