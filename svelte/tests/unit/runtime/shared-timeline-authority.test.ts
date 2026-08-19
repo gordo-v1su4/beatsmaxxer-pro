@@ -39,7 +39,7 @@ describe('shared timeline authority', () => {
 
   test('routes uploaded playback anchoring and tempo resets through AudioTimeline', () => {
     const audioEngine = source('audio/AudioEngine.ts');
-    expect(audioEngine).toContain('audioTimeline.play(this.mediaElement.currentTime)');
+    expect(audioEngine).toContain('audioTimeline.play(mediaElement.currentTime)');
     expect(audioEngine).not.toMatch(/this\._tempo\s*=\s*1;/);
     expect(audioEngine).toContain('this.applyTempoRate(1)');
   });

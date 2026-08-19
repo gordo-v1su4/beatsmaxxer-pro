@@ -97,7 +97,8 @@ export class AudioEngine implements IAudioEngine {
   private _highAmp = 0;
   private _fftBands = new Array(8).fill(0);
   private _playing = false;
-  private _starting = false;
+  private playbackStartGeneration = 0;
+  private activePlaybackStartGeneration: number | null = null;
   private lastStopReason: AudioStopReason | null = null;
   private stopCount = 0;
   private _trackName = "";
@@ -146,7 +147,7 @@ export class AudioEngine implements IAudioEngine {
   }
 
   async start() {
-    if (this._starting) return;
+    if (this.activePlaybackStartGeneration !== null) return;
 
     // A decoded upload is the only playable source. Never let a missing or
     // failed upload fall through to a synthetic clock that makes the rack look
@@ -157,7 +158,15 @@ export class AudioEngine implements IAudioEngine {
       if (this.getTransportTime() >= 0.05) return;
       this.stop('restart-near-zero');
     }
-    this._starting = true;
+    const mediaElement = this.mediaElement;
+    const startGeneration = ++this.playbackStartGeneration;
+    this.activePlaybackStartGeneration = startGeneration;
+    this.uploadedPlaybackValidated = false;
+    const isCurrentStart = () =>
+      this.playbackStartGeneration === startGeneration &&
+      this.activePlaybackStartGeneration === startGeneration &&
+      this.mediaElement === mediaElement &&
+      this._usingUploadedTrack;
 
     /**
      * Start the song BEFORE any await.
@@ -179,7 +188,7 @@ export class AudioEngine implements IAudioEngine {
      */
     let pendingPlay: Promise<void> | null = null;
     try {
-      pendingPlay = this.mediaElement.play();
+      pendingPlay = mediaElement.play();
     } catch {
       pendingPlay = null;
     }
@@ -187,6 +196,18 @@ export class AudioEngine implements IAudioEngine {
     try {
       await this.ensureContext();
       if (!this.ctx) return;
+
+      if (!isCurrentStart()) {
+        if (pendingPlay) {
+          try {
+            await pendingPlay;
+          } catch {
+            // A cancelled play commonly rejects after pause/disposal.
+          }
+        }
+        this.pauseCancelledStartElement(mediaElement);
+        return;
+      }
 
       if (this.ctx.state === "suspended") {
         try {
@@ -196,7 +217,6 @@ export class AudioEngine implements IAudioEngine {
         }
       }
 
-      this.uploadedPlaybackValidated = false;
       if (!pendingPlay) {
         this._playing = false;
         audioTimeline.pause();
@@ -207,27 +227,39 @@ export class AudioEngine implements IAudioEngine {
       try {
         await pendingPlay;
       } catch {
-        this.mediaElement.pause();
+        if (!isCurrentStart()) {
+          this.pauseCancelledStartElement(mediaElement);
+          return;
+        }
+        mediaElement.pause();
         this._playing = false;
         audioTimeline.pause();
         audioTimeline.publishFrame();
         return;
       }
 
+      if (!isCurrentStart()) {
+        this.pauseCancelledStartElement(mediaElement);
+        return;
+      }
+
       this.uploadedPlaybackValidated = true;
       this._playing = true;
-      audioTimeline.play(this.mediaElement.currentTime);
+      audioTimeline.play(mediaElement.currentTime);
       audioTimeline.publishFrame();
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.bassEma = 0.08;
       this.onsetCooldown = 0;
     } finally {
-      this._starting = false;
+      if (this.activePlaybackStartGeneration === startGeneration) {
+        this.activePlaybackStartGeneration = null;
+      }
     }
   }
 
   stop(reason: AudioStopReason = 'operator') {
+    this.invalidatePlaybackStart();
     this.lastStopReason = reason;
     this.stopCount += 1;
     this._playing = false;
@@ -445,7 +477,7 @@ export class AudioEngine implements IAudioEngine {
   }
 
   private disposeMediaElement() {
-    this.uploadedPlaybackValidated = false;
+    this.invalidatePlaybackStart();
     this.mediaTimelineAbort?.abort();
     this.mediaTimelineAbort = null;
     if (this.mediaSource) {
@@ -463,6 +495,21 @@ export class AudioEngine implements IAudioEngine {
     if (this.objectUrl) {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;
+    }
+  }
+
+  private invalidatePlaybackStart() {
+    this.playbackStartGeneration += 1;
+    this.activePlaybackStartGeneration = null;
+    this.uploadedPlaybackValidated = false;
+  }
+
+  private pauseCancelledStartElement(mediaElement: HTMLAudioElement) {
+    if (
+      this.mediaElement !== mediaElement ||
+      (!this._playing && this.activePlaybackStartGeneration === null)
+    ) {
+      mediaElement.pause();
     }
   }
 

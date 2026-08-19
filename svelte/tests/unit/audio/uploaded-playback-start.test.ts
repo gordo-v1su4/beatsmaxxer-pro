@@ -3,21 +3,38 @@ import { AudioEngine } from '$lib/audio/AudioEngine';
 
 interface StartInternals {
   ctx: { state: AudioContextState; resume: () => Promise<void> };
-  mediaElement: HTMLAudioElement;
+  mediaElement: HTMLAudioElement | null;
   _loadedUploadName: string;
   _trackName: string;
   _usingUploadedTrack: boolean;
   ensureContext: () => Promise<void>;
+  gainNode: GainNode;
+  disposeMediaElement: () => void;
+  attachMediaElement: (url: string, trackName: string) => void;
+}
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+function mediaElement(play: () => Promise<void>, currentTime = 1.25) {
+  return {
+    currentTime,
+    pause: vi.fn(),
+    play: vi.fn(play),
+  } as unknown as HTMLAudioElement;
 }
 
 function createHarness(play: () => Promise<void>) {
   const engine = new AudioEngine();
   const internals = engine as unknown as StartInternals;
-  const media = {
-    currentTime: 1.25,
-    pause: vi.fn(),
-    play: vi.fn(play),
-  } as unknown as HTMLAudioElement;
+  const media = mediaElement(play);
   internals.ctx = { state: 'running', resume: vi.fn(async () => {}) };
   internals.mediaElement = media;
   internals._loadedUploadName = 'song.wav';
@@ -59,6 +76,68 @@ describe('uploaded playback startup', () => {
       playing: false,
       usingUploadedTrack: true,
       trackName: 'song.wav',
+    });
+  });
+
+  test('stop invalidates a pending play before it can activate the timeline', async () => {
+    const pending = deferred();
+    const { engine, media } = createHarness(() => pending.promise);
+
+    const starting = engine.start();
+    engine.stop();
+    pending.resolve();
+    await starting;
+
+    expect(media.play).toHaveBeenCalledOnce();
+    expect(media.pause).toHaveBeenCalled();
+    expect(engine.getState()).toMatchObject({ playing: false, usingUploadedTrack: true });
+  });
+
+  test('replacement invalidates the old play without pausing the new upload', async () => {
+    const pending = deferred();
+    const { engine, media: oldMedia } = createHarness(() => pending.promise);
+    const internals = engine as unknown as StartInternals;
+    const newMedia = mediaElement(async () => {}, 0);
+    internals.gainNode = {} as GainNode;
+    internals.disposeMediaElement = vi.fn(() => {
+      internals.mediaElement = null;
+    });
+    internals.attachMediaElement = vi.fn((_url, trackName) => {
+      internals.mediaElement = newMedia;
+      internals._trackName = trackName;
+    });
+
+    const starting = engine.start();
+    await engine.loadAudioUrl('replacement.wav', 'replacement.wav');
+    pending.resolve();
+    await starting;
+
+    expect(oldMedia.play).toHaveBeenCalledOnce();
+    expect(oldMedia.pause).toHaveBeenCalled();
+    expect(newMedia.pause).not.toHaveBeenCalled();
+    expect(engine.getState()).toMatchObject({
+      playing: false,
+      usingUploadedTrack: true,
+      trackName: 'replacement.wav',
+    });
+  });
+
+  test('clear disposes a pending element without allowing its play to revive transport', async () => {
+    const pending = deferred();
+    const { engine, media } = createHarness(() => pending.promise);
+    Object.assign(media, { src: 'blob:song', load: vi.fn() });
+
+    const starting = engine.start();
+    engine.clearUploadedTrack();
+    pending.resolve();
+    await starting;
+
+    expect(media.play).toHaveBeenCalledOnce();
+    expect(media.pause).toHaveBeenCalled();
+    expect(engine.getState()).toMatchObject({
+      playing: false,
+      usingUploadedTrack: false,
+      trackName: '',
     });
   });
 });
