@@ -1,5 +1,5 @@
 import type { RequestHandler } from './$types';
-import { readFile, realpath } from 'node:fs/promises';
+import { open, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const MEDIA_ROOT = path.resolve('tests', 'fixtures', 'media');
@@ -37,28 +37,84 @@ function contentType(filePath: string) {
   return 'application/octet-stream';
 }
 
-export const GET: RequestHandler = async ({ params }) => {
-  const candidate = _resolveQaMediaRequestPath(params.path ?? '');
-  if (!candidate) {
-    return new Response('Forbidden', { status: 403 });
+interface ResolvedQaMediaFile {
+  realFile: string;
+  size: number;
+}
+
+async function resolveQaMediaFile(requestPath: string): Promise<ResolvedQaMediaFile | Response> {
+  const candidate = _resolveQaMediaRequestPath(requestPath);
+  if (!candidate) return new Response('Forbidden', { status: 403 });
+  try {
+    const [realRoot, realFile] = await Promise.all([realpath(candidate.root), realpath(candidate.filePath)]);
+    if (!isContained(realRoot, realFile)) return new Response('Forbidden', { status: 403 });
+    const info = await stat(realFile);
+    if (!info.isFile()) return new Response('Not found', { status: 404 });
+    return { realFile, size: info.size };
+  } catch {
+    return new Response('Not found', { status: 404 });
+  }
+}
+
+function mediaHeaders(realFile: string, size: number) {
+  return new Headers({
+    'Content-Type': contentType(realFile),
+    'Content-Length': String(size),
+    'Accept-Ranges': 'bytes',
+    'Access-Control-Allow-Origin': '*'
+  });
+}
+
+function parseSingleByteRange(value: string, size: number): { start: number; end: number } | null {
+  if (!value.startsWith('bytes=') || value.includes(',')) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || (!match[1] && !match[2]) || size < 1) return null;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return null;
+    return { start: Math.max(0, size - suffixLength), end: size - 1 };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start < 0 || start >= size || requestedEnd < start) {
+    return null;
+  }
+  return { start, end: Math.min(requestedEnd, size - 1) };
+}
+
+export const HEAD: RequestHandler = async ({ params }) => {
+  const resolved = await resolveQaMediaFile(params.path ?? '');
+  if (resolved instanceof Response) return resolved;
+  return new Response(null, { status: 200, headers: mediaHeaders(resolved.realFile, resolved.size) });
+};
+
+export const GET: RequestHandler = async ({ params, request }) => {
+  const resolved = await resolveQaMediaFile(params.path ?? '');
+  if (resolved instanceof Response) return resolved;
+  const { realFile, size } = resolved;
+  const rangeValue = request?.headers.get('range');
+  if (rangeValue) {
+    const range = parseSingleByteRange(rangeValue, size);
+    if (!range) {
+      const headers = mediaHeaders(realFile, 0);
+      headers.set('Content-Range', `bytes */${size}`);
+      return new Response(null, { status: 416, headers });
+    }
+    const length = range.end - range.start + 1;
+    const handle = await open(realFile, 'r');
+    try {
+      const buffer = Buffer.allocUnsafe(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, range.start);
+      const headers = mediaHeaders(realFile, bytesRead);
+      headers.set('Content-Range', `bytes ${range.start}-${range.start + bytesRead - 1}/${size}`);
+      return new Response(buffer.subarray(0, bytesRead), { status: 206, headers });
+    } finally {
+      await handle.close();
+    }
   }
   try {
-    // Resolve symlinks before reading so a link inside the fixture directory
-    // cannot escape to an arbitrary machine-local path.
-    const [realRoot, realFile] = await Promise.all([
-      realpath(candidate.root),
-      realpath(candidate.filePath)
-    ]);
-    if (!isContained(realRoot, realFile)) {
-      return new Response('Forbidden', { status: 403 });
-    }
     const data = await readFile(realFile);
-    return new Response(data, {
-      headers: {
-        'Content-Type': contentType(realFile),
-        'Access-Control-Allow-Origin': '*'
-      }
-    });
+    return new Response(data, { headers: mediaHeaders(realFile, size) });
   } catch {
     return new Response('Not found', { status: 404 });
   }

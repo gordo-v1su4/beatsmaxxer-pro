@@ -25,7 +25,12 @@
   onMount(() => {
     // Collapses the rack to one slot and restores it if the viewport grows back
     // past the mobile threshold — which happens on every desktop review pass.
-    const restore = enterMobileSession();
+    let disposed = false;
+    let restore: (() => void) | null = null;
+    void enterMobileSession().then((readyRestore) => {
+      if (disposed) readyRestore();
+      else restore = readyRestore;
+    });
     // LINEAR/RANDOM are inert without something to move them on; the clip never
     // ends by itself because rack video loops.
     const stopAdvance = startMobileClipAdvance();
@@ -33,8 +38,9 @@
     // visible, the picture is not covered, and one drag opens the controls.
     sheetState.set('peek');
     return () => {
+      disposed = true;
       stopAdvance();
-      restore();
+      restore?.();
     };
   });
 </script>

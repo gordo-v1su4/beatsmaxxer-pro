@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 const mocks = vi.hoisted(() => ({
   start: vi.fn(async () => {}),
   loadAudioFile: vi.fn(async () => {}),
-  register: vi.fn(async () => ({ status: 'success' as const })),
+  registerFile: vi.fn(async () => ({ status: 'success' as const })),
+  registerUrl: vi.fn(async () => ({ status: 'success' as const })),
   remove: vi.fn(async () => {}),
   tick: vi.fn()
 }));
@@ -29,7 +30,8 @@ vi.mock('$lib/media/VideoPool', () => ({ videoPool: { tick: mocks.tick } }));
 
 vi.mock('$lib/runtime/media/MediaRuntime', () => ({
   mediaRuntime: {
-    registerModuleFileClip: mocks.register,
+    registerModuleFileClip: mocks.registerFile,
+    registerModuleClip: mocks.registerUrl,
     removeModuleClip: mocks.remove
   }
 }));
@@ -57,18 +59,18 @@ vi.mock('$lib/stores/clipLibrary', async () => {
   const clipLibrary = writable<Array<{
     id: string;
     name: string;
-    file: File;
+    source: { kind: 'file'; file: File } | { kind: 'url'; url: string };
     thumbnail: null;
     duration: null;
   }>>([]);
 
   return {
     clipLibrary,
-    addClipsToLibrary: async (files: File[]) => {
-      const added = files.map((file) => ({
-        id: file.name,
-        name: file.name,
-        file,
+    addUrlClipsToLibrary: async (inputs: Array<{ name: string; url: string }>) => {
+      const added = inputs.map(({ name, url }) => ({
+        id: `url:${url}`,
+        name,
+        source: { kind: 'url' as const, url },
         thumbnail: null,
         duration: null
       }));
@@ -88,11 +90,12 @@ import {
   advanceStageClip,
   clipQueueIds,
   enterMobileSession,
+  loadStageClip,
   seedMobileQaClips,
   stageClipId
 } from '$lib/mobile/mobileSession';
 import { clipLibrary } from '$lib/stores/clipLibrary';
-import { videoLayers } from '$lib/stores/rack';
+import { rackBottom, videoLayers } from '$lib/stores/rack';
 
 const CLIP_NAMES = Array.from({ length: 13 }, (_, index) => `redline/video-${index + 1}.mp4`);
 
@@ -127,10 +130,13 @@ describe('mobile real-media QA session', () => {
 
     expect(get(clipLibrary)).toHaveLength(13);
     expect(get(clipQueueIds)).toHaveLength(13);
-    expect(mocks.register).toHaveBeenCalledExactlyOnceWith(
+    expect(mocks.registerUrl).toHaveBeenCalledExactlyOnceWith(
       MOBILE_SLOT,
-      expect.objectContaining({ name: CLIP_NAMES[0] })
+      'video-1.mp4',
+      `/qa-media/${CLIP_NAMES[0]}`
     );
+    const fetchCalls = vi.mocked(fetch).mock.calls.map(([input]) => String(input));
+    expect(fetchCalls.filter((url) => url.endsWith('.mp4'))).toEqual([]);
     expect(mocks.loadAudioFile).toHaveBeenCalledOnce();
     expect(mocks.start).not.toHaveBeenCalled();
   });
@@ -143,27 +149,54 @@ describe('mobile real-media QA session', () => {
       await advanceStageClip(true);
     }
 
-    expect(mocks.register).toHaveBeenCalledTimes(13);
-    const registerCalls = mocks.register.mock.calls as unknown as Array<[string, File]>;
+    expect(mocks.registerUrl).toHaveBeenCalledTimes(13);
+    const registerCalls = mocks.registerUrl.mock.calls as unknown as Array<[string, string, string]>;
     expect(new Set(registerCalls.map(([slot]) => slot))).toEqual(new Set([MOBILE_SLOT]));
-    expect(registerCalls.map(([, file]) => file.name)).toEqual(CLIP_NAMES);
+    expect(registerCalls.map(([, name]) => `redline/${name}`)).toEqual(CLIP_NAMES);
+    expect(registerCalls.map(([, , url]) => url)).toEqual(CLIP_NAMES.map((name) => `/qa-media/${name}`));
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
-  test('removes decoded desktop lanes when the one-slot mobile session begins', () => {
+  test('keeps ordinary File clips on the existing File registration path', async () => {
+    const file = new File(['video'], 'local.mp4', { type: 'video/mp4' });
+    await loadStageClip({
+      id: 'local', name: file.name, source: { kind: 'file', file }, thumbnail: null, duration: null
+    });
+    expect(mocks.registerFile).toHaveBeenCalledExactlyOnceWith(MOBILE_SLOT, file);
+    expect(mocks.registerUrl).not.toHaveBeenCalled();
+  });
+
+  test('awaits decoded desktop lane removal before exposing the one-slot mobile session', async () => {
     videoLayers.set({
       [MOBILE_SLOT]: { name: 'mobile', url: 'blob:mobile' },
       'top-1': { name: 'desktop-a', url: 'blob:desktop-a' },
       'bottom-0': { name: 'desktop-b', url: 'blob:desktop-b' }
     });
 
-    const restore = enterMobileSession();
+    let finishFirstRemoval!: () => void;
+    mocks.remove.mockImplementationOnce(() => new Promise<void>((resolve) => { finishFirstRemoval = resolve; }));
+    const entering = enterMobileSession();
 
     expect(mocks.remove).toHaveBeenCalledTimes(2);
     expect(mocks.remove).toHaveBeenCalledWith('top-1');
     expect(mocks.remove).toHaveBeenCalledWith('bottom-0');
     expect(mocks.remove).not.toHaveBeenCalledWith(MOBILE_SLOT);
+    expect(get(rackBottom)).toEqual(['orbit']);
+    finishFirstRemoval();
+    const restore = await entering;
+    expect(get(rackBottom)).toEqual([]);
     restore();
+  });
+
+  test('keeps a stale session restore from overwriting a newer mobile session', async () => {
+    const firstRestore = await enterMobileSession();
+    const secondRestore = await enterMobileSession();
+    rackBottom.set(['sentinel']);
+    firstRestore();
+    expect(get(rackBottom)).toEqual(['sentinel']);
+    secondRestore();
+    expect(get(rackBottom)).toEqual([]);
+    expect(mocks.remove).not.toHaveBeenCalledWith(MOBILE_SLOT);
   });
 
   test('mounts exactly one live WebGPU canvas in the mobile shell', async () => {

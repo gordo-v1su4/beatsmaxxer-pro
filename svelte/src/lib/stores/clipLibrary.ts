@@ -11,10 +11,14 @@ import { readClipPoster } from '$lib/media/clipThumbnail';
  * Files are retained by reference — no copy — so the library costs a poster
  * frame per clip and nothing more.
  */
+export type LibraryClipSource =
+  | { kind: 'file'; file: File }
+  | { kind: 'url'; url: string };
+
 export interface LibraryClip {
   id: string;
   name: string;
-  file: File;
+  source: LibraryClipSource;
   thumbnail: string | null;
   duration: number | null;
 }
@@ -30,6 +34,10 @@ function clipKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
+function urlClipKey(url: string) {
+  return `url:${url}`;
+}
+
 export function findLibraryClip(id: string): LibraryClip | undefined {
   return get(clipLibrary).find((clip) => clip.id === id);
 }
@@ -43,7 +51,7 @@ export async function addClipsToLibrary(files: File[]): Promise<LibraryClip[]> {
   const videos = files.filter(isVideoFile);
   if (videos.length === 0) return [];
 
-  const existing = new Set(get(clipLibrary).map((clip) => clipKey(clip.file)));
+  const existing = new Set(get(clipLibrary).map((clip) => clip.id));
   const fresh = videos.filter((file) => {
     const key = clipKey(file);
     if (existing.has(key)) return false;
@@ -57,17 +65,50 @@ export async function addClipsToLibrary(files: File[]): Promise<LibraryClip[]> {
   const added: LibraryClip[] = fresh.map((file) => ({
     id: clipKey(file),
     name: file.name,
-    file,
+    source: { kind: 'file', file },
     thumbnail: null,
     duration: null
   }));
   clipLibrary.update((clips) => [...clips, ...added]);
 
   for (const clip of added) {
-    const poster = await readClipPoster(clip.file);
+    if (clip.source.kind !== 'file') continue;
+    const poster = await readClipPoster(clip.source.file);
     clipLibrary.update((clips) =>
       clips.map((c) => (c.id === clip.id ? { ...c, ...poster } : c))
     );
+  }
+  return added;
+}
+
+export interface UrlLibraryClipInput {
+  name: string;
+  url: string;
+}
+
+/** Add URL-backed QA/bundled clips without materializing their full media as Blob/File objects. */
+export async function addUrlClipsToLibrary(inputs: UrlLibraryClipInput[]): Promise<LibraryClip[]> {
+  const existing = new Set(get(clipLibrary).map((clip) => clip.id));
+  const fresh = inputs.filter(({ name, url }) => {
+    if (!name || !url) return false;
+    const key = urlClipKey(url);
+    if (existing.has(key)) return false;
+    existing.add(key);
+    return true;
+  });
+  const added: LibraryClip[] = fresh.map(({ name, url }) => ({
+    id: urlClipKey(url),
+    name,
+    source: { kind: 'url', url },
+    thumbnail: null,
+    duration: null
+  }));
+  if (added.length === 0) return [];
+  clipLibrary.update((clips) => [...clips, ...added]);
+  for (const clip of added) {
+    if (clip.source.kind !== 'url') continue;
+    const poster = await readClipPoster(clip.source.url);
+    clipLibrary.update((clips) => clips.map((candidate) => candidate.id === clip.id ? { ...candidate, ...poster } : candidate));
   }
   return added;
 }

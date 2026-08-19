@@ -216,7 +216,9 @@
 
   /** Drop from the clip bank — swaps that slot's media, leaving its effect alone. */
   async function assignLibraryClip(clip: LibraryClip, row: 'top' | 'bottom', slotIndex: number) {
-    await loadRackClipsFromFiles([clip.file], `${row}-${slotIndex}`);
+    const slotId = `${row}-${slotIndex}`;
+    if (clip.source.kind === 'file') await loadRackClipsFromFiles([clip.source.file], slotId);
+    else await mediaRuntime.registerModuleClip(slotId, clip.name, clip.source.url);
   }
 
   async function loadClipsFromModule(startId: string, files: File[]) {

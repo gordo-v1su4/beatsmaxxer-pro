@@ -20,8 +20,9 @@ function posterTime(duration: number) {
   return Math.min(duration * 0.1, 1);
 }
 
-export async function readClipPoster(file: File): Promise<ClipPoster> {
-  const url = URL.createObjectURL(file);
+export async function readClipPoster(source: File | string): Promise<ClipPoster> {
+  const ownsObjectUrl = typeof source !== 'string';
+  const url = ownsObjectUrl ? URL.createObjectURL(source) : source;
   const video = document.createElement('video');
   video.preload = 'metadata';
   video.muted = true;
@@ -76,7 +77,7 @@ export async function readClipPoster(file: File): Promise<ClipPoster> {
   } finally {
     video.removeAttribute('src');
     video.load();
-    URL.revokeObjectURL(url);
+    if (ownsObjectUrl) URL.revokeObjectURL(url);
   }
 }
 

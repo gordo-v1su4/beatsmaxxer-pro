@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { validateRedlineManifest } from '../../../scripts/validate-redline-media';
-import { GET, _resolveQaMediaRequestPath } from '../../../src/routes/qa-media/[...path]/+server';
+import { GET, HEAD, _resolveQaMediaRequestPath } from '../../../src/routes/qa-media/[...path]/+server';
 import { parseMidi } from '../../../src/lib/audio/MidiParser';
 import { supportsModuleMidi } from '../../../src/lib/modules/midiContracts';
 import { DEFAULT_RACK_BOTTOM, DEFAULT_RACK_TOP } from '../../../src/lib/modules/catalog';
@@ -63,16 +63,57 @@ describe('authoritative Redline QA media', () => {
     const response = await GET({
       params: {
         path: 'redline/Redline (Remastered) Stems/Redline (Remastered) (Drums).mid'
-      }
+      },
+      request: new Request('http://qa/qa-media/redline/drums.mid')
     } as never);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('audio/midi');
     expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
+  test('serves single byte ranges with truthful media headers', async () => {
+    const pathName = 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
+    const response = await GET({
+      params: { path: pathName },
+      request: new Request('http://qa/qa-media/clip.mp4', { headers: { Range: 'bytes=10-10' } })
+    } as never);
+    expect(response.status).toBe(206);
+    expect(response.headers.get('accept-ranges')).toBe('bytes');
+    expect(response.headers.get('content-length')).toBe('1');
+    expect(response.headers.get('content-range')).toMatch(/^bytes 10-10\/\d+$/);
+    expect((await response.arrayBuffer()).byteLength).toBe(1);
+  });
+
+  test('HEAD exposes metadata without a response body', async () => {
+    const response = await HEAD({
+      params: { path: 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4' }
+    } as never);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('video/mp4');
+    expect(Number(response.headers.get('content-length'))).toBeGreaterThan(0);
+    expect(response.headers.get('accept-ranges')).toBe('bytes');
+    expect((await response.arrayBuffer()).byteLength).toBe(0);
+  });
+
+  test('rejects malformed, multi, and unsatisfiable ranges with 416', async () => {
+    const pathName = 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
+    for (const range of ['bytes=999999999999-', 'bytes=0-1,4-5', 'items=0-1']) {
+      const response = await GET({
+        params: { path: pathName },
+        request: new Request('http://qa/qa-media/clip.mp4', { headers: { Range: range } })
+      } as never);
+      expect(response.status, range).toBe(416);
+      expect(response.headers.get('content-range'), range).toMatch(/^bytes \*\/\d+$/);
+      expect(response.headers.get('content-length'), range).toBe('0');
+    }
+  });
+
   test('rejects traversal instead of normalizing it into a fixture path', async () => {
     expect(_resolveQaMediaRequestPath('redline/../../package.json')).toBeNull();
-    const response = await GET({ params: { path: 'redline/../../package.json' } } as never);
+    const response = await GET({
+      params: { path: 'redline/../../package.json' },
+      request: new Request('http://qa/qa-media/redline/../../package.json')
+    } as never);
     expect(response.status).toBe(403);
   });
 
