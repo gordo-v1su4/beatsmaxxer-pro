@@ -25,6 +25,36 @@ describe("AudioTimeline", () => {
     expect(timeline.publishFrame().positionSeconds).toBe(2.5);
   });
 
+  test("follows a media actuator without bumping generation for small clock error", () => {
+    const ctx = context();
+    const timeline = new AudioTimeline();
+    timeline.bindContext(ctx);
+    timeline.play();
+    ctx.currentTime = 1;
+    const before = timeline.publishFrame();
+
+    ctx.currentTime = 1.04;
+    timeline.followPosition(1.03);
+    const followed = timeline.publishFrame();
+    expect(followed.positionSeconds).toBeCloseTo(1.03);
+    expect(followed.generation).toBe(before.generation);
+  });
+
+  test("treats a large follow jump as a discontinuity so actuators can seek", () => {
+    const ctx = context();
+    const timeline = new AudioTimeline();
+    timeline.bindContext(ctx);
+    timeline.play();
+    ctx.currentTime = 1;
+    const before = timeline.publishFrame();
+
+    timeline.followPosition(8);
+    const jumped = timeline.publishFrame();
+    expect(jumped.positionSeconds).toBe(8);
+    expect(jumped.generation).toBe(before.generation + 1);
+    expect(jumped.reason).toBe("seek");
+  });
+
   test("does not apply playback rate twice to the fallback beat grid", () => {
     const ctx = context();
     const timeline = new AudioTimeline();

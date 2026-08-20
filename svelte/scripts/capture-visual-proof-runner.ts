@@ -1,10 +1,10 @@
+import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, realMediaFileMetadata } from './visual-proof-verification.ts';
-import { evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
+import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, readProductionPreviewIdentity, realMediaFileMetadata } from './visual-proof-verification.ts';
+import { dispatchVisibleButtonClick, evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
 import {
   FIXED_VISUAL_PROOF_FIXTURE,
-  REAL_MEDIA_VIDEO_NAMES,
   FIXED_VISUAL_PROOF_TIMELINE_POSITIONS,
   FIXED_VISUAL_PROOF_VIEWPORT,
   buildVisualProofManifest,
@@ -14,13 +14,41 @@ import {
   type VisualProofEvidence,
   type VisualProofReport
 } from '../src/lib/qa/visualProof.ts';
+import { REDLINE_EXPECTED_BPM, createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
+import { resolveProofEnvironment } from '../src/lib/qa/proofEnvironment.ts';
+import {
+  REDLINE_AUDIO_NAME,
+  REDLINE_AUDIO_SOURCE_PATH,
+  REDLINE_PRIMARY_MIDI_SOURCE_PATH,
+  REDLINE_VIDEO_NAMES,
+  REDLINE_VIDEO_SOURCE_PATHS,
+  redlineVirtualPathToSourceRelative
+} from '../src/lib/qa/redlineProofMedia.ts';
 
-const QA_URL = 'http://127.0.0.1:5174/?qaProof=1';
+const QA_URL = process.env.QA_URL ?? '';
 const OUTPUT_DIR = '.artifacts/visual-proof';
 const REPORT_PATH = `${OUTPUT_DIR}/report.json`;
 
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+async function gitText(...args: string[]) {
+  const process = Bun.spawn(['git', ...args], { cwd: '..', stdout: 'pipe', stderr: 'pipe' });
+  const [text, exitCode] = await Promise.all([new Response(process.stdout).text(), process.exited]);
+  if (exitCode !== 0) throw new Error(`git ${args.join(' ')} failed`);
+  return text.trim();
+}
+
+const status = (passed: boolean): ProofCapabilityStatus => passed ? 'passed' : 'failed';
+
 if (process.env.HEADLESS === '1') {
   throw new Error('Physical-browser proof capture refuses HEADLESS=1');
+}
+if (!QA_URL || new URL(QA_URL).searchParams.has('qaAutoplay')) {
+  throw new Error('Release proof requires an explicit production-preview QA_URL without qaAutoplay');
+}
+if (process.env.PROOF_SERVER_KIND !== 'vite-production-preview' ||
+    process.env.PROOF_SERVER_ORIGIN !== new URL(QA_URL).origin) {
+  throw new Error('Release proof refuses an unowned or non-production-preview server');
 }
 
 interface BrowserControl extends AdvertisedControl {
@@ -254,12 +282,12 @@ async function assignFixtureFile(session: CdpSession, control: BrowserControl, r
   const queried = await session.send('DOM.querySelector', { nodeId: rootNodeId, selector }) as { nodeId?: number };
   if (!queried.nodeId) throw new Error(`fixture file input unavailable for ${control.id}`);
   const files = control.fixtureKind === 'audio'
-    ? [resolve(FIXED_VISUAL_PROOF_FIXTURE.root, FIXED_VISUAL_PROOF_FIXTURE.audio)]
+    ? [resolve(REDLINE_AUDIO_SOURCE_PATH)]
     : control.fixtureKind === 'midi'
-      ? [resolve('tests/fixtures/media/qa.mid')]
+      ? [resolve(REDLINE_PRIMARY_MIDI_SOURCE_PATH)]
       : control.fixtureKind === 'clips'
-        ? [resolve(FIXED_VISUAL_PROOF_FIXTURE.root, FIXED_VISUAL_PROOF_FIXTURE.clips[0])]
-        : [resolve(FIXED_VISUAL_PROOF_FIXTURE.root, FIXED_VISUAL_PROOF_FIXTURE.clips[0])];
+        ? [resolve(REDLINE_VIDEO_SOURCE_PATHS[0]!)]
+        : [resolve(REDLINE_VIDEO_SOURCE_PATHS[0]!)];
   await session.send('DOM.setFileInputFiles', { nodeId: queried.nodeId, files });
   await evalPage(session, `(() => {
     const input = document.querySelector(${JSON.stringify(selector)});
@@ -403,7 +431,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const controls = await discoverControls(session);
   const songControl = controls.find((control) => control.fixtureKind === 'audio');
   if (!songControl) throw new Error('stable SONG picker control is missing');
-  console.log('[visual-proof] REAL AUDIO: selecting Redline (Remastered).mp3 through SONG');
+  console.log(`[visual-proof] REAL AUDIO: selecting ${REDLINE_AUDIO_NAME} through SONG`);
   const realPhaseRequestStart = protocolCapture.requests.length;
   await assignFixtureFile(session, songControl, false);
   const consentControls = (await discoverControls(session)).filter((control) => control.state === 'audio-consent');
@@ -412,9 +440,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
   await exerciseControl(session, localOnly);
+  await dispatchVisibleButtonClick(session, 'PLAY');
+  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
   const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
-  if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== 'Redline (Remastered).mp3') {
+  const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
+  if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== REDLINE_AUDIO_NAME) {
     throw new Error('Redline did not remain bound to uploaded playback');
   }
   if (audioPlayback.after.contextState !== 'running' || audioPlayback.after.contextCurrentTime - audioPlayback.before.contextCurrentTime < 2 ||
@@ -433,8 +464,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   if (!clipInput.nodeId) throw new Error('visible CLIP file input is unavailable');
 
   const mediaPaths = [
-    ...FIXED_VISUAL_PROOF_FIXTURE.clips.map((name) => `${FIXED_VISUAL_PROOF_FIXTURE.root}/${name}`),
-    `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`
+    ...REDLINE_VIDEO_SOURCE_PATHS,
+    REDLINE_AUDIO_SOURCE_PATH
   ];
   const mediaMetadata = await realMediaFileMetadata(mediaPaths);
   const mediaByName = new Map(mediaMetadata.map((entry) => [entry.name, entry]));
@@ -442,12 +473,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const realFirstFrames: ReturnType<typeof parsePngMetrics>[] = [];
   let maxSimultaneousDecoded = 0;
   await evalPage(session, `window.__BMX_QA__?.focusVisualProofModule?.('transition')`);
-  for (let index = 0; index < REAL_MEDIA_VIDEO_NAMES.length; index++) {
-    const fileName = REAL_MEDIA_VIDEO_NAMES[index]!;
+  for (let index = 0; index < REDLINE_VIDEO_NAMES.length; index++) {
+    const fileName = REDLINE_VIDEO_NAMES[index]!;
     console.log(`[visual-proof] REAL VIDEO ${index + 1}/13: ${fileName} — UI load, live motion/cadence, then full release`);
     await evalPage(session, `window.__BMX_QA__?.showVisualProofRealVideoProgress?.(${index + 1}, 13, ${JSON.stringify(fileName)})`);
     const selectionBefore = await evalPage<{ generation: number }>(session, `window.__BMX_QA__?.visualProofRealMediaSelectionState?.()`);
-    await session.send('DOM.setFileInputFiles', { nodeId: clipInput.nodeId, files: [resolve(FIXED_VISUAL_PROOF_FIXTURE.root, FIXED_VISUAL_PROOF_FIXTURE.clips[index]!)] });
+    await session.send('DOM.setFileInputFiles', { nodeId: clipInput.nodeId, files: [resolve(redlineVirtualPathToSourceRelative(FIXED_VISUAL_PROOF_FIXTURE.clips[index]!))] });
     const capturedSelection = await evalPage<{ generation: number; name: string; size: number; sha256: string }>(session,
       `window.__BMX_QA__?.waitForVisualProofRealMediaSelection?.(${selectionBefore.generation}, ${JSON.stringify(fileName)}, 5000)`, 10_000,
       `retain capture-phase selected File: ${fileName}`);
@@ -494,7 +525,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   }
   await evalPage(session, `window.__BMX_QA__?.hideVisualProofRealVideoProgress?.()`);
   const adjacentCrossFileDifferenceRatios = realFirstFrames.slice(1).map((frame, index) => pixelDifferenceRatio(realFirstFrames[index]!, frame));
-  if (new Set(videoExercise.map((entry) => entry.currentSrc)).size !== REAL_MEDIA_VIDEO_NAMES.length ||
+  if (new Set(videoExercise.map((entry) => entry.currentSrc)).size !== REDLINE_VIDEO_NAMES.length ||
       new Set(videoExercise.map((entry) => entry.firstContentHash)).size < 10 ||
       adjacentCrossFileDifferenceRatios.filter((ratio) => ratio > 0.01).length < 8) {
     throw new Error('Real-video phase failed before matrix: PGM sources or screenshots were reused across files');
@@ -570,7 +601,9 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
           await evalPage(session, `window.__BMX_QA__?.releaseAllVisualProofClips?.()`, 30_000);
           activeMatrixModule = null;
         }
-        const action = await exerciseControl(session, control);
+        const action = isPlayControl
+          ? await dispatchVisibleButtonClick(session, 'PLAY').then(() => ({ ok: true }))
+          : await exerciseControl(session, control);
         actionOk = Boolean(action?.ok);
         actionError = action?.error;
         if (uploadedTrackLoadGeneration !== null && actionOk) {
@@ -713,8 +746,81 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   );
   if (!gpu) captureErrors.push('WebGPU adapter/device provenance was not captured from navigator.gpu.requestAdapter');
 
+  const [sourceDigest, buildDigest, sourceCommit, dirtyStatus, lockBytes, previewIdentity] = await Promise.all([
+    computeVisualProofSourceDigest(),
+    computeVisualProofBuildDigest(),
+    gitText('rev-parse', 'HEAD'),
+    gitText('status', '--porcelain', '--untracked-files=normal'),
+    readFile('bun.lock'),
+    readProductionPreviewIdentity(new URL(QA_URL).origin)
+  ]);
+  const capturedAt = new Date().toISOString();
+  const contentAssets = videoExercise.map((clip) => ({ name: clip.fileName, sha256: clip.sha256, size: clip.size }));
+  const primarySamples = await Promise.all(videoExercise.map(async (clip) => ({
+    assetName: clip.fileName,
+    assetSha256: clip.sha256,
+    observedSource: clip.currentSrc,
+    rendererSource: clip.rendererSource ?? '',
+    sourceBackend: 'html-video' as const,
+    frameProducer: 'HTMLVideoElement.copyExternalImageToTexture' as const,
+    sourceFrameId: clip.rendererFrameId ?? 0,
+    sourceTimestampSeconds: clip.secondMediaTimeSeconds,
+    outputFrameSha256: sha256(await readFile(clip.secondScreenshot)),
+    width: clip.videoWidth,
+    height: clip.videoHeight
+  })));
+  const detectedBpm = Number(audioSnapshot?.bpm ?? 0);
+  const mediaAdvanced = videoExercise.every((clip) => clip.secondMediaTimeSeconds !== clip.firstMediaTimeSeconds);
+  const contentIntegrityPassed = primarySamples.length === videoExercise.length && primarySamples.every((sample) =>
+    sample.rendererSource === sample.observedSource && sample.sourceFrameId > 0 && /^[0-9a-f]{64}$/.test(sample.outputFrameSha256));
+  const proofEnv = resolveProofEnvironment();
+  const artifactProvenance = createArtifactProvenance({
+    captureId: crypto.randomUUID(),
+    capturedAt,
+    source: { commit: sourceCommit, digest: sourceDigest, workingTreeDirty: dirtyStatus.length > 0 },
+      build: { id: buildDigest, digest: buildDigest, profile: 'production' },
+      server: {
+        kind: 'vite-production-preview',
+        origin: new URL(QA_URL).origin,
+        buildDigest,
+        ...previewIdentity
+      },
+    dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
+    environment: {
+      shellKind: proofEnv.shellKind,
+      sourceBackend: proofEnv.sourceBackend,
+      frameProducer: proofEnv.frameProducer,
+      releaseEvidence: proofEnv.releaseEvidence,
+      webgpuAvailable: gpu?.deviceCreated === true,
+      runtime: {
+        name: cdpVersion.product?.split('/')[0] ?? '',
+        version: cdpVersion.product?.split('/')[1] ?? '',
+        userAgent: cdpVersion.userAgent ?? ''
+      },
+      device: {
+        operatingSystem: process.platform,
+        architecture: process.arch,
+        model: [gpu?.vendor, gpu?.device].filter(Boolean).join(' ') || 'unknown',
+        gpuIdentity: [gpu?.vendor, gpu?.architecture, gpu?.device, gpu?.description].filter(Boolean).join(' ')
+      }
+    },
+    capabilities: {
+      webgpu: status(gpu?.deviceCreated === true),
+      mediaAdvance: status(mediaAdvanced),
+      bpmMatch: status(Math.abs(detectedBpm - REDLINE_EXPECTED_BPM) <= 0.01),
+      primarySamples: status(primarySamples.length === videoExercise.length),
+      contentIntegrity: status(contentIntegrityPassed)
+    },
+    contentIntegrity: {
+      algorithm: 'sha256',
+      requiredPrimarySampleCount: videoExercise.length,
+      assets: contentAssets,
+      primarySamples
+    }
+  });
+
   const report: VisualProofReport = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifest,
     environment: {
       browserName: cdpVersion.product?.split('/')[0] ?? 'unknown',
@@ -740,12 +846,9 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       statement: 'Human-observed headed browser; this attestation is not machine-verifiable.'
     },
     provenance: {
-      sourceDigest: await computeVisualProofSourceDigest(),
-      buildDigest: await computeVisualProofBuildDigest(),
+      ...artifactProvenance,
       catalogDigest: digestJson(manifest.items.filter((item) => item.kind !== 'control')),
       controlInventoryDigest: digestJson(manifest.items.filter((item) => item.kind === 'control')),
-      captureNonce: crypto.randomUUID(),
-      capturedAt: new Date().toISOString(),
       fixtureFiles: mediaMetadata
     },
     realMedia: {
@@ -753,10 +856,10 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       assignedVia: 'serial QA target helper from one selected File object',
       videoExercise,
       audioExercise: {
-        fileName: 'Redline (Remastered).mp3',
-        relativePath: mediaByName.get('Redline (Remastered).mp3')!.relativePath,
-        sha256: mediaByName.get('Redline (Remastered).mp3')!.sha256,
-        size: mediaByName.get('Redline (Remastered).mp3')!.size,
+        fileName: REDLINE_AUDIO_NAME,
+        relativePath: mediaByName.get(REDLINE_AUDIO_NAME)!.relativePath,
+        sha256: mediaByName.get(REDLINE_AUDIO_NAME)!.sha256,
+        size: mediaByName.get(REDLINE_AUDIO_NAME)!.size,
         loadedVia: 'SONG -> LOCAL ONLY', volume: audioPlayback.after.volume,
         observationDurationMs: audioPlayback.observationDurationMs,
         contextStateBefore: audioPlayback.before.contextState, contextStateAfter: audioPlayback.after.contextState,
@@ -764,13 +867,15 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         mediaTimeBefore: audioPlayback.before.mediaCurrentTime, mediaTimeAfter: audioPlayback.after.mediaCurrentTime,
         rmsPeak: audioPlayback.rmsPeak, amplitudePeak: audioPlayback.amplitudePeak,
         currentSrc: audioPlayback.after.currentSrc, mediaPaused: audioPlayback.after.mediaPaused,
-        mediaMuted: audioPlayback.after.mediaMuted
+        mediaMuted: audioPlayback.after.mediaMuted,
+        expectedBpm: REDLINE_EXPECTED_BPM,
+        detectedBpm
       },
       assignments: matrixAssignments,
       noNetwork: {
         requests: protocolCapture.requests.slice(realPhaseRequestStart),
         externalRequests: protocolCapture.requests.slice(realPhaseRequestStart).filter((url) => {
-          try { return new URL(url).origin !== 'http://127.0.0.1:5174'; } catch { return true; }
+          try { return new URL(url).origin !== new URL(QA_URL).origin; } catch { return true; }
         })
       },
       pausedBeforeEffectMatrix: pausedDiagnostics?.playing === false && pausedDiagnostics?.mediaPaused === true,

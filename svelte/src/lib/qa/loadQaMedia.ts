@@ -1,18 +1,129 @@
 import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
+import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { activeRackSlotIds } from '$lib/stores/rack';
+import { activeRackSlotIds, rackBottom, rackTop } from '$lib/stores/rack';
+import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
+import { addMidiChannels, clearMidiChannels } from '$lib/stores/midiChannels';
+import { syncMidiUiFromLoadedParts } from '$lib/stores/rackUi';
 import { isTauriRuntime } from '$lib/platform/runtime';
+import { get } from 'svelte/store';
 
-export interface QaManifest {
-  clips?: string[];
-  audio?: string;
+export interface QaMidiAssignment {
+  moduleId: string;
+  file: string;
 }
 
-export async function loadQaMediaFromManifest(manifest: QaManifest) {
+export interface QaManifest {
+  bundle?: string;
+  sourceRoot?: string;
+  clips?: string[];
+  audio?: string;
+  audios?: string[];
+  stems?: string[];
+  midi?: string;
+  midis?: string[];
+  midiAssignments?: QaMidiAssignment[];
+}
+
+export function validateQaMidiAssignments(
+  manifest: QaManifest,
+  activeModuleIds = [...get(rackTop), ...get(rackBottom)]
+): QaMidiAssignment[] {
+  const assignments = manifest.midiAssignments ?? [];
+  if (assignments.length === 0) return assignments;
+  if (assignments.length !== 7) {
+    throw new Error(`QA MIDI manifest must assign exactly 7 stems; found ${assignments.length}`);
+  }
+  const moduleIds = assignments.map(({ moduleId }) => moduleId);
+  const files = assignments.map(({ file }) => file);
+  if (new Set(moduleIds).size !== assignments.length) {
+    throw new Error('QA MIDI manifest assigns more than one stem to a module');
+  }
+  if (new Set(files).size !== assignments.length) {
+    throw new Error('QA MIDI manifest assigns one stem more than once');
+  }
+  const midiInventory = new Set(manifest.midis ?? []);
+  const activeModules = new Set(activeModuleIds);
+  for (const assignment of assignments) {
+    if (!midiInventory.has(assignment.file)) {
+      throw new Error(`QA MIDI assignment is not inventoried: ${assignment.file}`);
+    }
+    if (!activeModules.has(assignment.moduleId)) {
+      throw new Error(`QA MIDI assignment targets inactive rack module: ${assignment.moduleId}`);
+    }
+    if (!supportsModuleMidi(assignment.moduleId)) {
+      throw new Error(`QA MIDI assignment targets unsupported module: ${assignment.moduleId}`);
+    }
+  }
+  return assignments;
+}
+
+/** Load the rack-bound MIDI parts without registering duplicate free stem lanes. */
+export async function loadQaMidiAssignments(manifest: QaManifest): Promise<void> {
+  const assignments = validateQaMidiAssignments(manifest);
+  const files = await Promise.all(assignments.map(async (assignment) => {
+    const response = await fetch(`/qa-media/${assignment.file}`);
+    if (!response.ok) {
+      throw new Error(`MIDI fetch failed for ${assignment.moduleId}: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const name = assignment.file.split('/').at(-1) ?? assignment.file;
+    return {
+      assignment,
+      file: new File([blob], name, { type: blob.type || 'audio/midi' })
+    };
+  }));
+  for (const { assignment, file } of files) {
+    await attachModuleMidiFile(assignment.moduleId, file);
+  }
+}
+
+/** Load every inventoried stem into the arranger trigger lanes. */
+export async function loadQaMidiChannels(manifest: QaManifest): Promise<void> {
+  const paths = manifest.midis ?? [];
+  if (paths.length === 0) return;
+
+  clearMidiChannels();
+  const files = await Promise.all(paths.map(async (midiPath) => {
+    const response = await fetch(`/qa-media/${midiPath}`);
+    if (!response.ok) {
+      throw new Error(`MIDI fetch failed for ${midiPath}: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const name = midiPath.split('/').at(-1) ?? midiPath;
+    return new File([blob], name, { type: blob.type || 'audio/midi' });
+  }));
+
+  const added = await addMidiChannels(files);
+  if (added.length === 0) {
+    throw new Error('QA MIDI stems did not produce any arranger trigger channels');
+  }
+}
+
+export async function loadQaMediaFromManifest(
+  manifest: QaManifest,
+  options?: { midi?: boolean }
+) {
   const clips = manifest.clips ?? [];
   const slotIds = activeRackSlotIds();
   const errors: string[] = [];
+
+  // Song + Essentia rhythm must finish before clips prewarm or transport can
+  // start — otherwise rack video runs on the 128 default BPM.
+  if (manifest.audio) {
+    try {
+      const response = await fetch(`/qa-media/${manifest.audio}`);
+      if (!response.ok) throw new Error(`audio fetch failed: ${response.status}`);
+      const blob = await response.blob();
+      const file = new File([blob], manifest.audio, { type: blob.type || 'audio/mpeg' });
+      await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`audio: ${msg}`);
+      console.error('[QA] audio load failed:', err);
+    }
+  }
 
   for (let i = 0; i < slotIds.length; i++) {
     const clip = clips[i % clips.length];
@@ -39,35 +150,44 @@ export async function loadQaMediaFromManifest(manifest: QaManifest) {
     }
   }
 
-  videoPool.tick(true);
+  videoPool.tick(false);
 
-  if (manifest.audio) {
+  if (manifest.midis?.length) {
     try {
-      // Load through the real upload path with hosted analysis so QA sessions
-      // exercise the Essentia endpoint and get the song's true BPM instead of
-      // silently running on the 128 default. Falls back to realtime estimation
-      // when the service is unreachable.
-      const response = await fetch(`/qa-media/${manifest.audio}`);
-      if (!response.ok) throw new Error(`audio fetch failed: ${response.status}`);
-      const blob = await response.blob();
-      const file = new File([blob], manifest.audio, { type: blob.type || 'audio/mpeg' });
-      await audioEngine.loadAudioFile(file, { hostedAnalysis: true });
+      await loadQaMidiChannels(manifest);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`audio: ${msg}`);
-      console.error('[QA] audio load failed:', err);
+      errors.push(`arranger MIDI: ${msg}`);
+      console.error('[QA] arranger MIDI load failed:', err);
     }
   }
+
+  if (options?.midi !== false && manifest.midiAssignments?.length) {
+    try {
+      await loadQaMidiAssignments(manifest);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`MIDI: ${msg}`);
+      console.error('[QA] MIDI load failed:', err);
+    }
+  }
+
+  syncMidiUiFromLoadedParts();
 
   if (errors.length > 0) {
     throw new Error(`QA media partial failure:\n${errors.join('\n')}`);
   }
 }
 
-export async function fetchAndLoadQaMedia() {
+/** Rack module parts load on every QA session unless `?qaMidi=0`. Arranger lanes always load. */
+export function shouldAutoloadQaMidi(search: string): boolean {
+  return new URLSearchParams(search).get('qaMidi') !== '0';
+}
+
+export async function fetchAndLoadQaMedia(options?: { midi?: boolean }) {
   const res = await fetch('/qa-media/manifest.json');
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   const manifest = (await res.json()) as QaManifest;
-  await loadQaMediaFromManifest(manifest);
+  await loadQaMediaFromManifest(manifest, options);
   return manifest;
 }

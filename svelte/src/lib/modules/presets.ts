@@ -11,27 +11,27 @@ function presetsFor(id: string): ModulePreset[] {
   switch (id) {
     case 'transition':
       return [
-        { n: '1', title: 'Whip bar — sharp 1-beat wipe', set: { type: 0, interval: 10, duration: 25, amount: 75, mix: 100, in_: 85, out: 80 } },
-        { n: '2', title: 'Iris punch — 2-bar iris', set: { type: 12, interval: 50, duration: 45, amount: 85, mix: 100, in_: 90, out: 75 } },
-        { n: '3', title: 'Glitch storm — 1/2 bar flash', set: { type: 6, interval: 70, duration: 15, amount: 95, mix: 100, in_: 80, out: 70 } }
+        { n: '1', title: 'Whip bar — sharp 1-beat wipe', set: { type: 0, interval: 10, duration: 25, amount: 75, mix: 100 } },
+        { n: '2', title: 'Iris punch — 2-bar iris', set: { type: 12, interval: 50, duration: 45, amount: 85, mix: 100 } },
+        { n: '3', title: 'Glitch storm — 1/2 bar flash', set: { type: 6, interval: 70, duration: 15, amount: 95, mix: 100 } }
       ];
     case 'speedramp':
       return [
-        { n: '1', title: 'Slam in — late ease to 4×', set: { len: 10, spdMin: 25, spdMax: 100, bzY0: 100, bzY3: 0, mix: 100, in_: 85, out: 70 } },
-        { n: '2', title: 'Breath — 1-bar swell', set: { len: 50, spdMin: 40, spdMax: 85, bzY0: 50, bzY3: 50, mix: 90, in_: 80, out: 80 } },
-        { n: '3', title: 'Stutter halt — drop to ¼×', set: { len: 30, spdMin: 0, spdMax: 60, bzY0: 100, bzY3: 100, mix: 100, in_: 75, out: 65 } }
+        { n: '1', title: 'Slam in — late ease to 4×', set: { len: 10, spdMin: 25, spdMax: 100, bzY0: 100, bzY3: 0, mix: 100 } },
+        { n: '2', title: 'Breath — 1-bar swell', set: { len: 50, spdMin: 40, spdMax: 85, bzY0: 50, bzY3: 50, mix: 90 } },
+        { n: '3', title: 'Stutter halt — drop to ¼×', set: { len: 30, spdMin: 0, spdMax: 60, bzY0: 100, bzY3: 100, mix: 100 } }
       ];
     case 'tapdelay':
       return [
-        { n: '1', title: 'Swung triplets', set: { type: 1, time: 50, velCrv: 50, feel: 1, scratchMode: 0, scratchDepth: 35, end: 65, mix: 70, feedback: 55 } },
-        { n: '2', title: 'Dotted pong', set: { type: 1, time: 30, velCrv: 75, feel: 2, scratchMode: 2, scratchDepth: 60, end: 55, mix: 75, feedback: 65 } },
-        { n: '3', title: 'Chaos stutter', set: { type: 1, time: 70, velCrv: 100, feel: 0, scratchMode: 3, scratchDepth: 80, end: 75, mix: 85, feedback: 70 } }
+        { n: '1', title: 'Swung triplet hold', set: { time: 50, feedback: 55, feel: 1, gate: 72, sens: 20, mix: 100 } },
+        { n: '2', title: 'Dotted gated stab', set: { time: 30, feedback: 72, feel: 2, gate: 38, sens: 45, mix: 100 } },
+        { n: '3', title: 'Hard sixteenth lock', set: { time: 70, feedback: 92, feel: 0, gate: 100, sens: 70, mix: 100 } }
       ];
     case 'timesampler':
       return [
-        { n: '1', title: 'Bar march — 8 slices', set: { mode: 0, size: 90, slices: 8, loops: 2, accent: 0, chance: 40, rate: 43, mix: 70 } },
-        { n: '2', title: 'Pong halves', set: { mode: 2, size: 70, slices: 16, loops: 2, accent: 1, chance: 55, rate: 43, mix: 75 } },
-        { n: '3', title: 'Juggle random', set: { mode: 3, size: 50, slices: 32, loops: 4, accent: 0, chance: 75, rate: 50, mix: 85 } }
+        { n: '1', title: 'Bar march — eight unique slices', set: { mode: 0, size: 90, slices: 8, loops: 1, accent: 0, chance: 40, rate: 43, mix: 72 } },
+        { n: '2', title: 'Pong halves — chroma landings', set: { mode: 2, size: 70, slices: 16, loops: 1, accent: 1, chance: 55, rate: 43, mix: 78 } },
+        { n: '3', title: 'Random juggle — fast teleports', set: { mode: 3, size: 50, slices: 32, loops: 1, accent: 0, chance: 75, rate: 62, mix: 90 } }
       ];
     case 'punch':
       return [
@@ -73,14 +73,14 @@ function presetsFor(id: string): ModulePreset[] {
       // midpoint, so anything near 50 reads neutral and the character lives out
       // at the ends.
       return [
-        { n: '1', title: 'Iris ghosts — round six-blade discs, slow drift', set: { type: 0, edge: 55, warmth: 34, drift: 25, blades: 25, squeeze: 0, freq: 30, hold: 55, audio: 35, mix: 60, in_: 80, out: 70 } },
-        { n: '2', title: 'Oval bokeh — squeezed pupil, kick-driven stabs', set: { type: 0, edge: 45, warmth: 40, drift: 30, blades: 75, squeeze: 45, freq: 82, hold: 14, audio: 85, mix: 65, in_: 80, out: 70 } },
-        { n: '3', title: 'Blue anamorphic — hard coated streak', set: { type: 1, edge: 60, warmth: 16, drift: 35, blades: 100, squeeze: 90, freq: 45, hold: 35, audio: 55, mix: 75, in_: 85, out: 75 } },
-        { n: '4', title: 'Sunstar — five straight blades, ten rays', set: { type: 2, edge: 45, warmth: 30, drift: 45, blades: 0, squeeze: 0, freq: 55, hold: 22, audio: 70, mix: 70, in_: 85, out: 75 } },
-        { n: '5', title: 'Newton rings — interference fringes drifting', set: { type: 3, edge: 50, warmth: 42, drift: 20, blades: 50, squeeze: 0, freq: 26, hold: 62, audio: 20, mix: 65, in_: 80, out: 70 } },
-        { n: '6', title: 'Edge fog — a long pass leaking off the border', set: { type: 4, edge: 50, warmth: 76, drift: 30, blades: 50, squeeze: 0, freq: 18, hold: 78, audio: 15, mix: 70, in_: 85, out: 75 } },
-        { n: '7', title: 'Ice veil — cold glare breathing on the low end', set: { type: 5, edge: 40, warmth: 6, drift: 25, blades: 50, squeeze: 0, freq: 38, hold: 66, audio: 75, mix: 55, in_: 75, out: 65 } },
-        { n: '8', title: 'Prism — spectral fringe, split per wavelength', set: { type: 6, edge: 55, warmth: 50, drift: 35, blades: 50, squeeze: 15, freq: 45, hold: 40, audio: 45, mix: 65, in_: 80, out: 70 } }
+        { n: '1', title: 'Iris ghosts — round six-blade discs, slow drift', set: { type: 0, edge: 55, warmth: 34, drift: 25, blades: 25, squeeze: 0, freq: 30, hold: 55, audio: 35, mix: 60 } },
+        { n: '2', title: 'Oval bokeh — squeezed pupil, kick-driven stabs', set: { type: 0, edge: 45, warmth: 40, drift: 30, blades: 75, squeeze: 45, freq: 82, hold: 14, audio: 85, mix: 65 } },
+        { n: '3', title: 'Blue anamorphic — hard coated streak', set: { type: 1, edge: 60, warmth: 16, drift: 35, blades: 100, squeeze: 90, freq: 45, hold: 35, audio: 55, mix: 75 } },
+        { n: '4', title: 'Sunstar — five straight blades, ten rays', set: { type: 2, edge: 45, warmth: 30, drift: 45, blades: 0, squeeze: 0, freq: 55, hold: 22, audio: 70, mix: 70 } },
+        { n: '5', title: 'Newton rings — interference fringes drifting', set: { type: 3, edge: 50, warmth: 42, drift: 20, blades: 50, squeeze: 0, freq: 26, hold: 62, audio: 20, mix: 65 } },
+        { n: '6', title: 'Edge fog — a long pass leaking off the border', set: { type: 4, edge: 50, warmth: 76, drift: 30, blades: 50, squeeze: 0, freq: 18, hold: 78, audio: 15, mix: 70 } },
+        { n: '7', title: 'Ice veil — cold glare breathing on the low end', set: { type: 5, edge: 40, warmth: 6, drift: 25, blades: 50, squeeze: 0, freq: 38, hold: 66, audio: 75, mix: 55 } },
+        { n: '8', title: 'Prism — spectral fringe, split per wavelength', set: { type: 6, edge: 55, warmth: 50, drift: 35, blades: 50, squeeze: 15, freq: 45, hold: 40, audio: 45, mix: 65 } }
       ];
     case 'vhs':
       return [
@@ -122,9 +122,9 @@ function presetsFor(id: string): ModulePreset[] {
       ];
     case 'streak':
       return [
-        { n: '1', title: 'Horizontal smear', set: { length: 40, angle: 10, decay: 45, mix: 55, in_: 80, out: 70 } },
-        { n: '2', title: 'Diagonal drag', set: { length: 60, angle: 45, decay: 50, mix: 65, in_: 85, out: 75 } },
-        { n: '3', title: 'Long exposure', set: { length: 85, angle: 25, decay: 35, mix: 75, in_: 90, out: 80 } }
+        { n: '1', title: 'Horizontal smear', set: { length: 40, angle: 10, decay: 45, mix: 55 } },
+        { n: '2', title: 'Diagonal drag', set: { length: 60, angle: 45, decay: 50, mix: 65 } },
+        { n: '3', title: 'Long exposure', set: { length: 85, angle: 25, decay: 35, mix: 75 } }
       ];
     case 'mirror':
       return [

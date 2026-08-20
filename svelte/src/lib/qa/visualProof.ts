@@ -1,30 +1,25 @@
 import { listCatalog } from '$lib/modules/catalog';
 import { MODULE_PRESETS } from '$lib/modules/presets';
 import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
-
-export const REAL_MEDIA_VIDEO_NAMES = [
-  'hf_20260715_204952_1521dea1-55e8-4838-a74c-2afbb212e243.mp4',
-  'hf_20260717_235926_b1805436-f918-4add-b83c-f497810c29ea.mp4',
-  'hf_20260715_165127_8bb294ab-8a6d-4851-b877-27465d118317.mp4',
-  'hf_20260718_013335_1eec6ac9-d3fa-4655-a555-21db5a3f95bd.mp4',
-  'hf_20260717_195142_815a3b96-f6e2-4a85-a161-b45df1edae6c.mp4',
-  'hf_20260718_023309_41f04f84-709e-43c7-bb30-6e0c24b8bc21.mp4',
-  'hf_20260716_210852_f5d98eac-eb0a-4e77-be16-65dc75da0308.mp4',
-  'hf_20260718_061437_6ac38dee-9f5a-4e0d-a8d7-fa094f5eacf6.mp4',
-  'hf_20260716_175809_a346b9ad-b8e8-44be-81e0-6fe71985a646.mp4',
-  'hf_20260715_201526_024d1160-e1cf-478a-8c02-5eb43d077bb7.mp4',
-  'hf_20260715_194141_0245c9a1-d272-4a13-a828-2a1600612252.mp4',
-  'hf_20260726_020851_cd23322f-b749-4bd3-b284-eca8e6eabd66.mp4',
-  'hf_20260718_041459_a54159b7-e02c-4ae0-9739-f3589080db4a.mp4'
-] as const;
+import {
+  PROOF_REPORT_SCHEMA_VERSION,
+  REDLINE_EXPECTED_BPM,
+  validateArtifactProvenance,
+  type ArtifactProvenance
+} from '$lib/qa/artifactProvenance';
+import {
+  REDLINE_AUDIO_NAME,
+  REDLINE_AUDIO_VIRTUAL_PATH,
+  REDLINE_MIDI_VIRTUAL_PATHS,
+  REDLINE_VIDEO_NAMES,
+  REDLINE_VIDEO_VIRTUAL_PATHS
+} from '$lib/qa/redlineProofMedia';
 
 export const FIXED_VISUAL_PROOF_FIXTURE = {
-  root: '../.artifacts/real-media',
-  audio: 'audio/Redline (Remastered).mp3',
-  midi: 'tests/fixtures/media/qa.mid',
-  clips: [
-    ...REAL_MEDIA_VIDEO_NAMES.map((name) => `videos/${name}`)
-  ]
+  source: 'tests/fixtures/media/manifest.json',
+  audio: REDLINE_AUDIO_VIRTUAL_PATH,
+  midi: [...REDLINE_MIDI_VIRTUAL_PATHS],
+  clips: [...REDLINE_VIDEO_VIRTUAL_PATHS]
 };
 
 export const FIXED_VISUAL_PROOF_VIEWPORT = {
@@ -157,7 +152,7 @@ export interface VisualProofEvidence {
 }
 
 export interface VisualProofReport {
-  schemaVersion: 1;
+  schemaVersion: typeof PROOF_REPORT_SCHEMA_VERSION;
   manifest: VisualProofManifest;
   environment: {
     browserName: string;
@@ -191,13 +186,9 @@ export interface VisualProofReport {
     operator: string;
     statement: string;
   };
-  provenance: {
-    sourceDigest: string;
-    buildDigest: string;
+  provenance: ArtifactProvenance & {
     catalogDigest: string;
     controlInventoryDigest: string;
-    captureNonce: string;
-    capturedAt: string;
     fixtureFiles: VisualProofMediaMetadata[];
   };
   realMedia: {
@@ -225,6 +216,7 @@ export interface VisualProofReport {
       contextTimeBefore: number; contextTimeAfter: number;
       mediaTimeBefore: number; mediaTimeAfter: number;
       rmsPeak: number; amplitudePeak: number; currentSrc: string; mediaPaused: boolean; mediaMuted: boolean;
+      expectedBpm: number; detectedBpm: number;
     };
     assignments: Record<string, { fileName: string; sha256: string }>;
     noNetwork: { requests: string[]; externalRequests: string[] };
@@ -351,6 +343,9 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   if (!report.environment.browserName.trim() || !report.environment.browserVersion.trim()) {
     blockers.push('physical browser name and version are required');
   }
+  if (!['browser', 'pwa'].includes(report.provenance?.environment?.shellKind ?? '')) {
+    blockers.push('report shell identity does not match the headed browser capture');
+  }
   if (
     !/^Chrome|Chromium$/.test(report.environment.browserName) ||
     !/^\d+\.\d+/.test(report.environment.browserVersion) ||
@@ -359,6 +354,9 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
     report.environment.browserCommandLine.some((arg) => arg.includes('--headless'))
   ) {
     blockers.push('browser identity must come from a headed CDP browser session');
+  }
+  if (report.environment.browserCommandLine.some((arg) => arg === '--autoplay-policy=no-user-gesture-required')) {
+    blockers.push('release proof must use a visible PLAY gesture without an autoplay-policy bypass');
   }
   if (
     !gpu ||
@@ -381,15 +379,11 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   ) {
     blockers.push('physical proof requires a native hardware WebGPU adapter, not software or fallback rendering');
   }
-  if (
-    !/^[a-f0-9]{64}$/.test(report.provenance?.sourceDigest ?? '') ||
-    !/^[a-f0-9]{64}$/.test(report.provenance?.buildDigest ?? '') ||
-    !/^[a-f0-9]{64}$/.test(report.provenance?.catalogDigest ?? '') ||
-    !/^[a-f0-9]{64}$/.test(report.provenance?.controlInventoryDigest ?? '') ||
-    !/^[0-9a-f-]{36}$/i.test(report.provenance?.captureNonce ?? '') ||
-    !Number.isFinite(Date.parse(report.provenance?.capturedAt ?? ''))
-  ) {
-    blockers.push('capture provenance is missing or invalid');
+  if (report.schemaVersion !== PROOF_REPORT_SCHEMA_VERSION) blockers.push('unsupported visual-proof report schema');
+  blockers.push(...validateArtifactProvenance(report.provenance));
+  if (!/^[a-f0-9]{64}$/.test(report.provenance?.catalogDigest ?? '') ||
+      !/^[a-f0-9]{64}$/.test(report.provenance?.controlInventoryDigest ?? '')) {
+    blockers.push('visual-proof inventory provenance is missing or invalid');
   }
   if (!same(report.environment.fixture, FIXED_VISUAL_PROOF_FIXTURE)) {
     blockers.push('fixed QA fixture does not match the release manifest');
@@ -406,31 +400,43 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
   if (!same(report.manifest.fixture, FIXED_VISUAL_PROOF_FIXTURE)) {
     blockers.push('proof manifest fixture is not the fixed QA fixture');
   }
-  if (report.realMedia?.videoExercise?.length !== REAL_MEDIA_VIDEO_NAMES.length ||
-      !same(report.realMedia.videoExercise.map((entry) => entry.fileName), [...REAL_MEDIA_VIDEO_NAMES])) {
+  if (report.realMedia?.videoExercise?.length !== REDLINE_VIDEO_NAMES.length ||
+      !same(report.realMedia.videoExercise.map((entry) => entry.fileName), [...REDLINE_VIDEO_NAMES])) {
     blockers.push('real-media phase must exercise every staged MP4 in manifest order');
   } else {
     const uniqueSources = new Set(report.realMedia.videoExercise.map((entry) => entry.currentSrc));
     const uniqueFirstFrames = new Set(report.realMedia.videoExercise.map((entry) => entry.firstContentHash));
     const crossFileRatios = report.realMedia.adjacentCrossFileDifferenceRatios ?? [];
-    if (uniqueSources.size !== REAL_MEDIA_VIDEO_NAMES.length || uniqueFirstFrames.size < 10 ||
-        crossFileRatios.length !== REAL_MEDIA_VIDEO_NAMES.length - 1 || crossFileRatios.filter((ratio) => ratio > 0.01).length < 8) {
+    if (uniqueSources.size !== REDLINE_VIDEO_NAMES.length || uniqueFirstFrames.size < 10 ||
+        crossFileRatios.length !== REDLINE_VIDEO_NAMES.length - 1 || crossFileRatios.filter((ratio) => ratio > 0.01).length < 8) {
       blockers.push('real-video sequence reused the same PGM source or screenshot content');
     }
     for (const clip of report.realMedia.videoExercise) {
       blockers.push(...validateVisualProofRealVideoExercise(clip));
+      const sample = report.provenance?.contentIntegrity?.primarySamples
+        .find((entry) => entry.assetName === clip.fileName);
+      if (!sample || sample.assetSha256 !== clip.sha256 || sample.observedSource !== clip.currentSrc ||
+          sample.rendererSource !== clip.rendererSource || sample.sourceFrameId !== clip.rendererFrameId ||
+          Math.abs(sample.sourceTimestampSeconds - clip.secondMediaTimeSeconds) > 1e-6 ||
+          sample.width !== clip.videoWidth || sample.height !== clip.videoHeight) {
+        blockers.push(`content-integrity sample does not match observed visual diagnostics: ${clip.fileName}`);
+      }
     }
   }
   if (report.realMedia?.selectedVia !== 'CLIP' || report.realMedia?.assignedVia !== 'serial QA target helper from one selected File object') {
     blockers.push('real MP4s were not selected serially through the actual CLIP UI path');
   }
   const audio = report.realMedia?.audioExercise;
-  if (!audio || audio.fileName !== 'Redline (Remastered).mp3' || audio.loadedVia !== 'SONG -> LOCAL ONLY' ||
+  if (!audio || audio.fileName !== REDLINE_AUDIO_NAME || audio.loadedVia !== 'SONG -> LOCAL ONLY' ||
       !audio.currentSrc.startsWith('blob:') || audio.volume < 0.25 || audio.observationDurationMs < 2500 ||
       audio.contextStateAfter !== 'running' || audio.contextTimeAfter - audio.contextTimeBefore < 2 ||
       audio.mediaTimeAfter - audio.mediaTimeBefore < 2 || audio.mediaPaused || audio.mediaMuted ||
       audio.rmsPeak <= 0.005 || audio.amplitudePeak <= 0.005) {
     blockers.push('real Redline audio was not audibly played through SONG -> LOCAL ONLY');
+  }
+  if (!audio || audio.expectedBpm !== REDLINE_EXPECTED_BPM ||
+      !Number.isFinite(audio.detectedBpm) || Math.abs(audio.detectedBpm - audio.expectedBpm) > 0.01) {
+    blockers.push(`Redline BPM mismatch: expected ${REDLINE_EXPECTED_BPM}`);
   }
   if (!report.realMedia?.pausedBeforeEffectMatrix) blockers.push('transport was not centrally paused before deterministic effect capture');
   if (report.realMedia?.noNetwork?.externalRequests?.length ||
@@ -566,7 +572,7 @@ export function evaluateVisualProofReport(report: VisualProofReport): VisualProo
       }
       if (
         !timeline.fixtureClipName ||
-        !REAL_MEDIA_VIDEO_NAMES.includes(timeline.fixtureClipName as typeof REAL_MEDIA_VIDEO_NAMES[number]) ||
+        !REDLINE_VIDEO_NAMES.includes(timeline.fixtureClipName) ||
         !timeline.currentSrc?.startsWith('blob:') || timeline.videoWidth < 1 || timeline.videoHeight < 1 ||
         timeline.durationSeconds <= 0 || timeline.rendererHasVideo !== true ||
         timeline.externalTextureImported !== true || timeline.externalTextureBound !== true ||

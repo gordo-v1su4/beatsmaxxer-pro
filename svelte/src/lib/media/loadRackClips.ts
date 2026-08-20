@@ -1,5 +1,4 @@
 import { get } from 'svelte/store';
-import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
 import { isVideoFile } from '$lib/media/videoFile';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
@@ -35,11 +34,8 @@ async function setSlotVideo(id: string, file: File) {
   return mediaRuntime.registerModuleFileClip(id, file);
 }
 
-async function finishClipLoad() {
+function finishClipLoad() {
   videoPool.tick(true);
-  if (!audioEngine.getState().playing) {
-    await audioEngine.start();
-  }
 }
 
 /** Same path as TopBar CLIPS — fill rack slots from local File objects. */
@@ -57,7 +53,7 @@ export async function loadRackClipsFromFiles(files: File[], startId?: string) {
     })
   );
   const loadedTargets = targets.filter((_, index) => results[index]?.status === 'success');
-  if (loadedTargets.length > 0) await finishClipLoad();
+  if (loadedTargets.length > 0) finishClipLoad();
   return { loaded: loadedTargets.length, targets: loadedTargets, results };
 }
 

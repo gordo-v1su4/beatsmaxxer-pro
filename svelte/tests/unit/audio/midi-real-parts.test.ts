@@ -14,7 +14,13 @@ import { analyseMidiTiming } from '$lib/stores/midiTiming';
  * fixed tempo, so measuring their seconds against a constant BPM reported every
  * part as loose regardless of where the notes were written.
  */
-const STEMS = resolve('..', 'test_media/Redline (Remastered) Stems');
+const STEMS = resolve(
+  '..',
+  'docs',
+  'test_media',
+  'redline-media',
+  'Redline (Remastered) Stems'
+);
 const available = existsSync(STEMS);
 const midiFiles = available
   ? readdirSync(STEMS).filter((f) => /\.midi?$/i.test(f)).sort()

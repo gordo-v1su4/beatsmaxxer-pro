@@ -30,11 +30,18 @@
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
   import { installBmxQaHook } from '$lib/qa/bmxQa';
   import { fxHold } from '$lib/stores/rack';
-  import { topRowCompact, bottomRowCompact, viewMode } from '$lib/stores/rackUi';
+  import {
+    topRowCompact,
+    bottomRowCompact,
+    viewMode,
+    fxLibOpen,
+    pgmRailOpen
+  } from '$lib/stores/rackUi';
   import { audioEngine } from '$lib/audio';
-  import { parseMidi } from '$lib/audio/MidiParser';
+  import { supportsModuleMidi } from '$lib/modules/midiContracts';
+  import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { fetchAndLoadQaMedia, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
@@ -139,13 +146,13 @@
     }
 
     if (params.has('qa')) {
-      const stepQa = bootStep('Loading test clips');
+      const stepQa = bootStep('Loading song rhythm and test clips');
       try {
         // The phone has one slot and a clip bank; the rack has ten slots and no
         // bank. Fanning the manifest across slots leaves the phone's grid empty,
         // so each shell seeds itself the way its own import path would.
         if (get(isMobileShell)) await seedMobileQaClips();
-        else await fetchAndLoadQaMedia();
+        else await fetchAndLoadQaMedia({ midi: shouldAutoloadQaMidi(window.location.search) });
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
         stepQa.note('failed');
@@ -154,6 +161,7 @@
     }
     if (params.get('qaAutoplay') === '1') {
       const stepPlay = bootStep('Starting playback');
+      await audioEngine.waitForRhythmReady();
       await audioEngine.start();
       stepPlay.done();
     }
@@ -179,13 +187,12 @@
   }
 
   async function setModuleMidi(id: string, file: File) {
+    if (!supportsModuleMidi(id)) {
+      console.warn(`[midi] ${id} has no meaningful MIDI consumer; ${file.name} was not attached.`);
+      return;
+    }
     try {
-      const buffer = await file.arrayBuffer();
-      const data = parseMidi(buffer);
-      midiLayers.update((layers) => ({
-        ...layers,
-        [id]: { name: file.name, notes: data.notes, duration: data.duration }
-      }));
+      await attachModuleMidiFile(id, file);
     } catch (err) {
       console.error('Failed to parse MIDI file:', err);
     }
@@ -210,7 +217,9 @@
 
   /** Drop from the clip bank — swaps that slot's media, leaving its effect alone. */
   async function assignLibraryClip(clip: LibraryClip, row: 'top' | 'bottom', slotIndex: number) {
-    await loadRackClipsFromFiles([clip.file], `${row}-${slotIndex}`);
+    const slotId = `${row}-${slotIndex}`;
+    if (clip.source.kind === 'file') await loadRackClipsFromFiles([clip.source.file], slotId);
+    else await mediaRuntime.registerModuleClip(slotId, clip.name, clip.source.url);
   }
 
   async function loadClipsFromModule(startId: string, files: File[]) {
@@ -221,25 +230,12 @@
 <div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
 <LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} />
 <!--
-  No PIN on the phone. The phone shell is the public face of this thing — it
-  says on arrival that it is a stripped-down representation and points at the
-  desktop for the real rack — and a lock screen in front of a showcase is a
-  contradiction.
-
-  This costs nothing in protection, which is the only reason it is safe to do.
-  The gate's server half is untouched: `/api/analyze` still requires the signed
-  cookie, and its policy comment is right that the cookie is the one control a
-  request cannot assert its way past. What makes the phone a special case is
-  that hosted analysis is the *only* thing that check guards, and the phone
-  never asks for it — mobile song loads deliberately run local realtime
-  analysis. So the surface being opened here needs no server at all.
-
-  If hosted analysis ever reaches the phone, this decision has to be revisited
-  along with it, not quietly inherited.
+  One deployment gate for both shells. Mobile can request hosted analysis, and
+  the protected proxy requires the same signed cookie as desktop. AccessGate
+  remains invisible when the endpoint reports an open deployment, so local
+  development keeps its fail-open behavior without a route-specific bypass.
 -->
-{#if !$isMobileShell}
-  <AccessGate />
-{/if}
+<AccessGate />
 <CapabilityGate state={$capabilities} />
 
 <!--
@@ -267,7 +263,14 @@
        other worse, so ARRANGE replaces the workspace rather than docking under
        it. The engine keeps running underneath either way. -->
   <div class="rack-workspace" style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
-    <div class="side-panels" style="display:flex;flex-shrink:0">
+    <div
+      class="side-panels"
+      style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
+        ? 'var(--fx-lib-width)'
+        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$pgmRailOpen
+        ? 'var(--pgm-rail-width)'
+        : 'var(--pgm-rail-collapsed)'})"
+    >
       <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
       <PgmRail modules={rackModules} />
@@ -315,6 +318,8 @@
             onVideoUpload={(f) => setSlotVideo(`bottom-${i}`, f)}
             onVideosUpload={(files) => loadClipsFromModule(`bottom-${i}`, files)}
             onClearVideo={() => clearSlotVideo(`bottom-${i}`)}
+            onMidiUpload={(f) => setModuleMidi(moduleId, f)}
+            onClearMidi={() => clearModuleMidi(moduleId)}
           />
         {/each}
         {#each Array(MAX_RACK_SLOTS_PER_ROW - $rackBottom.length) as _, offset (`bottom-empty-${offset}`)}
@@ -328,7 +333,9 @@
   </div>
 
   {#if $viewMode === 'arrange'}
-    <ArrangeView />
+    <div class="arrange-workspace">
+      <ArrangeView />
+    </div>
   {/if}
 </div>
 {/if}

@@ -59,8 +59,8 @@ const finiteNonNegative = (value: number) =>
   Number.isFinite(value) ? Math.max(0, value) : 0;
 
 /**
- * The one semantic runtime clock. rAF may request a publication, but only the
- * bound AudioContext advances position.
+ * The one semantic runtime clock. rAF publishes each frame; uploaded tracks
+ * also resync from HTMLAudio timeupdate/play/pause events in AudioEngine.
  */
 export class AudioTimeline {
   private context: AudioTimelineContext | null = null;
@@ -137,6 +137,27 @@ export class AudioTimeline {
     const to = finiteNonNegative(positionSeconds);
     this.reanchor(to);
     this.mutate(reason, from, to, true);
+  }
+
+  /**
+   * Soft-lock position to a heard media actuator (HTMLAudio.currentTime).
+   * Small clock error is absorbed without a generation bump so videos keep
+   * decoding; a jump larger than a beat-16th is a discontinuity.
+   */
+  followPosition(positionSeconds: number) {
+    if (!this.playing) return;
+    const now = this.readContextTime();
+    const from = this.positionAt(now);
+    const to = finiteNonNegative(positionSeconds);
+    this.reanchor(to, now);
+    if (Math.abs(to - from) > 0.12) {
+      const wrapped =
+        this.loop &&
+        this.durationSeconds > 0 &&
+        from > this.durationSeconds - 0.5 &&
+        to < 0.5;
+      this.mutate(wrapped ? "loop-wrap" : "seek", from, to, true);
+    }
   }
 
   setPlaybackRate(rate: number) {

@@ -48,7 +48,8 @@
   );
 
   function isMounted(clip: LibraryClip) {
-    return mounted.has(`${clip.file.name}:${clip.file.size}`) || mounted.has(clip.name);
+    if (clip.source.kind === 'file' && mounted.has(`${clip.source.file.name}:${clip.source.file.size}`)) return true;
+    return mounted.has(clip.name) || (clip.source.kind === 'url' && mounted.has(clip.source.url));
   }
 
   export async function importFiles(files: File[]) {

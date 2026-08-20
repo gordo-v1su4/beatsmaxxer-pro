@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   browserProfilesRoot,
   chromeLaunchArgs,
+  dispatchVisibleButtonClick,
   evalPage,
   navigateAndReady,
   type CdpSession
@@ -33,6 +34,31 @@ describe('CDP browser isolation', () => {
     expect(args).not.toContain('--enable-unsafe-webgpu');
     expect(args).not.toContain('--use-angle=swiftshader');
     expect(args).not.toContain('--use-gl=angle');
+    expect(args).not.toContain('--autoplay-policy=no-user-gesture-required');
+  });
+
+  it('keeps autoplay bypass diagnostic-only and opt-in', () => {
+    const args = chromeLaunchArgs('/Applications/Google Chrome', 10036, '/repo/.artifacts/browser-profiles/proof', true, true);
+    expect(args).toContain('--autoplay-policy=no-user-gesture-required');
+  });
+
+  it('clicks PLAY through trusted CDP mouse input at the visible button coordinates', async () => {
+    const calls: Array<{ method: string; params: Record<string, unknown> }> = [];
+    const session = {
+      send: (method: string, params: Record<string, unknown> = {}) => {
+        calls.push({ method, params });
+        if (method === 'Runtime.evaluate') return Promise.resolve({ result: { value: { x: 50, y: 75 } } });
+        return Promise.resolve({});
+      }
+    } as unknown as CdpSession;
+
+    await dispatchVisibleButtonClick(session, 'PLAY');
+
+    expect(calls.slice(1).map(({ method }) => method)).toEqual([
+      'Input.dispatchMouseEvent', 'Input.dispatchMouseEvent'
+    ]);
+    expect(calls[1]?.params).toMatchObject({ type: 'mousePressed', x: 50, y: 75, button: 'left' });
+    expect(calls[2]?.params).toMatchObject({ type: 'mouseReleased', x: 50, y: 75, button: 'left' });
   });
 
   it('enables CDP command-line provenance without changing the headed native-GPU contract', () => {

@@ -4,7 +4,6 @@ import {
   FIXED_VISUAL_PROOF_FIXTURE,
   FIXED_VISUAL_PROOF_TIMELINE_POSITIONS,
   FIXED_VISUAL_PROOF_VIEWPORT,
-  REAL_MEDIA_VIDEO_NAMES,
   buildVisualProofManifest,
   evaluateVisualProofReport,
   retainSerialVisualProofSelection,
@@ -13,10 +12,18 @@ import {
   validateVisualProofRealVideoExercise,
   type VisualProofReport
 } from '$lib/qa/visualProof';
+import {
+  REDLINE_AUDIO_NAME,
+  REDLINE_AUDIO_SOURCE_PATH,
+  REDLINE_MIDI_SOURCE_PATHS,
+  REDLINE_VIDEO_NAMES,
+  REDLINE_VIDEO_SOURCE_PATHS
+} from '$lib/qa/redlineProofMedia';
 import { verifyVisualProof } from '../../../scripts/verify-visual-proof-runner';
 import { realMediaFileMetadata } from '../../../scripts/visual-proof-verification';
 import { MODULE_PRESETS } from '$lib/modules/presets';
 import { catalogIds } from '$lib/modules/catalog';
+import { createArtifactProvenance } from '$lib/qa/artifactProvenance';
 
 /** Derived, not hardcoded. These totals were literals, so adding presets to a
  *  single module failed two unrelated release-gate tests with a bare number
@@ -62,21 +69,64 @@ function completeReport(): VisualProofReport {
       expectedMediaTimeSeconds: FIXED_VISUAL_PROOF_TIMELINE_POSITIONS[index % FIXED_VISUAL_PROOF_TIMELINE_POSITIONS.length],
       actualMediaTimeSeconds: FIXED_VISUAL_PROOF_TIMELINE_POSITIONS[index % FIXED_VISUAL_PROOF_TIMELINE_POSITIONS.length] + 0.01,
       mediaTimeToleranceSeconds: 2 / 30,
-      fixtureClipName: REAL_MEDIA_VIDEO_NAMES[0], currentSrc: 'blob:real-video',
+      fixtureClipName: REDLINE_VIDEO_NAMES[0], currentSrc: 'blob:real-video',
       videoWidth: 1920, videoHeight: 1080, durationSeconds: 10, rendererHasVideo: true,
       bindingId: 'pgm', externalTextureImported: true, externalTextureBound: true, samplePath: 'external-texture',
       rendererSource: 'blob:real-video', rendererDimensions: '1920x1080', rendererFrameId: 42
     },
     ...(item.kind === 'control' ? {} : { configuration: {
-      moduleId: item.subjectId.split(':')[0], fixtureClipName: REAL_MEDIA_VIDEO_NAMES[0],
+      moduleId: item.subjectId.split(':')[0], fixtureClipName: REDLINE_VIDEO_NAMES[0],
       beforeBypassed: true, afterBypassed: false,
       beforeParams: { mix: 50 }, afterParams: { mix: 75 },
       intendedParameterDelta: { mix: { before: 50, after: 75 } }, clipSha256: '1'.repeat(64), currentSrc: 'blob:real-video'
     } })
   }));
+  const videoExercise = REDLINE_VIDEO_NAMES.map((fileName, index) => ({
+    fileName, relativePath: REDLINE_VIDEO_SOURCE_PATHS[index]!, sha256: '1'.repeat(64), size: 1000,
+    selectedFileSha256: '1'.repeat(64), selectedFileSize: 1000,
+    currentSrc: `blob:video-${index}`, pgmModule: 'transition', bindingId: 'pgm', videoWidth: 1920, videoHeight: 1080, durationSeconds: 10,
+    readyState: 4, hasVideo: true, externalTextureImported: true, externalTextureBound: true,
+    samplePath: 'external-texture', rendererSource: `blob:video-${index}`, rendererDimensions: '1920x1080', rendererFrameId: index + 1,
+    videoSize: '1920x1080',
+    firstTimelineSeconds: 1, secondTimelineSeconds: 2, firstMediaTimeSeconds: 1, secondMediaTimeSeconds: 2,
+    firstCentralFrameId: index * 2 + 1, secondCentralFrameId: index * 2 + 2,
+    firstScreenshot: `.artifacts/visual-proof/real-${index}-a.png`, secondScreenshot: `.artifacts/visual-proof/real-${index}-b.png`,
+    firstContentHash: `a${index}`, secondContentHash: `b${index}`, nonBlackPixelRatio: 0.75, pixelMotionRatio: 0.2,
+    sampleCount: 65, p95IntervalMs: 17, maxIntervalMs: 17, droppedFrames: 0, stalledFrames: 0, released: true, previousSourceUnbound: true,
+    frameIntervalsMs: Array(65).fill(17)
+  }));
+  const provenance = createArtifactProvenance({
+    captureId: '12345678-1234-4234-8234-123456789abc',
+    capturedAt: new Date().toISOString(),
+    source: { commit: 'e'.repeat(40), digest: 'a'.repeat(64), workingTreeDirty: false },
+    build: { id: 'd'.repeat(64), digest: 'd'.repeat(64), profile: 'production' },
+    server: {
+      kind: 'vite-production-preview', origin: 'http://127.0.0.1:5194', buildDigest: 'd'.repeat(64),
+      versionPath: '/_app/version.json', version: 'current-build', versionSha256: 'e'.repeat(64)
+    },
+    dependencyLock: { path: 'bun.lock', sha256: 'f'.repeat(64) },
+    environment: {
+      shellKind: 'browser', sourceBackend: 'html-video',
+      frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', releaseEvidence: true, webgpuAvailable: true,
+      runtime: { name: 'Chrome', version: '128.0.0.0', userAgent: 'Mozilla Chrome/128.0.0.0' },
+      device: { operatingSystem: 'darwin', architecture: 'arm64', model: 'Apple M3 Pro', gpuIdentity: 'apple common-3 Apple M3 Pro Metal' }
+    },
+    capabilities: { webgpu: 'passed', mediaAdvance: 'passed', bpmMatch: 'passed', primarySamples: 'passed', contentIntegrity: 'passed' },
+    contentIntegrity: {
+      algorithm: 'sha256', requiredPrimarySampleCount: videoExercise.length,
+      assets: videoExercise.map((clip) => ({ name: clip.fileName, sha256: clip.sha256, size: clip.size })),
+      primarySamples: videoExercise.map((clip, index) => ({
+        assetName: clip.fileName, assetSha256: clip.sha256, observedSource: clip.currentSrc,
+        rendererSource: clip.rendererSource, sourceBackend: 'html-video',
+        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture', sourceFrameId: clip.rendererFrameId,
+        sourceTimestampSeconds: clip.secondMediaTimeSeconds, outputFrameSha256: String((index % 9) + 1).repeat(64),
+        width: clip.videoWidth, height: clip.videoHeight
+      }))
+    }
+  });
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     manifest,
     environment: {
       browserName: 'Chrome',
@@ -103,37 +153,24 @@ function completeReport(): VisualProofReport {
       statement: 'Human-observed headed browser; this attestation is not machine-verifiable.'
     },
     provenance: {
-      sourceDigest: 'a'.repeat(64), buildDigest: 'd'.repeat(64), catalogDigest: 'b'.repeat(64), controlInventoryDigest: 'c'.repeat(64),
-      captureNonce: '12345678-1234-1234-1234-123456789abc', capturedAt: '2026-08-01T12:00:00.000Z',
+      ...provenance, catalogDigest: 'b'.repeat(64), controlInventoryDigest: 'c'.repeat(64),
       fixtureFiles: [
-        ...REAL_MEDIA_VIDEO_NAMES.map((name) => ({ relativePath: `../.artifacts/real-media/videos/${name}`, name, kind: 'video' as const,
+        ...REDLINE_VIDEO_NAMES.map((name, index) => ({ relativePath: REDLINE_VIDEO_SOURCE_PATHS[index]!, name, kind: 'video' as const,
           size: 1000, sha256: '1'.repeat(64), durationSeconds: 10, width: 1920, height: 1080, codecs: ['h264'], formatName: 'mov,mp4' })),
-        { relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3', name: 'Redline (Remastered).mp3', kind: 'audio' as const,
-          size: 1000, sha256: '2'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['mjpeg', 'mp3'], formatName: 'mp3' }
+        { relativePath: REDLINE_AUDIO_SOURCE_PATH, name: REDLINE_AUDIO_NAME, kind: 'audio' as const,
+          size: 1000, sha256: '2'.repeat(64), durationSeconds: 200, width: null, height: null, codecs: ['pcm_s24le'], formatName: 'wav' }
       ]
     },
     realMedia: {
       selectedVia: 'CLIP', assignedVia: 'serial QA target helper from one selected File object',
-      videoExercise: REAL_MEDIA_VIDEO_NAMES.map((fileName, index) => ({
-        fileName, relativePath: `../.artifacts/real-media/videos/${fileName}`, sha256: '1'.repeat(64), size: 1000,
-        selectedFileSha256: '1'.repeat(64), selectedFileSize: 1000,
-        currentSrc: `blob:video-${index}`, pgmModule: 'transition', bindingId: 'pgm', videoWidth: 1920, videoHeight: 1080, durationSeconds: 10,
-        readyState: 4, hasVideo: true, externalTextureImported: true, externalTextureBound: true,
-        samplePath: 'external-texture', rendererSource: `blob:video-${index}`, rendererDimensions: '1920x1080', rendererFrameId: index + 1,
-        videoSize: '1920x1080',
-        firstTimelineSeconds: 1, secondTimelineSeconds: 2, firstMediaTimeSeconds: 1, secondMediaTimeSeconds: 2,
-        firstCentralFrameId: index * 2 + 1, secondCentralFrameId: index * 2 + 2,
-        firstScreenshot: `.artifacts/visual-proof/real-${index}-a.png`, secondScreenshot: `.artifacts/visual-proof/real-${index}-b.png`,
-        firstContentHash: `a${index}`, secondContentHash: `b${index}`, nonBlackPixelRatio: 0.75, pixelMotionRatio: 0.2,
-        sampleCount: 65, p95IntervalMs: 17, maxIntervalMs: 17, droppedFrames: 0, stalledFrames: 0, released: true, previousSourceUnbound: true,
-        frameIntervalsMs: Array(65).fill(17)
-      })),
-      audioExercise: { fileName: 'Redline (Remastered).mp3', relativePath: '../.artifacts/real-media/audio/Redline (Remastered).mp3',
+      videoExercise,
+      audioExercise: { fileName: REDLINE_AUDIO_NAME, relativePath: REDLINE_AUDIO_SOURCE_PATH,
         sha256: '2'.repeat(64), size: 1000, loadedVia: 'SONG -> LOCAL ONLY', volume: 0.72, observationDurationMs: 3000,
         contextStateBefore: 'running', contextStateAfter: 'running', contextTimeBefore: 1, contextTimeAfter: 4,
-        mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false },
+        mediaTimeBefore: 1, mediaTimeAfter: 4, rmsPeak: 0.1, amplitudePeak: 0.1, currentSrc: 'blob:redline', mediaPaused: false, mediaMuted: false,
+        expectedBpm: 125, detectedBpm: 125 },
       assignments: Object.fromEntries(manifest.items.filter((item) => item.kind === 'module')
-        .map((item) => [item.subjectId, { fileName: REAL_MEDIA_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
+        .map((item) => [item.subjectId, { fileName: REDLINE_VIDEO_NAMES[0], sha256: '1'.repeat(64) }])),
       noNetwork: { requests: [], externalRequests: [] }, pausedBeforeEffectMatrix: true, maxSimultaneousDecoded: 1,
       adjacentCrossFileDifferenceRatios: Array(12).fill(0.2)
     },
@@ -147,8 +184,18 @@ function completeReport(): VisualProofReport {
 }
 
 describe('visual proof release gate', () => {
+  test('uses only manifest-backed repo Redline media and actual MIDI stems', () => {
+    expect(FIXED_VISUAL_PROOF_FIXTURE.source).toBe('tests/fixtures/media/manifest.json');
+    expect(FIXED_VISUAL_PROOF_FIXTURE.clips).toHaveLength(13);
+    expect(FIXED_VISUAL_PROOF_FIXTURE.midi).toHaveLength(7);
+    expect([...REDLINE_VIDEO_SOURCE_PATHS, REDLINE_AUDIO_SOURCE_PATH, ...REDLINE_MIDI_SOURCE_PATHS]
+      .every((path) => path.startsWith('../docs/test_media/redline-media/'))).toBe(true);
+    expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('.artifacts/real-media');
+    expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('qa.mid');
+  });
+
   test('capture-phase retention survives the normal UI handler clearing its file input', () => {
-    const selected = { name: REAL_MEDIA_VIDEO_NAMES[0], size: 123 };
+    const selected = { name: REDLINE_VIDEO_NAMES[0], size: 123 };
     const input = { files: [selected] as Array<typeof selected>, value: '/fake/path/video.mp4' };
     const retained = retainSerialVisualProofSelection(input.files);
     input.value = '';
@@ -159,7 +206,7 @@ describe('visual proof release gate', () => {
   });
 
   test('ignores empty follow-up changes without erasing a valid captured selection', () => {
-    const selected = { name: REAL_MEDIA_VIDEO_NAMES[0], size: 123 };
+    const selected = { name: REDLINE_VIDEO_NAMES[0], size: 123 };
     const initial = { generation: 0, files: [] as Array<typeof selected>, error: '' };
     const captured = reduceSerialVisualProofSelection(initial, [selected]);
     const afterUiClear = reduceSerialVisualProofSelection(captured, []);
@@ -177,6 +224,66 @@ describe('visual proof release gate', () => {
     const result = evaluateVisualProofReport(completeReport());
 
     expect(result).toEqual({ passed: true, blockers: [] });
+  });
+
+  test('fails closed on missing or stale shared provenance', async () => {
+    const missing = completeReport();
+    (missing as { provenance?: VisualProofReport['provenance'] }).provenance = undefined;
+    expect(evaluateVisualProofReport(missing).blockers).toContain('artifact provenance is missing or has an unsupported schema');
+    expect(await verifyVisualProof(missing)).toContain('artifact provenance is missing or has an unsupported schema');
+
+    const stale = completeReport();
+    stale.provenance.capturedAt = '2020-01-01T00:00:00.000Z';
+    stale.provenance.freshness.expiresAt = '2020-01-02T00:00:00.000Z';
+    expect(evaluateVisualProofReport(stale).blockers).toContain('artifact provenance is stale');
+  });
+
+  test('accepts authoritative 125 BPM and rejects stale 128 BPM evidence', () => {
+    expect(evaluateVisualProofReport(completeReport()).passed).toBe(true);
+    const stale = completeReport();
+    stale.realMedia.audioExercise.expectedBpm = 128;
+    stale.realMedia.audioExercise.detectedBpm = 128;
+    expect(evaluateVisualProofReport(stale).blockers).toContain('Redline BPM mismatch: expected 125');
+  });
+
+  test('fails closed on zero media advance and BPM mismatch', () => {
+    const value = completeReport();
+    value.realMedia.videoExercise[0]!.secondMediaTimeSeconds = value.realMedia.videoExercise[0]!.firstMediaTimeSeconds;
+    value.realMedia.audioExercise.detectedBpm = 127;
+    const blockers = evaluateVisualProofReport(value).blockers;
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain('Redline BPM mismatch: expected 125');
+  });
+
+  test('fails closed on missing primary samples and content-integrity mismatch', () => {
+    const value = completeReport();
+    value.provenance.contentIntegrity.primarySamples = [];
+    expect(evaluateVisualProofReport(value).blockers).toContain('primary content-integrity samples are missing');
+
+    const mismatched = completeReport();
+    mismatched.provenance.contentIntegrity.primarySamples[0]!.rendererSource = 'blob:wrong';
+    const blockers = evaluateVisualProofReport(mismatched).blockers;
+    expect(blockers).toContain(`content-integrity source diagnostics mismatch: ${REDLINE_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`content-integrity sample does not match observed visual diagnostics: ${REDLINE_VIDEO_NAMES[0]}`);
+  });
+
+  test('fails closed on shell/backend mismatch or test-synthetic release evidence', () => {
+    const mismatch = completeReport();
+    mismatch.provenance.environment.shellKind = 'tauri-desktop';
+    expect(evaluateVisualProofReport(mismatch).blockers).toContain('report shell identity does not match the headed browser capture');
+
+    const backendMismatch = completeReport();
+    backendMismatch.provenance.environment.frameProducer = 'test-synthetic';
+    expect(evaluateVisualProofReport(backendMismatch).blockers).toContain('shell/source-backend frame producer mismatch');
+
+    const synthetic = completeReport();
+    synthetic.provenance.environment.sourceBackend = 'test-synthetic';
+    synthetic.provenance.environment.frameProducer = 'test-synthetic';
+    synthetic.provenance.contentIntegrity.primarySamples.forEach((sample) => {
+      sample.sourceBackend = 'test-synthetic';
+      sample.frameProducer = 'test-synthetic';
+    });
+    expect(evaluateVisualProofReport(synthetic).blockers).toContain('test-synthetic backend cannot be release evidence');
   });
 
   test('accepts headed CDP provenance from an automated Chrome using a native hardware adapter', () => {
@@ -247,7 +354,7 @@ describe('visual proof release gate', () => {
       'explicit, separately identified human observation attestation is required'
     );
     expect(evaluateVisualProofReport(report).blockers).toContain(
-      `real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`
+      `real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`
     );
   });
 
@@ -257,7 +364,7 @@ describe('visual proof release gate', () => {
     report.realMedia.videoExercise[0]!.released = false;
     const blockers = evaluateVisualProofReport(report).blockers;
     expect(blockers).toContain('real-media proof decoded more than one video at a time');
-    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
   });
 
   test('rejects copied/test-card video instead of the WebGPU external-texture path', () => {
@@ -266,7 +373,7 @@ describe('visual proof release gate', () => {
     report.realMedia.videoExercise[0]!.samplePath = 'test-card';
     report.evidence[0]!.timeline.externalTextureBound = false;
     const blockers = evaluateVisualProofReport(report).blockers;
-    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REAL_MEDIA_VIDEO_NAMES[0]}`);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${REDLINE_VIDEO_NAMES[0]}`);
     expect(blockers).toContain(`fixed fixture media is not synchronized within tolerance: ${report.evidence[0]!.itemId}`);
   });
 
@@ -302,7 +409,7 @@ describe('visual proof release gate', () => {
         if (blockers.length) throw new Error(blockers.join('; '));
       }
       matrixStarted = true;
-    }).toThrow(REAL_MEDIA_VIDEO_NAMES[5]);
+    }).toThrow(REDLINE_VIDEO_NAMES[5]);
     expect(matrixStarted).toBe(false);
   });
 
@@ -340,10 +447,19 @@ describe('visual proof release gate', () => {
     const restore = controlProof.indexOf('stopTransport?.()');
 
     expect(controlProof).toContain("control.label.replace(/\\s+/g, ' ').trim().toUpperCase() === 'PLAY'");
+    expect(controlProof).toContain("dispatchVisibleButtonClick(session, 'PLAY')");
+    expect(controlProof).not.toContain('startTransport');
     expect(click).toBeLessThan(playback);
     expect(playback).toBeLessThan(afterState);
     expect(afterState).toBeLessThan(evidence);
     expect(evidence).toBeLessThan(restore);
+  });
+
+  test('rejects autoplay-policy bypass in release evidence', () => {
+    const report = completeReport();
+    report.environment.browserCommandLine.push('--autoplay-policy=no-user-gesture-required');
+    expect(evaluateVisualProofReport(report).blockers)
+      .toContain('release proof must use a visible PLAY gesture without an autoplay-policy bypass');
   });
 
   test('SONG proof observes a new real local-only upload generation before sampling state', async () => {
@@ -498,14 +614,14 @@ describe('visual proof release gate', () => {
     const report = completeReport();
     report.realMedia.audioExercise.mediaMuted = true;
     report.realMedia.audioExercise.rmsPeak = 0;
-    report.realMedia.noNetwork.requests.push('http://127.0.0.1:5174/__api/analyze/rhythm');
+    report.realMedia.noNetwork.requests.push('http://127.0.0.1:5194/__api/analyze/rhythm');
     const blockers = evaluateVisualProofReport(report).blockers;
     expect(blockers).toContain('real Redline audio was not audibly played through SONG -> LOCAL ONLY');
     expect(blockers).toContain('network analysis/upload traffic occurred during the real-media phase');
   });
 
   test('classifies Redline as audio despite its embedded cover-art video stream', async () => {
-    const audioPath = `${FIXED_VISUAL_PROOF_FIXTURE.root}/${FIXED_VISUAL_PROOF_FIXTURE.audio}`;
+    const audioPath = REDLINE_AUDIO_SOURCE_PATH;
     const { access } = await import('node:fs/promises');
     try {
       await access(audioPath);

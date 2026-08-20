@@ -1,4 +1,6 @@
 import { dispatchUserGesture, evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import { REDLINE_EXPECTED_BPM } from '../src/lib/qa/artifactProvenance.ts';
+import { evaluateSmokeGate } from '../src/lib/qa/smokeGate.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
@@ -59,10 +61,29 @@ await withChrome('verify-beat', 9950, async (s) => {
     20_000
   );
 
+  const snap = await evalPage<{
+    playing?: boolean;
+    bpm?: number;
+    webgpu?: boolean;
+    clipsLoaded?: number;
+    usingUploadedTrack?: boolean;
+    trackName?: string;
+    analysisStatus?: string;
+    modules?: Record<string, { hasReadyFrame?: boolean }>;
+    render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
+  }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
+
+  const smoke = evaluateSmokeGate({ snapshot: snap ?? {} });
+
   const report = {
-    passed: Boolean(metrics?.playing) && Boolean(metrics?.advanced) && (metrics?.bpm ?? 0) > 0,
-    expectedBpm: 133,
-    bpmMatch: metrics?.bpm === 133,
+    passed:
+      Boolean(metrics?.playing) &&
+      Boolean(metrics?.advanced) &&
+      (metrics?.bpm ?? 0) > 0 &&
+      smoke.passed,
+    expectedBpm: REDLINE_EXPECTED_BPM,
+    bpmMatch: Math.abs((metrics?.bpm ?? 0) - REDLINE_EXPECTED_BPM) <= 0.5,
+    smokeBlockers: smoke.blockers,
     ...metrics,
     note: 'QA manifest sets BPM 133; Essentia may override after analysis'
   };

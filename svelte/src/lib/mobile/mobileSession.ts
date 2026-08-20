@@ -4,7 +4,7 @@ import { listCatalog, type ModuleDefinition } from '$lib/modules/catalog';
 import { rackTop, rackBottom, videoLayers } from '$lib/stores/rack';
 import { pgmSource, queuedPgmSource, autoRandom } from '$lib/stores/pgm';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { clipLibrary, addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
+import { clipLibrary, addUrlClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
 import { audioEngine } from '$lib/audio';
 import { videoPool } from '$lib/media/VideoPool';
 import { transportDisplay } from '$lib/stores/transportDisplay';
@@ -91,11 +91,12 @@ export function pageModule(delta: number) {
 export async function loadStageClip(clip: LibraryClip): Promise<boolean> {
   stageLoading.set(true);
   try {
-    const result = await mediaRuntime.registerModuleFileClip(MOBILE_SLOT, clip.file);
+    const result = clip.source.kind === 'file'
+      ? await mediaRuntime.registerModuleFileClip(MOBILE_SLOT, clip.source.file)
+      : await mediaRuntime.registerModuleClip(MOBILE_SLOT, clip.name, clip.source.url);
     if (result?.status !== 'success') return false;
     stageClipId.set(clip.id);
     videoPool.tick(true);
-    if (!audioEngine.getState().playing) await audioEngine.start();
     return true;
   } finally {
     stageLoading.set(false);
@@ -193,22 +194,16 @@ export function startMobileClipAdvance(): () => void {
  * advance modes all have nothing to act on. Pulling the manifest into the
  * library instead gives the phone the same starting state a real import would.
  */
-export async function seedMobileQaClips(max = 6) {
+export async function seedMobileQaClips() {
   const res = await fetch('/qa-media/manifest.json');
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   const manifest = (await res.json()) as { clips?: string[]; audio?: string };
-  const names = (manifest.clips ?? []).slice(0, max);
+  const names = manifest.clips ?? [];
 
-  const files = await Promise.all(
-    names.map(async (name) => {
-      const clipRes = await fetch(`/qa-media/${name}`);
-      if (!clipRes.ok) throw new Error(`clip fetch failed: ${name} ${clipRes.status}`);
-      const blob = await clipRes.blob();
-      return new File([blob], name, { type: blob.type || 'video/webm' });
-    })
-  );
-
-  const added = await addClipsToLibrary(files);
+  const added = await addUrlClipsToLibrary(names.map((path) => ({
+    name: path.split('/').at(-1) ?? path,
+    url: `/qa-media/${path}`
+  })));
   const first = added[0] ?? get(clipLibrary)[0];
   if (first) {
     clipQueueIds.set(added.map((c) => c.id));
@@ -233,7 +228,10 @@ export async function seedMobileQaClips(max = 6) {
  * The restore matters for the review path: `?mobile=1` on a desktop browser,
  * then resizing back, must not leave the operator with a one-module rack.
  */
-export function enterMobileSession(): () => void {
+let mobileSessionGeneration = 0;
+
+export async function enterMobileSession(): Promise<() => void> {
+  const generation = ++mobileSessionGeneration;
   const previous = {
     top: get(rackTop),
     bottom: get(rackBottom),
@@ -244,9 +242,10 @@ export function enterMobileSession(): () => void {
   // Any clip the desktop path had already mounted lives in a slot that is about
   // to stop existing; drop them all so nothing decodes off-screen forever.
   const layers = get(videoLayers);
-  for (const slotId of Object.keys(layers)) {
-    if (slotId !== MOBILE_SLOT && layers[slotId]) void mediaRuntime.removeModuleClip(slotId);
-  }
+  await Promise.all(Object.keys(layers)
+    .filter((slotId) => slotId !== MOBILE_SLOT && layers[slotId])
+    .map((slotId) => mediaRuntime.removeModuleClip(slotId)));
+  if (generation !== mobileSessionGeneration) return () => {};
 
   rackBottom.set([]);
   autoRandom.set(false);
@@ -254,6 +253,8 @@ export function enterMobileSession(): () => void {
   setActiveModuleIndex(startIndex);
 
   return () => {
+    if (generation !== mobileSessionGeneration) return;
+    mobileSessionGeneration++;
     rackTop.set(previous.top);
     rackBottom.set(previous.bottom);
     pgmSource.set(previous.pgm);

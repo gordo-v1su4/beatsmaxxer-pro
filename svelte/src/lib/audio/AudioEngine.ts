@@ -30,6 +30,15 @@ import {
 
 const DEFAULT_BPM = 128;
 
+/** Uploaded tracks stay paused until hosted analysis settles or fails closed. */
+export function isRhythmAnalysisReady(
+  usingUploadedTrack: boolean,
+  analysisStatus: AudioEngineState["analysisStatus"]
+): boolean {
+  if (!usingUploadedTrack) return true;
+  return analysisStatus === "ready" || analysisStatus === "fallback" || analysisStatus === "error";
+}
+
 export interface AudioFileLoadOptions {
   /** Enable only after an explicit, per-upload disclosure and user choice. */
   hostedAnalysis?: boolean;
@@ -97,7 +106,8 @@ export class AudioEngine implements IAudioEngine {
   private _highAmp = 0;
   private _fftBands = new Array(8).fill(0);
   private _playing = false;
-  private _starting = false;
+  private playbackStartGeneration = 0;
+  private activePlaybackStartGeneration: number | null = null;
   private lastStopReason: AudioStopReason | null = null;
   private stopCount = 0;
   private _trackName = "";
@@ -108,6 +118,7 @@ export class AudioEngine implements IAudioEngine {
   private _bpmLocked = false;
   private _analysisStatus: AudioEngineState["analysisStatus"] = "idle";
   private _analysisConfidence: number | null = null;
+  private _analysisDuration = 0;
   private _analysisError: string | null = null;
   private tapTimes: number[] = [];
   private _volume = 0.72;
@@ -145,25 +156,27 @@ export class AudioEngine implements IAudioEngine {
   }
 
   async start() {
-    if (this._starting) return;
+    if (this.activePlaybackStartGeneration !== null) return;
 
-    // Nothing loaded means nothing to play. The tail of this method used to set
-    // _playing = true unconditionally, so PLAY on a fresh page started the beat
-    // clock with no track behind it: the transport read as running, every idle
-    // card animated, and every beat-driven module ran -- all against a silent
-    // grid. That also makes audio-reactive work impossible to judge, since the
-    // analyser is reporting zeroes while the rack looks alive.
-    //
-    // A decoded upload (mediaElement) is the only thing that can actually
-    // sound here, so refuse to start without one and leave the transport
-    // stopped until a track is loaded.
-    if (!this.mediaElement && !this._loadedUploadName) return;
+    // A decoded upload is the only playable source. Never let a missing or
+    // failed upload fall through to a synthetic clock that makes the rack look
+    // active while the song remains silent.
+    if (!this._usingUploadedTrack || !this.mediaElement) return;
 
     if (this._playing) {
       if (this.getTransportTime() >= 0.05) return;
       this.stop('restart-near-zero');
     }
-    this._starting = true;
+    const mediaElement = this.mediaElement;
+    const audioContext = this.ctx;
+    const startGeneration = ++this.playbackStartGeneration;
+    this.activePlaybackStartGeneration = startGeneration;
+    this.uploadedPlaybackValidated = false;
+    const isCurrentStart = () =>
+      this.playbackStartGeneration === startGeneration &&
+      this.activePlaybackStartGeneration === startGeneration &&
+      this.mediaElement === mediaElement &&
+      this._usingUploadedTrack;
 
     /**
      * Start the song BEFORE any await.
@@ -179,110 +192,65 @@ export class AudioEngine implements IAudioEngine {
      * so every video kept moving and reacting while the song sat paused — it
      * looked like an audio bug in the track, not a lost gesture.
      *
-     * The promise is captured here and awaited in the same place as before, so
-     * the stall detection and the fallback are unchanged.
+     * Capture the one play invocation and any required context resume before
+     * the first await. Calling either again would no longer be inside the
+     * original gesture on Safari/iOS.
      */
-    let pendingPlay: Promise<void> | null = null;
-    if (this._usingUploadedTrack && this.mediaElement) {
-      try {
-        this.mediaElement.currentTime = 0;
-        pendingPlay = this.mediaElement.play();
-      } catch {
-        pendingPlay = null;
-      }
-    }
+    const pendingPlay = this.gestureAttempt(() => mediaElement.play());
+    const pendingResume = audioContext?.state === "suspended"
+      ? this.gestureAttempt(() => audioContext.resume())
+      : Promise.resolve(audioContext?.state === "running");
 
     try {
-      await this.ensureContext();
-      if (!this.ctx) return;
+      let contextSetupSucceeded = true;
+      try {
+        await this.ensureContext();
+      } catch {
+        contextSetupSucceeded = false;
+      }
+      const currentAfterContextSetup =
+        contextSetupSucceeded &&
+        isCurrentStart() &&
+        this.ctx === audioContext;
 
-      if (this.ctx.state === "suspended") {
-        try {
-          await this.ctx.resume();
-        } catch {
-          // Autoplay policy may block resume until a user gesture.
-        }
+      const [playAccepted, resumeAccepted] = await Promise.all([
+        pendingPlay,
+        pendingResume,
+      ]);
+
+      if (!isCurrentStart() || this.ctx !== audioContext) {
+        this.pauseCancelledStartElement(mediaElement);
+        return;
       }
 
-      let useUploadedPlayback = this._usingUploadedTrack && Boolean(this.mediaElement);
-
-      if (useUploadedPlayback && this.mediaElement) {
-        this.uploadedPlaybackValidated = false;
-        this.mediaElement.currentTime = 0;
-        try {
-          await Promise.race([
-            this.mediaElement.play(),
-            new Promise<void>((_, reject) =>
-              setTimeout(() => reject(new Error("media play timeout")), 4_000)
-            ),
-          ]);
-          const t0 = this.mediaElement.currentTime;
-          await new Promise((r) => setTimeout(r, 800));
-          if (
-            this.mediaElement.paused ||
-            this.mediaElement.currentTime - t0 < 0.01
-          ) {
-            throw new Error("media playback stalled");
-          }
-        } catch {
-          useUploadedPlayback = false;
-          this.mediaElement.pause();
-        }
+      if (
+        !currentAfterContextSetup ||
+        !playAccepted ||
+        !resumeAccepted ||
+        !audioContext ||
+        audioContext.state !== "running"
+      ) {
+        this.rejectCurrentPlaybackStart(mediaElement);
+        return;
       }
 
-      if (useUploadedPlayback && this.mediaElement) {
-        this.uploadedPlaybackValidated = true;
-        this._playing = true;
-        audioTimeline.play(this.mediaElement.currentTime);
-        audioTimeline.publishFrame();
-        this.onsetHistory = [];
-        this.prevEnergy = 0;
-        this.bassEma = 0.08;
-        this.onsetCooldown = 0;
-
-        await new Promise((r) => setTimeout(r, 600));
-        if (this.getTransportTime() >= 0.05) return;
-
-        this._playing = false;
-        audioTimeline.pause();
-        audioTimeline.publishFrame();
-        this.mediaElement.pause();
-        useUploadedPlayback = false;
-      }
-
-      if (this.ctx.state === "suspended") {
-        try {
-          await this.ctx.resume();
-        } catch {
-          /* gesture may still be required */
-        }
-      }
-
-      if (this.sourceNode) {
-        try {
-          this.sourceNode.stop();
-        } catch {
-          /* already stopped */
-        }
-        this.sourceNode.disconnect();
-        this.sourceNode = null;
-      }
-
-      this._usingUploadedTrack = false;
-      this._trackName = this._loadedUploadName ?? "";
+      this.uploadedPlaybackValidated = true;
       this._playing = true;
-      audioTimeline.play(0);
+      audioTimeline.play(mediaElement.currentTime);
       audioTimeline.publishFrame();
       this.onsetHistory = [];
       this.prevEnergy = 0;
       this.bassEma = 0.08;
       this.onsetCooldown = 0;
     } finally {
-      this._starting = false;
+      if (this.activePlaybackStartGeneration === startGeneration) {
+        this.activePlaybackStartGeneration = null;
+      }
     }
   }
 
   stop(reason: AudioStopReason = 'operator') {
+    this.invalidatePlaybackStart();
     this.lastStopReason = reason;
     this.stopCount += 1;
     this._playing = false;
@@ -373,6 +341,7 @@ export class AudioEngine implements IAudioEngine {
     audioTimeline.configureSource({ id: null, positionSeconds: 0 });
     this._analysisStatus = "idle";
     this._analysisConfidence = null;
+    this._analysisDuration = 0;
     this._analysisError = null;
   }
 
@@ -492,13 +461,14 @@ export class AudioEngine implements IAudioEngine {
     this.onsetCooldown = 0;
     this._analysisStatus = hostedAnalysisRequested ? "analyzing" : "fallback";
     this._analysisConfidence = null;
+    this._analysisDuration = 0;
     this._analysisError = hostedAnalysisRequested
       ? null
       : "Local-only mode — hosted rhythm analysis was not requested.";
   }
 
   private disposeMediaElement() {
-    this.uploadedPlaybackValidated = false;
+    this.invalidatePlaybackStart();
     this.mediaTimelineAbort?.abort();
     this.mediaTimelineAbort = null;
     if (this.mediaSource) {
@@ -516,6 +486,40 @@ export class AudioEngine implements IAudioEngine {
     if (this.objectUrl) {
       URL.revokeObjectURL(this.objectUrl);
       this.objectUrl = null;
+    }
+  }
+
+  private invalidatePlaybackStart() {
+    this.playbackStartGeneration += 1;
+    this.activePlaybackStartGeneration = null;
+    this.uploadedPlaybackValidated = false;
+  }
+
+  private gestureAttempt(attempt: () => Promise<void>): Promise<boolean> {
+    try {
+      return attempt().then(
+        () => true,
+        () => false,
+      );
+    } catch {
+      return Promise.resolve(false);
+    }
+  }
+
+  private rejectCurrentPlaybackStart(mediaElement: HTMLAudioElement) {
+    mediaElement.pause();
+    this.uploadedPlaybackValidated = false;
+    this._playing = false;
+    audioTimeline.pause();
+    audioTimeline.publishFrame();
+  }
+
+  private pauseCancelledStartElement(mediaElement: HTMLAudioElement) {
+    if (
+      this.mediaElement !== mediaElement ||
+      (!this._playing && this.activePlaybackStartGeneration === null)
+    ) {
+      mediaElement.pause();
     }
   }
 
@@ -615,9 +619,33 @@ export class AudioEngine implements IAudioEngine {
       usingUploadedTrack: this._usingUploadedTrack,
       analysisStatus: this._analysisStatus,
       analysisConfidence: this._analysisConfidence,
+      analysisDuration: this._analysisDuration,
       analysisError: this._analysisError,
       analysisOnsetGeneration: this._analysisOnsetGeneration,
     };
+  }
+
+  /** Seek the active song; its media events re-anchor the sole AudioTimeline. */
+  seek(seconds: number) {
+    const media = this.mediaElement;
+    if (!media || !Number.isFinite(media.duration) || media.duration <= 0) return;
+    media.currentTime = Math.max(0, Math.min(media.duration, seconds));
+  }
+
+  isRhythmReady() {
+    return isRhythmAnalysisReady(this._usingUploadedTrack, this._analysisStatus);
+  }
+
+  async waitForRhythmReady(timeoutMs = 90_000) {
+    if (this.isRhythmReady()) return;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.isRhythmReady()) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(
+      `Timed out waiting for rhythm analysis (${this._analysisStatus})`
+    );
   }
 
   /** Onset times in transport seconds. Empty unless hosted analysis succeeded. */
@@ -693,6 +721,8 @@ export class AudioEngine implements IAudioEngine {
       controls: config.controls,
       sourceDurationSeconds: config.sourceDurationSeconds,
       sourceKey: config.sourceKey,
+      triggerKey: config.triggerKey,
+      feel: config.feel,
       midiNotes: config.midiNotes,
       midiDurationSeconds: config.midiDurationSeconds,
       onsetSensitivity: config.onsetSensitivity,
@@ -719,10 +749,16 @@ export class AudioEngine implements IAudioEngine {
         targetPlaybackRate: frame.timeSampler.targetPlaybackRate,
         jumpGeneration: frame.timeSampler.jumpGeneration,
         activeSlice: frame.timeSampler.activeSlice,
+        effectiveSliceCount: frame.timeSampler.effectiveSliceCount,
+        jumpReason: frame.timeSampler.jumpReason,
+        mode: frame.timeSampler.mode,
+        loopIteration: frame.timeSampler.loopIteration,
+        loopCount: frame.timeSampler.loopCount,
       },
       accent: frame.accent
         ? {
             mode: ACCENT_MODE_INDEX[frame.accent.mode],
+            transportSeconds: frame.accent.transportSeconds,
             presentationTimeSeconds: frame.accent.presentationTimeSeconds,
           }
         : null,
@@ -967,6 +1003,7 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = Number.isFinite(analysis.confidence)
       ? analysis.confidence
       : null;
+    this._analysisDuration = analysis.duration;
     this._analysisError = null;
     this.syncSoundTouch();
   }
@@ -980,6 +1017,7 @@ export class AudioEngine implements IAudioEngine {
 
   private applyRealtimeFallback(error: unknown) {
     this.beatGrid = [];
+    this._analysisDuration = 0;
     this.setAnalysisOnsets([]);
     this.transportClock.setBeatGrid([], this._bpm, this.getTransportTime());
     audioTimeline.setBeatGrid([], this._bpm, this._bpm / this._tempo);
@@ -987,33 +1025,6 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisError =
       error instanceof Error ? error.message : "Hosted rhythm analysis failed.";
-    void this.seedFallbackBpmFromPlayback();
-  }
-
-  /** Kick onset BPM estimation without waiting for the user to press play. */
-  private async seedFallbackBpmFromPlayback() {
-    if (!this.ctx || !this.mediaElement || this._analysisStatus !== "fallback") return;
-    try {
-      await this.mediaElement.play();
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-      if (this._analysisStatus !== "fallback" || this.beatGrid.length >= 2) return;
-      if (this._bpm !== DEFAULT_BPM || this._bpmLocked) return;
-      this.onsetHistory = [];
-      this.prevEnergy = 0;
-      this.bassEma = 0.08;
-      for (let i = 0; i < 120; i++) {
-        const timelineFrame = audioTimeline.getLastFrame();
-        if (timelineFrame) this.tick(timelineFrame);
-        await new Promise((resolve) => setTimeout(resolve, 16));
-        if (this.beatGrid.length >= 4 || this._bpm !== DEFAULT_BPM) break;
-      }
-    } catch {
-      // Local-only playback may stay blocked until a user gesture — realtime path still works once playing.
-    } finally {
-      if (this.mediaElement && !this._playing) {
-        this.mediaElement.pause();
-      }
-    }
   }
 }
 

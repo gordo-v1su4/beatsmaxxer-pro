@@ -1,5 +1,7 @@
 import { derived, get, writable } from 'svelte/store';
 import { parseMidi } from '$lib/audio/MidiParser';
+import { syncMidiUiFromLoadedParts } from '$lib/stores/rackUi';
+import type { MidiLayer } from '$lib/stores/rack';
 
 /**
  * A trigger channel: one instrument's note times, taken from a stem's .mid.
@@ -22,6 +24,10 @@ export interface MidiChannel {
   /** First note. Backing vocals that enter at 115s should read as entering late. */
   firstOnset: number;
   color: string;
+  /** Rack imports retain this exact parsed note-array identity. */
+  notes?: MidiLayer['notes'];
+  /** Stable display identity; parsed notes remain the runtime identity. */
+  identity?: string;
 }
 
 /**
@@ -93,12 +99,14 @@ export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
       const onsets = collapseToOnsets(times);
       added.push({
         id: `midi-${channelSeq++}`,
+        identity: `${file.name}:${file.size}:${file.lastModified}`,
         name: channelNameFromFile(file.name),
         onsets,
         noteCount: data.notes.length,
         duration: data.duration,
         firstOnset: onsets[0] ?? 0,
-        color: CHANNEL_COLORS[channelSeq % CHANNEL_COLORS.length]
+        color: CHANNEL_COLORS[channelSeq % CHANNEL_COLORS.length],
+        notes: data.notes
       });
     } catch (error) {
       console.error(`[midi] failed to parse ${file.name}:`, error);
@@ -109,6 +117,7 @@ export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
   // Loading a part is an intent to use it; without this the lane stays empty
   // after an import and reads as a failed parse.
   if (get(activeChannelId) === null) activeChannelId.set(added[0].id);
+  syncMidiUiFromLoadedParts();
   return added;
 }
 

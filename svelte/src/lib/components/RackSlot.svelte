@@ -173,11 +173,14 @@ import {
         {params}
         canvasId={slotCanvasId}
         videoLayer={$videoLayers[slotCanvasId]}
+        midiLayer={$midiLayers[mod.id]}
         {isOnAir}
         {onHeaderPointerDown}
         {onVideoUpload}
         {onVideosUpload}
         {onClearVideo}
+        {onMidiUpload}
+        {onClearMidi}
       />
     {:else}
       <EffectModule

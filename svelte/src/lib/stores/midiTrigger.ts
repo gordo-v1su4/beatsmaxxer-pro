@@ -22,6 +22,15 @@ export function setModuleTriggerSource(moduleId: string, source: ModuleTriggerSo
   moduleTriggerSource.update((map) => ({ ...map, [moduleId]: source }));
 }
 
+/** Hand every module back to the track. Used when the MIDI surface is hidden. */
+export function setAllModuleTriggerSources(source: ModuleTriggerSource) {
+  moduleTriggerSource.update((map) => {
+    const next: Record<string, ModuleTriggerSource> = { ...map };
+    for (const id of Object.keys(next)) next[id] = source;
+    return next;
+  });
+}
+
 /**
  * Deterministic keep/drop for one note.
  *
@@ -47,13 +56,16 @@ export function noteFires(index: number, velocity: number, density: number): boo
 
 /** Note times, in seconds, that survive DENSITY. Sorted ascending. */
 export function firingTimes(layer: MidiLayer | null, density: number): number[] {
+  return firingNotes(layer, density).map(({ note }) => note.time);
+}
+
+/** The canonical kept subset, retaining original indexes for UI identity. */
+export function firingNotes(layer: MidiLayer | null, density: number) {
   if (!layer) return [];
-  const out: number[] = [];
-  for (let i = 0; i < layer.notes.length; i++) {
-    const n = layer.notes[i];
-    if (noteFires(i, n.velocity, density)) out.push(n.time);
-  }
-  return out.sort((a, b) => a - b);
+  return layer.notes
+    .map((note, index) => ({ note, index }))
+    .filter(({ note, index }) => noteFires(index, note.velocity, density))
+    .sort((a, b) => a.note.time - b.note.time || a.index - b.index);
 }
 
 /**
@@ -78,4 +90,31 @@ export function triggerAgeBeats(
   }
   const safeBpm = bpm > 0 ? bpm : 120;
   return ((seconds - times[lo]) * safeBpm) / 60;
+}
+
+/** Most recent kept note at or before the absolute song position. */
+export function lastTriggerTime(
+  times: readonly number[],
+  seconds: number
+): number | null {
+  if (times.length === 0 || seconds < times[0]) return null;
+  let lo = 0;
+  let hi = times.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (times[mid] <= seconds) lo = mid;
+    else hi = mid - 1;
+  }
+  return times[lo] ?? null;
+}
+
+/** Visual hits use absolute song time and always clear while stopped. */
+export function noteIsHighlighted(
+  noteSeconds: number,
+  transportSeconds: number,
+  _duration: number,
+  playing: boolean,
+  windowSeconds = 0.05
+): boolean {
+  return playing && Math.abs(noteSeconds - transportSeconds) < windowSeconds;
 }

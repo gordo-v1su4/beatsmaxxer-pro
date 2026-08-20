@@ -16,8 +16,15 @@ export interface ModuleDefinition extends ModuleConfig {
   /** WGSL shader registry key */
   shaderKey?: string;
   description?: string;
+  /** Notes either fire an event or modulate an otherwise continuous effect. */
+  midiControl?: 'trigger' | 'modulation';
 }
 
+/**
+ * Live identities: 19. The M1 brief said 18 because camcorder (shader mode 16)
+ * merged into VHS / CAM. There is no 20th module — extras live on the FX rail
+ * (`paletteSwapIdentities` in controlContracts) and swap into a default-rack slot.
+ */
 const defs: ModuleDefinition[] = [
   {
     id: 'transition',
@@ -28,9 +35,10 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'transition',
     description: '16 beat-synced transition moves',
+    midiControl: 'trigger',
     params: {
       type: 0, interval: 36, duration: 40, amount: 60, trig: 0,
-      mix: 100, in_: 80, out: 75
+      mix: 100
     }
   },
   {
@@ -45,7 +53,7 @@ const defs: ModuleDefinition[] = [
     params: {
       len: 36, spdMin: 25, spdMax: 75,
       bzY0: 100, bzX1: 35, bzY1: 0, bzX2: 65, bzY2: 0, bzY3: 100,
-      mix: 100, in_: 80, out: 70
+      mix: 100
     }
   },
   {
@@ -61,13 +69,14 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'tapdelay',
     description: 'Holds a frame on the beat division',
+    midiControl: 'trigger',
     params: {
       // time = LEN, feedback = HOLD, feel = grid, gate = how much of the
       // division the freeze occupies. The old type/velCrv/end/start/
       // filterSlider/scratch* keys are gone: nothing outside the UI and the
       // preset table ever read them.
       time: 60, feedback: 50, feel: 0, gate: 70, sens: 40,
-      mix: 55, in_: 80, out: 65
+      mix: 100
     }
   },
   {
@@ -79,12 +88,13 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'timesampler',
     description: 'Slice sampler jumps',
+    midiControl: 'trigger',
     params: {
       // loops was 2, so every slice retriggered twice before advancing — which
       // is a stutter, and made the sampler read as the same effect as TAPDELAY.
       // At 1 the module does its own job: jump to a slice, play it, move on.
       mode: 0, size: 50, slices: 8, loops: 1, accent: 0, chance: 60, rate: 43,
-      mix: 60, in_: 80, out: 60
+      mix: 60
     }
   },
   {
@@ -97,6 +107,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'punch',
     description: 'Crash zoom punch',
+    midiControl: 'trigger',
     params: { dir: 50, amt: 60, snap: 55, mix: 100 }
   },
   {
@@ -109,6 +120,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'shake',
     description: 'Handheld camera shake',
+    midiControl: 'modulation',
     params: { hand: 40, impact: 55, sway: 30, mix: 100 }
   },
   {
@@ -121,6 +133,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'orbit',
     description: 'Slow orbital drift',
+    midiControl: 'modulation',
     params: { spd: 35, drift: 50, nudge: 40, mix: 100 }
   },
   {
@@ -167,7 +180,8 @@ const defs: ModuleDefinition[] = [
     row: 'top',
     category: 'film',
     shaderKey: 'leak',
-    description: 'Iris ghosts, anamorphic, spikes, rings, edge fog, veil, prism',
+    description: '7 leak geometries · MIDI trigger',
+    midiControl: 'trigger',
     // `type` selects the leak geometry, not a tint. It is read as a discrete
     // index by the shader, so the preset values below sit exactly on 0..6.
     // freq = how often a pass fires (0 is off entirely), hold = how long one
@@ -177,7 +191,7 @@ const defs: ModuleDefinition[] = [
       // blades 0-100 maps to a 5..9 blade iris; squeeze 0 is a round aperture
       // and 100 is a hard anamorphic stretch. Both are lens properties.
       blades: 25, squeeze: 0,
-      freq: 45, hold: 30, audio: 40, mix: 55, in_: 80, out: 70
+      freq: 45, hold: 30, audio: 40, mix: 55
     }
   },
   {
@@ -190,6 +204,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'dutch',
     description: 'Tilted horizon drift',
+    midiControl: 'modulation',
     params: { tilt: 45, drift: 40, snap: 30, mix: 100 }
   },
   {
@@ -217,6 +232,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'bulge',
     description: 'Pinch to bulge, on or off the beat',
+    midiControl: 'modulation',
     // amount is signed around 50 now: below pinches, above bulges. 50 is
     // neutral, so the default sits slightly bulged rather than at one extreme.
     params: { amount: 65, center: 50, falloff: 55, beat: 0, mix: 75 }
@@ -231,6 +247,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'vhs',
     description: 'Tape wave, tracking, chroma + beat glitch',
+    midiControl: 'modulation',
     params: { tracking: 35, chroma: 45, noise: 30, beat: 40, mix: 60 }
   },
   {
@@ -254,7 +271,8 @@ const defs: ModuleDefinition[] = [
     category: 'beat',
     shaderKey: 'streak',
     description: 'Directional velocity streaks',
-    params: { length: 50, angle: 35, decay: 45, mix: 60, in_: 80, out: 70 }
+    midiControl: 'modulation',
+    params: { length: 50, angle: 35, decay: 45, mix: 60 }
   },
   {
     id: 'mirror',
@@ -266,6 +284,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'mirror',
     description: 'Reflection folds: mirror planes, slabs, boxes',
+    midiControl: 'modulation',
     params: { fold: 0, offset: 50, spin: 50, beat: 40, mix: 100 }
   },
   {
@@ -278,6 +297,7 @@ const defs: ModuleDefinition[] = [
     compact: true,
     shaderKey: 'lens',
     description: 'Fisheye to tele-crush glass + beat pump',
+    midiControl: 'modulation',
     params: { amount: 75, zoom: 50, edge: 45, beat: 30, mix: 100 }
   }
 ];

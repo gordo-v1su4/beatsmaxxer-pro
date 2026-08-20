@@ -1,0 +1,87 @@
+{
+  "id": "bpm-mismatch",
+  "expectedBlocker": "required capability did not pass: bpmMatch",
+  "provenance": {
+    "schemaVersion": 3,
+    "captureId": "12345678-1234-4234-8234-123456789abc",
+    "capturedAt": "2026-08-20T05:24:30.762Z",
+    "source": {
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workingTreeDirty": false
+    },
+    "build": {
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "profile": "production"
+    },
+    "server": {
+      "kind": "vite-production-preview",
+      "origin": "http://127.0.0.1:5194",
+      "buildDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "versionPath": "/_app/version.json",
+      "version": "current-build",
+      "versionSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "dependencyLock": {
+      "path": "bun.lock",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "environment": {
+      "shellKind": "browser",
+      "sourceBackend": "html-video",
+      "frameProducer": "HTMLVideoElement.copyExternalImageToTexture",
+      "releaseEvidence": true,
+      "webgpuAvailable": true,
+      "runtime": {
+        "name": "Chrome",
+        "version": "128.0",
+        "userAgent": "Chrome/128.0"
+      },
+      "device": {
+        "operatingSystem": "darwin",
+        "architecture": "arm64",
+        "model": "Apple M3",
+        "gpuIdentity": "apple metal M3 native"
+      }
+    },
+    "capabilities": {
+      "webgpu": "passed",
+      "mediaAdvance": "passed",
+      "bpmMatch": "failed",
+      "primarySamples": "passed",
+      "contentIntegrity": "passed"
+    },
+    "contentIntegrity": {
+      "algorithm": "sha256",
+      "requiredPrimarySampleCount": 1,
+      "assets": [
+        {
+          "name": "clip.mp4",
+          "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "size": 1000
+        }
+      ],
+      "primarySamples": [
+        {
+          "assetName": "clip.mp4",
+          "assetSha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "observedSource": "blob:clip",
+          "rendererSource": "blob:clip",
+          "sourceBackend": "html-video",
+          "frameProducer": "HTMLVideoElement.copyExternalImageToTexture",
+          "sourceFrameId": 42,
+          "sourceTimestampSeconds": 1.25,
+          "outputFrameSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "width": 1920,
+          "height": 1080
+        }
+      ]
+    },
+    "freshness": {
+      "policy": "release-proof-24h.v1",
+      "maxAgeMs": 86400000,
+      "expiresAt": "2026-08-21T05:24:30.762Z"
+    }
+  }
+}

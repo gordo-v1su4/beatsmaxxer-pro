@@ -846,11 +846,16 @@ fn effectTransition(col: vec3f, uv: vec2f) -> vec3f {
   // On the rack groove, not a plain modulo. This ran straight through a swung
   // song no matter what the PGM rail said, so the one module whose entire job is
   // arriving on the beat arrived on the wrong one.
-  let seg = grooveSegment(u.beat, intervalBeats);
-  let beatInCycle = u.beat - seg.x;
+  var seg = grooveSegment(u.beat, intervalBeats);
+  var beatInCycle = u.beat - seg.x;
   // The move keeps its own length and lands ON the boundary, so a short swing
   // segment shortens the gap before the move rather than squashing the move.
-  let start = max(seg.y - durBeats, 0.0);
+  var start = max(seg.y - durBeats, 0.0);
+  if (u.triggerAge >= 0.0) {
+    beatInCycle = u.triggerAge;
+    start = 0.0;
+    seg.y = durBeats;
+  }
   if (beatInCycle < start) { return col; }
 
   let p = clamp((beatInCycle - start) / max(seg.y - start, 0.0001), 0.0, 1.0);
@@ -910,7 +915,7 @@ fn stutterLenBeats(p: f32) -> f32 {
     p0 = LEN, p1 = HOLD, p2 = FEEL (0 straight, 1 swing, 2 dotted). */
 fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   let hold = clamp(u.p1, 0.0, 1.0);
-  let len = stutterLenBeats(u.p0);
+  var len = stutterLenBeats(u.p0);
   let feel = floor(clamp(u.p2, 0.0, 1.0) * 100.0 + 0.5);
 
   // FEEL reshapes the repeat grid on top of whatever LEN is set, and STUTTER
@@ -923,8 +928,13 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // repeats marched away from the pair structure instead of alternating long,
   // short, long. Swing was not slightly off, it was a different rhythm.
   let stutterSeg = grooveSegmentFeel(u.beat, len, feel);
-  let seg = stutterSeg.y;
-  let prog = clamp((u.beat - stutterSeg.x) / max(stutterSeg.y, 0.0001), 0.0, 1.0);
+  var prog = clamp((u.beat - stutterSeg.x) / max(stutterSeg.y, 0.0001), 0.0, 1.0);
+  let gate = clamp(u.p3, 0.0, 1.0);
+  let triggerLen = min(len, mix(0.0625, len * 0.35, gate));
+  if (u.triggerAge >= 0.0) {
+    len = triggerLen;
+    prog = clamp(u.triggerAge / max(triggerLen, 0.0001), 0.0, 1.0);
+  }
 
   // Capture window: wide enough to survive a dropped frame at any sane division,
   // narrow enough that the held frame is the one on the beat and not a later one.
@@ -935,14 +945,6 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
   // stab -- lock on the beat, release back to live before the next one -- while
   // a full gate holds the whole division. Without it the freeze always ran edge
   // to edge, which is one gesture at one length.
-  let gate = clamp(u.p3, 0.0, 1.0);
-
-  // SENS ties the length of the freeze to how hard the track is hitting, so the
-  // module plays the song instead of running a metronome over it: quiet bars
-  // barely catch, loud ones lock for the full gate. Energy scales the gate
-  // rather than arming a hard threshold on purpose -- a threshold evaluated per
-  // frame would flicker mid-division, since nothing here holds state between
-  // frames. At SENS 0 the gate is constant and this term disappears.
   let sens = clamp(u.accent, 0.0, 1.0);
   // bassNorm, not bassAmp. The raw figure measures about 0.02-0.13 on this
   // engine rather than 0-1, so this expression sat near 0.1 whatever the track

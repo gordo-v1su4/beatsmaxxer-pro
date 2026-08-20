@@ -7,17 +7,34 @@ await withChrome('verify-ui', 9500, async (s) => {
   await navigateAndReady(
     s,
     QA_URL,
-    '!document.body.innerText.includes("Probing WebGPU") && document.body.innerText.includes("BEATSURFING")',
+    '!document.body.innerText.includes("Probing WebGPU") && document.body.innerText.includes("BEATSMAXXER PRO")',
     45_000
   );
 
-  const ui = await evalPage<{ ok: boolean; labels: string[] }>(
+  const ui = await evalPage<{
+    ok: boolean;
+    labels: string[];
+    pgmBottom: number;
+    rackBottom: number;
+    baselineDelta: number;
+  }>(
     s,
     `(() => {
-      const labels = ["BEATSURFING", "PGM SOURCE", "TRANSITION"];
+      const labels = ["BEATSMAXXER PRO", "PGM SOURCE", "TRANSITION"];
       const text = document.body.innerText;
-      const ok = labels.every((t) => text.includes(t));
-      return { ok, labels: labels.filter((t) => text.includes(t)) };
+      const pgm = document.querySelector("[data-bmx-pgm-rail]");
+      const rack = document.querySelector(".bottom-rack-row");
+      const pgmBottom = pgm?.getBoundingClientRect().bottom ?? Number.NaN;
+      const rackBottom = rack?.getBoundingClientRect().bottom ?? Number.NaN;
+      const baselineDelta = Math.abs(pgmBottom - rackBottom);
+      const ok = labels.every((t) => text.includes(t)) && baselineDelta < 0.01;
+      return {
+        ok,
+        labels: labels.filter((t) => text.includes(t)),
+        pgmBottom,
+        rackBottom,
+        baselineDelta
+      };
     })()`,
     10_000
   );
@@ -29,6 +46,9 @@ await withChrome('verify-ui', 9500, async (s) => {
   const report = {
     passed: Boolean(ui?.ok),
     labelsFound: ui?.labels ?? [],
+    pgmBottom: ui?.pgmBottom ?? null,
+    rackBottom: ui?.rackBottom ?? null,
+    baselineDelta: ui?.baselineDelta ?? null,
     url: QA_URL
   };
 
@@ -36,5 +56,10 @@ await withChrome('verify-ui', 9500, async (s) => {
   s.close();
 
   if (!report.passed) throw new Error(`UI smoke failed: ${JSON.stringify(report)}`);
-  console.log('verify-ui PASSED labels=' + report.labelsFound.join(','));
+  console.log(
+    'verify-ui PASSED labels=' +
+      report.labelsFound.join(',') +
+      ' baselineDelta=' +
+      report.baselineDelta
+  );
 });

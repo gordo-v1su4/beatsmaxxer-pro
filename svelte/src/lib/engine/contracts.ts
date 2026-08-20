@@ -37,6 +37,8 @@ export interface AudioEngineState {
   usingUploadedTrack: boolean;
   analysisStatus: AnalysisStatus;
   analysisConfidence: number | null;
+  /** Duration of the bounded excerpt actually analysed, not the full song. */
+  analysisDuration: number;
   analysisError: string | null;
   /**
    * Bumped whenever a new onset list lands. The list itself is thousands of
@@ -59,6 +61,7 @@ export interface IAudioEngine {
   getLiveScheduleFrame(): LiveScheduleFrame | null;
   setBPM(bpm: number): void;
   unlockBPM(): void;
+  seek(seconds: number): void;
   tapTempo(): void;
 }
 
@@ -73,6 +76,7 @@ export interface TimeSamplerConfig {
   };
   sourceDurationSeconds: number;
   sourceKey: string;
+  triggerKey?: string;
   /** Rack groove from the PGM rail: 0 straight, 1 swing, 2 dotted. */
   feel?: 0 | 1 | 2;
   midiNotes?: Array<{ time: number; note: number; velocity: number }>;
@@ -87,9 +91,15 @@ export interface LiveScheduleFrame {
     targetPlaybackRate: number;
     jumpGeneration: number;
     activeSlice: number;
+    effectiveSliceCount: number;
+    jumpReason: 'initial' | 'scheduled' | 'forced' | 'discontinuity' | 'source-remap' | null;
+    mode: 'FWD' | 'REV' | 'PONG' | 'RND';
+    loopIteration: number;
+    loopCount: number;
   };
   accent: {
     mode: number;
+    transportSeconds: number;
     presentationTimeSeconds: number;
   } | null;
 }
@@ -155,7 +165,7 @@ export interface IWebGpuPresenter {
   isReady(): boolean;
 }
 
-export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card';
+export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card' | 'unsupported';
 
 export interface WebGpuRenderDiagnostics {
   bindingId: string;

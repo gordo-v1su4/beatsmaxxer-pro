@@ -26,10 +26,11 @@
     toggleBypass,
     toggleMute
   } from '$lib/stores/rack';
-  import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
+  import { moduleCollapsed, midiUiOpen, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
+  import { moduleMidiContract } from '$lib/modules/midiContracts';
 
   interface Props {
     mod: ModuleDefinition;
@@ -72,14 +73,18 @@
   const td = $derived($transportDisplay);
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
   const clipEntry = $derived($clipStatusStore[mediaSlotId ?? slotCanvasId]);
+  const midiContract = $derived(moduleMidiContract(mod.id));
+  const midiBehavior = $derived(
+    midiContract.timingClass === 'none' ? undefined : midiContract.timingClass
+  );
 
   function applyVideoFiles(files: File[]) {
+    const midi = files.find((f) => /\.midi?$/i.test(f.name));
+    if (midi && midiBehavior && $midiUiOpen && onMidiUpload) onMidiUpload(midi);
     const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
     else if (clips[0] && onVideoUpload) onVideoUpload(clips[0]);
-    const midi = files.find((f) => /\.midi?$/i.test(f.name));
-    if (midi && onMidiUpload) onMidiUpload(midi);
   }
 </script>
 
@@ -87,6 +92,8 @@
 <div
   class="rack-module"
   data-bmx-module-id={mod.id}
+  data-midi-source={$moduleTriggerSource[mod.id] ?? 'audio'}
+  data-midi-identity={midiLayer?.identity ?? ''}
   class:is-collapsed={collapsed}
   style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$muted[mod.id] ? 0.35 : $bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
@@ -141,9 +148,7 @@
     <Screw />
   </div>
 
-  <div
-    style="position:relative;display:flex;flex-direction:column;flex-shrink:0;background:#000;border-bottom:{collapsed ? 'none' : '2px solid #0d0e0f'}"
-  >
+  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed}>
     {#if !collapsed}
       <MediaPatchBay
         color={mod.accentColor}
@@ -157,18 +162,29 @@
         }}
         onSetVideos={onVideosUpload}
         {midiLayer}
-        onSetMidi={(file) => (file ? onMidiUpload?.(file) : onClearMidi?.())}
+        midiSupported={midiBehavior !== undefined}
+        midiReason={midiContract?.consumer ?? 'No timing contract'}
+        onSetMidi={midiBehavior
+          ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
+          : undefined}
+        triggerSource={$moduleTriggerSource[mod.id] ?? 'audio'}
+        onTriggerSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
+        density={params.density ?? 100}
+        onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
       />
-      {#if midiLayer}
-        <MidiTimeline
-          color={mod.accentColor}
-          {midiLayer}
-          moduleId={mod.id}
-          source={$moduleTriggerSource[mod.id] ?? 'audio'}
-          onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
-          density={params.density ?? 100}
-          onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
-        />
+      {#if $midiUiOpen}
+        {#if midiLayer && midiBehavior}
+          <MidiTimeline
+            color={mod.accentColor}
+            {midiLayer}
+            moduleId={mod.id}
+            behavior={midiBehavior}
+            source={$moduleTriggerSource[mod.id] ?? 'audio'}
+            density={params.density ?? 100}
+          />
+        {:else}
+          <div class="module-midi-lane module-midi-lane-empty" aria-hidden="true"></div>
+        {/if}
       {/if}
     {/if}
     <div class="module-preview">

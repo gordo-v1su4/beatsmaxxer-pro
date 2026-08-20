@@ -1,4 +1,4 @@
-export { AudioEngine, audioEngine } from "./AudioEngine";
+export { AudioEngine, audioEngine, isRhythmAnalysisReady } from "./AudioEngine";
 export {
   applySoundTouchParams,
   createSoundTouchNode,

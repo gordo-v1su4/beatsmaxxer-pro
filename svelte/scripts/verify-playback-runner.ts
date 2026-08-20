@@ -1,4 +1,5 @@
-import { type CdpSession, evalPage, navigateAndReady, screenshotPng, withChrome } from './cdp.ts';
+import { dispatchUserGesture, type CdpSession, evalPage, navigateAndReady, screenshotPng, withChrome } from './cdp.ts';
+import { evaluateSmokeGate } from '../src/lib/qa/smokeGate.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
@@ -21,10 +22,29 @@ async function waitForClips(session: CdpSession) {
   return snap as { clipsLoaded: number; modules?: Record<string, { hasReadyFrame?: boolean }> };
 }
 
-await withChrome('verify-playback', 9600, async (s) => {
-  await navigateAndReady(s, QA_URL);
-  await waitForClips(s);
+async function ensureTransportPlaying(session: CdpSession) {
+  await dispatchUserGesture(session);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await dispatchUserGesture(session);
+    await evalPage(session, `window.__BMX_QA__?.startTransport?.()`, 25_000);
+    const playing = await evalPage<boolean>(session, 'window.__BMX_QA__?.snapshot?.()?.playing', 10_000);
+    if (playing) break;
+    await Bun.sleep(500);
+  }
+  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000);
+}
 
+await withChrome('verify-playback', 9600, async (s) => {
+  console.log('[verify-playback] loading QA page');
+  await navigateAndReady(s, QA_URL);
+  console.log('[verify-playback] waiting for 8 decoded clips');
+  await waitForClips(s);
+  console.log('[verify-playback] starting transport');
+  await ensureTransportPlaying(s);
+  console.log('[verify-playback] waiting for Redline rhythm analysis');
+  await evalPage(s, `window.__BMX_QA__?.waitForAnalysis?.('ready', 90000)`, 95_000);
+
+  console.log('[verify-playback] preparing eight-video benchmark');
   await evalPage(
     s,
     `window.__BMX_QA__?.prepareEightVideoBenchmark?.(${Math.min(CLIP_WAIT_MS, 30_000)})`,
@@ -32,8 +52,8 @@ await withChrome('verify-playback', 9600, async (s) => {
   ).catch(() => evalPage(s, 'window.__BMX_QA__?.snapshot?.()', 15_000));
 
   await Bun.sleep(500);
-  await waitForClips(s);
 
+  console.log('[verify-playback] measuring video advance');
   const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(
     s,
     'window.__BMX_QA__?.snapshot?.()',
@@ -44,7 +64,11 @@ await withChrome('verify-playback', 9600, async (s) => {
     clipsLoaded?: number;
     webgpu?: boolean;
     bpm?: number;
+    usingUploadedTrack?: boolean;
+    trackName?: string;
+    analysisStatus?: string;
     modules?: Record<string, { currentTime?: number; hasReadyFrame?: boolean }>;
+    render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
   }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
   let videoDelta = 0;
@@ -54,19 +78,21 @@ await withChrome('verify-playback', 9600, async (s) => {
   }
 
   const readyCount = Object.values(t1?.modules ?? {}).filter((m) => m.hasReadyFrame).length;
+  const smoke = evaluateSmokeGate({ snapshot: t1 ?? {}, videoDelta });
 
   if (process.env.SCREENSHOT === '1') {
     await screenshotPng(s, `${ARTIFACT_DIR}/playback-full.png`);
   }
 
   const report = {
-    passed: readyCount >= 8 && videoDelta > 0.15,
+    passed: videoDelta > 0.15 && smoke.passed,
     clipsLoaded: t1?.clipsLoaded,
     readyCount,
     videoDelta,
     webgpu: t1?.webgpu,
     bpm: t1?.bpm,
-    modules: t1?.modules
+    modules: t1?.modules,
+    smokeBlockers: smoke.blockers
   };
 
   await Bun.write(`${ARTIFACT_DIR}/playback-report.json`, JSON.stringify(report, null, 2));

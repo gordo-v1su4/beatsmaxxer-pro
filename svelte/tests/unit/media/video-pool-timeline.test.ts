@@ -6,6 +6,7 @@ import {
   VideoPool
 } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
+import { timeSamplerVideoTarget } from '$lib/runtime/AppLoop';
 
 function frame(overrides: Partial<TimelineFrame> = {}): TimelineFrame {
   return {
@@ -245,6 +246,34 @@ describe('VideoPool timeline mapping', () => {
     expect(video.seekCount()).toBe(2);
     expect(video.paused).toBe(false);
     expect(pool.getTimelineTarget('timesampler')).toBe(7);
+  });
+
+  test('resets the controlled timesampler video to the stopped transport position', () => {
+    const pool = new VideoPool();
+    const video = actuatorVideo();
+    (pool as unknown as { videos: Map<string, unknown> }).videos.set('timesampler', video);
+
+    pool.syncControlledModule('timesampler', 2.706, 1, frame(), 1);
+    video.advance(2.706);
+    const stopped = frame({
+      frameId: 2,
+      generation: 2,
+      positionSeconds: 0,
+      transportSeconds: 0,
+      playing: false,
+      reason: 'stop',
+    });
+    pool.syncControlledModule(
+      'timesampler',
+      timeSamplerVideoTarget(stopped, 2.706),
+      1,
+      stopped,
+      1,
+    );
+
+    expect(video.paused).toBe(true);
+    expect(video.currentTime).toBe(0);
+    expect(pool.getTimelineTarget('timesampler')).toBe(0);
   });
 
   test('retries a timesampler jump that arrived during an in-flight seek', () => {

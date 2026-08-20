@@ -71,6 +71,8 @@
 </style>
 
 <aside
+  class="pgm-rail"
+  data-bmx-pgm-rail
   style="flex-shrink:0;display:flex;flex-direction:column;background:linear-gradient(180deg,#111214,#0d0e10);border-right:1px solid #0d0e0f;overflow:hidden;transition:width 0.2s ease;width:{$pgmRailOpen
     ? 'var(--pgm-rail-width)'
     : 'var(--pgm-rail-collapsed)'}"

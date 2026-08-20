@@ -128,6 +128,9 @@ function outputFor(
     jumpGeneration: state.jumpGeneration,
     jumpReason,
     accent,
+    mode: state.mode,
+    loopIteration: state.loopIteration,
+    loopCount: state.loopCount,
   };
 }
 

@@ -15,6 +15,7 @@
     videoLayers
   } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
+  import { audioEngine } from '$lib/audio';
 
   interface Props {
     modules: ModuleDefinition[];
@@ -31,9 +32,16 @@
   const liveColor = $derived(parseAccentColor(live?.accentColor ?? '#38bdf8'));
   const isBypassed = $derived(live ? ($bypassed[live.id] ?? false) : false);
   const td = $derived($transportDisplay);
+  const clock = $derived(td.hud.clock);
+  const sampler = $derived(td.hud.sampler);
 
-  const bar = $derived(Math.floor(td.beat / 4) + 1);
-  const beatInBar = $derived((Math.floor(td.beat) % 4) + 1);
+  function seekFromHud(event: MouseEvent) {
+    if (event.shiftKey) {
+      audioEngine.seek(0);
+      return;
+    }
+    audioEngine.seek(td.time + 8);
+  }
 </script>
 
 <!--
@@ -68,12 +76,38 @@
     <aside class="pgm-gutter pgm-gutter-right">
       <span class="pgm-kicker">TRANSPORT</span>
       <span class="pgm-bpm">
-        {Math.round(td.bpm)}<small>BPM</small>
-        {#if td.bpmLocked}<em class="pgm-lock">LOCK</em>{/if}
+        {Math.round(clock.bpm)}<small>BPM</small>
+        {#if clock.bpmLocked}<em class="pgm-lock">LOCK</em>{/if}
       </span>
-      <span class="pgm-state" class:is-idle={!td.playing}>
-        BAR {bar} · BEAT {beatInBar}
-      </span>
+      <div class="pgm-hud" data-timing-hud>
+        <button
+          type="button"
+          class="pgm-state pgm-hud-clock"
+          class:is-idle={!clock.playing}
+          data-clock-playing={clock.playing}
+          title="Seek 8 seconds ahead. Shift-click returns to 0:00."
+          onclick={seekFromHud}
+        >
+          {clock.playing ? 'PLAY' : 'STOP'} · {clock.positionLabel}
+        </button>
+        <span class="pgm-state">BAR {clock.bar} · BEAT {clock.beatInBar}</span>
+        <span class="pgm-hud-reason" data-clock-reason={clock.reasonLabel}>
+          {clock.reasonLabel} · G{clock.generation}
+        </span>
+      </div>
+      {#if sampler}
+        <span class="pgm-rule" style="background:{live.accentColor}33"></span>
+        <span class="pgm-kicker">SAMPLER</span>
+        <span class="pgm-state" data-sampler-slice="{sampler.slice}/{sampler.sliceCount}">
+          {sampler.mode} {sampler.slice}/{sampler.sliceCount}
+        </span>
+        <span class="pgm-source" data-sampler-source={sampler.sourceLabel}>
+          SRC {sampler.sourceLabel} · L{sampler.loopIteration}/{sampler.loopCount}
+        </span>
+        <span class="pgm-hud-reason" data-sampler-jump={sampler.jumpLabel}>
+          {sampler.jumpLabel} · J{sampler.jumpGeneration}
+        </span>
+      {/if}
       <span class="pgm-rule" style="background:{live.accentColor}33"></span>
       <div class="pgm-meters">
         <VUMeter value={td.bassAmp * 100} color={live.accentColor} />
@@ -103,6 +137,12 @@
     padding: 6px;
     min-width: 0;
     container-type: size;
+  }
+
+  @media (min-width: 961px) and (max-height: 980px) {
+    .main-viewer {
+      height: clamp(200px, 22vh, 320px);
+    }
   }
 
   .pgm-screen {
@@ -219,6 +259,36 @@
     border: 1px solid #4ade8055;
     border-radius: 2px;
     padding: 0 2px;
+  }
+
+  .pgm-hud {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .pgm-hud-reason {
+    font-family: var(--font-ui);
+    font-size: 8px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    color: #4ade80;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .pgm-hud-clock {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: inherit;
+    font: inherit;
+    letter-spacing: inherit;
+    text-align: inherit;
+    cursor: pointer;
+  }
+  .pgm-hud-clock:hover {
+    color: #cfe0e2;
   }
 
   .pgm-meters {

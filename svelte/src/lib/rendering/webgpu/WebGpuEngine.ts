@@ -6,6 +6,7 @@ import { parseAccentColor } from '$lib/modules/registry';
 import { videoPool } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
+import { resolveVideoSamplePath } from '$lib/qa/proofEnvironment';
 import { VideoTextureCache } from './VideoTextureCache';
 import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
@@ -27,8 +28,8 @@ export interface ModuleRenderParams {
   aux3?: number;
   aux4?: number;
   /**
-   * Beats since this module's last MIDI trigger, or negative to follow the
-   * transport's beat grid (the default).
+   * Beats since this module's last MIDI note or manual FIRE, or negative to
+   * follow the transport's beat grid (the default).
    *
    * Expressed as an age rather than as an envelope so the shader's beatPulse
    * can substitute it for beatPhase directly and each effect keeps its own
@@ -827,7 +828,7 @@ export class WebGpuEngine {
       cachedTextureUploaded,
       cachedTextureBound,
       coveredLoopWrap: coverLoopWrap && cachedTextureBound,
-      samplePath: externalTextureBound ? 'external-texture' : cachedTextureBound ? 'cached-video-texture' : 'test-card',
+      samplePath: resolveVideoSamplePath(externalTextureBound, cachedTextureBound, Boolean(shaderHasVideo)),
       source: video?.currentSrc || video?.src || null,
       dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
       frameId: timeline?.frameId ?? null,

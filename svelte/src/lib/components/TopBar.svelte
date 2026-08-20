@@ -2,10 +2,11 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { allModulesCollapsed, setMinimalPerformView, viewMode } from '$lib/stores/rackUi';
+  import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
+  import TopMenu from '$lib/components/rack/TopMenu.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
@@ -39,6 +40,7 @@
   let bpmEdit = $state<string | null>(null);
   let tapTimes: number[] = [];
   let soundTouch = $state(audioEngine.getSoundTouchState());
+  let openMenu = $state<string | null>(null);
 
   let audioInput: HTMLInputElement;
   let clipsInput: HTMLInputElement;
@@ -367,18 +369,13 @@
       <button type="button" onclick={() => nudgePitch(1)} class="step-btn" aria-label="Pitch up">+</button>
     </div>
 
-    <div class="tempo-block" class:soundtouch-on={soundTouch.active} title="Tempo — changes playback speed and effective BPM (0.5×–2×)">
+    <div
+      class="step-block tempo-step"
+      class:soundtouch-on={soundTouch.active}
+      title="Tempo — changes playback speed and effective BPM (0.5×–2×). Same stepper as KEY and PITCH."
+    >
       <button type="button" onclick={() => nudgeTempo(-TEMPO_STEP)} class="step-btn" aria-label="Decrease tempo">−</button>
-      <span class="slider-label">TEMPO</span>
-      <input
-        type="range"
-        min={TEMPO_MIN}
-        max={TEMPO_MAX}
-        step={TEMPO_STEP}
-        value={soundTouch.tempo}
-        oninput={(e) => setTempo(Number(e.currentTarget.value))}
-      />
-      <span class="slider-val">{soundTouch.tempo.toFixed(1)}×</span>
+      <span>TEMPO·{soundTouch.tempo.toFixed(1)}×</span>
       <button type="button" onclick={() => nudgeTempo(TEMPO_STEP)} class="step-btn" aria-label="Increase tempo">+</button>
     </div>
 
@@ -396,93 +393,151 @@
         }}
       />
     </div>
-
-    <select
-      class="preset-select"
-      title="Factory preset"
-      value={$selectedPreset}
-      onchange={(e) => selectPreset(e.currentTarget.value as PresetName)}
-    >
-      {#each FACTORY_PRESETS as preset (preset)}
-        <option value={preset}>{preset}</option>
-      {/each}
-    </select>
     </div>
 
     <div class="topbar-actions">
-    <TopBtn label="UNDO" onclick={undoRackParams} disabled={!$canUndo}>
-      {#snippet icon()}<Undo2 size={10} />{/snippet}
-    </TopBtn>
-    <TopBtn label="REDO" onclick={redoRackParams} disabled={!$canRedo}>
-      {#snippet icon()}<Redo2 size={10} />{/snippet}
-    </TopBtn>
-    <TopBtn label="RANDOMIZE" onclick={onRandomize} accent>
-      {#snippet icon()}<Shuffle size={10} />{/snippet}
-    </TopBtn>
-    <TopBtn label="CLEAR" onclick={onClear} danger>
-      {#snippet icon()}<X size={10} />{/snippet}
-    </TopBtn>
-
-    <!-- Strip the performance view to the picture: ten modules to previews and
-         both browser rails away. The rails were left out before, so the gesture
-         cleared the bottom of the window and left two columns of list beside a
-         monitor that was meant to be the only thing on screen. -->
-    <TopBtn
-      label={$allModulesCollapsed ? 'SHOW ALL' : 'MIN ALL'}
-      accent
-      active={$allModulesCollapsed}
-      onclick={() => setMinimalPerformView([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
-      title={$allModulesCollapsed
-        ? 'Bring back the module controls and the side rails'
-        : 'Collapse the modules to previews and retract both side rails'}
-    >
-      {#snippet icon()}
-        {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}
-      {/snippet}
-    </TopBtn>
-
-    <!-- Programming and performing are separate screens, so this is a switch
-         between them, not a panel that opens. -->
     <TopBtn
       label={$viewMode === 'arrange' ? 'PERFORM' : 'ARRANGE'}
       accent
       active={$viewMode === 'arrange'}
-      onclick={() => viewMode.set($viewMode === 'arrange' ? 'perform' : 'arrange')}
       title={$viewMode === 'arrange'
         ? 'Back to the rack and the program monitor'
-        : 'Open the arrangement — cuts and trigger channels across the whole song'}
+        : 'Open the arrangement sequencer — cuts and trigger lanes across the song'}
+      onclick={() => viewMode.set($viewMode === 'arrange' ? 'perform' : 'arrange')}
     >
       {#snippet icon()}<ListMusic size={10} />{/snippet}
     </TopBtn>
 
-    <div class="crt-group" role="group" aria-label="CRT screen treatment">
-      <span class="crt-label">CRT</span>
-      <button
-        type="button"
-        class="crt-btn"
-        data-active={$screenFxViewer}
-        onclick={() => screenFxViewer.update((v) => !v)}
-        title="CRT glass on the PGM monitor"
-      >PGM</button>
-      <button
-        type="button"
-        class="crt-btn"
-        data-active={$screenFxModules}
-        onclick={() => screenFxModules.update((v) => !v)}
-        title="CRT glass on the rack previews — off by default; it costs image at preview size"
-      >RACK</button>
-    </div>
-
-    <button
-      type="button"
-      onclick={() => fxHold.update((h) => !h)}
-      title={$fxHold ? 'Resume FX preview shaders' : 'Freeze all FX preview shaders'}
-      aria-label={$fxHold ? 'Resume FX shaders' : 'Hold FX shaders'}
-      class="hold-btn"
-      data-active={$fxHold}
+    <TopMenu
+      id="edit"
+      label="EDIT"
+      openId={openMenu}
+      onOpen={(id) => (openMenu = id)}
+      title="Undo, randomize, and clear the rack"
     >
-      {#if $fxHold}<Play size={11} />{:else}<Pause size={11} />{/if}
-    </button>
+      <div class="menu-row">
+        <TopBtn label="UNDO" onclick={undoRackParams} disabled={!$canUndo}>
+          {#snippet icon()}<Undo2 size={10} />{/snippet}
+        </TopBtn>
+        <TopBtn label="REDO" onclick={redoRackParams} disabled={!$canRedo}>
+          {#snippet icon()}<Redo2 size={10} />{/snippet}
+        </TopBtn>
+      </div>
+      <TopBtn
+        label="RANDOMIZE"
+        accent
+        onclick={() => {
+          onRandomize();
+          openMenu = null;
+        }}
+      >
+        {#snippet icon()}<Shuffle size={10} />{/snippet}
+      </TopBtn>
+      <TopBtn
+        label="CLEAR"
+        danger
+        onclick={() => {
+          onClear();
+          openMenu = null;
+        }}
+      >
+        {#snippet icon()}<X size={10} />{/snippet}
+      </TopBtn>
+    </TopMenu>
+
+    <TopMenu
+      id="presets"
+      label="PRESETS"
+      openId={openMenu}
+      onOpen={(id) => (openMenu = id)}
+      title="Factory rack macros — {$selectedPreset}"
+    >
+      {#each FACTORY_PRESETS as preset (preset)}
+        <button
+          type="button"
+          class="preset-item"
+          data-active={$selectedPreset === preset}
+          onclick={() => {
+            selectPreset(preset);
+            openMenu = null;
+          }}
+        >
+          {preset}
+        </button>
+      {/each}
+    </TopMenu>
+
+    <TopMenu
+      id="view"
+      label="VIEW"
+      openId={openMenu}
+      onOpen={(id) => (openMenu = id)}
+      active={$midiUiOpen || $allModulesCollapsed || $fxHold}
+      title="Trigger source, layout, and screen treatment"
+    >
+      <div class="menu-section-label">TRIGGER</div>
+      <div class="menu-row">
+        <TopBtn
+          label="ANALYSIS"
+          accent
+          active={!$midiUiOpen}
+          title="Fire modules from onsets / rhythm analysis. Hides MIDI lanes."
+          onclick={() => setMidiUiOpen(false)}
+        />
+        <TopBtn
+          label="MIDI"
+          accent
+          active={$midiUiOpen}
+          title="Show MIDI lanes and allow written notes to fire modules."
+          onclick={() => setMidiUiOpen(true)}
+        >
+          {#snippet icon()}<Music4 size={10} />{/snippet}
+        </TopBtn>
+      </div>
+      <div class="menu-section-label">LAYOUT</div>
+      <TopBtn
+        label={$allModulesCollapsed ? 'SHOW ALL' : 'MIN ALL'}
+        accent
+        active={$allModulesCollapsed}
+        onclick={() => setMinimalPerformView([...$rackTop, ...$rackBottom], !$allModulesCollapsed)}
+        title={$allModulesCollapsed
+          ? 'Bring back the module controls and the side rails'
+          : 'Collapse the modules to previews and retract both side rails'}
+      >
+        {#snippet icon()}
+          {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}
+        {/snippet}
+      </TopBtn>
+      <div class="menu-section-label">SCANLINES</div>
+      <p class="menu-hint">CRT glass on the picture — not a view switch. Program is the big monitor; tiles are the ten small previews.</p>
+      <div class="menu-row">
+        <TopBtn
+          label="PROGRAM"
+          accent
+          active={$screenFxViewer}
+          title="Scanlines and vignette on the big program monitor"
+          onclick={() => screenFxViewer.update((v) => !v)}
+        />
+        <TopBtn
+          label="TILES"
+          accent
+          active={$screenFxModules}
+          title="Scanlines on the small rack previews — off by default because it muddies the image at that size"
+          onclick={() => screenFxModules.update((v) => !v)}
+        />
+      </div>
+      <button
+        type="button"
+        onclick={() => fxHold.update((h) => !h)}
+        title={$fxHold ? 'Resume FX preview shaders' : 'Freeze all FX preview shaders'}
+        aria-label={$fxHold ? 'Resume FX shaders' : 'Hold FX shaders'}
+        class="hold-btn"
+        data-active={$fxHold}
+      >
+        {#if $fxHold}<Play size={11} />{:else}<Pause size={11} />{/if}
+        {$fxHold ? 'HELD' : 'HOLD'}
+      </button>
+    </TopMenu>
 
     <div class="divider"></div>
 
@@ -753,7 +808,7 @@
   .topbar-shell {
     flex-shrink: 0;
     width: 100%;
-    overflow: hidden;
+    overflow: visible;
     font-family: var(--font-ui);
     background: linear-gradient(180deg, #202224 0%, #18191b 60%, #141516 100%);
     border-bottom: 2px solid #0a0b0c;
@@ -930,7 +985,6 @@
   .phase-bar,
   .rhy-badge,
   .step-block,
-  .tempo-block,
   .slider-block {
     height: 26px;
     background: linear-gradient(180deg, #0e1012, #0a0c0e);
@@ -1139,24 +1193,19 @@
     line-height: 1;
   }
 
-  .tempo-block {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding-inline: 4px;
-    width: 168px;
-    min-width: 168px;
-    box-sizing: border-box;
+  .tempo-step {
+    width: 100px;
+    min-width: 100px;
+    max-width: 100px;
   }
 
-  .tempo-block.soundtouch-on {
+  .tempo-step span {
+    color: #7dd3fc;
+    flex: 0 1 auto;
+  }
+
+  .tempo-step.soundtouch-on {
     border-color: #a78bfa33;
-  }
-
-  .tempo-block input[type='range'] {
-    width: 72px;
-    height: 4px;
-    accent-color: #38bdf8;
   }
 
   .slider-block {
@@ -1168,27 +1217,24 @@
   }
 
   .vol-block {
-    width: 88px;
-    min-width: 88px;
+    width: 92px;
+    min-width: 92px;
+    max-width: 92px;
   }
 
   .slider-label {
     font-size: 7px;
     color: #64748b;
     font-weight: 500;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
   }
 
   .vol-block input[type='range'] {
-    width: 52px;
+    width: 56px;
+    min-width: 56px;
     height: 4px;
     accent-color: #22c55e;
-  }
-
-  .slider-val {
-    font-family: var(--font-mono);
-    font-size: 8px;
-    color: #94a3b8;
-    min-width: 28px;
   }
 
   .preset-select {
@@ -1207,6 +1253,30 @@
     letter-spacing: 0.04em;
     cursor: pointer;
     flex-shrink: 0;
+  }
+
+  .preset-item {
+    height: 22px;
+    padding: 0 8px;
+    text-align: left;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    color: #7a8090;
+    font-family: var(--font-ui);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+  }
+  .preset-item:hover {
+    background: #1a1c1f;
+    color: #cfe0e2;
+  }
+  .preset-item[data-active='true'] {
+    color: #22c55e;
+    border-color: #22c55e33;
+    background: #22c55e12;
   }
 
   .hold-btn {
@@ -1231,6 +1301,33 @@
     border-color: #ef444466;
     color: #ef4444;
     box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+  }
+
+  .menu-section-label {
+    font-family: var(--font-ui);
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: #3f4653;
+  }
+
+  .menu-hint {
+    margin: 0;
+    font-size: 8px;
+    line-height: 1.35;
+    color: #5a6270;
+  }
+
+  .menu-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .menu-wide {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
   .crt-group {

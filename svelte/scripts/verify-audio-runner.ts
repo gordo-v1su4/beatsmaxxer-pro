@@ -1,4 +1,5 @@
 import { dispatchUserGesture, evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import { evaluateSmokeGate } from '../src/lib/qa/smokeGate.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifacts`;
@@ -49,9 +50,18 @@ await withChrome('verify-audio', 9900, async (s) => {
     bpm?: number;
     bpmLocked?: boolean;
     usingUploadedTrack?: boolean;
+    trackName?: string;
     clipsLoaded?: number;
     amplitude?: number;
+    webgpu?: boolean;
+    modules?: Record<string, { hasReadyFrame?: boolean }>;
+    render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
   }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
+
+  const smoke = evaluateSmokeGate({
+    snapshot: snap ?? {},
+    requireAnalysisReady: true
+  });
 
   const report = {
     passed:
@@ -66,7 +76,8 @@ await withChrome('verify-audio', 9900, async (s) => {
       ((controls?.rateEvents ?? 0) >= 1 ||
         (controls?.after?.soundTouch?.tempo ?? 1) !== 1) &&
       (motion?.phaseDelta ?? 0) > 0.05 &&
-      (motion?.transportDelta ?? 0) > 0.2,
+      (motion?.transportDelta ?? 0) > 0.2 &&
+      smoke.passed,
     playing: snap?.playing,
     analysisStatus: snap?.analysisStatus,
     analysisError: snap?.analysisError,
@@ -76,6 +87,7 @@ await withChrome('verify-audio', 9900, async (s) => {
     clipsLoaded: snap?.clipsLoaded,
     motion,
     controls,
+    smokeBlockers: smoke.blockers,
     note: 'Headless gate — confirm audibly in IDE browser before marking README manual items'
   };
 
