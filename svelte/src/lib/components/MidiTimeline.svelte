@@ -8,21 +8,14 @@
   } from '$lib/stores/midiTrigger';
   import { analyseMidiTiming, formatMidiTiming } from '$lib/stores/midiTiming';
   import { analysisBeatGrid } from '$lib/stores/triggerLane';
-  import RackBtn from '$lib/components/rack/RackBtn.svelte';
-  import HSlider from '$lib/components/rack/HSlider.svelte';
 
   interface Props {
     color: string;
     midiLayer: MidiLayer;
     moduleId: string;
-    /** Which clock fires this module. Exclusive — never both at once. */
     source?: ModuleTriggerSource;
-    onSourceChange?: (source: ModuleTriggerSource) => void;
-    /** 0-100. What share of the part's notes actually fire. */
     density?: number;
-    onDensityChange?: (value: number) => void;
     behavior?: 'trigger' | 'modulation';
-    onClearMidi?: () => void;
   }
 
   let {
@@ -30,11 +23,8 @@
     midiLayer,
     moduleId,
     source = 'audio',
-    onSourceChange,
     density = 100,
-    onDensityChange,
-    behavior = 'trigger',
-    onClearMidi
+    behavior = 'trigger'
   }: Props = $props();
 
   const td = $derived($transportDisplay);
@@ -65,51 +55,13 @@
 </script>
 
 <div
-  class="midi-trigger-bar"
+  class="module-midi-lane"
   data-midi-identity={midiLayer.identity ?? midiLayer.name}
   data-midi-source={source}
   data-midi-kept={midiLayer.notes.filter((note, index) => noteFires(index, note.velocity, density / 100)).length}
   data-midi-total={midiLayer.notes.length}
   data-midi-density={Math.round(density)}
 >
-  <span class="midi-trigger-label">{behavior === 'trigger' ? 'HIT SRC' : 'MOD SRC'}</span>
-  <!-- Two buttons rather than one toggle: the exclusivity is the point, so both
-       options stay visible and which one is live is never in doubt. -->
-  <RackBtn
-    label="AUD"
-    active={!active}
-    {color}
-    width={26}
-    onclick={() => onSourceChange?.('audio')}
-  />
-  <RackBtn
-    label="MIDI"
-    {active}
-    {color}
-    width={30}
-    onclick={() => onSourceChange?.('midi')}
-  />
-  <span class="midi-trigger-label" style="margin-left:4px;opacity:{active ? 1 : 0.35}">DENS</span>
-  <div style="flex:1;min-width:28px;opacity:{active ? 1 : 0.35}">
-    <HSlider
-      value={density}
-      onChange={(v) => onDensityChange?.(v)}
-      {color}
-      ariaLabel="MIDI note density"
-      controlId="{moduleId}-density"
-    />
-  </div>
-  <span class="midi-trigger-value" style="opacity:{active ? 1 : 0.35}">
-    {Math.round(density)}%
-  </span>
-  {#if onClearMidi}
-    <button class="midi-clear" type="button" onclick={onClearMidi} title="Remove MIDI and return to audio">×</button>
-  {/if}
-</div>
-
-<!-- Its own line, not squeezed into the control row: sharing that row shrank the
-     DENSITY slider from about 130px to 42px, and a readout should never cost a
-     control its drag target. -->
 <div class="midi-timing-bar">
   <span class="midi-trigger-label">AS IMPORTED</span>
   <span
@@ -151,16 +103,17 @@
     ></div>
   {/each}
 </div>
+</div>
 
 <style>
-  .midi-trigger-bar {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
-    background: #0b0c0e;
-    border-bottom: 1px solid #0d0e0f;
+  .module-midi-lane {
     flex-shrink: 0;
+    height: var(--module-midi-lane-height, 46px);
+    min-height: var(--module-midi-lane-height, 46px);
+    max-height: var(--module-midi-lane-height, 46px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   .midi-trigger-label {
@@ -203,26 +156,5 @@
 
   .midi-timing.is-loose {
     color: #8a6a3a;
-  }
-
-  .midi-trigger-value {
-    font-family: var(--font-mono);
-    font-size: 7px;
-    color: #6b7280;
-    width: 22px;
-    text-align: right;
-    flex-shrink: 0;
-  }
-
-  .midi-clear {
-    width: 14px;
-    height: 14px;
-    padding: 0;
-    border: 1px solid #342020;
-    border-radius: 2px;
-    background: #1b1212;
-    color: #c46b6b;
-    cursor: pointer;
-    line-height: 11px;
   }
 </style>

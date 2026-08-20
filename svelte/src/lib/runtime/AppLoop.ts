@@ -52,8 +52,21 @@ import { grooveSegment } from '$lib/runtime/groove';
 import { feel as pgmFeel } from '$lib/stores/pgm';
 import type { MidiLayer } from '$lib/stores/rack';
 import { activeChannel } from '$lib/stores/midiChannels';
-import { getModuleDef } from '$lib/modules/catalog';
+import { gpuUniformsForModule } from '$lib/modules/controlContracts';
 import { supportsModuleMidi } from '$lib/modules/midiContracts';
+import {
+  advanceManualFire,
+  mergeTriggerAge,
+  type ManualFireState
+} from '$lib/runtime/manualFire';
+import {
+  audioStutterTriggerAge,
+  mergeStutterTriggerAge,
+  stutterTriggerWindowBeats,
+  advanceLiveOnsetStutter,
+  type LiveOnsetStutterState
+} from '$lib/runtime/stutterTrigger';
+import { midiUiOpen } from '$lib/stores/rackUi';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
 let running = false;
@@ -72,6 +85,7 @@ const SPEEDRAMP_CYCLE_BEATS = [1, 2, 4, 8, 16, 24, 32] as const;
  * per-frame cost drops to one binary search.
  */
 const midiFiringCache = new Map<string, { layer: MidiLayer | null; density: number; times: number[] }>();
+const manualFireByModule = new Map<string, ManualFireState>();
 
 function firingTimesFor(moduleId: string, layer: MidiLayer | null, density: number): number[] {
   const hit = midiFiringCache.get(moduleId);
@@ -98,6 +112,7 @@ export function midiNotesForTriggerSource(
  * lookup and nothing on the GPU.
  */
 function midiTriggerAges(frame: TimelineFrame): Record<string, number> {
+  if (!get(midiUiOpen)) return {};
   const sources = get(moduleTriggerSource);
   const ages: Record<string, number> = {};
   const ids = Object.keys(sources);
@@ -179,6 +194,8 @@ let sequencerGeneration = -1;
 let sequencerAbsoluteStep: number | null = null;
 /** Absolute bar the active section started on, so its length can be measured. */
 let sectionStartBar = 0;
+/** Rising-flux strike window for tapdelay when MIDI/analysis are quiet. */
+let liveOnsetStutterState: LiveOnsetStutterState | null = null;
 
 function syncVideoModes(assignments: Array<{ slotId: string; moduleId: string }>) {
   for (const { slotId, moduleId } of assignments) {
@@ -188,83 +205,58 @@ function syncVideoModes(assignments: Array<{ slotId: string; moduleId: string }>
 }
 
 function paramsForGpu(moduleId: string, params: Record<string, number>) {
-  const def = getModuleDef(moduleId);
-  const p = params;
-  switch (def?.shaderKey ?? moduleId) {
-    case 'transition':
-      return { mix: p.mix, p0: p.amount, p1: p.duration, p2: p.type, p3: p.interval };
-    case 'speedramp':
-      return {
-        mix: p.mix, p0: p.spdMax, p1: p.spdMin, p2: p.len,
-        aux1: lastSpeedRampAux.aux1, aux2: lastSpeedRampAux.aux2
-      };
-    case 'tapdelay':
-      // accent carries SENS here — the slot is otherwise unused by this module,
-      // and every p-slot is already spoken for by LEN/HOLD/FEEL/GATE.
-      return { mix: p.mix, p0: p.time, p1: p.feedback, p2: p.feel, p3: p.gate, accent: p.sens };
-    case 'timesampler':
-      return {
-        mix: p.mix,
-        p0: p.rate,
-        p1: p.slices,
-        p2: p.size,
-        accent: 0,
-        aux1: lastTimeSamplerAux.aux1,
-        aux2: lastTimeSamplerAux.aux2
-      };
-    case 'punch':
-      return { mix: p.mix, p0: p.amt, p1: p.dir, p2: p.snap };
-    case 'shake':
-      return { mix: p.mix, p0: p.hand, p1: p.impact, p2: p.sway };
-    case 'orbit':
-      return { mix: p.mix, p0: p.spd, p1: p.drift, p2: p.nudge };
-    case 'focus':
-      return { mix: p.mix, p0: p.amt, p1: p.pulse, p2: p.soft, p3: p.xeye ?? 0 };
-    case 'anamorphic':
-      return { mix: p.mix, p0: p.bars, p1: p.zoom, p2: p.flare };
-    case 'grain':
-      return { mix: p.mix, p0: p.size, p1: p.amount, p2: p.drift };
-    case 'leak':
-      // FREQ/HOLD ride on aux1/aux2: every p-slot is taken by EDGE/WARMTH/
-      // DRIFT/TYPE. Unlike the p-slots the engine writes aux raw, so the 0-100
-      // control range is normalised here.
-      return {
-        mix: p.mix, p0: p.edge, p1: p.warmth, p2: p.drift, p3: p.type,
-        aux1: (p.freq ?? 45) / 100,
-        aux2: (p.hold ?? 30) / 100,
-        // BLADES is sent as a real blade count, not 0-1: the shader needs the
-        // integer to build the polygon and to derive the spike rule from it.
-        aux3: 5 + Math.round(((p.blades ?? 50) / 100) * 4),
-        aux4: (p.squeeze ?? 0) / 100,
-        // accent carries AUDIO here — LEAK never reads the slot for colour, the
-        // same reason TAPDELAY puts SENS on it, and every other word is taken.
-        accent: (p.audio ?? 40) / 100
-      };
-    case 'dutch':
-      return { mix: p.mix, p0: p.tilt, p1: p.drift, p2: p.snap };
-    case 'halation':
-      return { mix: p.mix, p0: p.threshold, p1: p.spread, p2: p.tint };
-    case 'bulge':
-      return { mix: p.mix, p0: p.amount, p1: p.center, p2: p.falloff, p3: p.beat };
-    case 'vhs':
-      return { mix: p.mix, p0: p.tracking, p1: p.chroma, p2: p.noise, p3: p.beat };
-    case 'prism':
-      return { mix: p.mix, p0: p.split, p1: p.angle, p2: p.edge };
-    case 'streak':
-      return { mix: p.mix, p0: p.length, p1: p.angle, p2: p.decay };
-    case 'mirror':
-      return { mix: p.mix, p0: p.fold, p1: p.offset, p2: p.spin, p3: p.beat };
-    case 'lens':
-      return { mix: p.mix, p0: p.amount, p1: p.zoom, p2: p.edge, p3: p.beat };
-    default:
-      return {
-        mix: p.mix ?? 100,
-        p0: p.amount ?? p.amt ?? p.size ?? 50,
-        p1: p.feedback ?? p.drift ?? p.bleed ?? 50,
-        p2: p.tracking ?? p.squeeze ?? 50,
-        p3: p.noise ?? 50
-      };
+  return gpuUniformsForModule(moduleId, params, {
+    speedRamp: lastSpeedRampAux,
+    timeSampler: lastTimeSamplerAux
+  });
+}
+
+function fireTriggerAges(
+  frame: TimelineFrame,
+  params: Record<string, Record<string, number>>
+): Record<string, number> {
+  const ages: Record<string, number> = {};
+  for (const [id, module] of Object.entries(params)) {
+    if (module.trig == null) continue;
+    const next = advanceManualFire(
+      manualFireByModule.get(id) ?? null,
+      module.trig,
+      frame.beatPosition,
+      module.duration ?? 40
+    );
+    manualFireByModule.set(id, next.state);
+    if (next.age != null) ages[id] = next.age;
   }
+  return ages;
+}
+
+function tapdelayTriggerAge(
+  frame: TimelineFrame,
+  params: Record<string, number>,
+  midiAge: number | undefined,
+  fireAge: number | undefined,
+  onsetAmp: number
+): { age: number; liveState: LiveOnsetStutterState | null } {
+  const density = (params.density ?? 100) / 100;
+  const analysisAge = audioStutterTriggerAge(
+    frame,
+    audioEngine.getAnalysisOnsets(),
+    get(analysisBeatGrid),
+    density
+  );
+  const window = stutterTriggerWindowBeats(params.time ?? 60, params.gate ?? 70);
+  const live = advanceLiveOnsetStutter(
+    liveOnsetStutterState,
+    onsetAmp,
+    frame.beatPosition,
+    frame.playing,
+    window
+  );
+  return {
+    // Analysis/MIDI/FIRE only for now — live flux stays in onsetAmp for SENS scaling.
+    age: mergeStutterTriggerAge(midiAge, fireAge, analysisAge, undefined),
+    liveState: live.state
+  };
 }
 
 export function timeSamplerAccentUniforms(
@@ -436,7 +428,9 @@ function configureTimeSampler() {
   const tsMidi = (() => {
     // A file attached to the TIMESAMPLER card is the first authority. Loading
     // it selects MIDI; removing it returns this source to audio/onsets.
-    const cardSource = get(moduleTriggerSource).timesampler ?? 'audio';
+    const cardSource = get(midiUiOpen)
+      ? (get(moduleTriggerSource).timesampler ?? 'audio')
+      : 'audio';
     const cardLayer = get(midiLayers).timesampler ?? null;
     const density = (tsParams.density ?? 100) / 100;
     if (cardLayer) {
@@ -515,6 +509,7 @@ export function startAppLoop() {
   unsubscribeTimeline = audioTimeline.subscribe((frame) => {
     const state = audioEngine.getState();
     const sound = audioEngine.getSoundTouchState();
+    const onsetAmp = updateBassOnset(state.bassAmp);
     webGpuEngine.setFrameContext({
       beat: frame.beatPosition,
       beatPhase: frame.beatPhase,
@@ -522,7 +517,7 @@ export function startAppLoop() {
       playing: frame.playing,
       amplitude: state.amplitude,
       bassAmp: state.bassAmp,
-      onsetAmp: updateBassOnset(state.bassAmp),
+      onsetAmp,
       bassNorm,
       highAmp: state.highAmp,
       pitchSemitones: sound.keySemitones + sound.pitchSemitones,
@@ -540,23 +535,45 @@ export function startAppLoop() {
 
     const livePgm = get(pgmSource);
     const livePgmSlot = currentRackSlotForModule(livePgm);
-    syncControlledVideos(assignments, get(moduleParams), frame);
-    getVideoSourcePort().tick(frame);
-
     const params = get(moduleParams);
+    const tapdelayParams = params.tapdelay ?? {};
+    const midiAges = midiTriggerAges(frame);
+    const fireAges = fireTriggerAges(frame, params);
+    const tapdelay = tapdelayTriggerAge(
+      frame,
+      tapdelayParams,
+      midiAges.tapdelay,
+      fireAges.tapdelay,
+      onsetAmp
+    );
+    liveOnsetStutterState = tapdelay.liveState;
+
+    if (audioEngine.isRhythmReady()) {
+      syncControlledVideos(assignments, params, frame);
+      getVideoSourcePort().tick(frame);
+    } else {
+      getVideoSourcePort().tick(false);
+    }
     const layers = get(videoLayers);
-    const triggerAges = midiTriggerAges(frame);
     for (const id of moduleIds) {
+      const triggerAge =
+        id === 'tapdelay'
+          ? tapdelay.age
+          : mergeTriggerAge(midiAges[id], fireAges[id]);
       webGpuEngine.setModuleParams(id, {
         ...paramsForGpu(id, params[id] ?? {}),
-        triggerAge: triggerAges[id] ?? -1
+        triggerAge
       });
     }
 
     if (livePgmSlot && layers[livePgmSlot]) {
+      const triggerAge =
+        livePgm === 'tapdelay'
+          ? tapdelay.age
+          : mergeTriggerAge(midiAges[livePgm], fireAges[livePgm]);
       webGpuEngine.setModuleParams(livePgm, {
         ...paramsForGpu(livePgm, params[livePgm] ?? {}),
-        triggerAge: triggerAges[livePgm] ?? -1
+        triggerAge
       });
     }
 
@@ -585,6 +602,8 @@ export function stopAppLoop() {
   sequencerGeneration = -1;
   sequencerAbsoluteStep = null;
   speedRampSourceState = null;
+  liveOnsetStutterState = null;
+  manualFireByModule.clear();
   if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
   rafId = 0;
 }

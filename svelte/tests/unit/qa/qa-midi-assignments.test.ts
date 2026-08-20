@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import manifestJson from '../../fixtures/media/manifest.json';
 import {
   loadQaMidiAssignments,
+  loadQaMidiChannels,
   validateQaMidiAssignments,
   type QaManifest
 } from '../../../src/lib/qa/loadQaMedia';
@@ -74,5 +75,35 @@ describe('desktop QA MIDI assignments', () => {
       expect(noteIsHighlighted(layer!.notes[0].time, layer!.notes[0].time, layer!.duration, false)).toBe(false);
     }
     expect(get(midiChannels)).toEqual([]);
+  });
+
+  test('loads every inventoried stem into arranger trigger lanes', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const virtualPath = decodeURIComponent(url.replace(/^\/qa-media\//, ''));
+      const bytes = await readFile(path.resolve(sourceRoot, virtualPath.slice('redline/'.length)));
+      return new Response(new Uint8Array(bytes), {
+        status: 200,
+        headers: { 'content-type': 'audio/midi' }
+      });
+    };
+
+    try {
+      await loadQaMidiChannels(manifest);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    const channels = get(midiChannels);
+    expect(channels).toHaveLength(7);
+    expect(new Set(channels.map((channel) => channel.name)).size).toBe(7);
+    for (const channel of channels) {
+      expect(channel.onsets.length).toBeGreaterThan(0);
+      expect(channel.noteCount).toBeGreaterThan(0);
+    }
+    expect(get(midiLayers)).toEqual(
+      Object.fromEntries(Object.keys(get(midiLayers)).map((id) => [id, null]))
+    );
   });
 });

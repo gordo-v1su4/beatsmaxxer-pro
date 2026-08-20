@@ -22,6 +22,15 @@ export function setModuleTriggerSource(moduleId: string, source: ModuleTriggerSo
   moduleTriggerSource.update((map) => ({ ...map, [moduleId]: source }));
 }
 
+/** Hand every module back to the track. Used when the MIDI surface is hidden. */
+export function setAllModuleTriggerSources(source: ModuleTriggerSource) {
+  moduleTriggerSource.update((map) => {
+    const next: Record<string, ModuleTriggerSource> = { ...map };
+    for (const id of Object.keys(next)) next[id] = source;
+    return next;
+  });
+}
+
 /**
  * Deterministic keep/drop for one note.
  *

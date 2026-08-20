@@ -64,6 +64,7 @@ run_gate "verify:audio" bun scripts/verify-audio-runner.ts
 run_gate "verify:beat" bun scripts/verify-beat-runner.ts
 run_gate "verify:visual-proof (required release gate)" bun scripts/verify-visual-proof-runner.ts
 run_gate "verify:eight-video-proof (required release gate)" bun scripts/verify-eight-video-proof-runner.ts
+run_gate "verify:broken-fixtures (M0 negative gate)" bun scripts/verify-broken-fixtures-runner.ts
 
 echo ""
 echo "══════════════════════════════════════════"

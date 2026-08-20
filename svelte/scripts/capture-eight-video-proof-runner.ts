@@ -11,6 +11,7 @@ import {
   type EightVideoProofReport
 } from '../src/lib/qa/eightVideoProof.ts';
 import { REDLINE_EXPECTED_BPM, createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
+import { resolveProofEnvironment } from '../src/lib/qa/proofEnvironment.ts';
 import {
   REDLINE_AUDIO_NAME,
   REDLINE_AUDIO_SOURCE_PATH,
@@ -263,6 +264,7 @@ async function capture() {
     const contentIntegrityPassed = primarySamples.length === 8 && primarySamples.every((sample) =>
       /^[0-9a-f]{64}$/.test(sample.assetSha256) && /^[0-9a-f]{64}$/.test(sample.outputFrameSha256) &&
       sample.observedSource === sample.rendererSource && sample.sourceFrameId > 0);
+    const proofEnv = resolveProofEnvironment();
     const artifactProvenance = createArtifactProvenance({
       captureId: crypto.randomUUID(),
       capturedAt,
@@ -276,10 +278,10 @@ async function capture() {
       },
       dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
       environment: {
-        shellKind: 'browser',
-        sourceBackend: 'html-video',
-        frameProducer: 'HTMLVideoElement.copyExternalImageToTexture',
-        releaseEvidence: true,
+        shellKind: proofEnv.shellKind,
+        sourceBackend: proofEnv.sourceBackend,
+        frameProducer: proofEnv.frameProducer,
+        releaseEvidence: proofEnv.releaseEvidence,
         webgpuAvailable: gpu?.deviceCreated === true,
         runtime: {
           name: version.product?.split('/')[0] ?? '',

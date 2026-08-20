@@ -15,6 +15,7 @@ import {
   type VisualProofReport
 } from '../src/lib/qa/visualProof.ts';
 import { REDLINE_EXPECTED_BPM, createArtifactProvenance, type ProofCapabilityStatus } from '../src/lib/qa/artifactProvenance.ts';
+import { resolveProofEnvironment } from '../src/lib/qa/proofEnvironment.ts';
 import {
   REDLINE_AUDIO_NAME,
   REDLINE_AUDIO_SOURCE_PATH,
@@ -772,6 +773,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const mediaAdvanced = videoExercise.every((clip) => clip.secondMediaTimeSeconds !== clip.firstMediaTimeSeconds);
   const contentIntegrityPassed = primarySamples.length === videoExercise.length && primarySamples.every((sample) =>
     sample.rendererSource === sample.observedSource && sample.sourceFrameId > 0 && /^[0-9a-f]{64}$/.test(sample.outputFrameSha256));
+  const proofEnv = resolveProofEnvironment();
   const artifactProvenance = createArtifactProvenance({
     captureId: crypto.randomUUID(),
     capturedAt,
@@ -785,10 +787,10 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       },
     dependencyLock: { path: 'bun.lock', sha256: sha256(lockBytes) },
     environment: {
-      shellKind: 'browser',
-      sourceBackend: 'html-video',
-      frameProducer: 'HTMLVideoElement.copyExternalImageToTexture',
-      releaseEvidence: true,
+      shellKind: proofEnv.shellKind,
+      sourceBackend: proofEnv.sourceBackend,
+      frameProducer: proofEnv.frameProducer,
+      releaseEvidence: proofEnv.releaseEvidence,
       webgpuAvailable: gpu?.deviceCreated === true,
       runtime: {
         name: cdpVersion.product?.split('/')[0] ?? '',

@@ -1,5 +1,6 @@
 import { derived, get, writable } from 'svelte/store';
 import { parseMidi } from '$lib/audio/MidiParser';
+import { syncMidiUiFromLoadedParts } from '$lib/stores/rackUi';
 import type { MidiLayer } from '$lib/stores/rack';
 
 /**
@@ -116,6 +117,7 @@ export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
   // Loading a part is an intent to use it; without this the lane stays empty
   // after an import and reads as a failed parse.
   if (get(activeChannelId) === null) activeChannelId.set(added[0].id);
+  syncMidiUiFromLoadedParts();
   return added;
 }
 

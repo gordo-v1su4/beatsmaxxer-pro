@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Film, Upload, X } from '@lucide/svelte';
+  import { Upload, X } from '@lucide/svelte';
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import type { VideoLayer } from '$lib/engine/contracts';
   import type { MidiLayer } from '$lib/stores/rack';
@@ -9,6 +9,7 @@
   import Screw from '$lib/components/rack/Screw.svelte';
   import ModuleGrip from '$lib/components/rack/ModuleGrip.svelte';
   import HeaderBtn from '$lib/components/rack/HeaderBtn.svelte';
+  import MediaPatchBay from '$lib/components/rack/MediaPatchBay.svelte';
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
@@ -17,7 +18,7 @@
   import { screenFxModules } from '$lib/stores/screenFx';
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
-  import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
+  import { moduleCollapsed, midiUiOpen, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
   // The condensed button/slider table used to be declared here, where only the
@@ -28,6 +29,7 @@
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
   import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { moduleMidiContract } from '$lib/modules/midiContracts';
+  import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
 
   interface Props {
     mod: ModuleDefinition;
@@ -61,11 +63,10 @@
 
   let dragOver = $state(false);
   let dragDepth = $state(0);
-  let fileInput: HTMLInputElement;
-  let midiInput = $state<HTMLInputElement>();
 
   const color = $derived(parseAccentColor(mod.accentColor));
   const slotCanvasId = $derived(canvasId ?? mod.id);
+  const clipEntry = $derived($clipStatusStore[slotCanvasId]);
   const modulePresets = $derived(presetsForModule(mod.id));
   const collapsed = $derived($moduleCollapsed[mod.id] === true);
 
@@ -82,7 +83,7 @@
 
   function applyVideoFiles(files: File[]) {
     const midi = files.find((file) => /\.midi?$/i.test(file.name));
-    if (midi && midiBehavior) onMidiUpload?.(midi);
+    if (midi && midiBehavior && $midiUiOpen) onMidiUpload?.(midi);
     const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
@@ -135,55 +136,6 @@
       </span>
     {/if}
     <div style="flex:1"></div>
-    <input
-      bind:this={fileInput}
-      type="file"
-      accept="video/*"
-      multiple
-      class="hidden"
-      onchange={(e) => {
-        applyVideoFiles([...((e.target as HTMLInputElement).files ?? [])]);
-        (e.target as HTMLInputElement).value = '';
-      }}
-    />
-    {#if midiBehavior}
-      <input
-        bind:this={midiInput}
-        type="file"
-        accept=".mid,.midi"
-        class="hidden"
-        onchange={(e) => {
-          const input = e.currentTarget;
-          const file = input.files?.[0];
-          if (file) onMidiUpload?.(file);
-          input.value = '';
-        }}
-      />
-      <button
-        type="button"
-        onclick={() => midiInput?.click()}
-        title={midiLayer ? midiLayer.name : 'Load MIDI part'}
-        style="height:14px;padding-inline:4px;background:linear-gradient(180deg,#191d22,#121519);border:1px solid {midiLayer ? mod.accentColor + '55' : '#1a1d22'};border-radius:2px;cursor:pointer;color:{midiLayer ? mod.accentColor : '#445060'};font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.08em"
-      >MIDI</button>
-    {/if}
-    <button
-      type="button"
-      onclick={() => fileInput?.click()}
-      title={videoLayer ? videoLayer.name : 'Load clip — select multiple to fill empty slots'}
-      style="height:14px;padding-inline:4px;background:linear-gradient(180deg,#191d22,#121519);border:1px solid {videoLayer ? mod.accentColor + '44' : '#1a1d22'};border-radius:2px;cursor:pointer;color:{videoLayer ? mod.accentColor : '#445060'};display:flex;align-items:center;gap:2px;font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.08em"
-    >
-      <Film size={7} /> CLIP
-    </button>
-    {#if videoLayer}
-      <button
-        type="button"
-        onclick={() => onClearVideo?.()}
-        aria-label="Clear clip from {mod.name}"
-        style="width:14px;height:14px;background:linear-gradient(180deg,#241919,#1b1212);border:1px solid #342020;border-radius:2px;color:#c46b6b;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0"
-      >
-        <X size={7} />
-      </button>
-    {/if}
     <button
       type="button"
       onclick={() => toggleModuleCollapsed(mod.id)}
@@ -199,27 +151,53 @@
     <Screw />
   </div>
 
-  {#if !collapsed && midiBehavior && midiLayer}
-    <MidiTimeline
-      color={mod.accentColor}
-      {midiLayer}
-      moduleId={mod.id}
-      behavior={midiBehavior}
-      source={$moduleTriggerSource[mod.id] ?? 'audio'}
-      onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
-      density={params.density ?? 100}
-      onDensityChange={(value) => updateParam(mod.id, 'density', Math.round(value))}
-      {onClearMidi}
-    />
-  {/if}
-
-  <div class="module-preview">
+  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed}>
+    {#if !collapsed}
+      <MediaPatchBay
+        color={mod.accentColor}
+        moduleId={mod.id}
+        {videoLayer}
+        clipStatus={clipEntry?.status ?? 'idle'}
+        clipError={clipEntry?.error}
+        onSetVideo={(file) => {
+          if (file && onVideoUpload) onVideoUpload(file);
+          else onClearVideo?.();
+        }}
+        onSetVideos={onVideosUpload}
+        {midiLayer}
+        midiSupported={midiBehavior !== undefined}
+        midiReason={midiContract?.consumer ?? 'No timing contract'}
+        onSetMidi={midiBehavior
+          ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
+          : undefined}
+        triggerSource={$moduleTriggerSource[mod.id] ?? 'audio'}
+        onTriggerSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
+        density={params.density ?? 100}
+        onDensityChange={(value) => updateParam(mod.id, 'density', Math.round(value))}
+      />
+      {#if $midiUiOpen}
+        {#if midiLayer && midiBehavior}
+          <MidiTimeline
+            color={mod.accentColor}
+            {midiLayer}
+            moduleId={mod.id}
+            behavior={midiBehavior}
+            source={$moduleTriggerSource[mod.id] ?? 'audio'}
+            density={params.density ?? 100}
+          />
+        {:else}
+          <div class="module-midi-lane module-midi-lane-empty" aria-hidden="true"></div>
+        {/if}
+      {/if}
+    {/if}
+    <div class="module-preview">
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
     {#if $screenFxModules}<ScreenOverlay variant="module" />{/if}
     <ScreenBadge
       text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
       color={mod.accentColor}
     />
+    </div>
   </div>
 
   {#if !collapsed && spec}
@@ -276,7 +254,7 @@
         {#each spec.sliders as sl (sl.param)}
           <div style="display:flex;align-items:center;gap:4px">
             <span
-              style="width:44px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em"
+              style="width:44px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em;white-space:nowrap"
             >
               {sl.label}
             </span>

@@ -30,6 +30,15 @@ import {
 
 const DEFAULT_BPM = 128;
 
+/** Uploaded tracks stay paused until hosted analysis settles or fails closed. */
+export function isRhythmAnalysisReady(
+  usingUploadedTrack: boolean,
+  analysisStatus: AudioEngineState["analysisStatus"]
+): boolean {
+  if (!usingUploadedTrack) return true;
+  return analysisStatus === "ready" || analysisStatus === "fallback" || analysisStatus === "error";
+}
+
 export interface AudioFileLoadOptions {
   /** Enable only after an explicit, per-upload disclosure and user choice. */
   hostedAnalysis?: boolean;
@@ -623,6 +632,22 @@ export class AudioEngine implements IAudioEngine {
     media.currentTime = Math.max(0, Math.min(media.duration, seconds));
   }
 
+  isRhythmReady() {
+    return isRhythmAnalysisReady(this._usingUploadedTrack, this._analysisStatus);
+  }
+
+  async waitForRhythmReady(timeoutMs = 90_000) {
+    if (this.isRhythmReady()) return;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.isRhythmReady()) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(
+      `Timed out waiting for rhythm analysis (${this._analysisStatus})`
+    );
+  }
+
   /** Onset times in transport seconds. Empty unless hosted analysis succeeded. */
   getAnalysisOnsets(): readonly number[] {
     return this.analysisOnsets;
@@ -724,6 +749,11 @@ export class AudioEngine implements IAudioEngine {
         targetPlaybackRate: frame.timeSampler.targetPlaybackRate,
         jumpGeneration: frame.timeSampler.jumpGeneration,
         activeSlice: frame.timeSampler.activeSlice,
+        effectiveSliceCount: frame.timeSampler.effectiveSliceCount,
+        jumpReason: frame.timeSampler.jumpReason,
+        mode: frame.timeSampler.mode,
+        loopIteration: frame.timeSampler.loopIteration,
+        loopCount: frame.timeSampler.loopCount,
       },
       accent: frame.accent
         ? {

@@ -1,5 +1,7 @@
-import { writable, derived } from 'svelte/store';
-import { rackTop, rackBottom } from '$lib/stores/rack';
+import { writable, derived, get } from 'svelte/store';
+import { rackTop, rackBottom, midiLayers } from '$lib/stores/rack';
+import { midiChannels } from '$lib/stores/midiChannels';
+import { setAllModuleTriggerSources } from '$lib/stores/midiTrigger';
 
 /** Per-module control collapse — preview-only strip when true. */
 export const moduleCollapsed = writable<Record<string, boolean>>({});
@@ -75,6 +77,28 @@ export function showSideRailTab(tab: SideRailTab) {
 
 /** PGM source rail — can retract later for extra rack rows. */
 export const pgmRailOpen = writable(true);
+
+/**
+ * MIDI patch + trigger lanes on the rack.
+ *
+ * Off by default: a loaded part is exclusive with audio/onset triggers, and the
+ * lanes steal the vertical space SPEEDRAMP and the mix strips need. Parts can
+ * still be attached later; this only controls whether that surface is showing.
+ */
+export const midiUiOpen = writable(false);
+
+export function setMidiUiOpen(open: boolean) {
+  midiUiOpen.set(open);
+  if (!open) setAllModuleTriggerSources('audio');
+}
+
+/** Open perform-view MIDI lanes when arranger stems or module parts are present. */
+export function syncMidiUiFromLoadedParts() {
+  const hasModuleMidi = Object.values(get(midiLayers)).some(
+    (layer) => layer != null && layer.notes.length > 0
+  );
+  if (hasModuleMidi || get(midiChannels).length > 0) setMidiUiOpen(true);
+}
 
 export const topRowCompact = derived([rackTop, moduleCollapsed], ([top, collapsed]) => {
   if (top.length === 0) return false;

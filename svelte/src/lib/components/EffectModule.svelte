@@ -26,7 +26,7 @@
     toggleBypass,
     toggleMute
   } from '$lib/stores/rack';
-  import { moduleCollapsed, toggleModuleCollapsed } from '$lib/stores/rackUi';
+  import { moduleCollapsed, midiUiOpen, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
   import { previewTargetFps } from '$lib/platform/desktopPerformance';
@@ -80,7 +80,7 @@
 
   function applyVideoFiles(files: File[]) {
     const midi = files.find((f) => /\.midi?$/i.test(f.name));
-    if (midi && midiBehavior && onMidiUpload) onMidiUpload(midi);
+    if (midi && midiBehavior && $midiUiOpen && onMidiUpload) onMidiUpload(midi);
     const clips = files.filter(isVideoFile);
     if (clips.length === 0) return;
     if (clips.length > 1 && onVideosUpload) onVideosUpload(clips);
@@ -148,9 +148,7 @@
     <Screw />
   </div>
 
-  <div
-    style="position:relative;display:flex;flex-direction:column;flex-shrink:0;background:#000;border-bottom:{collapsed ? 'none' : '2px solid #0d0e0f'}"
-  >
+  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed}>
     {#if !collapsed}
       <MediaPatchBay
         color={mod.accentColor}
@@ -169,18 +167,24 @@
         onSetMidi={midiBehavior
           ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
           : undefined}
+        triggerSource={$moduleTriggerSource[mod.id] ?? 'audio'}
+        onTriggerSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
+        density={params.density ?? 100}
+        onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
       />
-      {#if midiLayer && midiBehavior}
-        <MidiTimeline
-          color={mod.accentColor}
-          {midiLayer}
-          moduleId={mod.id}
-          behavior={midiBehavior}
-          source={$moduleTriggerSource[mod.id] ?? 'audio'}
-          onSourceChange={(source) => setModuleTriggerSource(mod.id, source)}
-          density={params.density ?? 100}
-          onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
-        />
+      {#if $midiUiOpen}
+        {#if midiLayer && midiBehavior}
+          <MidiTimeline
+            color={mod.accentColor}
+            {midiLayer}
+            moduleId={mod.id}
+            behavior={midiBehavior}
+            source={$moduleTriggerSource[mod.id] ?? 'audio'}
+            density={params.density ?? 100}
+          />
+        {:else}
+          <div class="module-midi-lane module-midi-lane-empty" aria-hidden="true"></div>
+        {/if}
       {/if}
     {/if}
     <div class="module-preview">

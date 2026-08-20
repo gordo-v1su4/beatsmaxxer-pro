@@ -29,7 +29,7 @@ export const COMPACT_CONTROLS: Record<string, CompactControlSpec> = {
     ],
     primary: 'dir',
     sliders: [
-      { param: 'amt', label: 'AMOUNT' },
+      { param: 'amt', label: 'AMT' },
       { param: 'snap', label: 'SNAP' }
     ]
   },
@@ -527,5 +527,5 @@ export function mobileSpecForModule(id: string): MobileModuleSpec | null {
   return compact ? fromCompact(compact) : null;
 }
 
-/** Params every module carries as plumbing rather than as an effect control. */
-export const PLUMBING_PARAMS = new Set(['mix', 'in_', 'out']);
+/** Mix is the only plumbing param. Dead IN/OUT envelopes were retired in G002. */
+export const PLUMBING_PARAMS = new Set(['mix']);

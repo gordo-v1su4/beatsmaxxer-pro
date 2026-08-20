@@ -1,6 +1,7 @@
 import { parseMidi } from '$lib/audio/MidiParser';
 import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { midiLayers, type MidiLayer } from '$lib/stores/rack';
+import { syncMidiUiFromLoadedParts } from '$lib/stores/rackUi';
 import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
 
 /**
@@ -26,5 +27,6 @@ export async function attachModuleMidiFile(moduleId: string, file: File): Promis
   const layer = await parseModuleMidiFile(file);
   midiLayers.update((layers) => ({ ...layers, [moduleId]: layer }));
   setModuleTriggerSource(moduleId, 'midi');
+  syncMidiUiFromLoadedParts();
   return layer;
 }

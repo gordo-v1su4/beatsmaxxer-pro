@@ -47,14 +47,6 @@
   {/if}
   <div class="mix-strip-knobs">
     <Knob
-      knobId="{moduleId}-in"
-      label="IN"
-      value={params.in_ ?? 80}
-      onChange={(v) => onUpdate('in_', v)}
-      size="xxs"
-      {color}
-    />
-    <Knob
       knobId="{moduleId}-mix"
       label="MIX"
       value={params.mix ?? 100}

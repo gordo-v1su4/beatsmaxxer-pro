@@ -2,6 +2,7 @@
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { sequencerArmed } from '$lib/stores/sequencer';
+  import { viewMode } from '$lib/stores/rackUi';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
     rackTop,
@@ -13,7 +14,6 @@
   import {
     firingTimes,
     moduleTriggerSource,
-    noteIsHighlighted,
     setModuleTriggerSource
   } from '$lib/stores/midiTrigger';
   import {
@@ -173,26 +173,11 @@
     $transportDisplay.duration > $transportDisplay.analysisDuration + 1
   );
   const channelTicks = $derived(
-    $midiChannels.map((channel) => {
-      const density = 1;
-      const times = channel.notes
-        ? firingTimes({ name: channel.name, notes: channel.notes, duration: channel.duration }, density)
-        : channel.onsets;
-      return {
-        channel,
-        density,
-        keptCount: times.length,
-        ticks: times.map((time) => ({
-          left: pct(stepAtSeconds(time)),
-          active: noteIsHighlighted(
-            time,
-            $transportDisplay.time,
-            channel.duration,
-            $transportDisplay.playing
-          )
-        }))
-      };
-    })
+    $midiChannels.map((channel) => ({
+      channel,
+      keptCount: channel.onsets.length,
+      ticks: bucketTicks(channel.onsets)
+    }))
   );
   const moduleMidiTicks = $derived(
     Object.entries($midiLayers).flatMap(([moduleId, layer]) => {
@@ -207,15 +192,8 @@
         module,
         density,
         source,
-        ticks: times.map((time) => ({
-          left: pct(stepAtSeconds(time)),
-          active: noteIsHighlighted(
-            time,
-            $transportDisplay.time,
-            layer.duration,
-            $transportDisplay.playing
-          )
-        }))
+        keptCount: times.length,
+        ticks: bucketTicks(times)
       }];
     })
   );
@@ -241,6 +219,12 @@
   <header class="arr-head">
     <span class="arr-title">ARRANGEMENT</span>
     <span class="arr-sub">{totalBars} BARS · {$cuts.length} CUTS</span>
+    <button
+      type="button"
+      class="arr-btn"
+      onclick={() => viewMode.set('perform')}
+      title="Back to the rack and the program monitor"
+    >PERFORM</button>
 
     <span class="arr-zoom" role="group" aria-label="Timeline zoom">
       <button type="button" class="arr-btn" onclick={() => (zoom = Math.max(1, zoom - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
@@ -419,7 +403,7 @@
       </div>
     </div>
 
-    {#each moduleMidiTicks as { moduleId, layer, module, density, source, ticks } (moduleId)}
+    {#each moduleMidiTicks as { moduleId, layer, module, density, source, keptCount, ticks } (moduleId)}
       <div
         class="arr-row arr-row-chan arr-row-module-midi"
         data-active={source === 'midi'}
@@ -433,19 +417,17 @@
           type="button"
           class="arr-gutter arr-gutter-chan arr-gutter-module-midi"
           onclick={() => setModuleTriggerSource(moduleId, source === 'midi' ? 'audio' : 'midi')}
-          title="{module?.name ?? moduleId}: {ticks.length}/{layer.notes.length} notes at {Math.round(density * 100)}% density — click to use {source === 'midi' ? 'audio' : 'MIDI'}"
+          title="{module?.name ?? moduleId}: {keptCount}/{layer.notes.length} notes at {Math.round(density * 100)}% density — click to use {source === 'midi' ? 'audio' : 'MIDI'}"
         >
           <span class="arr-chan-dot" style="background:{module?.accentColor ?? '#7aa2ff'}"></span>
           {module?.shortName ?? moduleId}
-          <small>{source === 'midi' ? 'MIDI' : 'AUD'} · {ticks.length}/{layer.notes.length}</small>
+          <small>{source === 'midi' ? 'MIDI' : 'AUD'} · {keptCount}/{layer.notes.length}</small>
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="{layer.name} — click to seek; Enter or Space seeks to the playhead">
-          {#each ticks as tick, i (i)}
+          {#each ticks as left, i (i)}
             <span
               class="arr-tick arr-tick-module"
-              class:is-hit={tick.active}
-              data-active={tick.active}
-              style="left:{tick.left}%;background:{module?.accentColor ?? '#7aa2ff'};color:{module?.accentColor ?? '#7aa2ff'}"
+              style="left:{left}%;background:{module?.accentColor ?? '#7aa2ff'}"
             ></span>
           {/each}
           <span class="arr-midi-count">{layer.name}</span>
@@ -453,26 +435,24 @@
       </div>
     {/each}
 
-    {#each channelTicks as { channel, ticks, density, keptCount } (channel.id)}
+    {#each channelTicks as { channel, ticks, keptCount } (channel.id)}
       <div class="arr-row arr-row-chan">
         <button
           type="button"
           class="arr-gutter arr-gutter-chan arr-gutter-midi"
           data-active={$activeChannelId === channel.id}
           onclick={() => activeChannelId.set(channel.id)}
-          title="{channel.name} — {keptCount}/{channel.noteCount} notes fire at {Math.round(density * 100)}% density"
+          title="{channel.name} — {keptCount}/{channel.noteCount} onsets"
         >
           <span class="arr-chan-dot" style="background:{channel.color}"></span>
           {channel.name}
           <small>{keptCount}/{channel.noteCount}</small>
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
-          {#each ticks as tick, i (i)}
+          {#each ticks as left, i (i)}
             <span
               class="arr-tick"
-              class:arr-tick-active={tick.active}
-              data-active={tick.active}
-              style="left:{tick.left}%;background:{channel.color}"
+              style="left:{left}%;background:{channel.color}"
             ></span>
           {/each}
           <button
@@ -596,24 +576,25 @@
   }
 
   /*
-   * Column flex, not a plain block: eighteen lanes at a fixed 17px filled half
-   * the screen and left the rest black, which is the same dead space the dock
-   * used to leave. The lanes take the height that exists and stop growing at a
-   * point where a taller lane would stop adding information — a cut is a mark,
-   * not a bar, so past ~34px it is just a longer mark.
+   * Column flex, not a plain block: lanes share the viewport height instead of
+   * collapsing to a thin strip with dead space underneath. flex-shrink: 0 keeps
+   * each row readable; overflow scrolls when MIDI lanes stack up.
    */
   .arr-scroll {
     position: relative;
     flex: 1;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow: auto;
     padding: 6px 10px 12px;
   }
 
   .arr-canvas {
     position: relative;
-    min-width: 100%;
+    flex: 1 0 auto;
     min-height: 100%;
+    min-width: 100%;
     display: flex;
     flex-direction: column;
   }
@@ -646,14 +627,14 @@
   /* Slot lanes carry more weight than channel lanes — they are the thing being
      authored; the channels are reference underneath them. */
   .arr-row-slot {
-    flex: 3 1 auto;
-    min-height: 17px;
-    max-height: 58px;
+    flex: 3 0 auto;
+    min-height: 28px;
+    max-height: 72px;
   }
   .arr-row-chan {
-    flex: 2 1 auto;
-    min-height: 15px;
-    max-height: 38px;
+    flex: 2 0 auto;
+    min-height: 22px;
+    max-height: 48px;
   }
   /* The seam between the two rack rows. */
   .arr-row-slot.is-rowbreak {
@@ -914,7 +895,6 @@
     background: #35e08a;
     box-shadow: 0 0 6px #35e08a;
     pointer-events: none;
-    transition: left 0.08s linear;
     z-index: 2;
   }
 

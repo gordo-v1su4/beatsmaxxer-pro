@@ -41,7 +41,7 @@
   import { supportsModuleMidi } from '$lib/modules/midiContracts';
   import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { fetchAndLoadQaMedia, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
@@ -146,13 +146,13 @@
     }
 
     if (params.has('qa')) {
-      const stepQa = bootStep('Loading test clips');
+      const stepQa = bootStep('Loading song rhythm and test clips');
       try {
         // The phone has one slot and a clip bank; the rack has ten slots and no
         // bank. Fanning the manifest across slots leaves the phone's grid empty,
         // so each shell seeds itself the way its own import path would.
         if (get(isMobileShell)) await seedMobileQaClips();
-        else await fetchAndLoadQaMedia();
+        else await fetchAndLoadQaMedia({ midi: shouldAutoloadQaMidi(window.location.search) });
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
         stepQa.note('failed');
@@ -161,6 +161,7 @@
     }
     if (params.get('qaAutoplay') === '1') {
       const stepPlay = bootStep('Starting playback');
+      await audioEngine.waitForRhythmReady();
       await audioEngine.start();
       stepPlay.done();
     }
@@ -332,7 +333,9 @@
   </div>
 
   {#if $viewMode === 'arrange'}
-    <ArrangeView />
+    <div class="arrange-workspace">
+      <ArrangeView />
+    </div>
   {/if}
 </div>
 {/if}

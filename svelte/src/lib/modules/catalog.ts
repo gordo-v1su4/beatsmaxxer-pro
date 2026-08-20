@@ -20,6 +20,11 @@ export interface ModuleDefinition extends ModuleConfig {
   midiControl?: 'trigger' | 'modulation';
 }
 
+/**
+ * Live identities: 19. The M1 brief said 18 because camcorder (shader mode 16)
+ * merged into VHS / CAM. There is no 20th module — extras live on the FX rail
+ * (`paletteSwapIdentities` in controlContracts) and swap into a default-rack slot.
+ */
 const defs: ModuleDefinition[] = [
   {
     id: 'transition',
@@ -33,7 +38,7 @@ const defs: ModuleDefinition[] = [
     midiControl: 'trigger',
     params: {
       type: 0, interval: 36, duration: 40, amount: 60, trig: 0,
-      mix: 100, in_: 80, out: 75
+      mix: 100
     }
   },
   {
@@ -48,7 +53,7 @@ const defs: ModuleDefinition[] = [
     params: {
       len: 36, spdMin: 25, spdMax: 75,
       bzY0: 100, bzX1: 35, bzY1: 0, bzX2: 65, bzY2: 0, bzY3: 100,
-      mix: 100, in_: 80, out: 70
+      mix: 100
     }
   },
   {
@@ -71,7 +76,7 @@ const defs: ModuleDefinition[] = [
       // filterSlider/scratch* keys are gone: nothing outside the UI and the
       // preset table ever read them.
       time: 60, feedback: 50, feel: 0, gate: 70, sens: 40,
-      mix: 55, in_: 80, out: 65
+      mix: 100
     }
   },
   {
@@ -89,7 +94,7 @@ const defs: ModuleDefinition[] = [
       // is a stutter, and made the sampler read as the same effect as TAPDELAY.
       // At 1 the module does its own job: jump to a slice, play it, move on.
       mode: 0, size: 50, slices: 8, loops: 1, accent: 0, chance: 60, rate: 43,
-      mix: 60, in_: 80, out: 60
+      mix: 60
     }
   },
   {
@@ -175,7 +180,7 @@ const defs: ModuleDefinition[] = [
     row: 'top',
     category: 'film',
     shaderKey: 'leak',
-    description: 'Iris ghosts, anamorphic, spikes, rings, edge fog, veil, prism',
+    description: '7 leak geometries · MIDI trigger',
     midiControl: 'trigger',
     // `type` selects the leak geometry, not a tint. It is read as a discrete
     // index by the shader, so the preset values below sit exactly on 0..6.
@@ -186,7 +191,7 @@ const defs: ModuleDefinition[] = [
       // blades 0-100 maps to a 5..9 blade iris; squeeze 0 is a round aperture
       // and 100 is a hard anamorphic stretch. Both are lens properties.
       blades: 25, squeeze: 0,
-      freq: 45, hold: 30, audio: 40, mix: 55, in_: 80, out: 70
+      freq: 45, hold: 30, audio: 40, mix: 55
     }
   },
   {
@@ -267,7 +272,7 @@ const defs: ModuleDefinition[] = [
     shaderKey: 'streak',
     description: 'Directional velocity streaks',
     midiControl: 'modulation',
-    params: { length: 50, angle: 35, decay: 45, mix: 60, in_: 80, out: 70 }
+    params: { length: 50, angle: 35, decay: 45, mix: 60 }
   },
   {
     id: 'mirror',

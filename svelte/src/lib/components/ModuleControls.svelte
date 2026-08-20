@@ -83,7 +83,9 @@
     for (const sh of RAMP_SHAPES) {
       const d =
         Math.abs((params.bzY0 ?? 100) - sh.pts.y0) +
+        Math.abs((params.bzX1 ?? 35) - sh.pts.x1) +
         Math.abs((params.bzY1 ?? 0) - sh.pts.y1) +
+        Math.abs((params.bzX2 ?? 65) - sh.pts.x2) +
         Math.abs((params.bzY2 ?? 0) - sh.pts.y2) +
         Math.abs((params.bzY3 ?? 100) - sh.pts.y3);
       if (d < bestD) {
@@ -91,7 +93,7 @@
         best = sh.key;
       }
     }
-    return bestD < 40 ? best : '';
+    return bestD < 48 ? best : '';
   });
 
   function applyRamp(c: (typeof RAMP_SHAPES)[number]['pts']) {
@@ -180,26 +182,28 @@
 {:else if moduleId === 'speedramp'}
   <div style="display:flex;flex-direction:column;flex:1">
     <Section label="SHAPE" {color}>
-      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:3px">
+      <div class="ramp-grid">
         {#each RAMP_SHAPES as sh (sh.key)}
           {@const W = 44}
-          {@const H = 30}
-          {@const P = 4}
+          {@const H = 22}
+          {@const P = 3}
           {@const X = (v: number) => P + (v / 100) * (W - P * 2)}
           {@const Y = (v: number) => P + ((100 - v) / 100) * (H - P * 2)}
           <button
             type="button"
+            class="ramp-btn"
             title={sh.key}
+            aria-pressed={activeRampKey === sh.key}
             onclick={() => applyRamp(sh.pts)}
-            style="width:100%;height:26px;padding:0;cursor:pointer;background:{activeRampKey === sh.key
-              ? `linear-gradient(180deg,${color}22,${color}0e)`
-              : 'linear-gradient(180deg,#181a1c,#141618)'};border:1px solid {activeRampKey === sh.key
+            style="border-color:{activeRampKey === sh.key
               ? color + '77'
-              : '#1e2226'};border-radius:2px;box-shadow:{activeRampKey === sh.key
+              : '#1e2226'};background:{activeRampKey === sh.key
+              ? `linear-gradient(180deg,${color}22,${color}0e)`
+              : 'linear-gradient(180deg,#181a1c,#141618)'};box-shadow:{activeRampKey === sh.key
               ? `inset 0 1px 3px rgba(0,0,0,0.5), 0 0 6px ${color}22`
               : 'inset 0 1px 2px rgba(0,0,0,0.4)'}"
           >
-            <svg viewBox="0 0 {W} {H}" width="100%" height="100%" preserveAspectRatio="none" style="display:block">
+            <svg viewBox="0 0 {W} {H}" width="100%" height="18" preserveAspectRatio="none" style="display:block">
               <line x1="0" y1={Y(50)} x2={W} y2={Y(50)} stroke="#2a2e34" stroke-width="0.6" stroke-dasharray="2 2" />
               <path
                 d="M {X(0)} {Y(sh.pts.y0)} C {X(sh.pts.x1)} {Y(sh.pts.y1)}, {X(sh.pts.x2)} {Y(sh.pts.y2)}, {X(100)} {Y(sh.pts.y3)}"
@@ -209,12 +213,13 @@
                 stroke-linecap="round"
               />
             </svg>
+            <span class="ramp-btn-label" style="color:{activeRampKey === sh.key ? color : '#3a4050'}">{sh.key}</span>
           </button>
         {/each}
       </div>
     </Section>
     <Section label="CYCLE" {color}>
-      <div style="display:flex;gap:2px;flex-wrap:wrap">
+      <div style="display:flex;gap:2px;flex-wrap:nowrap;min-width:0">
         {#each [{ l: '1BT', val: 7 }, { l: '2BT', val: 21 }, { l: '1BR', val: 36 }, { l: '2BR', val: 50 }, { l: '4BR', val: 64 }, { l: '6BR', val: 79 }, { l: '8BR', val: 93 }] as v, i (v.l)}
           <RackBtn
             label={v.l}
@@ -230,12 +235,15 @@
       <div style="display:flex;align-items:center;justify-content:space-around;gap:6px">
         <div style="display:flex;align-items:center;gap:5px">
           <Knob knobId="{moduleId}-spdMin" label="MIN" value={params.spdMin ?? 25} onChange={(v) => onUpdate('spdMin', v)} size="xs" {color} />
-          <MiniDisplay value={`${achievedRange.min.toFixed(2)}x`} width={42} />
+          <MiniDisplay value={`${rampSpeed(params.spdMin ?? 25)}x`} width={42} />
         </div>
         <div style="display:flex;align-items:center;gap:5px">
           <Knob knobId="{moduleId}-spdMax" label="MAX" value={params.spdMax ?? 75} onChange={(v) => onUpdate('spdMax', v)} size="xs" {color} />
-          <MiniDisplay value={`${achievedRange.max.toFixed(2)}x`} width={42} />
+          <MiniDisplay value={`${rampSpeed(params.spdMax ?? 75)}x`} width={42} />
         </div>
+      </div>
+      <div class="ramp-reach" title="What this curve actually hits — a cubic bezier does not pass through its control points">
+        HITS {achievedRange.min.toFixed(2)}× – {achievedRange.max.toFixed(2)}×
       </div>
     </Section>
   </div>
@@ -407,7 +415,7 @@
          discrete index in the shader, so it matches on the value itself
          rather than on the whole set. -->
     <Section label="TYPE" {color}>
-      <div style="display:flex;gap:2px;flex-wrap:wrap">
+      <div style="display:flex;gap:2px;flex-wrap:nowrap">
         {#each [
           // Spread across the whole temperature range, not clustered in the
           // warm half. leakRamp sharpens WARMTH around its midpoint, so a value
@@ -436,7 +444,7 @@
             label={p.l}
             {active}
             {color}
-            width={40}
+            width={34}
             onclick={() => Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v))}
           />
         {/each}
@@ -619,5 +627,48 @@
     font-weight: 500;
     letter-spacing: 0.06em;
     line-height: 1;
+  }
+
+  .ramp-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .ramp-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    min-width: 0;
+    padding: 2px 2px 3px;
+    border-style: solid;
+    border-width: 1px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 0.08s, border-color 0.08s;
+  }
+  .ramp-btn:hover {
+    background: #1e2022 !important;
+  }
+  .ramp-btn-label {
+    font-family: var(--font-ui);
+    font-size: 5.5px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ramp-reach {
+    margin-top: 3px;
+    font-family: var(--font-ui);
+    font-size: 6px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: #3a4050;
+    text-align: center;
+    white-space: nowrap;
   }
 </style>

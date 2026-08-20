@@ -7,7 +7,7 @@ await withChrome('verify-ui', 9500, async (s) => {
   await navigateAndReady(
     s,
     QA_URL,
-    '!document.body.innerText.includes("Probing WebGPU") && document.body.innerText.includes("BEATSURFING")',
+    '!document.body.innerText.includes("Probing WebGPU") && document.body.innerText.includes("BEATSMAXXER PRO")',
     45_000
   );
 
@@ -20,7 +20,7 @@ await withChrome('verify-ui', 9500, async (s) => {
   }>(
     s,
     `(() => {
-      const labels = ["BEATSURFING", "PGM SOURCE", "TRANSITION"];
+      const labels = ["BEATSMAXXER PRO", "PGM SOURCE", "TRANSITION"];
       const text = document.body.innerText;
       const pgm = document.querySelector("[data-bmx-pgm-rail]");
       const rack = document.querySelector(".bottom-rack-row");

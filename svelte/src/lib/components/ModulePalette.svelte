@@ -124,6 +124,7 @@
       <button
         type="button"
         class="palette-card"
+        data-module-id={mod.id}
         aria-label="Grab {mod.name} to move to a rack slot"
         title={mod.description ? `${mod.name} — ${mod.description}` : mod.name}
         style="border-left:2px solid {mod.accentColor};opacity:{inRack.has(mod.id) ? 0.45 : 1};background:{inRack.has(mod.id) ? '#131416' : '#101214'}"
@@ -137,13 +138,13 @@
       >
         <span style="font-size:10px;font-weight:500;color:{mod.accentColor}">{mod.shortName}</span>
         {#if mod.description}
-          <span style="font-size:7px;line-height:1.2;color:#4a5260">{mod.description}</span>
+          <span class="palette-desc">{mod.description}</span>
         {/if}
       </button>
     {/each}
   {/each}
   <p class="palette-hint">
-    Drag onto a rack slot to swap. MIN ALL collapses the rack and opens the arrangement.
+    Drag onto a rack slot to swap. ARRANGE on the top bar opens the song sequencer.
   </p>
 </div>
 
@@ -277,6 +278,14 @@
     background: #16181b;
   }
 
+  .palette-desc {
+    font-size: 7px;
+    line-height: 1.2;
+    color: #4a5260;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .palette-card {
     display: flex;
     flex-direction: column;

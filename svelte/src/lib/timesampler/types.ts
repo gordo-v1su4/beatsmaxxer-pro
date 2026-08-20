@@ -72,6 +72,9 @@ export interface TimeSamplerOutput {
   jumpGeneration: number;
   jumpReason: TimeSamplerJumpReason;
   accent: TimeSamplerAccentEvent | null;
+  mode: TimeSamplerMode;
+  loopIteration: number;
+  loopCount: number;
 }
 
 export interface TimeSamplerState {

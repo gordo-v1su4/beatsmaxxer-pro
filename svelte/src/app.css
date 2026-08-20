@@ -81,6 +81,9 @@
 	--rack-preview-height: 153px;
 	--rack-module-min: var(--rack-module-width);
 	--mix-strip-height: 46px;
+	--module-patch-row-height: 22px;
+	--module-patch-midi-chrome: 44px;
+	--module-midi-lane-height: 46px;
 	/* 160 is the narrowest width at which every module description in the library
 	   sits on one line. Below it MIRROR, LENS and TAPE wrap, so three cards stand
 	   9px taller than the other sixteen and the column loses its rhythm. */
@@ -164,9 +167,26 @@ input[type='range']::-moz-range-thumb {
 .app-viewport {
 	width: 100vw;
 	height: 100vh;
+	height: 100dvh;
 	overflow: auto;
 	background: var(--rack-bg);
 	-webkit-overflow-scrolling: touch;
+	scrollbar-width: thin;
+	scrollbar-color: #2a3038 var(--rack-bg);
+}
+
+.app-viewport::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.app-viewport::-webkit-scrollbar-thumb {
+	background: #2a3038;
+	border-radius: 4px;
+}
+
+.app-viewport::-webkit-scrollbar-track {
+	background: var(--rack-bg);
 }
 
 .app-shell {
@@ -188,6 +208,22 @@ input[type='range']::-moz-range-thumb {
 	background: var(--rack-bg);
 }
 
+/* ARRANGE replaces the rack — give the sequencer the full viewport below the bar. */
+.arrange-workspace {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.app-shell:has(.arrange-workspace) {
+	height: 100vh;
+	height: 100dvh;
+	min-height: 0;
+	overflow: hidden;
+}
+
 /* On the desktop rack, the module rows define the performance surface's
    bottom edge. Do not stretch the workspace to fill a taller viewport: that
    makes the side rails continue below the last module row. */
@@ -203,6 +239,10 @@ input[type='range']::-moz-range-thumb {
 		height: auto;
 		min-height: 0;
 		overflow: hidden;
+		/* Stay visible when the rack is wider than the window and scrolls sideways. */
+		position: sticky;
+		left: 0;
+		z-index: 4;
 	}
 }
 
@@ -295,12 +335,22 @@ input[type='range']::-moz-range-thumb {
 	display: flex;
 	gap: 3px;
 	align-items: center;
-	/* The strip is a fixed 46px and clips, so a module that outgrows one row of
-	   presets would silently lose the overflow. Wrapping keeps them reachable;
-	   the 160px cap is the measured gap between the row's left edge and the
-	   knob cluster, so a full row never pushes into the knobs. */
-	flex-wrap: wrap;
+	/* One row inside the fixed strip — wrap was clipping rows 2+ (MIRROR's twelve
+	   presets). Horizontal scroll keeps every preset reachable without breaking
+	   the shared mix-strip baseline across modules. */
+	flex-wrap: nowrap;
+	overflow-x: auto;
 	max-width: 160px;
+	scrollbar-width: thin;
+}
+
+.mix-strip-presets-row::-webkit-scrollbar {
+	height: 3px;
+}
+
+.mix-strip-presets-row::-webkit-scrollbar-thumb {
+	background: #2a3038;
+	border-radius: 2px;
 }
 
 .mix-strip-knobs {
@@ -329,6 +379,36 @@ input[type='range']::-moz-range-thumb {
 	align-self: center;
 	flex-shrink: 0;
 	background: #000;
+}
+
+/* Clip/MIDI patch rows + optional piano roll share one block so previews line
+   up across every slot in a rack row. */
+.module-media-stack {
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	background: #000;
+	border-bottom: 2px solid #0d0e0f;
+}
+
+/* When MIDI UI is open every slot reserves the same chrome — including modules
+   that cannot accept a MIDI part — so previews stay on one horizontal line. */
+.module-media-stack.midi-ui-open > .module-midi-lane,
+.module-media-stack.midi-ui-open > .module-midi-lane-empty {
+	height: var(--module-midi-lane-height);
+	min-height: var(--module-midi-lane-height);
+	max-height: var(--module-midi-lane-height);
+	overflow: hidden;
+	flex-shrink: 0;
+}
+
+.module-midi-lane-empty {
+	background: #08090a;
+	border-bottom: 1px solid #0d0e0f;
+}
+
+.rack-module.is-collapsed .module-media-stack {
+	border-bottom: none;
 }
 
 .rack-module.is-collapsed .module-preview {
@@ -430,15 +510,15 @@ input[type='range']::-moz-range-thumb {
 /* Keep the complete performance surface inside a maximized laptop-height
    desktop window. Width/height ratios stay intact; only chrome whitespace and
    the program monitor's display footprint tighten. */
-@media (min-width: 961px) and (max-height: 900px) {
+@media (min-width: 961px) and (max-height: 980px) {
 	.main-viewer {
-		height: clamp(210px, 24vh, 260px) !important;
+		height: clamp(200px, 22vh, 320px) !important;
 	}
 	.top-rack-row {
-		min-height: 270px !important;
+		min-height: 260px !important;
 	}
 	.bottom-rack-row {
-		min-height: 180px !important;
+		min-height: 170px !important;
 	}
 }
 .rack-add-card {

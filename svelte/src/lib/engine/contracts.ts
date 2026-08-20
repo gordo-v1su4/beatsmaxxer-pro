@@ -91,6 +91,11 @@ export interface LiveScheduleFrame {
     targetPlaybackRate: number;
     jumpGeneration: number;
     activeSlice: number;
+    effectiveSliceCount: number;
+    jumpReason: 'initial' | 'scheduled' | 'forced' | 'discontinuity' | 'source-remap' | null;
+    mode: 'FWD' | 'REV' | 'PONG' | 'RND';
+    loopIteration: number;
+    loopCount: number;
   };
   accent: {
     mode: number;
@@ -160,7 +165,7 @@ export interface IWebGpuPresenter {
   isReady(): boolean;
 }
 
-export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card';
+export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card' | 'unsupported';
 
 export interface WebGpuRenderDiagnostics {
   bindingId: string;

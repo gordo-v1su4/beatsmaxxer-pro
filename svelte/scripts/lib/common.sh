@@ -89,9 +89,13 @@ cleanup_production_preview() {
 }
 
 require_chrome() {
+  if [[ -n "${CHROME_PATH:-}" && -x "${CHROME_PATH}" ]]; then return 0; fi
   if command -v google-chrome >/dev/null 2>&1; then return 0; fi
+  if command -v google-chrome-stable >/dev/null 2>&1; then return 0; fi
   if command -v chromium >/dev/null 2>&1; then return 0; fi
   if command -v chromium-browser >/dev/null 2>&1; then return 0; fi
+  if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then return 0; fi
+  if [[ -x "/Applications/Chromium.app/Contents/MacOS/Chromium" ]]; then return 0; fi
   echo "Chrome/Chromium not found. Install Google Chrome or set CHROME_PATH." >&2
   echo "  macOS: bundled Chrome at /Applications/Google Chrome.app" >&2
   echo "  Linux: sudo apt install chromium-browser" >&2
