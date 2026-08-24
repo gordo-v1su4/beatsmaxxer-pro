@@ -4,8 +4,9 @@ Windows-first desktop shell for Beatsmaxxer Pro. It is the same Svelte app the
 web target ships, running in a Tauri window instead of a browser tab: identical
 controls, rack model, and HTMLVideo → WebGPU playback path.
 
-The shell adds two things the browser cannot do — reading `.env` from disk and
-calling the Essentia analysis host directly from Rust, bypassing CORS.
+The shell adds things the browser cannot do — reading `.env` from disk,
+calling the Essentia analysis host directly from Rust (bypassing CORS), and
+checking, downloading, and installing signed desktop updates.
 
 ## Fresh machine setup (Windows)
 
@@ -22,6 +23,34 @@ bun run dev:desktop
 
 Release build: `bun run build:desktop` — output lands in
 `desktop/src-tauri/target/release/bundle/`.
+
+## Windows updates and releases
+
+Version 0.2.0 is the first updater-enabled build. A 0.1.0 installation must be
+upgraded once with the published `x64-setup.exe`; later releases can be applied
+from the update control in the desktop top bar. The control checks on startup,
+shows the available version, reports download progress, installs it, and
+relaunches the app. It is not rendered in the browser build.
+
+Updater artifacts are signed independently of Windows Authenticode signing.
+The updater signature protects release integrity, but an unsigned installer may
+still show a Windows SmartScreen reputation warning.
+
+Release automation lives in
+[`release.yml`](../.github/workflows/release.yml). A `v*` tag builds the Windows
+NSIS and MSI installers, their updater signatures, and `latest.json` as a draft
+GitHub release. Inspect the assets before publishing the draft: the updater
+endpoint only follows the latest **published** release.
+
+The signing material is intentionally outside this repository:
+
+- private key: `%USERPROFILE%\.tauri\beatsmaxxer-pro.key`
+- password backup: `%USERPROFILE%\.tauri\beatsmaxxer-pro.key.password`
+- Actions secrets: `TAURI_SIGNING_PRIVATE_KEY` and
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+
+Back up both local files securely. Losing either prevents future versions from
+updating installations that trust the current public key.
 
 ## Prerequisites
 

@@ -59,6 +59,8 @@
 	},
 	"dependencies": {
 		"@lucide/svelte": "^1.27.0",
-		"@soundtouchjs/audio-worklet": "^2.1.0"
+		"@soundtouchjs/audio-worklet": "^2.1.0",
+		"@tauri-apps/plugin-process": "^2",
+		"@tauri-apps/plugin-updater": "^2"
 	}
 }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Beatsmaxxer Pro",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "dev.beatsmaxxer.pro.desktop",
   "build": {
     "frontendDist": "../../svelte/build",
@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -36,5 +37,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4Mzg0OUMyMjMyMjI5QzUKUldURktTSWp3a2s0K0ZORGdDS3VjNnZ6TzZaZGpvUGRrSjdNVHEwMWJSY0NPR2VwckFuaW0raUMK",
+      "endpoints": [
+        "https://github.com/gordo-v1su4/beatsmaxxer-pro/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -1,7 +1,7 @@
 name: Release
 
 # Push a version tag to cut a release:
-#   git tag v0.1.0 && git push origin v0.1.0
+#   git tag v0.2.0 && git push origin v0.2.0
 # The job builds the installers and attaches them to a DRAFT GitHub release, so
 # nothing is public until you review the artifacts and press Publish.
 #
@@ -57,15 +57,24 @@ jobs:
       # The frontend is NOT built here: tauri.conf.json's beforeBuildCommand
       # runs `build:desktop-frontend` itself, so CI and local builds go through
       # exactly one path. Building it here too would just double the work.
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
           tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Beatsmaxxer Pro ${{ github.ref_name }}
-          releaseBody: Download the installer for your platform below.
+          releaseBody: |
+            Download the Windows installer below.
+
+            This desktop build is updater-enabled. Production WebGPU proof remains tracked separately in svelte/docs/SHIP_PLAN.md.
           releaseDraft: true
           prerelease: false
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+          uploadWorkflowArtifacts: true

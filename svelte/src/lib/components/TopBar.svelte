@@ -7,6 +7,7 @@
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import TopMenu from '$lib/components/rack/TopMenu.svelte';
+  import DesktopUpdater from '$lib/components/DesktopUpdater.svelte';
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
@@ -538,6 +539,8 @@
         {$fxHold ? 'HELD' : 'HOLD'}
       </button>
     </TopMenu>
+
+    <DesktopUpdater />
 
     <div class="divider"></div>
 
