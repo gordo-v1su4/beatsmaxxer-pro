@@ -9,8 +9,8 @@ describe('desktop and mobile access-gate route contract', () => {
     );
 
     expect(pageSource.match(/^\s*<AccessGate \/>$/gm)).toHaveLength(1);
-    expect(pageSource).toContain('<AccessGate />\n<CapabilityGate');
-    expect(pageSource).not.toContain('{#if !$isMobileShell}\n  <AccessGate />');
+    expect(pageSource).toMatch(/<AccessGate \/>\r?\n<CapabilityGate/);
+    expect(pageSource).not.toMatch(/{#if !\$isMobileShell}\r?\n  <AccessGate \/>/);
   });
 
   test('retains touch sizing for both physical and forced mobile shells', async () => {

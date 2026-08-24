@@ -20,7 +20,7 @@ function assertVirtualPath(path: string, extension: string) {
   return path;
 }
 
-if (manifest.bundle !== 'redline-media' || manifest.sourceRoot !== 'docs/test_media/redline-media') {
+if (manifest.bundle !== 'redline-media' || manifest.sourceRoot !== 'test_media') {
   throw new Error('QA manifest is not the authoritative repo-local Redline media bundle');
 }
 if (manifest.clips.length !== 13 || new Set(manifest.clips).size !== 13) {

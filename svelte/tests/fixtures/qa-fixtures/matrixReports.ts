@@ -416,7 +416,12 @@ export function buildEightVideoMatrixReport(): EightVideoProofReport {
       baseline: { decoderCount: 8, documentVideoCount: 8, timelineGeneration: 4, slots: [] },
       steps: []
     },
-    legacyDriftReport: { maxDriftSeconds: 0.03, sampleCount: 31 },
+    legacyDriftReport: {
+      thresholdSeconds: 0.4,
+      releaseCriterion: false,
+      maxObservedSeconds: 0.03,
+      exceeded: false
+    },
     errors: { console: [], network: [], gpu: [], uncaught: [] }
   };
 }

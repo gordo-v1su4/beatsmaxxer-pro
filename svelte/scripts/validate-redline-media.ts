@@ -39,7 +39,7 @@ export async function validateRedlineManifest(
 ) {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as RedlineQaManifest;
   assert(manifest.bundle === 'redline-media', 'manifest.bundle must be redline-media');
-  assert(manifest.sourceRoot === 'docs/test_media/redline-media', 'manifest.sourceRoot is not authoritative');
+  assert(manifest.sourceRoot === 'test_media', 'manifest.sourceRoot is not authoritative');
   assertUnique('clips', manifest.clips, EXPECTED_COUNTS.clips);
   assertUnique('audios', manifest.audios, EXPECTED_COUNTS.audios);
   assertUnique('stems', manifest.stems, EXPECTED_COUNTS.stems);

@@ -189,7 +189,7 @@ describe('visual proof release gate', () => {
     expect(FIXED_VISUAL_PROOF_FIXTURE.clips).toHaveLength(13);
     expect(FIXED_VISUAL_PROOF_FIXTURE.midi).toHaveLength(7);
     expect([...REDLINE_VIDEO_SOURCE_PATHS, REDLINE_AUDIO_SOURCE_PATH, ...REDLINE_MIDI_SOURCE_PATHS]
-      .every((path) => path.startsWith('../docs/test_media/redline-media/'))).toBe(true);
+      .every((path) => path.startsWith('../test_media/'))).toBe(true);
     expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('.artifacts/real-media');
     expect(JSON.stringify(FIXED_VISUAL_PROOF_FIXTURE)).not.toContain('qa.mid');
   });

@@ -3,7 +3,7 @@ import { open, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const MEDIA_ROOT = path.resolve('tests', 'fixtures', 'media');
-const REDLINE_ROOT = path.resolve('..', 'docs', 'test_media', 'redline-media');
+const REDLINE_ROOT = path.resolve('..', 'test_media');
 
 interface QaMediaCandidate {
   root: string;

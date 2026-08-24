@@ -15,7 +15,7 @@ import { moduleTriggerSource, noteIsHighlighted } from '../../../src/lib/stores/
 import { get } from 'svelte/store';
 
 const manifest = manifestJson as QaManifest;
-const sourceRoot = path.resolve('..', 'docs', 'test_media', 'redline-media');
+const sourceRoot = path.resolve('..', 'test_media');
 
 describe('desktop QA MIDI assignments', () => {
   beforeEach(() => {

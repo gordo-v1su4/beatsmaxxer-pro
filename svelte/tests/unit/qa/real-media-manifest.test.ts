@@ -72,7 +72,7 @@ describe('authoritative Redline QA media', () => {
   });
 
   test('serves single byte ranges with truthful media headers', async () => {
-    const pathName = 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
+    const pathName = 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
     const response = await GET({
       params: { path: pathName },
       request: new Request('http://qa/qa-media/clip.mp4', { headers: { Range: 'bytes=10-10' } })
@@ -86,7 +86,7 @@ describe('authoritative Redline QA media', () => {
 
   test('HEAD exposes metadata without a response body', async () => {
     const response = await HEAD({
-      params: { path: 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4' }
+      params: { path: 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4' }
     } as never);
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('video/mp4');
@@ -96,7 +96,7 @@ describe('authoritative Redline QA media', () => {
   });
 
   test('rejects malformed, multi, and unsatisfiable ranges with 416', async () => {
-    const pathName = 'redline/videos/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
+    const pathName = 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
     for (const range of ['bytes=999999999999-', 'bytes=0-1,4-5', 'items=0-1']) {
       const response = await GET({
         params: { path: pathName },
