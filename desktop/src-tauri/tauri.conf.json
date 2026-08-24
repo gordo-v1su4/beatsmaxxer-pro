@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Beatsmaxxer Pro",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "dev.beatsmaxxer.pro.desktop",
   "build": {
     "frontendDist": "../../svelte/build",
@@ -13,10 +13,10 @@
     "windows": [
       {
         "title": "Beatsmaxxer Pro",
-        "width": 1786,
-        "height": 1243,
-        "minWidth": 1280,
-        "minHeight": 800,
+        "width": 1440,
+        "height": 810,
+        "minWidth": 960,
+        "minHeight": 600,
         "center": true,
         "maximized": false,
         "resizable": true
