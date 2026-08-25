@@ -81,8 +81,10 @@
     inset: 0;
     display: flex;
     flex-direction: column;
-    background: var(--rack-bg);
-    color: #e5e7eb;
+    background:
+      radial-gradient(120% 42% at 50% 0%, rgba(45, 212, 191, 0.045), transparent 58%),
+      var(--m-bg, var(--rack-bg));
+    color: var(--m-ink, #e5e7eb);
     font-family: var(--font-ui);
     overflow: hidden;
     /* The one place the app opts out of the browser's touch defaults wholesale.
@@ -111,7 +113,7 @@
       Padding on the body rather than a margin on the transport, so the transport
       does not have to know a sheet exists.
     */
-    padding-bottom: var(--m-sheet-peek, 76px);
+    padding-bottom: var(--m-sheet-peek, 64px);
   }
 
   /* Landscape floats the transport instead of stacking it, so nothing is
@@ -133,7 +135,7 @@
     bottom: 0;
     z-index: 40;
     padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: linear-gradient(180deg, rgba(10, 11, 12, 0), rgba(10, 11, 12, 0.86) 45%);
+    background: linear-gradient(180deg, rgba(10, 11, 12, 0), rgba(10, 11, 12, 0.78) 52%);
     pointer-events: none;
   }
   .mobile-perform-transport :global(> *) {

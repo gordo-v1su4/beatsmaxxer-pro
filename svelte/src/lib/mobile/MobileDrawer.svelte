@@ -162,7 +162,7 @@
 
   let panel = $state<HTMLElement>();
   let dragging = $state(false);
-  let dragX = $state(0);
+  let dragY = $state(0);
   let pointerId: number | null = null;
   let startX = 0;
   let startY = 0;
@@ -185,7 +185,7 @@
     suppressClick = false;
     if (immediate) {
       dragging = true;
-      dragX = 0;
+      dragY = 0;
       capture(e.pointerId);
     }
   }
@@ -197,9 +197,8 @@
 
     if (!dragging) {
       if (Math.abs(dx) < INTENT_PX && Math.abs(dy) < INTENT_PX) return;
-      // Vertical or rightward: the list owns it, and we stay out of the way for
-      // the rest of this gesture.
-      if (dx > 0 || Math.abs(dy) >= Math.abs(dx)) {
+      // Upward or sideways: the list owns it.
+      if (dy < 0 || Math.abs(dx) >= Math.abs(dy)) {
         pointerId = null;
         return;
       }
@@ -208,7 +207,7 @@
     }
 
     suppressClick = true;
-    dragX = Math.min(0, dx);
+    dragY = Math.max(0, dy);
   }
 
   function endDrag(e: PointerEvent) {
@@ -217,12 +216,12 @@
     pointerId = null;
     if (!dragging) return;
 
-    const width = panel?.offsetWidth ?? 1;
-    const dismissed = -dragX > width * DISMISS_FRACTION;
+    const height = panel?.offsetHeight ?? 1;
+    const dismissed = dragY > height * DISMISS_FRACTION;
     // Drop the inline transform in the same tick so the class transition — not
     // the drag — carries the panel the rest of the way, open or shut.
     dragging = false;
-    dragX = 0;
+    dragY = 0;
     if (dismissed) close();
   }
 
@@ -230,7 +229,7 @@
     if (pointerId !== e.pointerId) return;
     pointerId = null;
     dragging = false;
-    dragX = 0;
+    dragY = 0;
   }
 </script>
 
@@ -260,7 +259,7 @@
   aria-label="Clip and effect browsers"
   aria-hidden={!$drawerOpen}
   inert={!$drawerOpen}
-  style={dragging ? `transform: translateX(${dragX}px);` : undefined}
+  style={dragging ? `transform: translateY(${dragY}px);` : undefined}
   onpointerdown={(e) => beginDrag(e)}
   onpointermove={moveDrag}
   onpointerup={endDrag}
@@ -273,6 +272,16 @@
     e.preventDefault();
   }}
 >
+  <div
+    class="drawer-rail"
+    aria-hidden="true"
+    onpointerdown={(e) => {
+      e.stopPropagation();
+      beginDrag(e, true);
+    }}
+  >
+    <span class="drawer-grip"></span>
+  </div>
   <header class="drawer-head">
     <div class="drawer-tabs" role="tablist" aria-label="Browser">
       {#each TABS as tab (tab.key)}
@@ -365,19 +374,6 @@
       </div>
     {/if}
   </div>
-
-  <!-- Pure gesture surface: it has no other job, so it can afford to take the
-       whole gesture instead of waiting to see which way the finger goes. -->
-  <div
-    class="drawer-rail"
-    aria-hidden="true"
-    onpointerdown={(e) => {
-      e.stopPropagation();
-      beginDrag(e, true);
-    }}
-  >
-    <span class="drawer-grip"></span>
-  </div>
 </aside>
 
 <style>
@@ -388,11 +384,11 @@
     margin: 0;
     padding: 0;
     border: none;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--m-scrim, rgba(4, 6, 7, 0.1));
     opacity: 0;
     pointer-events: none;
     cursor: pointer;
-    transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1);
+    transition: opacity var(--m-dur, 220ms) var(--m-ease, cubic-bezier(0.2, 0, 0, 1));
     -webkit-tap-highlight-color: transparent;
   }
   .drawer-scrim.is-open {
@@ -402,34 +398,36 @@
 
   .drawer {
     position: fixed;
-    top: 0;
-    bottom: 0;
     left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
     z-index: 61;
     box-sizing: border-box;
-    /* 85% leaves a strip of the picture showing, which is the point — you are
-       choosing against the shot, not away from it. */
-    width: 85vw;
-    max-width: 85vw;
+    width: 100%;
+    max-width: 100%;
+    height: min(72dvh, 680px);
     display: flex;
     flex-direction: column;
-    background: rgba(12, 12, 12, 0.6);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-right: 1px solid rgba(255, 255, 255, 0.15);
-    transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+    background: var(--m-glass, rgba(8, 10, 12, 0.22));
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
+    transform: translateY(110%);
+    transition: transform var(--m-dur, 220ms) var(--m-ease, cubic-bezier(0.2, 0, 0, 1));
     font-family: var(--font-ui);
-    color: #dfe6ee;
-    padding-left: env(safe-area-inset-left, 0px);
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    /* The body scrolls; we take the horizontal pans only. */
+    color: var(--m-ink, #e5e7eb);
+    padding-left: var(--m-safe-left, 0px);
+    padding-right: var(--m-safe-right, 0px);
+    padding-top: 0;
+    padding-bottom: var(--m-safe-bottom, 0px);
     touch-action: pan-y;
     overscroll-behavior: contain;
   }
   .drawer.is-open {
-    transform: translateX(0);
+    transform: translateY(0);
   }
   /* A finger already owns the panel — a 300ms ease would lag behind it. */
   .drawer.is-dragging {
@@ -441,7 +439,7 @@
     display: flex;
     align-items: stretch;
     gap: 6px;
-    padding: 0 6px 0 10px;
+    padding: 8px 8px 0 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     touch-action: none;
   }
@@ -458,17 +456,17 @@
     position: relative;
     flex: 1 1 0;
     min-width: 0;
-    height: 36px;
+    height: var(--m-tap, 44px);
     padding: 0 8px 2px;
     border: none;
     border-bottom: 2px solid transparent;
     border-radius: 0;
     background: transparent;
-    color: #424c58;
+    color: var(--m-ink-faint, #555e6a);
     font-family: var(--font-ui);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.18em;
+    font-size: var(--m-text-xs, 11px);
+    font-weight: 600;
+    letter-spacing: 0.16em;
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -477,20 +475,20 @@
       border-color 0.15s;
   }
   .drawer-tab.is-on {
-    border-bottom-color: rgba(90, 159, 212, 0.65);
-    color: #c8d2dc;
+    border-bottom-color: var(--m-accent, #2dd4bf);
+    color: var(--m-ink, #e5e7eb);
   }
 
   .drawer-close {
     flex: 0 0 auto;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: var(--m-tap, 44px);
+    height: var(--m-tap, 44px);
     padding: 0;
     border: none;
     background: transparent;
-    color: #424c58;
+    color: var(--m-ink-faint, #555e6a);
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
@@ -508,22 +506,20 @@
   }
 
   .drawer-rail {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: 18px;
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    height: 18px;
     display: grid;
     place-items: center;
-    /* This surface exists to be dragged. */
     touch-action: none;
     cursor: grab;
   }
   .drawer-grip {
-    width: 3px;
-    height: 44px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.18);
+    width: 40px;
+    height: 4px;
+    border-radius: var(--m-radius-pill, 999px);
+    background: rgba(255, 255, 255, 0.28);
   }
 
   /* ---- FX tab ---- */
@@ -531,8 +527,8 @@
   .fx {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 10px 24px;
+    gap: 8px;
+    padding: 14px 12px 28px;
   }
 
   .fx-group {
@@ -543,7 +539,7 @@
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.2em;
-    color: #3f4653;
+    color: var(--m-ink-faint, #555e6a);
     white-space: nowrap;
   }
   .fx-group:first-child {
@@ -561,7 +557,7 @@
     font-size: 11px;
     line-height: 1.4;
     letter-spacing: 0.04em;
-    color: #3f4653;
+    color: var(--m-ink-faint, #555e6a);
   }
 
   /* ---- SONG tab ---- */
@@ -569,8 +565,8 @@
   .song {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 12px 10px 24px;
+    gap: 14px;
+    padding: 16px 12px 28px;
   }
 
   .song-load {
@@ -579,11 +575,11 @@
     justify-content: center;
     gap: 8px;
     width: 100%;
-    min-height: 52px;
-    border: 1px solid #23282e;
-    border-radius: 3px;
-    background: #131416;
-    color: #c8d2dc;
+    min-height: var(--m-tap-lg, 48px);
+    border: 1px solid color-mix(in srgb, var(--m-accent, #2dd4bf) 28%, var(--m-line-soft, #1e2226));
+    border-radius: var(--m-radius, 12px);
+    background: color-mix(in srgb, var(--m-accent, #2dd4bf) 8%, var(--m-raised, #17191c));
+    color: var(--m-accent-soft, #99f6e4);
     font-family: var(--font-ui);
     font-size: 13px;
     font-weight: 500;
@@ -605,16 +601,16 @@
     flex-direction: column;
     gap: 6px;
     padding: 12px 10px;
-    border: 1px solid #0d0e0f;
-    border-radius: 3px;
-    background: #0a0b0c;
+    border: 1px solid var(--m-line-soft, #1e2226);
+    border-radius: var(--m-radius, 12px);
+    background: rgba(8, 10, 12, 0.28);
   }
 
   .song-label {
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.2em;
-    color: #3f4653;
+    color: var(--m-ink-faint, #555e6a);
   }
 
   .song-name {
@@ -663,7 +659,7 @@
     align-self: flex-start;
     padding: 3px 6px;
     border: 1px solid;
-    border-radius: 2px;
+    border-radius: var(--m-radius-xs, 6px);
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.12em;
@@ -683,6 +679,6 @@
     font-size: 11px;
     line-height: 1.45;
     letter-spacing: 0.04em;
-    color: #3f4653;
+    color: var(--m-ink-faint, #555e6a);
   }
 </style>

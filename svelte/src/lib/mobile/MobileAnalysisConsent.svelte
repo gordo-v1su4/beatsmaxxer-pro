@@ -84,7 +84,7 @@
        buttons untappable while a song sat waiting on an answer. */
     z-index: 4000;
     background: rgba(0, 0, 0, 0.72);
-    backdrop-filter: blur(6px);
+    backdrop-filter: var(--m-blur, blur(4px));
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -96,9 +96,9 @@
     width: 100%;
     max-width: 520px;
     background: #101215;
-    border-top: 1px solid #1e2228;
-    border-radius: 14px 14px 0 0;
-    padding: 18px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--m-line-soft, #1e2226);
+    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
+    padding: 20px 18px calc(18px + var(--m-safe-bottom, 0px));
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -157,7 +157,7 @@
   .consent-btn {
     flex: 1;
     min-height: 48px;
-    border-radius: 8px;
+    border-radius: var(--m-radius, 12px);
     border: 1px solid #2a3038;
     background: #171a1f;
     color: #c8cdd4;

@@ -56,32 +56,28 @@
     z-index: 40;
     flex: 0 0 auto;
     width: 100%;
-    /* mobile.css resolves the four insets into tokens; read those rather than
-       spelling env() out again per component. */
     padding-top: var(--m-safe-top, 0px);
-    background: linear-gradient(180deg, #16181a 0%, #101112 100%);
-    border-bottom: 1px solid var(--m-line, #0d0e0f);
+    background: var(--m-glass, rgba(8, 10, 12, 0.22));
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    border-bottom: 1px solid color-mix(in srgb, var(--m-line-soft, #1e2226) 70%, transparent);
     font-family: var(--font-ui);
-    /* The bar is chrome; taps belong to its own controls. */
     touch-action: manipulation;
   }
 
-  /* Perform posture: out of flow entirely, so the stage gets the whole viewport
-     and this rides over the top edge of the picture. */
   .mtb.floating {
     position: fixed;
     inset: 0 0 auto 0;
-    background: linear-gradient(180deg, rgba(10, 11, 12, 0.82), rgba(10, 11, 12, 0));
+    background: linear-gradient(180deg, rgba(10, 11, 12, 0.72), rgba(10, 11, 12, 0));
     border-bottom: none;
-    backdrop-filter: blur(8px) saturate(0.8);
-    -webkit-backdrop-filter: blur(8px) saturate(0.8);
-    /* Landscape notches live on the short edges. */
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
     padding-left: var(--m-safe-left, 0px);
     padding-right: var(--m-safe-right, 0px);
     pointer-events: none;
   }
   .mtb.floating .mtb-row {
-    height: 40px;
+    height: 44px;
   }
   .mtb.floating .mtb-menu,
   .mtb.floating .mtb-bpm {
@@ -92,9 +88,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    height: 44px;
-    padding: 0 6px;
+    gap: var(--m-gap, 8px);
+    height: var(--m-topbar-h, 48px);
+    padding: 0 8px;
   }
 
   .mtb-menu {
@@ -102,49 +98,54 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    /* 44px is the floor for a thumb; the desktop's 14px icon buttons are not
-       reachable targets on glass. */
     width: var(--m-tap, 44px);
     height: var(--m-tap, 44px);
     margin: 0;
     padding: 0;
-    border: none;
-    background: transparent;
-    color: #8a939f;
+    border: 1px solid;
+    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
+    border-radius: var(--m-radius, 2px);
+    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
+    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
+    color: var(--m-ink-dim, #8a93a0);
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
   .mtb-menu:active {
-    color: #dfe6ee;
+    color: var(--m-ink, #e5e7eb);
+    background: color-mix(in srgb, var(--m-raised, #17191c) 92%, white 4%);
+  }
+  .mtb.floating .mtb-menu {
+    background: rgba(12, 14, 16, 0.45);
   }
 
   .mtb-brand {
     display: flex;
     align-items: baseline;
-    gap: 4px;
+    gap: 6px;
     min-width: 0;
     overflow: hidden;
   }
 
   .mtb-word {
     font-family: var(--font-brand);
-    font-size: 13px;
+    font-size: var(--m-text-md, 13px);
     font-weight: 600;
-    letter-spacing: 0.16em;
-    color: #c8d2dc;
+    letter-spacing: 0.18em;
+    color: var(--m-ink, #e5e7eb);
     white-space: nowrap;
   }
 
   .mtb-pro {
     font-family: var(--font-brand);
-    font-size: 8px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 600;
-    letter-spacing: 0.18em;
-    color: #5a6472;
-    border: 1px solid #23282e;
-    border-radius: 2px;
-    padding: 1px 3px;
+    letter-spacing: 0.16em;
+    color: var(--m-accent, #2dd4bf);
+    border: 1px solid color-mix(in srgb, var(--m-accent, #2dd4bf) 28%, transparent);
+    border-radius: var(--m-radius-xs, 6px);
+    padding: 2px 5px;
     line-height: 1;
   }
 
@@ -153,16 +154,18 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 5px;
-    /* Matches the hamburger's footprint so the wordmark stays optically centred. */
-    min-width: 44px;
-    height: 44px;
-    padding-right: 6px;
+    gap: 6px;
+    min-width: var(--m-tap, 44px);
+    height: 32px;
+    padding: 0 8px 0 6px;
+    border-radius: var(--m-radius-pill, 999px);
+    background: var(--m-sunken, #070809);
+    box-shadow: inset 0 0 0 1px var(--m-line-soft, #1e2226);
   }
 
   .mtb-pip {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: #1e2226;
     transition:
@@ -170,32 +173,31 @@
       box-shadow 40ms linear;
   }
   .mtb-pip.on {
-    background: #f59e0b;
-    box-shadow: 0 0 6px #f59e0b;
+    background: var(--m-tempo, #e2a030);
+    box-shadow: 0 0 8px var(--m-tempo, #e2a030);
   }
 
   .mtb-bpm-value {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: var(--m-text-md, 13px);
     font-variant-numeric: tabular-nums;
-    color: #e2a030;
+    color: var(--m-tempo, #e2a030);
     line-height: 1;
   }
 
   .mtb-bpm-unit {
-    font-size: 8px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 500;
-    letter-spacing: 0.16em;
-    color: #3c434c;
+    letter-spacing: 0.12em;
+    color: var(--m-ink-faint, #555e6a);
   }
 
-  /* A hairline of text, not a card that shoves the picture down. */
   .mtb-toast {
-    padding: 4px 12px;
-    background: #0a0b0c;
-    border-top: 1px solid #0d0e0f;
-    color: #8ec5ff;
-    font-size: 11px;
+    padding: 6px 14px 8px;
+    background: transparent;
+    border-top: none;
+    color: var(--m-accent-soft, #99f6e4);
+    font-size: var(--m-text-xs, 11px);
     font-weight: 500;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -204,9 +206,9 @@
     text-overflow: ellipsis;
   }
   .mtb.floating .mtb-toast {
-    background: rgba(10, 11, 12, 0.78);
-    border-top: none;
-    margin: 0 6px;
-    border-radius: 2px;
+    background: rgba(10, 11, 12, 0.72);
+    margin: 0 10px 8px;
+    padding: 6px 12px;
+    border-radius: var(--m-radius-sm, 8px);
   }
 </style>

@@ -299,10 +299,10 @@
   .group {
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 7px 10px 9px;
+    gap: 10px;
+    padding: 12px 4px 14px;
     background: transparent;
-    border-top: 1px solid #1a1d20;
+    border-top: 1px solid color-mix(in srgb, var(--m-line-soft, #1e2226) 80%, transparent);
     border-bottom: none;
   }
   .group:last-of-type {
@@ -342,8 +342,8 @@
 
   .pads {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    gap: 8px;
   }
 
   /* Flat VST-style pads — no 3D shadows or asymmetric borders. */
@@ -354,11 +354,13 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    min-height: 34px;
-    padding: 5px 4px;
-    border: 1px solid #1e2226;
-    border-radius: 2px;
-    background: #181b1f;
+    min-height: var(--m-tap, 44px);
+    padding: 8px 6px;
+    border: 1px solid;
+    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
+    border-radius: var(--m-radius, 2px);
+    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
+    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
     box-shadow: none;
     color: #4d5561;
     cursor: pointer;
@@ -370,22 +372,23 @@
       color 90ms ease;
   }
 
-  /* Expanded hit area. */
+  /* Expanded hit area kept only as a hair — the pad itself is now 44px. */
   .pad::after {
     content: '';
     position: absolute;
-    inset: -6px -2px;
+    inset: -2px;
   }
 
   .pad.on {
     border-color: color-mix(in srgb, var(--accent) 50%, #1e2226);
-    background: color-mix(in srgb, var(--accent) 12%, #181b1f);
+    background: color-mix(in srgb, var(--accent) 14%, #181b1f);
     box-shadow: none;
     color: var(--accent);
   }
 
   .pad:active {
     background: #14171a;
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
   }
 
   .pad.fire {
@@ -481,7 +484,7 @@
   .track:focus-visible {
     outline: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--m-radius-sm, 8px);
   }
 
   .groove {
@@ -523,7 +526,7 @@
     height: 18px;
     margin-top: -9px;
     transform: translateX(-50%);
-    border-radius: 1px;
+    border-radius: var(--m-radius-xs, 6px);
     border: 1px solid #333840;
     background: linear-gradient(180deg, #2a2e34, #181a1e);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
@@ -547,11 +550,12 @@
   }
 
   .mix .track {
-    --thumb: 7px;
-    height: 34px;
+    --thumb: 8px;
+    height: 40px;
   }
   .mix .thumb {
     height: 22px;
     margin-top: -11px;
+    border-radius: var(--m-radius-sm, 8px);
   }
 </style>

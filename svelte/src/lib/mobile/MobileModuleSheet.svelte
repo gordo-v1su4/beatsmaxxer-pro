@@ -32,8 +32,9 @@
   import { swipe, committed, type SwipeAxis, type SwipeEnd } from './swipe';
   import MobileModuleControls from './MobileModuleControls.svelte';
 
-  /** Height of the resting grabber rail, and the sheet's peek offset in portrait. */
-  const PEEK_PX = 76;
+  /** Height of the resting grabber rail, and the sheet's peek offset in portrait.
+   *  Keep in lockstep with --m-sheet-peek in mobile.css. */
+  const PEEK_PX = 64;
 
   const landscape = $derived($isPerformPosture);
   const mod = $derived($activeModule);
@@ -296,17 +297,15 @@
     z-index: 40;
     display: flex;
     flex-direction: column;
-    /* Frosted glass: dark enough to read controls, transparent enough to see the frame. */
-    background: rgba(8, 9, 10, 0.52);
-    backdrop-filter: blur(24px) saturate(1.4);
-    -webkit-backdrop-filter: blur(24px) saturate(1.4);
-    color: #cfd4db;
+    background: var(--m-glass, rgba(8, 10, 12, 0.22));
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    color: var(--m-ink, #e5e7eb);
     will-change: transform;
-    transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+    transition: transform var(--m-dur, 220ms) var(--m-ease, cubic-bezier(0.2, 0, 0, 1));
     overscroll-behavior: contain;
   }
 
-  /* While a finger is on it, the sheet is an object being held — no easing. */
   .sheet.dragging {
     transition: none;
   }
@@ -317,27 +316,23 @@
     bottom: 0;
     height: 62vh;
     height: 62dvh;
-    border-top: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 18px 18px 0 0;
-    box-shadow: 0 -18px 48px rgba(0, 0, 0, 0.55);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
+    box-shadow: var(--m-sheet-shadow, 0 -24px 56px rgba(0, 0, 0, 0.55));
+    padding-bottom: var(--m-safe-bottom, 0px);
   }
 
-  /* Landscape is the performance posture: a bottom sheet here would cover the
-     picture, so the same object becomes a side panel. */
   .sheet.landscape {
     top: 0;
     bottom: 0;
     right: 0;
-    width: 46vw;
-    border-left: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 18px 0 0 18px;
+    width: min(46vw, 380px);
+    border-left: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: var(--m-radius-sheet, 20px) 0 0 var(--m-radius-sheet, 20px);
     box-shadow: -18px 0 48px rgba(0, 0, 0, 0.55);
-    padding-right: env(safe-area-inset-right, 0px);
+    padding-right: var(--m-safe-right, 0px);
   }
 
-  /* The 2px accent edge — which module you are inside, readable at a glance
-     from across a room. */
   .sheet::before {
     content: '';
     position: absolute;
@@ -350,24 +345,24 @@
     right: 0;
     top: 0;
     height: 2px;
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
   }
   .sheet.landscape::before {
     top: 0;
     bottom: 0;
     left: 0;
     width: 2px;
-    border-radius: 18px 0 0 18px;
+    border-radius: var(--m-radius-sheet, 20px) 0 0 var(--m-radius-sheet, 20px);
   }
 
   .grab {
     position: relative;
     flex: 0 0 auto;
-    height: 76px;
+    height: var(--m-sheet-peek, 64px);
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px 12px 0;
+    gap: 2px;
+    padding: 10px 12px 0;
     cursor: grab;
     user-select: none;
     -webkit-user-select: none;
@@ -375,20 +370,21 @@
   }
 
   .grab-pill {
-    width: 44px;
+    width: 40px;
     height: 4px;
     flex: 0 0 auto;
     align-self: center;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.22);
+    border-radius: var(--m-radius, 2px);
+    background: rgba(255, 255, 255, 0.28);
   }
 
   .head {
     flex: 1;
     min-height: 44px;
+    min-width: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
   }
 
   .head-gap {
@@ -397,65 +393,67 @@
 
   .head-name {
     font-family: var(--font-ui);
-    font-size: 13px;
-    font-weight: 500;
-    letter-spacing: 0.18em;
+    font-size: var(--m-text-md, 13px);
+    font-weight: 600;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--accent);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
   }
 
   .head-mix {
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 500;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     font-variant-numeric: tabular-nums;
-    color: #7b838f;
+    color: var(--m-ink-dim, #8a93a0);
+    white-space: nowrap;
   }
 
   .icon {
     flex: 0 0 auto;
-    width: 44px;
-    height: 44px;
+    width: var(--m-tap, 44px);
+    height: var(--m-tap, 44px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     border: none;
     background: transparent;
-    color: #8d95a2;
+    color: var(--m-ink-dim, #8a93a0);
     cursor: pointer;
-    border-radius: 8px;
+    border-radius: var(--m-radius, 2px);
     -webkit-tap-highlight-color: transparent;
   }
 
   .icon:active {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .byp {
     flex: 0 0 auto;
-    min-width: 66px;
-    height: 26px;
-    padding: 0 10px;
-    border: 1px solid #2a2e33;
-    border-radius: 2px;
+    min-width: 72px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--m-line-lit, #2a3138);
+    border-radius: var(--m-radius, 2px);
     background: transparent;
-    color: #7b838f;
+    color: var(--m-ink-dim, #8a93a0);
     font-family: var(--font-ui);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.16em;
+    font-size: var(--m-text-xs, 11px);
+    font-weight: 600;
+    letter-spacing: 0.14em;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
 
   .byp.on {
     border-color: rgba(239, 68, 68, 0.5);
-    background: rgba(239, 68, 68, 0.1);
+    background: rgba(239, 68, 68, 0.12);
     color: #ef6b6b;
   }
 
@@ -465,7 +463,7 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 0 16px 24px;
+    padding: 0 14px 24px;
   }
 
   .pos {
@@ -474,11 +472,9 @@
     z-index: 2;
     display: flex;
     align-items: center;
-    /* The position rail is chrome, not content — it was spending 18px of
-       vertical on a row of dots and a fraction. */
     gap: 8px;
-    padding: 3px 0 7px;
-    background: linear-gradient(180deg, rgba(12, 12, 12, 0.85), rgba(12, 12, 12, 0));
+    padding: 4px 0 10px;
+    background: linear-gradient(180deg, rgba(12, 14, 16, 0.28), rgba(12, 14, 16, 0));
   }
 
   .dots {
@@ -493,9 +489,9 @@
     flex: 1 1 0;
     height: 3px;
     min-width: 3px;
-    border-radius: 2px;
+    border-radius: var(--m-radius, 2px);
     background: rgba(255, 255, 255, 0.14);
-    transition: background 0.2s;
+    transition: background var(--m-dur, 220ms) var(--m-ease, ease);
   }
 
   .dot.on {
@@ -506,17 +502,15 @@
   .pos-count {
     flex: 0 0 auto;
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     letter-spacing: 0.1em;
     font-variant-numeric: tabular-nums;
-    color: #6b7280;
+    color: var(--m-ink-faint, #555e6a);
   }
 
   .pager {
-    transition: transform 0.18s ease-out;
+    transition: transform var(--m-dur-fast, 120ms) var(--m-ease, ease-out);
   }
-
-  /* --- the stand-in rail ------------------------------------------------- */
 
   .rail {
     position: fixed;
@@ -527,10 +521,10 @@
     gap: 10px;
     margin: 0;
     border: none;
-    background: rgba(12, 12, 12, 0.72);
-    backdrop-filter: blur(20px) saturate(1.2);
-    -webkit-backdrop-filter: blur(20px) saturate(1.2);
-    color: #8d95a2;
+    background: var(--m-glass-heavy, rgba(8, 10, 12, 0.32));
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    color: var(--m-ink-dim, #8a93a0);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
     box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.5);
@@ -541,9 +535,9 @@
     right: 0;
     bottom: 0;
     height: 56px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: var(--m-safe-bottom, 0px);
     border-top: 2px solid var(--accent);
-    border-radius: 14px 14px 0 0;
+    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
   }
 
   .rail:not(.landscape).thin {
@@ -558,7 +552,7 @@
     flex-direction: column;
     padding: 18px 0;
     border-left: 2px solid var(--accent);
-    border-radius: 14px 0 0 14px;
+    border-radius: var(--m-radius-sheet, 20px) 0 0 var(--m-radius-sheet, 20px);
     box-shadow: -8px 0 28px rgba(0, 0, 0, 0.5);
   }
 
@@ -568,9 +562,9 @@
 
   .rail-name {
     font-family: var(--font-ui);
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.18em;
+    font-size: var(--m-text-sm, 12px);
+    font-weight: 600;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--accent);
     white-space: nowrap;
@@ -578,14 +572,13 @@
 
   .rail-mix {
     font-family: var(--font-ui);
-    font-size: 11px;
-    letter-spacing: 0.14em;
+    font-size: var(--m-text-xs, 11px);
+    letter-spacing: 0.12em;
     font-variant-numeric: tabular-nums;
-    color: #6b7280;
+    color: var(--m-ink-faint, #555e6a);
     white-space: nowrap;
   }
 
-  /* Sideways, so the name still reads on a 56px-wide strip. */
   .rail.landscape .rail-name,
   .rail.landscape .rail-mix {
     writing-mode: vertical-rl;
@@ -593,21 +586,22 @@
   }
 
   .rail-pill {
-    width: 44px;
+    width: 40px;
     height: 4px;
-    border-radius: 2px;
+    border-radius: var(--m-radius, 2px);
     background: var(--accent);
-    opacity: 0.7;
+    opacity: 0.75;
   }
 
   .rail.landscape .rail-pill {
     width: 4px;
-    height: 44px;
+    height: 40px;
   }
 
   @media (prefers-reduced-motion: reduce) {
     .sheet,
-    .pager {
+    .pager,
+    .dot {
       transition: none;
     }
   }

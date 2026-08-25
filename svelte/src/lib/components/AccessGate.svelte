@@ -129,6 +129,11 @@
     --g-btn-track: 0.18em;
   }
 
+  :global(.mobile-shell) .gate-panel,
+  :global(.mobile-shell-active) .gate-panel {
+    border-radius: 2px;
+  }
+
   /* Phone lying down, or a short window: ~390px of height, most of which the
      software keyboard takes. Top-align and tighten so the submit button is
      never the thing that falls off the bottom. */

@@ -221,12 +221,11 @@
        with room to spare; the card is the touch target, nothing inside it is. */
     min-height: 64px;
     margin: 0;
-    padding: 8px 10px 8px 8px;
+    padding: 8px 10px 8px 10px;
     text-align: left;
-    border: 1px solid #0d0e0f;
-    border-left: 2px solid var(--accent);
-    border-radius: 3px;
-    background: #131416;
+    border: 1px solid var(--m-line-soft, #1e2226);
+    border-radius: var(--m-radius, 12px);
+    background: rgba(18, 20, 22, 0.28);
     color: #dfe6ee;
     font-family: var(--font-ui);
     cursor: pointer;
@@ -242,11 +241,8 @@
     background: #191b1e;
   }
   .mpt.is-active {
-    background:
-      linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
-      #16181b;
-    border-color: color-mix(in srgb, var(--accent) 45%, #0d0e0f);
-    border-left-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, rgba(16, 18, 20, 0.4));
+    border-color: color-mix(in srgb, var(--accent) 32%, var(--m-line-soft, #1e2226));
   }
 
   .mpt-glyph {
@@ -255,8 +251,8 @@
     place-items: center;
     width: 48px;
     height: 40px;
-    border-radius: 2px;
-    background: #0a0b0c;
+    border-radius: var(--m-radius-sm, 8px);
+    background: var(--m-sunken, #070809);
     box-shadow: inset 0 0 0 1px #0d0e0f;
   }
   .mpt.is-active .mpt-glyph {
@@ -304,7 +300,7 @@
   .mpt-short {
     flex: 0 0 auto;
     padding: 1px 4px;
-    border-radius: 2px;
+    border-radius: var(--m-radius-xs, 6px);
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     color: var(--accent);
     font-size: 11px;

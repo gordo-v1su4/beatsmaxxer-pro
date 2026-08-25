@@ -1,6 +1,10 @@
 /*
  * Phone shell stylesheet.
  *
+ * Hallmark · genre: atmospheric · designed-as-app · surface: mobile-shell
+ * tone: cinematic instrument · audience: VJs on a phone
+ * use: play one clip through one effect while watching it land
+ *
  * Imported once from app.css. Everything here is either (a) a token the phone
  * components read, or (b) a targeted neutralisation of a desktop rule that only
  * applies while the phone shell is actually mounted.
@@ -22,6 +26,7 @@
 	/* Apple's HIG minimum and the floor for every phone hit target here. */
 	--m-tap: 44px;
 	--m-tap-sm: 36px; /* only for controls inside a >=44px padded row */
+	--m-tap-lg: 48px; /* primary actions: play, load, empty-state CTA */
 
 	/* Type ramp. It bottoms out at 11px: the rack's 6.5–9px labels are read at
 	   arm's length on a desktop monitor, not at 30cm on a phone. */
@@ -35,10 +40,11 @@
 	   the layout never comes back. */
 	--m-text-input: 16px;
 
-	--m-track: 0.16em; /* label letterspacing */
-	--m-track-wide: 0.26em;
+	--m-track: 0.14em; /* label letterspacing */
+	--m-track-wide: 0.22em;
 
-	/* Surfaces — same near-black family as the rack. */
+	/* Surfaces — same near-black family as the rack, with a glass layer the
+	   overlays sit on so chrome recedes behind the picture. */
 	--m-bg: #0a0b0c;
 	--m-sheet: #131416;
 	--m-raised: #17191c;
@@ -46,29 +52,51 @@
 	--m-line: #0d0e0f;
 	--m-line-soft: #1e2226;
 	--m-line-lit: #2a3138;
+	/* Tint, not frost. A 16–24px blur is the usual “glass” look and it also
+	   fights the WebGPU canvas; 4px is just enough to separate chrome from the
+	   picture without milking the frame. */
+	--m-glass: rgba(8, 10, 12, 0.22);
+	--m-glass-heavy: rgba(8, 10, 12, 0.32);
+	--m-blur: blur(4px);
 
 	--m-ink: #e5e7eb;
-	--m-ink-dim: #7a8090;
-	--m-ink-faint: #4a515c;
+	--m-ink-dim: #8a93a0;
+	--m-ink-faint: #555e6a;
 
 	--m-accent: #2dd4bf;
 	--m-accent-soft: #99f6e4;
 	--m-accent-deep: #0d2b28;
 	--m-warn: #fca5a5;
+	--m-live: #22c55e;
+	--m-tempo: #e2a030;
 
-	/* Height of the phone top bar, so overlays can clear it without measuring.
-	   MobileTopBar owns the real number; this is the shared default it renders
-	   at today (45px) and the one place to change if that bar is re-sized. */
-	--m-topbar-h: 45px;
+	/* Height of the phone top bar row (not including the notch). Overlays add
+	   --m-safe-top themselves. */
+	--m-topbar-h: 48px;
 
+	/* Resting grabber of the module sheet. MobileModuleSheet.PEEK_PX must match. */
+	--m-sheet-peek: 64px;
+
+	/* Slight bevel, not iOS rounding. Sheets, keys and chips all share this. */
 	--m-radius: 2px;
-	--m-gap: 10px;
-	--m-pad: 14px;
+	--m-radius-sm: 2px;
+	--m-radius-xs: 2px;
+	--m-radius-pill: 2px;
+	--m-radius-sheet: 2px;
+	--m-bevel-face: linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%);
+	--m-bevel-edge: #2a2e34 #16181a #121416 #16181a;
+	--m-bevel-in: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48);
+	--m-gap: 8px;
+	--m-pad: 12px;
+
+	--m-ease: cubic-bezier(0.2, 0, 0, 1);
+	--m-dur: 220ms;
+	--m-dur-fast: 120ms;
 
 	/* Overlay scrim + sheet shadow, shared so every phone surface stacks the
 	   same way over the picture. */
-	--m-scrim: rgba(4, 6, 7, 0.72);
-	--m-sheet-shadow: 0 -18px 48px rgba(0, 0, 0, 0.72);
+	--m-scrim: rgba(4, 6, 7, 0.1);
+	--m-sheet-shadow: 0 -24px 56px rgba(0, 0, 0, 0.55);
 	--m-card-shadow: 0 18px 46px rgba(0, 0, 0, 0.78);
 
 	/* Safe areas, resolved once. `env()` inside a calc chain in twenty places is
@@ -158,7 +186,7 @@ input[type='range'],
    single wide child cannot re-introduce the horizontal scroll. */
 :is(.mobile-shell, .mobile-shell-active) {
 	max-width: 100%;
-	overflow-x: hidden;
+	overflow-x: clip;
 }
 
 /* ───────────────────────── chrome feel ───────────────────────── */
@@ -196,6 +224,12 @@ input[type='range'],
 	text-transform: uppercase;
 	color: var(--m-ink-dim);
 	line-height: 1;
+}
+
+/* Instant, not animated — a focus ring that fades in is a missed ring. */
+:is(.mobile-shell, .mobile-shell-active) :is(button, [role='button'], [role='slider'], [role='tab'], [role='radio']):focus-visible {
+	outline: 2px solid var(--m-accent);
+	outline-offset: 2px;
 }
 
 .m-safe-top {

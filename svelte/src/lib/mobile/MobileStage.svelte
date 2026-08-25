@@ -57,58 +57,28 @@
       </div>
     {/if}
 
-    {#if perform}
-      <!-- Landscape puts the readouts on the glass; there is no room beside it. -->
-      <div class="overlay">
+    <!-- Readouts live on the glass so the picture keeps every spare pixel.
+         Portrait used to spend a whole column under the frame on the same facts. -->
+    <div class="overlay">
+      <span class="dot" style="background:{accent}"></span>
+      <div class="overlay-copy">
         <span class="module" style="color:{accent}">{mod?.name ?? ''}</span>
         <span class="meta">MIX {mix}% · {clipName}</span>
       </div>
-    {/if}
-  </div>
-
-  {#if !perform}
-    <div class="readouts">
-      <div class="readout-line">
-        <span class="dot" style="background:{accent}"></span>
-        <span class="module" style="color:{accent}">{mod?.name ?? ''}</span>
-        <span class="mix">MIX {mix}%</span>
-      </div>
-      <div class="kicker">SOURCE</div>
-      <div class="clip" title={clipName}>{clipName}</div>
     </div>
-  {/if}
+  </div>
 </section>
 
 <style>
-  /*
-    The stage takes the slack instead of leaving it at the bottom.
-
-    It used to be `flex: 0 0 auto` while the transport carried `margin-top:auto`,
-    so every spare pixel in the column collected into one dead black band between
-    the readouts and the transport — around 370px of nothing on a 812px phone,
-    which read as the layout having failed rather than as breathing room.
-
-    The picture is 16:9 and the phone is 9:19.5, so some letterbox is unavoidable
-    without cropping the frame the effects are acting on. Centring it makes that
-    letterbox symmetric and deliberate rather than a void hanging under the text.
-  */
   .stage {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    /*
-      Top-aligned, not centred. A 16:9 picture in a 9:19.5 viewport leaves
-      ~500px spare whatever you do; centring split that into two dead bands, one
-      above the picture and one below it, so the whole screen read as loose.
-      Pinned to the top the spare collects in a single pool at the bottom —
-      which is exactly where the sheet rises from and where the drawer opens, so
-      it stops being dead space and starts being the gap those things live in.
-    */
     justify-content: flex-start;
-    gap: 7px;
-    padding: 8px 10px;
-    background: var(--m-bg, #0a0b0c);
+    gap: 0;
+    padding: 10px 12px 8px;
+    background: transparent;
   }
 
   .picture {
@@ -116,19 +86,15 @@
     width: 100%;
     aspect-ratio: 16 / 9;
     background: #000;
-    border: 1px solid color-mix(in srgb, var(--accent) 28%, #0d0e0f);
-    border-radius: 2px;
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, #121416);
+    border-radius: var(--m-radius, 12px);
     overflow: hidden;
-    /* The picture is not a scroll surface and not a drag surface — swallowing
-       the double-tap delay here keeps taps on the overlay controls crisp. */
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, 0.4),
+      0 18px 40px rgba(0, 0, 0, 0.45);
     touch-action: manipulation;
   }
 
-  /* Perform posture: the picture is the viewport. `cover` rather than `contain`
-     because a phone held sideways is ~19.5:9 and letterboxing a 16:9 render into
-     it would hand back the width that rotating just bought. */
-  /* Fixed rather than absolute so the stage does not depend on the shell having
-     established a containing block — the shell is another agent's file. */
   .stage.perform {
     position: fixed;
     inset: 0;
@@ -143,6 +109,7 @@
     aspect-ratio: auto;
     border: none;
     border-radius: 0;
+    box-shadow: none;
   }
   .stage.perform :global(.stage-canvas) {
     object-fit: cover;
@@ -156,8 +123,6 @@
     display: block;
   }
 
-  /* Unobtrusive on purpose: a spinner over the picture during a clip swap is a
-     bigger interruption than the swap. */
   .loading {
     position: absolute;
     left: 0;
@@ -165,10 +130,11 @@
     bottom: 0;
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 5px 8px;
-    background: linear-gradient(0deg, rgba(10, 11, 12, 0.8), transparent);
+    gap: 8px;
+    padding: 10px 12px 12px;
+    background: linear-gradient(0deg, rgba(10, 11, 12, 0.78), transparent);
     pointer-events: none;
+    z-index: 2;
   }
   .loading-bar {
     width: 22px;
@@ -179,10 +145,10 @@
   }
   .loading-text {
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 500;
     letter-spacing: 0.16em;
-    color: #7b8592;
+    color: var(--m-ink-dim, #8a93a0);
   }
   @keyframes stage-pulse {
     0%,
@@ -203,42 +169,51 @@
 
   .overlay {
     position: absolute;
-    /* Shell tokens rather than raw env(): mobile.css resolves the insets once so
-       they cannot be forgotten in one place out of twenty. */
-    left: calc(12px + var(--m-safe-left, 0px));
-    bottom: calc(10px + var(--m-safe-bottom, 0px));
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
     display: flex;
-    flex-direction: column;
-    gap: 2px;
-    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.95);
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--m-radius, 2px);
+    background: rgba(8, 9, 10, 0.28);
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
     pointer-events: none;
+    z-index: 1;
   }
 
-  .readouts {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-  }
-
-  .readout-line {
-    display: flex;
-    align-items: baseline;
-    gap: 7px;
-    min-width: 0;
+  .stage.perform .overlay {
+    left: calc(12px + var(--m-safe-left, 0px));
+    right: calc(12px + var(--m-safe-right, 0px));
+    bottom: calc(10px + var(--m-safe-bottom, 0px));
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding: 0;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
   }
 
   .dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 1px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
     flex: 0 0 auto;
-    align-self: center;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+
+  .overlay-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
   }
 
   .module {
     font-family: var(--font-ui);
-    font-size: 17px;
+    font-size: var(--m-text-lg, 15px);
     font-weight: 600;
     letter-spacing: 0.08em;
     line-height: 1.1;
@@ -248,33 +223,13 @@
     min-width: 0;
   }
 
-  .mix,
   .meta {
     font-family: var(--font-ui);
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 500;
-    letter-spacing: 0.14em;
-    color: #7b8592;
+    letter-spacing: 0.12em;
+    color: var(--m-ink-dim, #8a93a0);
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .mix {
-    margin-left: auto;
-  }
-
-  .kicker {
-    font-family: var(--font-ui);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.22em;
-    color: #3a4048;
-  }
-
-  .clip {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.02em;
-    color: #5f6a78;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -28,7 +28,7 @@ export const sheetState = writable<SheetState>('peek');
  */
 export const sheetDragY = writable(0);
 
-/** Left drawer — the browsers (FX list, clip bank) slide over the picture. */
+/** Browser sheet — clips, FX, song. Pulls up over the picture. */
 export const drawerOpen = writable(false);
 export type DrawerTab = 'fx' | 'clips' | 'song';
 export const drawerTab = writable<DrawerTab>('clips');
@@ -36,6 +36,8 @@ export const drawerTab = writable<DrawerTab>('clips');
 export function openDrawer(tab: DrawerTab) {
   drawerTab.set(tab);
   drawerOpen.set(true);
+  // The module editor peeks so two sheets are not stacked opaque over the frame.
+  sheetState.update((s) => (s === 'full' ? 'peek' : s));
 }
 
 /**

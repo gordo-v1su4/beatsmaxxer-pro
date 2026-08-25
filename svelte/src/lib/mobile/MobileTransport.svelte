@@ -84,7 +84,7 @@
       aria-label={td.playing ? 'Stop' : 'Play'}
       onclick={togglePlay}
     >
-      {#if td.playing}<Square size={13} />{:else}<Play size={13} />{/if}
+      {#if td.playing}<Square size={16} />{:else}<Play size={16} />{/if}
     </button>
 
     <div class="beat" class:idle={!td.playing}>
@@ -107,39 +107,39 @@
   -->
   <div class="rail">
     <div class="stepper">
-      <button type="button" aria-label="BPM down" onclick={() => nudgeBpm(-1)}><Minus size={13} /></button>
+      <button type="button" aria-label="BPM down" onclick={() => nudgeBpm(-1)}><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">BPM</span>
         <span class="cell-value">{Math.round(td.bpm)}{#if td.bpmLocked}<em>L</em>{/if}</span>
       </span>
-      <button type="button" aria-label="BPM up" onclick={() => nudgeBpm(1)}><Plus size={13} /></button>
+      <button type="button" aria-label="BPM up" onclick={() => nudgeBpm(1)}><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Tempo down" onclick={() => nudgeTempo(-TEMPO_STEP)}><Minus size={13} /></button>
+      <button type="button" aria-label="Tempo down" onclick={() => nudgeTempo(-TEMPO_STEP)}><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">TEMPO</span>
         <span class="cell-value">{st.tempo.toFixed(2)}<em>x</em></span>
       </span>
-      <button type="button" aria-label="Tempo up" onclick={() => nudgeTempo(TEMPO_STEP)}><Plus size={13} /></button>
+      <button type="button" aria-label="Tempo up" onclick={() => nudgeTempo(TEMPO_STEP)}><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Key down" onclick={() => nudgeKey(-1)}><Minus size={13} /></button>
+      <button type="button" aria-label="Key down" onclick={() => nudgeKey(-1)}><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">KEY</span>
         <span class="cell-value">{st.key}</span>
       </span>
-      <button type="button" aria-label="Key up" onclick={() => nudgeKey(1)}><Plus size={13} /></button>
+      <button type="button" aria-label="Key up" onclick={() => nudgeKey(1)}><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Pitch down" onclick={() => nudgePitch(-1)}><Minus size={13} /></button>
+      <button type="button" aria-label="Pitch down" onclick={() => nudgePitch(-1)}><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">PITCH</span>
         <span class="cell-value">{pitchLabel}<em>st</em></span>
       </span>
-      <button type="button" aria-label="Pitch up" onclick={() => nudgePitch(1)}><Plus size={13} /></button>
+      <button type="button" aria-label="Pitch up" onclick={() => nudgePitch(1)}><Plus size={16} /></button>
     </div>
   </div>
 </footer>
@@ -152,90 +152,85 @@
     margin-top: auto;
     display: flex;
     flex-direction: column;
-    gap: 7px;
-    padding: 7px 10px calc(7px + env(safe-area-inset-bottom, 0px));
-    background: rgba(8, 9, 10, 0.88);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border-top: 1px solid #1a1d20;
+    gap: 8px;
+    padding: 10px 12px 10px;
+    background: transparent;
     font-family: var(--font-ui);
   }
 
   .mt.perform {
-    gap: 5px;
-    padding: 5px calc(10px + env(safe-area-inset-right, 0px)) 5px
-      calc(10px + env(safe-area-inset-left, 0px));
-    background: transparent;
-    border-top: none;
+    gap: 6px;
+    padding: 6px calc(12px + var(--m-safe-right, 0px)) 6px
+      calc(12px + var(--m-safe-left, 0px));
   }
   .mt.perform .play,
   .mt.perform .stepper {
-    backdrop-filter: blur(10px) saturate(0.8);
-    -webkit-backdrop-filter: blur(10px) saturate(0.8);
+    backdrop-filter: var(--m-blur, blur(4px));
+    -webkit-backdrop-filter: var(--m-blur, blur(4px));
   }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
   }
 
-  /* Flat play button — easy target, no 3D. */
   .play {
     position: relative;
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 46px;
-    height: 28px;
+    width: var(--m-tap-lg, 48px);
+    height: var(--m-tap-lg, 48px);
     padding: 0;
-    border: 1px solid #23272c;
-    border-radius: 2px;
-    background: #181b1f;
-    box-shadow: none;
-    color: #6d7784;
+    border: 1px solid;
+    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
+    border-radius: var(--m-radius, 2px);
+    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
+    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
+    color: var(--m-ink-dim, #8a93a0);
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
-  }
-  .play::after {
-    content: '';
-    position: absolute;
-    inset: -8px -4px;
-  }
-  .play[data-playing='true'] {
-    border-color: rgba(34, 197, 94, 0.4);
-    background: rgba(34, 197, 94, 0.1);
-    box-shadow: none;
-    color: #22c55e;
+    transition:
+      background var(--m-dur-fast, 120ms) var(--m-ease, ease),
+      border-color var(--m-dur-fast, 120ms) var(--m-ease, ease),
+      color var(--m-dur-fast, 120ms) var(--m-ease, ease);
   }
   .play:active {
+    box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.7);
     background: #14171a;
+  }
+  .play[data-playing='true'] {
+    border-color: color-mix(in srgb, var(--m-live, #22c55e) 50%, transparent);
+    background: color-mix(in srgb, var(--m-live, #22c55e) 16%, #14171a);
+    color: var(--m-live, #22c55e);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--m-live, #22c55e) 22%, transparent);
   }
 
   .beat {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    min-width: 48px;
+    gap: 3px;
+    min-width: 56px;
   }
   .beat-value {
     font-family: var(--font-mono);
-    font-size: 16px;
+    font-size: var(--m-text-xl, 19px);
     font-variant-numeric: tabular-nums;
     line-height: 1;
   }
   .beat-value i {
     font-style: normal;
-    color: #3a4048;
-    padding: 0 1px;
+    color: var(--m-ink-faint, #555e6a);
+    padding: 0 2px;
   }
   .beat-kicker {
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 600;
     letter-spacing: 0.16em;
-    color: #3a4048;
+    color: var(--m-ink-faint, #555e6a);
   }
 
   .meters {
@@ -250,25 +245,25 @@
 
     At 375px, four steppers leave 84px each; the two keys take 48 of that and
     the readout is left with 36px — which "1.00x" fills exactly, so TEMPO would
-    clip on the narrowest phones. Two rows cost 40px of height and every value
+    clip on the narrowest phones. Two rows cost height and every value
     stays legible, which is the better trade for controls meant to be used while
     watching the picture.
   */
   .rail {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
 
-  /* Flat steppers — same proportions, no 3D. */
   .stepper {
     display: flex;
     align-items: stretch;
-    height: 34px;
-    border: 1px solid #1e2226;
-    border-radius: 2px;
-    background: #181b1f;
-    box-shadow: none;
+    height: var(--m-tap, 44px);
+    border: 1px solid;
+    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
+    border-radius: var(--m-radius, 2px);
+    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
+    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
     overflow: hidden;
     min-width: 0;
   }
@@ -276,29 +271,23 @@
   .stepper button {
     position: relative;
     flex: 0 0 auto;
-    width: 28px;
+    width: var(--m-tap-sm, 36px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     border: none;
     background: transparent;
-    color: #5a636e;
+    color: var(--m-ink-dim, #8a93a0);
     cursor: pointer;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-  .stepper button::after {
-    content: '';
-    position: absolute;
-    inset: -8px -4px;
-  }
   .stepper button:active {
-    color: #d8e2ea;
+    color: var(--m-ink, #e5e7eb);
     background: rgba(255, 255, 255, 0.07);
   }
 
-  /* Readout well — slightly darker than the stepper body. */
   .cell {
     flex: 1 1 auto;
     min-width: 0;
@@ -306,36 +295,40 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 1px;
-    border-left: 1px solid #13161a;
-    border-right: 1px solid #13161a;
-    background: #0f1215;
-    box-shadow: none;
+    gap: 2px;
+    border-left: 1px solid var(--m-line, #0d0e0f);
+    border-right: 1px solid var(--m-line, #0d0e0f);
+    background: var(--m-sunken, #070809);
   }
   .cell-label {
-    font-size: 11px;
+    font-size: var(--m-text-xs, 11px);
     font-weight: 600;
-    letter-spacing: 0.16em;
-    color: #3d4550;
+    letter-spacing: 0.14em;
+    color: var(--m-ink-faint, #555e6a);
     line-height: 1;
   }
   .cell-value {
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--m-text-sm, 12px);
     font-variant-numeric: tabular-nums;
-    color: #9fe8dc;
+    color: var(--m-accent-soft, #99f6e4);
     text-shadow: 0 0 8px rgba(45, 212, 191, 0.35);
     line-height: 1;
     white-space: nowrap;
   }
   .cell-value em {
     font-style: normal;
-    font-size: 11px;
-    color: #46525c;
+    font-size: var(--m-text-xs, 11px);
+    color: var(--m-ink-faint, #555e6a);
     padding-left: 1px;
   }
 
-  /* A phone in landscape is ~390px tall; the kicker is the first thing to go. */
+  @media (prefers-reduced-motion: reduce) {
+    .play {
+      transition: none;
+    }
+  }
+
   @media (max-height: 430px) {
     .mt.perform .beat-kicker {
       display: none;
