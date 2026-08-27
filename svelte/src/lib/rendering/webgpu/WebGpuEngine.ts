@@ -1,4 +1,8 @@
-import { getPreferredCanvasFormat, getSharedWebGpuDevice } from './SharedGpuDevice';
+import {
+  getPreferredCanvasFormat,
+  getSharedWebGpuDevice,
+  onSharedWebGpuDeviceLost
+} from './SharedGpuDevice';
 import { MODULE_FX_IDLE_WGSL, MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
 import { BLIT_WGSL, advanceFeedbackTo, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
@@ -197,6 +201,66 @@ export class WebGpuEngine {
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
   private initPromise: Promise<boolean> | null = null;
+  private unsubscribeDeviceLost: (() => void) | null = null;
+  /** Bumped on every device loss so a canvas can tell it must re-attach. */
+  private deviceGeneration = 0;
+  private readonly deviceLostListeners = new Set<() => void>();
+
+  /**
+   * The current device incarnation. A canvas that attached under an earlier one
+   * holds nothing usable; comparing this is how it knows without being told.
+   */
+  get generation() {
+    return this.deviceGeneration;
+  }
+
+  /**
+   * Called after the GPU device has been lost and everything built from it has
+   * been dropped. Canvases re-attach from here; the engine cannot do it for
+   * them because it does not own their elements.
+   */
+  onDeviceLost(listener: () => void) {
+    this.deviceLostListeners.add(listener);
+    return () => this.deviceLostListeners.delete(listener);
+  }
+
+  /**
+   * Forget everything the lost device produced.
+   *
+   * Every binding's pipelines, buffers and textures died with it, and calling
+   * destroy() on any of them is at best pointless and at worst an error, so
+   * they are dropped rather than torn down. Clearing `initPromise` is what lets
+   * the next init() acquire a fresh device instead of resolving to the memo of
+   * the dead one.
+   */
+  private handleDeviceLost() {
+    this.device = null;
+    this.initPromise = null;
+    this.sampler = null;
+    this.blitPipeline = null;
+    this.blitBindGroupLayout = null;
+    this.fxPipeline = null;
+    this.fxIdlePipeline = null;
+    this.fxBindGroupLayout = null;
+    this.fxIdleBindGroupLayout = null;
+    this.placeholderFeedback = null;
+    this.placeholderFeedbackView = null;
+    this.bindings.clear();
+    this.bindingSchedule.clear();
+    this.renderDiag.clear();
+    this.loopWrapCover.clear();
+    // destroy() on a resource of a lost device is a defined no-op, so the
+    // normal teardown is safe here and keeps the cache's own bookkeeping right.
+    this.videoTextureCache.dispose();
+    this.deviceGeneration += 1;
+    for (const listener of [...this.deviceLostListeners]) {
+      try {
+        listener();
+      } catch (err) {
+        console.error('[webgpu] device-lost re-attach threw:', err);
+      }
+    }
+  }
 
   /** Idempotent, race-safe init: concurrent callers share one in-flight attempt. */
   async init(): Promise<boolean> {
@@ -208,6 +272,11 @@ export class WebGpuEngine {
   private async initOnce(): Promise<boolean> {
     this.device = await getSharedWebGpuDevice();
     if (!this.device) return false;
+    this.unsubscribeDeviceLost?.();
+    this.unsubscribeDeviceLost = onSharedWebGpuDeviceLost((info) => {
+      console.warn(`[webgpu] device lost (${info.reason || 'unknown'}): ${info.message}`);
+      this.handleDeviceLost();
+    });
     this.format = getPreferredCanvasFormat();
     this.sampler = this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
     this.placeholderFeedback = createFeedbackPlaceholder(this.device);
@@ -933,9 +1002,19 @@ export class WebGpuEngine {
 
   dispose() {
     this.stop();
+    this.unsubscribeDeviceLost?.();
+    this.unsubscribeDeviceLost = null;
+    this.deviceLostListeners.clear();
     for (const id of [...this.bindings.keys()]) {
       this.detachCanvas(id);
     }
+    this.fxPipeline = null;
+    this.fxIdlePipeline = null;
+    this.fxBindGroupLayout = null;
+    this.fxIdleBindGroupLayout = null;
+    this.blitPipeline = null;
+    this.blitBindGroupLayout = null;
+    this.sampler = null;
     this.device = null;
     this.initPromise = null;
     this.bindingSchedule.clear();

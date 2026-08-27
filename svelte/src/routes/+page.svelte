@@ -27,6 +27,7 @@
   import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
   import { pgmDirector } from '$lib/runtime/pgm/PgmDirector';
   import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
+  import { startLifecycleWatch } from '$lib/runtime/lifecycle';
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
   import { installBmxQaHook } from '$lib/qa/bmxQa';
   import { fxHold } from '$lib/stores/rack';
@@ -64,6 +65,7 @@
   );
   let unsubHold: (() => void) | undefined;
   let stopMobileEnv: (() => void) | undefined;
+  let stopLifecycle: (() => void) | undefined;
 
   const activeClipSlotCount = $derived($rackTop.length + $rackBottom.length);
 
@@ -108,6 +110,7 @@
     startTransportPoll();
     pgmDirector.start();
     startAppLoop();
+    stopLifecycle = startLifecycleWatch();
     installBmxQaHook();
 
     // Every app load begins unheld. With no song playing, the beat-driven cards
@@ -131,7 +134,23 @@
         splashTotal = webGpuEngine.boundCanvasCount;
         splashDone = Math.min(splashTotal, splashDone + 1);
         if (splashTotal > 0) stepShaders.note(`${splashDone} / ${splashTotal}`);
-        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+        // Raced against a timer, not a bare rAF. A surface that is not
+        // compositing -- a background tab, and every in-app browser pane that
+        // has not been scrolled into view -- never fires an animation frame at
+        // all, so awaiting one alone parks this loop forever: the deadline
+        // below is never re-evaluated and the splash stays up over a working
+        // app until the user gives up. That is the reported "splash never
+        // dismisses in the in-app browser". Whichever arrives first wins.
+        await new Promise((resolve) => {
+          let settled = false;
+          const done = () => {
+            if (settled) return;
+            settled = true;
+            resolve(null);
+          };
+          requestAnimationFrame(done);
+          setTimeout(done, 100);
+        });
       }
       stepShaders.done();
     }
@@ -171,6 +190,7 @@
   onDestroy(() => {
     unsubHold?.();
     stopMobileEnv?.();
+    stopLifecycle?.();
     stopAppLoop();
     pgmDirector.stop();
     stopTransportPoll();

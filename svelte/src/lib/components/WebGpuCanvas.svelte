@@ -19,6 +19,7 @@
   let sizeObserver: ResizeObserver | null = null;
   /** Pending coalesced resize; 0 when none is queued. */
   let resizeRaf = 0;
+  let stopDeviceLostWatch: (() => void) | null = null;
   const effectMode = $derived(
     SHADER_EFFECT_MODE[getModuleDef(moduleId)?.shaderKey ?? moduleId] ?? 0
   );
@@ -86,6 +87,17 @@
     if (!canvas) return;
     applySize();
     const ok = await attach();
+    // The engine drops every binding when the GPU device is lost — it cannot
+    // rebuild them itself, because the canvas elements belong to components.
+    // Without this the picture goes black on the first loss and stays black:
+    // ordinary behaviour on a phone that has been backgrounded, and the reason
+    // it is worth re-attaching rather than reporting.
+    stopDeviceLostWatch = webGpuEngine.onDeviceLost(() => {
+      ready = false;
+      void (async () => {
+        if (await attach()) webGpuEngine.setCanvasActive(id, true);
+      })();
+    });
     if (ok && typeof IntersectionObserver !== 'undefined') {
       visibilityObserver = new IntersectionObserver(([entry]) => {
         webGpuEngine.setCanvasActive(id, entry?.isIntersecting === true);
@@ -116,6 +128,7 @@
   onDestroy(() => {
     visibilityObserver?.disconnect();
     sizeObserver?.disconnect();
+    stopDeviceLostWatch?.();
     if (resizeRaf !== 0) cancelAnimationFrame(resizeRaf);
     webGpuEngine.detachCanvas(id);
   });

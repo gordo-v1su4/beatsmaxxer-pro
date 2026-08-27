@@ -181,6 +181,38 @@ export class AudioEngine implements IAudioEngine {
     audioTimeline.subscribe(this.tick, 0);
   }
 
+  /**
+   * Re-establish audio after the page comes back to the foreground.
+   *
+   * Locking a phone, switching apps, or backgrounding the tab interrupts the
+   * AudioContext: iOS suspends it outright, and Android may pause the media
+   * element with it. Nothing used to run on the way back, so the transport
+   * returned to a context whose `currentTime` had stopped — the picture was
+   * live, the play button still read as playing, and the song was silent with
+   * the playhead frozen. There is no way out of that from inside the app.
+   *
+   * Deliberately narrow: it only resumes what was already playing, and it never
+   * starts playback. A `resume()` outside a gesture can be rejected, so this
+   * reports whether it took rather than assuming it did — a refusal leaves the
+   * transport exactly as it was, and the user's next tap on PLAY goes through
+   * the real gesture path in `start()`.
+   */
+  async resumeAfterBackground(): Promise<boolean> {
+    if (!this._playing) return false;
+    const audioContext = this.ctx;
+    const mediaElement = this.mediaElement;
+    if (!audioContext) return false;
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+      if (audioContext.state !== "running") return false;
+      if (mediaElement?.paused && this._usingUploadedTrack) await mediaElement.play();
+      return true;
+    } catch {
+      // Rejected without a gesture. The transport is untouched; PLAY still works.
+      return false;
+    }
+  }
+
   async start() {
     if (this.activePlaybackStartGeneration !== null) return;
 
