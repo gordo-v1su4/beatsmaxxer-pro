@@ -178,9 +178,12 @@
     min-width: 0;
     padding: 8px 10px;
     border-radius: var(--m-radius, 2px);
-    background: rgba(8, 9, 10, 0.28);
-    backdrop-filter: var(--m-blur, blur(4px));
-    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    /* Sits directly on the canvas, so no backdrop-filter — see
+       --m-blur-over-picture. The tint is carried a little heavier to make up
+       the separation the blur was providing. */
+    background: rgba(8, 9, 10, 0.42);
+    backdrop-filter: var(--m-blur-over-picture, none);
+    -webkit-backdrop-filter: var(--m-blur-over-picture, none);
     pointer-events: none;
     z-index: 1;
   }

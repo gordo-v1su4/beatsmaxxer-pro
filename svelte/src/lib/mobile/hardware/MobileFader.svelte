@@ -40,6 +40,19 @@
 
   let track = $state<HTMLDivElement>();
   let dragging = $state(false);
+  /**
+   * Track geometry, read once when the gesture starts.
+   *
+   * `getBoundingClientRect()` forces the browser to flush pending layout, and
+   * this used to run on every pointermove — up to 120 of them a second on a
+   * modern phone, each one a synchronous layout in the middle of a drag, while
+   * the GPU is rendering the effect the drag is dialling. The track cannot
+   * move or resize mid-stroke: it is inside a sheet whose transform is frozen
+   * while a control is captured, and pointer capture keeps the gesture on this
+   * element even when the finger leaves it. So one read per gesture is both
+   * cheaper and exactly as correct.
+   */
+  let trackRect: { left: number; width: number } | null = null;
 
   /**
    * The cap travels between its own half-widths, not between the track edges.
@@ -55,8 +68,8 @@
   const pct = $derived(Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100)));
 
   function valueFromClientX(clientX: number) {
-    if (!track) return value;
-    const rect = track.getBoundingClientRect();
+    const rect = trackRect;
+    if (!rect) return value;
     const travel = rect.width - CAP_W;
     if (travel <= 0) return value;
     const t = Math.max(0, Math.min(1, (clientX - rect.left - CAP_W / 2) / travel));
@@ -64,12 +77,20 @@
   }
 
   function down(event: PointerEvent) {
+    if (!track) return;
     event.preventDefault();
     dragging = true;
+    const rect = track.getBoundingClientRect();
+    trackRect = { left: rect.left, width: rect.width };
     // One undo entry for the whole gesture rather than one per pixel moved.
     beginRackParamTransaction();
     (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
     onChange(valueFromClientX(event.clientX));
+    // A fader that grabs is worth confirming. 8ms is a tick, not a buzz — long
+    // enough to register through a case, short enough that a fast dial does not
+    // turn into a rattle. Absent on iOS Safari and on any device where the user
+    // has turned haptics off, both of which are the correct outcome.
+    navigator.vibrate?.(8);
   }
 
   function move(event: PointerEvent) {
@@ -81,6 +102,7 @@
   function up(event: PointerEvent) {
     if (!dragging) return;
     dragging = false;
+    trackRect = null;
     (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
     endRackParamTransaction();
   }

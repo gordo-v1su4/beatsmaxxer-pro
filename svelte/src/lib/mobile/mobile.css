@@ -59,6 +59,25 @@
 	--m-glass-heavy: rgba(8, 10, 12, 0.32);
 	--m-blur: blur(4px);
 
+	/*
+	 * The blur to use on anything sitting OVER the live picture.
+	 *
+	 * backdrop-filter is not a paint cost, it is a per-frame compositor cost,
+	 * and it is charged against whatever is underneath. Underneath here is a
+	 * WebGPU canvas that presents a new texture every single frame, so the
+	 * compositor cannot cache the blurred result for even one frame: it
+	 * re-samples and re-blurs the covered region every time the picture
+	 * changes. In landscape four of them stack on the same live surface — the
+	 * floating top bar, the stage readout, the play key and every stepper — and
+	 * that is pure overhead on top of the effect the GPU is already running.
+	 *
+	 * So chrome over the picture gets `none` and leans on its tint instead,
+	 * which is what --m-glass was already doing most of the work with. Chrome
+	 * that sits over ordinary layout (the sheet, the drawer) keeps --m-blur:
+	 * a static backdrop blurs once and is cached, which costs nothing per frame.
+	 */
+	--m-blur-over-picture: none;
+
 	--m-ink: #e5e7eb;
 	--m-ink-dim: #8a93a0;
 	--m-ink-faint: #555e6a;

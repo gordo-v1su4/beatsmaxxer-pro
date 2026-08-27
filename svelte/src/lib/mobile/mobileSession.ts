@@ -120,6 +120,54 @@ export async function toggleQueuedClip(clip: LibraryClip) {
   if (!get(stageClipId)) await loadStageClip(clip);
 }
 
+/**
+ * Which clip LINEAR would move to next, without moving to it.
+ *
+ * Exists so the next clip can be decoded before the bar it is needed on. Only
+ * LINEAR is predictable; RANDOM has no next until it picks one.
+ */
+function nextLinearClip(queue: LibraryClip[]): LibraryClip | null {
+  if (queue.length < 2) return null;
+  const currentIndex = queue.findIndex((c) => c.id === get(stageClipId));
+  return queue[(currentIndex + 1) % queue.length] ?? null;
+}
+
+/**
+ * Pull the next clip's bytes into the HTTP cache before the bar it needs them.
+ *
+ * `loadStageClip` is the one path that re-decodes, and on the phone it runs on
+ * the cut: LOADING CLIP appears every eight bars, on the beat, for as long as
+ * the file takes to arrive and open. Over a phone network the network is most
+ * of that, so fetching the same URL a bar early turns the cut's load into a
+ * cache hit.
+ *
+ * Deliberately a fetch and not a staged video element. VideoPool's element
+ * identity is a release invariant -- the eight-video proof counts live <video>
+ * elements before, during and after every cut -- so a speculative extra element
+ * would be a decode lane the architecture says does not exist. Bytes in the
+ * HTTP cache belong to nobody and change no ownership.
+ *
+ * File-backed clips are already local and are skipped.
+ */
+const warmedClipUrls = new Set<string>();
+
+async function prewarmNextClip(): Promise<void> {
+  if (get(advanceMode) !== 'linear') return;
+  const next = nextLinearClip(get(clipQueue));
+  if (!next || next.id === get(stageClipId)) return;
+  if (next.source.kind !== 'url') return;
+  const url = next.source.url;
+  if (warmedClipUrls.has(url)) return;
+  warmedClipUrls.add(url);
+  try {
+    await fetch(url, { cache: 'force-cache' });
+  } catch {
+    // Offline, or the clip has gone. The cut still works, it just pays what it
+    // used to; drop the mark so a later pass can try again.
+    warmedClipUrls.delete(url);
+  }
+}
+
 /** Next clip per `advanceMode`. Returns false when there is nowhere to go. */
 export async function advanceStageClip(force = false): Promise<boolean> {
   const queue = get(clipQueue);
@@ -177,6 +225,9 @@ export function startMobileClipAdvance(): () => void {
     if (previous < 0) return;
     if (get(advanceMode) === 'hold') return;
     const every = Math.max(1, get(advanceBars));
+    // One bar out, warm what the next cut will ask for. Idempotent and cheap
+    // once warm, so re-entering the same bar costs nothing.
+    if (bar % every === every - 1) void prewarmNextClip();
     if (bar % every !== 0) return;
     if (inFlight) return;
     inFlight = true;

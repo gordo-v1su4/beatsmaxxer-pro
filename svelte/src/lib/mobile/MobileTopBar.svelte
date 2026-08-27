@@ -65,13 +65,16 @@
     touch-action: manipulation;
   }
 
+  /* Floating means over the live picture, where a backdrop-filter is re-blurred
+     by the compositor on every canvas frame. The gradient already carries the
+     contrast — see --m-blur-over-picture. */
   .mtb.floating {
     position: fixed;
     inset: 0 0 auto 0;
-    background: linear-gradient(180deg, rgba(10, 11, 12, 0.72), rgba(10, 11, 12, 0));
+    background: linear-gradient(180deg, rgba(10, 11, 12, 0.82), rgba(10, 11, 12, 0));
     border-bottom: none;
-    backdrop-filter: var(--m-blur, blur(4px));
-    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    backdrop-filter: var(--m-blur-over-picture, none);
+    -webkit-backdrop-filter: var(--m-blur-over-picture, none);
     padding-left: var(--m-safe-left, 0px);
     padding-right: var(--m-safe-right, 0px);
     pointer-events: none;

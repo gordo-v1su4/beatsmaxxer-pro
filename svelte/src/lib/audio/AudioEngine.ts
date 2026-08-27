@@ -874,7 +874,25 @@ export class AudioEngine implements IAudioEngine {
   private async ensureContext() {
     if (this.ctx) return;
 
-    this.ctx = new AudioContext({ sampleRate: 44100 });
+    /**
+     * No forced sample rate.
+     *
+     * This asked for 44100 on every device. Phone audio hardware runs at 48000
+     * — all iOS devices and effectively all Android — so the request did not
+     * get 44.1k output, it got a resampler inserted between the graph and the
+     * speaker: continuous CPU in the audio thread and added output latency, on
+     * exactly the machines with the least of both to spare. Nothing depended on
+     * the value; AudioTimeline reads `context.sampleRate` off the context, and
+     * SoundTouch and the analysers are all rate-relative. Letting the hardware
+     * pick removes the resampler wherever the native rate is not 44.1k, and is
+     * a no-op where it is.
+     *
+     * `latencyHint: 'interactive'` is the smallest buffer the device will give.
+     * This is a live instrument driving video off the same clock, so a shorter
+     * output buffer is the whole point; the default 'balanced' trades that away
+     * for power on a workload that is already GPU-bound.
+     */
+    this.ctx = new AudioContext({ latencyHint: 'interactive' });
     audioTimeline.bindContext(this.ctx);
 
     this.analyserFull = this.ctx.createAnalyser();

@@ -163,10 +163,14 @@
     padding: 6px calc(12px + var(--m-safe-right, 0px)) 6px
       calc(12px + var(--m-safe-left, 0px));
   }
+  /* Landscape floats these over the live canvas, so they take the tint rather
+     than a per-frame backdrop blur — see --m-blur-over-picture. */
   .mt.perform .play,
   .mt.perform .stepper {
-    backdrop-filter: var(--m-blur, blur(4px));
-    -webkit-backdrop-filter: var(--m-blur, blur(4px));
+    backdrop-filter: var(--m-blur-over-picture, none);
+    -webkit-backdrop-filter: var(--m-blur-over-picture, none);
+    background-color: rgba(10, 12, 14, 0.72);
+    background-image: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
   }
 
   .row {
