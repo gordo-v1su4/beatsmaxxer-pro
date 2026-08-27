@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
+  import { renderScale } from '$lib/runtime/renderBudget';
   import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 
   interface Props {
@@ -62,9 +63,13 @@
     if (rect.width < 1 || rect.height < 1) return PREVIEW_SIZE;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const scale = Math.min(1, PGM_MAX_WIDTH / (rect.width * dpr));
+    // The measured budget, which is 1 everywhere except a phone that is not
+    // keeping up (and under ?qa=, where the proof gates hash rendered PNGs and
+    // a size that depends on how the device felt would be nondeterministic).
+    const budget = $renderScale;
     return {
-      width: Math.max(320, Math.round(rect.width * dpr * scale)),
-      height: Math.max(180, Math.round(rect.height * dpr * scale))
+      width: Math.max(320, Math.round(rect.width * dpr * scale * budget)),
+      height: Math.max(180, Math.round(rect.height * dpr * scale * budget))
     };
   }
 
@@ -137,6 +142,18 @@
     if (!ready || id === 'pgm') return;
     webGpuEngine.setCanvasModule(id, moduleId);
     webGpuEngine.setCanvasAccent(id, color);
+  });
+
+  /**
+   * Follow the measured render budget. Only PGM is layout-sized and only the
+   * phone ever moves this, so on the rack the dependency is read once and the
+   * effect never runs again.
+   */
+  $effect(() => {
+    const scale = $renderScale;
+    if (!ready || id !== 'pgm' || !canvas) return;
+    void scale;
+    if (applySize()) void attach();
   });
 </script>
 

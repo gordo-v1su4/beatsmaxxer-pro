@@ -67,6 +67,7 @@ import {
   type LiveOnsetStutterState
 } from '$lib/runtime/stutterTrigger';
 import { midiUiOpen } from '$lib/stores/rackUi';
+import { recordFrame, startRenderBudget, stopRenderBudget } from '$lib/runtime/renderBudget';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
 let running = false;
@@ -585,8 +586,13 @@ export function startAppLoop() {
     webGpuEngine.renderAll(frame);
   }, 10);
 
-  const tick = () => {
+  startRenderBudget();
+  const tick = (now: number) => {
     if (!running) return;
+    // Measured here because this is the only owner of requestAnimationFrame in
+    // production, so this is the real presented cadence rather than a second
+    // timer's idea of it.
+    recordFrame(now);
     audioTimeline.publishFrame();
     rafId = requestAnimationFrame(tick);
   };
@@ -595,6 +601,7 @@ export function startAppLoop() {
 
 export function stopAppLoop() {
   running = false;
+  stopRenderBudget();
   unsubscribeTimeline?.();
   unsubscribeTimeline = null;
   unsubscribeTimeSamplerConfig?.();
