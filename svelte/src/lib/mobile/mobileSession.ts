@@ -207,6 +207,21 @@ export async function advanceStageClip(force = false): Promise<boolean> {
 export const advanceBars = writable(8);
 
 /**
+ * The choices offered for that, in bars.
+ *
+ * Labelled the way the desktop's PGM rail labels its quantize row (`1BR` is one
+ * bar) so the two surfaces name the same musical unit the same way. The rail's
+ * row starts below a bar, at `1BT`; this one does not, because a clip change is
+ * a decode. PGM cutting between already-decoded slots can afford a quarter-note
+ * boundary — swapping the single mobile slot's media cannot, and the prewarm
+ * that hides the load only runs a bar ahead.
+ *
+ * 16 bars is the top because past that the mode is effectively HOLD, and HOLD
+ * is already a button.
+ */
+export const CLIP_ADVANCE_BARS = [1, 2, 4, 8, 16] as const;
+
+/**
  * Drives LINEAR / RANDOM off the bar counter. Returns the teardown.
  *
  * Guarded on the bar *crossing* rather than on `bar % n === 0`, because the

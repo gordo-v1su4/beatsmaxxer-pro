@@ -3,7 +3,13 @@
   import { audioEngine } from '$lib/audio';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
-  import { activeModule } from './mobileSession';
+  import {
+    activeModule,
+    advanceBars,
+    advanceMode,
+    CLIP_ADVANCE_BARS,
+    type AdvanceMode
+  } from './mobileSession';
   import { isPerformPosture } from './mobileEnv';
 
   /**
@@ -73,6 +79,48 @@
   const pitchLabel = $derived(
     st.pitchSemitones > 0 ? `+${st.pitchSemitones}` : `${st.pitchSemitones}`
   );
+
+  /**
+   * How often the picture moves to the next clip — on the performance rail,
+   * beside the things it belongs with.
+   *
+   * The interval was fixed at eight bars and unreachable, so LINEAR and RANDOM
+   * each had exactly one tempo. It could have gone in the CLIPS drawer next to
+   * the mode buttons, but that is where a set gets *built*; this is a thing you
+   * reach for mid-track, watching the picture, which is the same reason BPM and
+   * KEY are on this row rather than in a menu.
+   *
+   * OFF is folded into the same stepper rather than left as a separate HOLD
+   * button, because "how often does the video change" and "does the video
+   * change" are one question, and answering it in two places is how the two get
+   * out of step. Stepping off the bottom holds; stepping back on restores
+   * whichever order the drawer was last set to, so RANDOM does not silently
+   * become LINEAR on the way back.
+   */
+  // `number[]`, not a literal tuple: advanceBars is a plain number, and a
+  // readonly tuple of literals makes indexOf() reject it.
+  const ADVANCE_STOPS: readonly number[] = [0, ...CLIP_ADVANCE_BARS];
+
+  /** Remembered so turning advance back on returns the order it had. */
+  let lastMovingMode: Exclude<AdvanceMode, 'hold'> = $state('linear');
+  $effect(() => {
+    if ($advanceMode !== 'hold') lastMovingMode = $advanceMode;
+  });
+
+  const advanceIndex = $derived(
+    $advanceMode === 'hold' ? 0 : Math.max(1, ADVANCE_STOPS.indexOf($advanceBars))
+  );
+  const advanceLabel = $derived($advanceMode === 'hold' ? 'OFF' : `${$advanceBars}`);
+
+  function nudgeAdvance(delta: number) {
+    const next = Math.max(0, Math.min(ADVANCE_STOPS.length - 1, advanceIndex + delta));
+    if (next === 0) {
+      advanceMode.set('hold');
+      return;
+    }
+    advanceMode.set(lastMovingMode);
+    advanceBars.set(ADVANCE_STOPS[next]!);
+  }
 
   /**
    * Hold to repeat.
@@ -269,6 +317,36 @@
         onpointerleave={stopRepeat}
       ><Plus size={16} /></button>
     </div>
+
+    <!-- Full width on its own row: it is the only control here that changes the
+         picture rather than the sound, and an odd fifth cell in a two-column
+         grid would have left a hole beside it anyway. -->
+    <div class="stepper stepper-wide">
+      <button
+        type="button"
+        aria-label="Advance less often"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeAdvance(-1))}
+        onclick={(e) => keyActivate(e, () => nudgeAdvance(-1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Minus size={16} /></button>
+      <span class="cell">
+        <span class="cell-label">NEXT CLIP</span>
+        <span class="cell-value" class:is-off={$advanceMode === 'hold'}>
+          {advanceLabel}{#if $advanceMode !== 'hold'}<em>BR</em>{/if}
+        </span>
+      </span>
+      <button
+        type="button"
+        aria-label="Advance more often"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeAdvance(1))}
+        onclick={(e) => keyActivate(e, () => nudgeAdvance(1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Plus size={16} /></button>
+    </div>
   </div>
 </footer>
 
@@ -453,6 +531,16 @@
     font-size: var(--m-text-xs, 11px);
     color: var(--m-ink-faint, #555e6a);
     padding-left: 1px;
+  }
+
+  .stepper-wide {
+    grid-column: 1 / -1;
+  }
+  /* OFF is a real state, not a missing value, so it reads in the ink colour
+     rather than the lit accent the other readouts use. */
+  .cell-value.is-off {
+    color: var(--m-ink-faint, #555e6a);
+    text-shadow: none;
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -4,7 +4,9 @@
   import { formatClipDuration } from '$lib/media/clipThumbnail';
   import { VIDEO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import {
+    advanceBars,
     advanceMode,
+    CLIP_ADVANCE_BARS,
     clipQueueIds,
     loadStageClip,
     stageClipId,
@@ -150,6 +152,36 @@
       {/each}
     </div>
   </div>
+
+  <!--
+    How often it moves. This was fixed at eight bars with nothing to change it,
+    so LINEAR and RANDOM were one tempo each and the mode buttons were the only
+    thing the set could be shaped with.
+
+    Hidden under HOLD rather than disabled: HOLD does not advance at all, so an
+    interval there is a control with no effect, and a greyed row still reads as
+    something you are meant to be able to reach.
+  -->
+  {#if $advanceMode !== 'hold'}
+    <div class="cg-every" role="radiogroup" aria-label="How often the stage moves to the next clip">
+      <span class="cg-advance-label">EVERY</span>
+      <div class="cg-modes">
+        {#each CLIP_ADVANCE_BARS as bars (bars)}
+          <button
+            type="button"
+            role="radio"
+            class="cg-mode"
+            class:is-on={$advanceBars === bars}
+            aria-checked={$advanceBars === bars}
+            aria-label="{bars} bar{bars === 1 ? '' : 's'}"
+            onclick={() => advanceBars.set(bars)}
+          >
+            {bars}BR
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if clips.length === 0}
     <div class="cg-empty">
@@ -330,8 +362,22 @@
     border: none;
     background: transparent;
   }
+  /* Same row shape as ADVANCE above it, so the two read as one setting in two
+     parts — what it does, then how often — rather than as unrelated controls. */
+  .cg-every {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
   .cg-advance-label {
     flex: 0 0 auto;
+    /* Both labels reserve the width of the longer one, so the two button rows
+       start on the same x and the pair lines up as a block. */
+    min-width: 4.6em;
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.18em;
