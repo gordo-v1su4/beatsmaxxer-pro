@@ -73,6 +73,70 @@
   const pitchLabel = $derived(
     st.pitchSemitones > 0 ? `+${st.pitchSemitones}` : `${st.pitchSemitones}`
   );
+
+  /**
+   * Hold to repeat.
+   *
+   * Every one of these was one step per tap, which is fine for a nudge and
+   * absurd for a move: getting BPM from 128 to 90 was thirty-eight separate
+   * taps on a phone, while the track played. Holding now repeats, and
+   * accelerates the longer it is held, so a nudge and a move are the same
+   * gesture at two durations rather than two different amounts of work.
+   *
+   * 420ms before the first repeat is the usual key-repeat delay and is what
+   * keeps a deliberate single tap single. The interval then falls from 140ms to
+   * 40ms over about a second and a half, which crosses a useful BPM range in
+   * roughly the time it takes to decide you have gone far enough.
+   */
+  const REPEAT_DELAY_MS = 420;
+  const REPEAT_START_MS = 140;
+  const REPEAT_MIN_MS = 40;
+
+  let repeatTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function stopRepeat() {
+    if (repeatTimer !== null) clearTimeout(repeatTimer);
+    repeatTimer = null;
+  }
+
+  /**
+   * Runs `step` now, then again on an accelerating schedule until released.
+   * Bound to pointerdown rather than click, so the release handlers below are
+   * what end it -- including pointercancel, which is what a browser sends when
+   * it decides mid-gesture that a stroke was a scroll.
+   */
+  function holdToRepeat(event: PointerEvent, step: () => void) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    event.preventDefault();
+    stopRepeat();
+    step();
+    navigator.vibrate?.(6);
+
+    let interval = REPEAT_START_MS;
+    const tick = () => {
+      step();
+      interval = Math.max(REPEAT_MIN_MS, interval * 0.86);
+      repeatTimer = setTimeout(tick, interval);
+    };
+    repeatTimer = setTimeout(tick, REPEAT_DELAY_MS);
+  }
+
+  /**
+   * The keyboard's way in.
+   *
+   * Moving these to pointerdown took Enter and Space with it: a keyboard
+   * activation raises `click` and never a pointer event, so without this the
+   * steppers became mouse-and-touch only. A click that came from a real pointer
+   * has already been handled by the hold above, and `detail` is how the two are
+   * told apart -- pointer-driven clicks carry a click count of at least one,
+   * keyboard-driven ones carry zero.
+   */
+  function keyActivate(event: MouseEvent, step: () => void) {
+    if (event.detail !== 0) return;
+    step();
+  }
+
+  $effect(() => stopRepeat);
 </script>
 
 <footer class="mt" class:perform>
@@ -107,39 +171,103 @@
   -->
   <div class="rail">
     <div class="stepper">
-      <button type="button" aria-label="BPM down" onclick={() => nudgeBpm(-1)}><Minus size={16} /></button>
+      <button
+        type="button"
+        aria-label="BPM down"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeBpm(-1))}
+        onclick={(e) => keyActivate(e, () => nudgeBpm(-1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">BPM</span>
         <span class="cell-value">{Math.round(td.bpm)}{#if td.bpmLocked}<em>L</em>{/if}</span>
       </span>
-      <button type="button" aria-label="BPM up" onclick={() => nudgeBpm(1)}><Plus size={16} /></button>
+      <button
+        type="button"
+        aria-label="BPM up"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeBpm(1))}
+        onclick={(e) => keyActivate(e, () => nudgeBpm(1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Tempo down" onclick={() => nudgeTempo(-TEMPO_STEP)}><Minus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Tempo down"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeTempo(-TEMPO_STEP))}
+        onclick={(e) => keyActivate(e, () => nudgeTempo(-TEMPO_STEP))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">TEMPO</span>
         <span class="cell-value">{st.tempo.toFixed(2)}<em>x</em></span>
       </span>
-      <button type="button" aria-label="Tempo up" onclick={() => nudgeTempo(TEMPO_STEP)}><Plus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Tempo up"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeTempo(TEMPO_STEP))}
+        onclick={(e) => keyActivate(e, () => nudgeTempo(TEMPO_STEP))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Key down" onclick={() => nudgeKey(-1)}><Minus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Key down"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeKey(-1))}
+        onclick={(e) => keyActivate(e, () => nudgeKey(-1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">KEY</span>
         <span class="cell-value">{st.key}</span>
       </span>
-      <button type="button" aria-label="Key up" onclick={() => nudgeKey(1)}><Plus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Key up"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgeKey(1))}
+        onclick={(e) => keyActivate(e, () => nudgeKey(1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Plus size={16} /></button>
     </div>
 
     <div class="stepper">
-      <button type="button" aria-label="Pitch down" onclick={() => nudgePitch(-1)}><Minus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Pitch down"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgePitch(-1))}
+        onclick={(e) => keyActivate(e, () => nudgePitch(-1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Minus size={16} /></button>
       <span class="cell">
         <span class="cell-label">PITCH</span>
         <span class="cell-value">{pitchLabel}<em>st</em></span>
       </span>
-      <button type="button" aria-label="Pitch up" onclick={() => nudgePitch(1)}><Plus size={16} /></button>
+      <button
+        type="button"
+        aria-label="Pitch up"
+        onpointerdown={(e) => holdToRepeat(e, () => nudgePitch(1))}
+        onclick={(e) => keyActivate(e, () => nudgePitch(1))}
+        onpointerup={stopRepeat}
+        onpointercancel={stopRepeat}
+        onpointerleave={stopRepeat}
+      ><Plus size={16} /></button>
     </div>
   </div>
 </footer>
