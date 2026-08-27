@@ -30,6 +30,32 @@ import {
 
 const DEFAULT_BPM = 128;
 
+/**
+ * The eight FFT band edges, flattened to one array so the per-frame band walk
+ * indexes a module constant instead of rebuilding nine arrays every frame.
+ * Pairs are [from, to] as fractions of the analyser's bin count.
+ */
+const FFT_BAND_EDGES = [
+  0.0, 0.02,
+  0.02, 0.05,
+  0.05, 0.1,
+  0.1, 0.18,
+  0.18, 0.3,
+  0.3, 0.48,
+  0.48, 0.7,
+  0.7, 1.0,
+] as const;
+const FFT_BAND_COUNT = FFT_BAND_EDGES.length / 2;
+
+/** Mean of `buf[from..to)`. Replaces a slice + reduce pair in the frame path. */
+function meanOfRange(buf: Uint8Array, from: number, to: number): number {
+  const end = Math.min(buf.length, to);
+  const start = Math.max(0, Math.min(from, end));
+  let sum = 0;
+  for (let i = start; i < end; i++) sum += buf[i];
+  return sum / Math.max(1, end - start);
+}
+
 /** Uploaded tracks stay paused until hosted analysis settles or fails closed. */
 export function isRhythmAnalysisReady(
   usingUploadedTrack: boolean,
@@ -278,7 +304,10 @@ export class AudioEngine implements IAudioEngine {
     this._amplitude = 0;
     this._bassAmp = 0;
     this._highAmp = 0;
-    this._fftBands = new Array(8).fill(0);
+    // In place: the array identity is handed out by getState() and the frame
+    // path now writes through it, so replacing it here would leave whoever is
+    // already holding it reading a band set that never updates again.
+    this._fftBands.fill(0);
   }
 
   async loadAudioFile(file: File, options: AudioFileLoadOptions = {}) {
@@ -867,7 +896,7 @@ export class AudioEngine implements IAudioEngine {
     this._beatPhase = transport.beatPhase;
 
     if (this.analyserFull) {
-      const td = new Uint8Array(this.analyserFull.fftSize);
+      const td = this.scratch(this.analyserFull.fftSize);
       this.analyserFull.getByteTimeDomainData(td);
       let sum = 0;
       for (let i = 0; i < td.length; i++) {
@@ -876,27 +905,21 @@ export class AudioEngine implements IAudioEngine {
       }
       this._amplitude = Math.min(1, Math.sqrt(sum / td.length) * 1.8);
 
-      const fd = new Uint8Array(this.analyserFull.frequencyBinCount);
+      const fd = this.scratchFreq(this.analyserFull.frequencyBinCount);
       this.analyserFull.getByteFrequencyData(fd);
-      this._fftBands = this.computeBands(fd);
+      this.computeBandsInto(fd, this._fftBands);
     }
 
     if (this.analyserBass) {
-      const buf = new Uint8Array(this.analyserBass.frequencyBinCount);
+      const buf = this.scratchBass(this.analyserBass.frequencyBinCount);
       this.analyserBass.getByteFrequencyData(buf);
-      const bassSlice = buf.slice(0, Math.max(4, Math.floor(buf.length * 0.09)));
-      const avg =
-        bassSlice.reduce((a, b) => a + b, 0) / Math.max(1, bassSlice.length);
-      this._bassAmp = avg / 255;
+      this._bassAmp = meanOfRange(buf, 0, Math.max(4, Math.floor(buf.length * 0.09))) / 255;
     }
 
     if (this.analyserHigh) {
-      const buf = new Uint8Array(this.analyserHigh.frequencyBinCount);
+      const buf = this.scratchHigh(this.analyserHigh.frequencyBinCount);
       this.analyserHigh.getByteFrequencyData(buf);
-      const highSlice = buf.slice(Math.floor(buf.length * 0.52));
-      const avg =
-        highSlice.reduce((a, b) => a + b, 0) / Math.max(1, highSlice.length);
-      this._highAmp = avg / 255;
+      this._highAmp = meanOfRange(buf, Math.floor(buf.length * 0.52), buf.length) / 255;
     }
 
     const energy = this._bassAmp;
@@ -947,25 +970,49 @@ export class AudioEngine implements IAudioEngine {
     this.advanceLiveSchedule(transport, onsetStrength);
   };
 
-  private computeBands(buf: Uint8Array): number[] {
-    const ranges = [
-      [0.0, 0.02],
-      [0.02, 0.05],
-      [0.05, 0.1],
-      [0.1, 0.18],
-      [0.18, 0.3],
-      [0.3, 0.48],
-      [0.48, 0.7],
-      [0.7, 1.0],
-    ];
+  /**
+   * Analyser scratch buffers, allocated once per size rather than per frame.
+   *
+   * tick() runs on every animation frame and used to allocate four Uint8Arrays
+   * (2048 + 1024 + 256 + 256 bytes), two slices of them, and computeBands'
+   * range table plus its result array — roughly twenty objects and 3.5KB of
+   * garbage, sixty times a second. Nothing downstream retains any of it, so it
+   * was pure collector pressure, and a phone pays for that in frame hitches
+   * rather than in throughput. Each getter reallocates only if the analyser's
+   * bin count actually changes, which it does not after setup.
+   */
+  private scratchTime = new Uint8Array(new ArrayBuffer(0));
+  private scratchFull = new Uint8Array(new ArrayBuffer(0));
+  private scratchLow = new Uint8Array(new ArrayBuffer(0));
+  private scratchTop = new Uint8Array(new ArrayBuffer(0));
 
-    return ranges.map(([from, to]) => {
-      const a = Math.floor(buf.length * from);
-      const b = Math.max(a + 1, Math.floor(buf.length * to));
+  private scratch(size: number) {
+    if (this.scratchTime.length !== size) this.scratchTime = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchTime;
+  }
+  private scratchFreq(size: number) {
+    if (this.scratchFull.length !== size) this.scratchFull = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchFull;
+  }
+  private scratchBass(size: number) {
+    if (this.scratchLow.length !== size) this.scratchLow = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchLow;
+  }
+  private scratchHigh(size: number) {
+    if (this.scratchTop.length !== size) this.scratchTop = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchTop;
+  }
+
+  /** Fills `out` in place; same maths as the old computeBands, no allocation. */
+  private computeBandsInto(buf: Uint8Array, out: number[]): number[] {
+    for (let band = 0; band < FFT_BAND_COUNT; band++) {
+      const a = Math.floor(buf.length * FFT_BAND_EDGES[band * 2]);
+      const b = Math.max(a + 1, Math.floor(buf.length * FFT_BAND_EDGES[band * 2 + 1]));
       let sum = 0;
       for (let i = a; i < b; i++) sum += buf[i];
-      return Math.min(1, sum / Math.max(1, b - a) / 255);
-    });
+      out[band] = Math.min(1, sum / Math.max(1, b - a) / 255);
+    }
+    return out;
   }
 
   private snapBPM(bpm: number): number {

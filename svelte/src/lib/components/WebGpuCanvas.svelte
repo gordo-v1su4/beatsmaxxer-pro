@@ -17,6 +17,8 @@
   let ready = $state(false);
   let visibilityObserver: IntersectionObserver | null = null;
   let sizeObserver: ResizeObserver | null = null;
+  /** Pending coalesced resize; 0 when none is queued. */
+  let resizeRaf = 0;
   const effectMode = $derived(
     SHADER_EFFECT_MODE[getModuleDef(moduleId)?.shaderKey ?? moduleId] ?? 0
   );
@@ -93,9 +95,19 @@
     // Only PGM is layout-sized, so only PGM needs to follow its box. Re-attaching
     // is the reallocation path: attachCanvas already destroys and rebuilds the
     // uniform buffer and both feedback textures, which are sized off the canvas.
+    //
+    // Coalesced to one attach per frame. A phone's URL bar collapsing is a
+    // continuous resize, not a single one, and every intermediate width used to
+    // reconfigure the swapchain and reallocate both feedback textures — mid
+    // performance, while the picture is live. Deferring to rAF means the run of
+    // resizes costs one reallocation at the size the box actually settles on.
     if (ok && id === 'pgm' && typeof ResizeObserver !== 'undefined') {
       sizeObserver = new ResizeObserver(() => {
-        if (applySize()) void attach();
+        if (resizeRaf !== 0) return;
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0;
+          if (applySize()) void attach();
+        });
       });
       sizeObserver.observe(canvas);
     }
@@ -104,6 +116,7 @@
   onDestroy(() => {
     visibilityObserver?.disconnect();
     sizeObserver?.disconnect();
+    if (resizeRaf !== 0) cancelAnimationFrame(resizeRaf);
     webGpuEngine.detachCanvas(id);
   });
 
