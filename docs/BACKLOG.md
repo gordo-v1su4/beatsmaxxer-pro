@@ -159,6 +159,53 @@ end and produces exactly one `<video>`. 850x390 landscape: perform posture, no
 overflow, transport floating over the picture. `svelte-check` 0 errors, 307
 unit tests pass, production build clean.
 
+### Second pass — latency, lifecycle, and the pad
+
+Most of what actually made the phone feel bad was not in `lib/mobile/`.
+
+- **The FX pipelines are built once per device**, not once per canvas per
+  attach. `attachCanvas` was compiling the 52KB module shader twice for every
+  canvas — twenty-two compiles to bring up the rack, which is the whole
+  "Compiling effect shaders" stall, and on the phone it was also the price of a
+  resize, because PGM reattaches to follow its box.
+- **The audio frame path allocates nothing.** `AudioEngine.tick` was making
+  four Uint8Arrays, two slices and a range table every frame — about twenty
+  objects and 3.5KB of garbage sixty times a second, none of it retained.
+- **Chrome over the live picture takes a tint, not a backdrop blur.**
+  `backdrop-filter` is a per-frame compositor cost charged against what is
+  underneath, and underneath is a canvas that presents a new texture every
+  frame, so it could never be cached. Landscape had five of them stacked on it.
+  One token, `--m-blur-over-picture`, holds the decision; the sheet keeps its
+  glass in portrait where the backdrop is static and free.
+- **Render resolution is measured, not fixed.** `renderBudget.ts` steps PGM's
+  scale down when frames run long and back up when the headroom holds. Off on
+  the rack and under `?qa=`, because `verify-visual-proof` hashes PNGs.
+- **The AudioContext no longer forces 44100.** Phone hardware runs at 48000, so
+  the request bought a resampler rather than 44.1k output.
+
+Lifecycle, which the app previously had no answer to at all:
+
+- **The splash can no longer hang.** Its wait awaited a bare rAF, so a surface
+  that is not compositing parked it before it ever re-read its own deadline.
+  Raced against a timer now. *(Closes the in-app-browser report below.)*
+- **Backgrounding recovers.** Nothing resumed the AudioContext, so the app came
+  back with a live picture, a frozen playhead and a silent song while still
+  reporting "playing" — unrecoverable from inside the app.
+- **A lost GPU device rebuilds.** Nothing listened for `device.lost`, so the
+  first loss left the engine rendering into a destroyed swapchain forever.
+- **The sequencer no longer replays the whole absence.** Five backgrounded
+  minutes at 128bpm was 2560 PGM cuts fired into the first frame back.
+
+New surface:
+
+- **The XY macro pad** (`MobileMacroPad.svelte`) plays a module's two
+  continuous parameters straight off the picture. Axes come from
+  `mobileSpecForModule`, so the pad and the sheet's first two faders are the
+  same pair and a new module gets one for free. Off by default; the `XY` key on
+  the glass arms it.
+- **Steppers hold to repeat**, accelerating after a 420ms delay. BPM 128→90 was
+  thirty-eight taps.
+
 ### Open / needs a decision
 - **Hosted rhythm analysis is off on the phone.** The desktop gates it behind a
   per-upload disclosure that has no mobile home yet, so mobile song loads run
@@ -168,9 +215,17 @@ unit tests pass, production build clean.
 - **WebGPU-absent path is written but unexercised** — `NoGpuPanel` renders in
   place of the picture and `CapabilityGate` stands down when the phone shell is
   up, but no real GPU-less device has been tested against it.
-- The in-app browser pane does not composite while hidden, so **rAF never runs
-  and the loading splash never dismisses there**. Everything above was measured
-  through the DOM; a real device pass is still owed.
+- **None of the second pass has been measured on a real phone.** Every change
+  above is reasoned from the code and covered by unit tests; the numbers that
+  would justify them — frame time, the governor's resting scale, whether the
+  blur removal is visible — need a device. The browser gates need Chrome and a
+  GPU, so they have not run either.
+- **A second decode lane is still unexplored.** The one-video rule was a first-
+  pass budget decision, and the headroom above was bought partly to reconsider
+  it: a real crossfade between two clips is the most obviously "desktop" thing
+  the phone still cannot do. It would have to be gated on the render budget
+  holding at full scale, and it is the one change that would touch the
+  eight-video proof's element-identity invariants.
 
 ---
 
