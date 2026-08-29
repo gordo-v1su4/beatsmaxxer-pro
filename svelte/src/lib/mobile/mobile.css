@@ -52,6 +52,17 @@
 	--m-line: #0d0e0f;
 	--m-line-soft: #1e2226;
 	--m-line-lit: #2a3138;
+	--m-edge-specular: rgba(255, 255, 255, 0.055);
+	--m-edge-shadow: rgba(0, 0, 0, 0.72);
+	--m-control-face: linear-gradient(180deg, #22272d 0%, #191d21 52%, #121518 100%);
+	--m-control-face-hover: linear-gradient(180deg, #293038 0%, #1d2227 54%, #15181c 100%);
+	--m-control-shadow:
+		inset 0 1px 0 var(--m-edge-specular),
+		inset 0 -2px 3px rgba(0, 0, 0, 0.52),
+		0 1px 0 var(--m-edge-shadow);
+	--m-control-shadow-pressed:
+		inset 0 3px 6px rgba(0, 0, 0, 0.72),
+		inset 0 1px 0 rgba(255, 255, 255, 0.025);
 	/* Tint, not frost. A 16–24px blur is the usual “glass” look and it also
 	   fights the WebGPU canvas; 4px is just enough to separate chrome from the
 	   picture without milking the frame. */
@@ -102,15 +113,15 @@
 	--m-radius-xs: 2px;
 	--m-radius-pill: 2px;
 	--m-radius-sheet: 2px;
-	--m-bevel-face: linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%);
+	--m-bevel-face: var(--m-control-face);
 	--m-bevel-edge: #2a2e34 #16181a #121416 #16181a;
-	--m-bevel-in: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48);
+	--m-bevel-in: var(--m-control-shadow);
 	--m-gap: 8px;
 	--m-pad: 12px;
 
-	--m-ease: cubic-bezier(0.2, 0, 0, 1);
+	--m-ease: var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 	--m-dur: 220ms;
-	--m-dur-fast: 120ms;
+	--m-dur-fast: 140ms;
 
 	/* Overlay scrim + sheet shadow, shared so every phone surface stacks the
 	   same way over the picture. */
@@ -247,7 +258,7 @@ input[type='range'],
 
 /* Instant, not animated — a focus ring that fades in is a missed ring. */
 :is(.mobile-shell, .mobile-shell-active) :is(button, [role='button'], [role='slider'], [role='tab'], [role='radio']):focus-visible {
-	outline: 2px solid var(--m-accent);
+	outline: 2px solid var(--focus-ring, var(--m-accent));
 	outline-offset: 2px;
 }
 

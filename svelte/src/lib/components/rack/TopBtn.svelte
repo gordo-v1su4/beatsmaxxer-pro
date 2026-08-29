@@ -33,6 +33,7 @@
 
 <button
   type="button"
+  class="top-btn"
   {disabled}
   {onclick}
   {title}
@@ -47,7 +48,17 @@
     ? `${c}${active ? '55' : '33'}`
     : '#1a1c1e'} {lit
     ? `${c}${active ? '55' : '33'}`
-    : '#1a1c1e'};border-radius:3px;cursor:{disabled ? 'not-allowed' : 'pointer'};color:{lit ? c : '#3a4050'};opacity:{disabled ? 0.45 : 1};font-family:var(--font-ui);font-weight:500;font-size:9px;letter-spacing:0.1em;display:flex;align-items:center;gap:4px;transition:all 0.1s;box-shadow:inset 0 1px 2px rgba(0,0,0,0.4)"
+    : '#1a1c1e'};border-radius:3px;cursor:{disabled ? 'not-allowed' : 'pointer'};color:{lit ? c : 'var(--ink-faint)'};opacity:{disabled ? 0.45 : 1};font-family:var(--font-ui);font-weight:500;font-size:9px;letter-spacing:0.1em;display:flex;align-items:center;gap:4px;transition:background var(--dur-control) var(--ease-out),border-color var(--dur-control) var(--ease-out),color var(--dur-control) var(--ease-out),box-shadow var(--dur-control) var(--ease-out),transform var(--dur-press) var(--ease-out);box-shadow:{lit ? `inset 0 1px 0 rgba(255,255,255,0.04),0 0 8px ${c}20` : 'var(--control-shadow)'}"
 >
   {#if icon}{@render icon()}{/if}{label}
 </button>
+
+<style>
+  .top-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: var(--control-shadow-pressed) !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .top-btn { transition-duration: 0ms !important; }
+  }
+</style>

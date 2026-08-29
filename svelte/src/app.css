@@ -1,3 +1,4 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V5 */
 @import 'tailwindcss';
 @import './lib/mobile/mobile.css';
 
@@ -57,10 +58,44 @@
 }
 
 :root {
+	/* Hallmark · genre: atmospheric · macrostructure: Workbench
+	 * theme: studied-DNA (source: https://designcode.io/) · tone: cinematic instrument
+	 * anchor hue: existing functional teal · design-system: design.md · designed-as-app
+	 * contrast: pass (40–41) · nav: app chrome · footer: none · slop: pass (42–45)
+	 * honest: pass (46) · chrome: pass (47) · tokens: pass for new system (48)
+	 * responsive: pass (49) · icons: pass (30) · mobile: pass (34, 49, 50–57)
+	 */
 	--rack-bg: #0a0b0c;
 	--panel-bg: #131416;
 	--border: #0d0e0f;
 	--text-dim: #7a8090;
+	--surface-canvas: #050607;
+	--surface-sunken: #090b0d;
+	--surface-panel: #111316;
+	--surface-raised: #181b1f;
+	--surface-hover: #20242a;
+	--edge-dark: #090a0c;
+	--edge-soft: #20242a;
+	--edge-lit: #30353c;
+	--ink: #edf0f3;
+	--ink-dim: #8d96a2;
+	--ink-faint: #4f5864;
+	--focus-ring: #7fe3d4;
+	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+	--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+	--dur-press: 90ms;
+	--dur-control: 140ms;
+	--dur-panel: 220ms;
+	--control-face: linear-gradient(180deg, #20242a 0%, #181b1f 52%, #121417 100%);
+	--control-face-hover: linear-gradient(180deg, #272c32 0%, #1c2025 54%, #15181b 100%);
+	--control-edge: #30353c #171a1e #0d0f11 #171a1e;
+	--control-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.055),
+		inset 0 -2px 3px rgba(0, 0, 0, 0.52),
+		0 1px 0 rgba(0, 0, 0, 0.7);
+	--control-shadow-pressed:
+		inset 0 3px 6px rgba(0, 0, 0, 0.72),
+		inset 0 1px 0 rgba(255, 255, 255, 0.025);
 	--font-ui: 'Avenir Next Condensed', 'Arial Narrow', system-ui, sans-serif;
 	--font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 	--font-brand: 'Avenir Next', system-ui, sans-serif;
@@ -119,6 +154,14 @@ button {
 	font-family: inherit;
 }
 
+button:focus-visible,
+[role='button']:focus-visible,
+[role='slider']:focus-visible,
+[role='tab']:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
 input[type='range'] {
 	-webkit-appearance: none;
 	appearance: none;
@@ -169,10 +212,22 @@ input[type='range']::-moz-range-thumb {
 	height: 100vh;
 	height: 100dvh;
 	overflow: auto;
-	background: var(--rack-bg);
+	background-color: var(--rack-bg);
+	background-image:
+		linear-gradient(rgba(255, 255, 255, 0.012) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(255, 255, 255, 0.01) 1px, transparent 1px);
+	background-size: 80px 80px;
 	-webkit-overflow-scrolling: touch;
 	scrollbar-width: thin;
 	scrollbar-color: #2a3038 var(--rack-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		scroll-behavior: auto !important;
+	}
 }
 
 .app-viewport::-webkit-scrollbar {

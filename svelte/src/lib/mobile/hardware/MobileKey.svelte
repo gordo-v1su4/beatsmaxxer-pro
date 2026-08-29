@@ -69,11 +69,8 @@
     /* The machined face: light at the top, shadowed down the sides. */
     border: 1px solid;
     border-color: #26292d #16181a #131416 #16181a;
-    background: linear-gradient(180deg, #202429 0%, #191c20 52%, #141619 100%);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.045),
-      inset 0 -2px 3px rgba(0, 0, 0, 0.5),
-      0 1px 0 rgba(0, 0, 0, 0.55);
+    background: var(--m-control-face, linear-gradient(180deg, #202429 0%, #191c20 52%, #141619 100%));
+    box-shadow: var(--m-control-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.045), inset 0 -2px 3px rgba(0, 0, 0, 0.5), 0 1px 0 rgba(0, 0, 0, 0.55));
     color: #4d5561;
     font-family: var(--font-ui);
     font-size: 11px;
@@ -82,16 +79,25 @@
     text-transform: uppercase;
     white-space: nowrap;
     transition:
-      color 90ms ease,
-      border-color 90ms ease,
-      box-shadow 90ms ease,
-      background 90ms ease;
+      color var(--m-dur-fast, 140ms) var(--m-ease, ease-out),
+      border-color var(--m-dur-fast, 140ms) var(--m-ease, ease-out),
+      box-shadow var(--m-dur-fast, 140ms) var(--m-ease, ease-out),
+      background var(--m-dur-fast, 140ms) var(--m-ease, ease-out),
+      transform var(--dur-press, 90ms) var(--m-ease, ease-out);
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
 
   .key.is-grow {
     flex: 1 1 auto;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .key:hover:not(:disabled):not(.is-active) {
+      background: var(--m-control-face-hover, #202429);
+      border-top-color: #353b43;
+      color: var(--m-ink-dim, #8a93a0);
+    }
   }
 
   /*
@@ -126,9 +132,8 @@
 
   /* Pressed goes further in, and the label sinks a hair with it. */
   .key:active:not(:disabled) {
-    box-shadow:
-      inset 0 3px 6px rgba(0, 0, 0, 0.7),
-      inset 0 0 8px color-mix(in srgb, var(--accent) 10%, transparent);
+    transform: translateY(0.5px);
+    box-shadow: var(--m-control-shadow-pressed, inset 0 3px 6px rgba(0, 0, 0, 0.7));
   }
   .key:active:not(:disabled) .key-label {
     transform: translateY(0.5px);

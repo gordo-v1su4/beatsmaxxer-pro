@@ -859,7 +859,10 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    transition: all 0.2s;
+    transition:
+      background-color var(--dur-control) var(--ease-out),
+      box-shadow var(--dur-control) var(--ease-out),
+      opacity var(--dur-control) var(--ease-out);
   }
 
   .brand-text {
@@ -886,8 +889,9 @@
   .transport-btn {
     height: 26px;
     padding-inline: 10px;
-    background: linear-gradient(180deg, #1c2020, #141818);
-    border: 1px solid #252729;
+    background: var(--control-face);
+    border: 1px solid;
+    border-color: var(--control-edge);
     border-radius: 3px;
     cursor: pointer;
     color: #4a5565;
@@ -897,9 +901,26 @@
     font-weight: 500;
     font-size: 9px;
     letter-spacing: 0.1em;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
-    transition: all 0.1s;
+    box-shadow: var(--control-shadow);
+    transition:
+      background var(--dur-control) var(--ease-out),
+      border-color var(--dur-control) var(--ease-out),
+      color var(--dur-control) var(--ease-out),
+      box-shadow var(--dur-control) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
     flex-shrink: 0;
+  }
+
+  .transport-btn:hover:not(:disabled) {
+    background: var(--control-face-hover);
+    color: var(--ink-dim);
+  }
+
+  .transport-btn:active:not(:disabled),
+  .tap-btn:active:not(:disabled),
+  .hold-btn:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: var(--control-shadow-pressed);
   }
 
   .transport-btn[data-playing='true'] {
@@ -1082,7 +1103,10 @@
     height: 7px;
     border-radius: 1px;
     border: 1px solid;
-    transition: all 0.05s;
+    transition:
+      background-color 50ms linear,
+      border-color 50ms linear,
+      box-shadow 50ms linear;
   }
 
   .phase-bar {
@@ -1142,8 +1166,13 @@
     font-weight: 500;
     font-size: 9px;
     letter-spacing: 0.1em;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
-    transition: all 0.05s;
+    box-shadow: var(--control-shadow);
+    transition:
+      background var(--dur-press) var(--ease-out),
+      border-color var(--dur-press) var(--ease-out),
+      color var(--dur-press) var(--ease-out),
+      box-shadow var(--dur-press) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
     flex-shrink: 0;
   }
 
@@ -1295,8 +1324,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
-    transition: all 0.1s;
+    box-shadow: var(--control-shadow);
+    transition:
+      background var(--dur-control) var(--ease-out),
+      border-color var(--dur-control) var(--ease-out),
+      color var(--dur-control) var(--ease-out),
+      box-shadow var(--dur-control) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
   }
 
   .hold-btn[data-active='true'] {
@@ -1362,8 +1396,13 @@
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.12em;
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
-    transition: all 0.1s;
+    box-shadow: var(--control-shadow);
+    transition:
+      background var(--dur-control) var(--ease-out),
+      border-color var(--dur-control) var(--ease-out),
+      color var(--dur-control) var(--ease-out),
+      box-shadow var(--dur-control) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
   }
 
   .crt-btn[data-active='true'] {
@@ -1371,5 +1410,13 @@
     border-color: #35e08a55;
     color: #35e08a;
     box-shadow: 0 0 8px rgba(53, 224, 138, 0.18);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .transport-btn,
+    .tap-btn,
+    .hold-btn {
+      transition-duration: 0ms;
+    }
   }
 </style>
