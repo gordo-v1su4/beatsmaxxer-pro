@@ -162,7 +162,7 @@
 
   let panel = $state<HTMLElement>();
   let dragging = $state(false);
-  let dragY = $state(0);
+  let dragX = $state(0);
   let pointerId: number | null = null;
   let startX = 0;
   let startY = 0;
@@ -185,7 +185,7 @@
     suppressClick = false;
     if (immediate) {
       dragging = true;
-      dragY = 0;
+      dragX = 0;
       capture(e.pointerId);
     }
   }
@@ -197,8 +197,9 @@
 
     if (!dragging) {
       if (Math.abs(dx) < INTENT_PX && Math.abs(dy) < INTENT_PX) return;
-      // Upward or sideways: the list owns it.
-      if (dy < 0 || Math.abs(dx) >= Math.abs(dy)) {
+      // Vertical or rightward: the list owns it. Only a deliberate swipe back
+      // toward the shelf's left edge dismisses it.
+      if (dx > 0 || Math.abs(dy) >= Math.abs(dx)) {
         pointerId = null;
         return;
       }
@@ -207,7 +208,7 @@
     }
 
     suppressClick = true;
-    dragY = Math.max(0, dy);
+    dragX = Math.min(0, dx);
   }
 
   function endDrag(e: PointerEvent) {
@@ -216,12 +217,12 @@
     pointerId = null;
     if (!dragging) return;
 
-    const height = panel?.offsetHeight ?? 1;
-    const dismissed = dragY > height * DISMISS_FRACTION;
+    const width = panel?.offsetWidth ?? 1;
+    const dismissed = -dragX > width * DISMISS_FRACTION;
     // Drop the inline transform in the same tick so the class transition — not
     // the drag — carries the panel the rest of the way, open or shut.
     dragging = false;
-    dragY = 0;
+    dragX = 0;
     if (dismissed) close();
   }
 
@@ -229,7 +230,7 @@
     if (pointerId !== e.pointerId) return;
     pointerId = null;
     dragging = false;
-    dragY = 0;
+    dragX = 0;
   }
 </script>
 
@@ -259,7 +260,7 @@
   aria-label="Clip and effect browsers"
   aria-hidden={!$drawerOpen}
   inert={!$drawerOpen}
-  style={dragging ? `transform: translateY(${dragY}px);` : undefined}
+  style={dragging ? `transform: translateX(${dragX}px);` : undefined}
   onpointerdown={(e) => beginDrag(e)}
   onpointermove={moveDrag}
   onpointerup={endDrag}
@@ -272,16 +273,6 @@
     e.preventDefault();
   }}
 >
-  <div
-    class="drawer-rail"
-    aria-hidden="true"
-    onpointerdown={(e) => {
-      e.stopPropagation();
-      beginDrag(e, true);
-    }}
-  >
-    <span class="drawer-grip"></span>
-  </div>
   <header class="drawer-head">
     <div class="drawer-tabs" role="tablist" aria-label="Browser">
       {#each TABS as tab (tab.key)}
@@ -374,6 +365,18 @@
       </div>
     {/if}
   </div>
+
+  <!-- Pure gesture surface: the shelf's exposed edge always dismisses left. -->
+  <div
+    class="drawer-rail"
+    aria-hidden="true"
+    onpointerdown={(e) => {
+      e.stopPropagation();
+      beginDrag(e, true);
+    }}
+  >
+    <span class="drawer-grip"></span>
+  </div>
 </aside>
 
 <style>
@@ -398,36 +401,38 @@
 
   .drawer {
     position: fixed;
-    left: 0;
-    right: 0;
+    top: 0;
     bottom: 0;
-    top: auto;
+    left: 0;
+    right: auto;
     z-index: 61;
     box-sizing: border-box;
-    width: 100%;
-    max-width: 100%;
-    height: min(72dvh, 680px);
+    /* Keep enough of the live picture exposed to make this read as a shelf,
+       not a page transition. The cap keeps it compact on forced-mobile QA. */
+    width: min(86vw, 380px);
+    max-width: 86vw;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     background: var(--m-glass, rgba(8, 10, 12, 0.22));
     backdrop-filter: var(--m-blur, blur(4px));
     -webkit-backdrop-filter: var(--m-blur, blur(4px));
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    border-right: none;
-    border-radius: var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0 0;
-    transform: translateY(110%);
+    border-top: none;
+    border-right: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 0 var(--m-radius-sheet, 20px) var(--m-radius-sheet, 20px) 0;
+    transform: translateX(-110%);
     transition: transform var(--m-dur, 220ms) var(--m-ease, cubic-bezier(0.2, 0, 0, 1));
     font-family: var(--font-ui);
     color: var(--m-ink, #e5e7eb);
     padding-left: var(--m-safe-left, 0px);
-    padding-right: var(--m-safe-right, 0px);
-    padding-top: 0;
+    padding-right: 8px;
+    padding-top: var(--m-safe-top, 0px);
     padding-bottom: var(--m-safe-bottom, 0px);
     touch-action: pan-y;
     overscroll-behavior: contain;
   }
   .drawer.is-open {
-    transform: translateY(0);
+    transform: translateX(0);
   }
   /* A finger already owns the panel — a 300ms ease would lag behind it. */
   .drawer.is-dragging {
@@ -439,7 +444,7 @@
     display: flex;
     align-items: stretch;
     gap: 6px;
-    padding: 8px 8px 0 12px;
+    padding: 8px 4px 0 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     touch-action: none;
   }
@@ -506,18 +511,17 @@
   }
 
   .drawer-rail {
-    position: relative;
-    flex: 0 0 auto;
-    width: 100%;
-    height: 18px;
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: 18px;
     display: grid;
     place-items: center;
     touch-action: none;
     cursor: grab;
   }
   .drawer-grip {
-    width: 40px;
-    height: 4px;
+    width: 4px;
+    height: 40px;
     border-radius: var(--m-radius-pill, 999px);
     background: rgba(255, 255, 255, 0.28);
   }
@@ -680,5 +684,12 @@
     line-height: 1.45;
     letter-spacing: 0.04em;
     color: var(--m-ink-faint, #555e6a);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .drawer,
+    .drawer-scrim {
+      transition: none;
+    }
   }
 </style>
