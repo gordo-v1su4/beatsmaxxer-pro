@@ -178,6 +178,19 @@ export class WebGpuEngine {
   private sampler: GPUSampler | null = null;
   private blitPipeline: GPURenderPipeline | null = null;
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
+  /** The module FX shader is ~100KB of WGSL and every canvas used to compile
+   * its own copy of it plus the idle derivation, so a desktop rack paid 22
+   * compilations of two identical programs before the first frame. Nothing in
+   * either pipeline varies per canvas — both render into an offscreen
+   * rgba8unorm feedback target, not the swapchain — so they are built once
+   * here and shared by every binding. Only the blit pipeline touches
+   * this.format, and it was already shared. */
+  private fxShaderModule: GPUShaderModule | null = null;
+  private idleShaderModule: GPUShaderModule | null = null;
+  private fxBindGroupLayout: GPUBindGroupLayout | null = null;
+  private fxIdleBindGroupLayout: GPUBindGroupLayout | null = null;
+  private fxPipeline: GPURenderPipeline | null = null;
+  private fxIdlePipeline: GPURenderPipeline | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
   private initPromise: Promise<boolean> | null = null;
@@ -214,7 +227,53 @@ export class WebGpuEngine {
       },
       primitive: { topology: 'triangle-list' }
     });
+    this.createModulePipelines(this.device);
     return true;
+  }
+
+  /** Compile the shared module-FX programs. Called once from init so the cost
+   * lands during device acquisition rather than on the first canvas attach. */
+  private createModulePipelines(device: GPUDevice) {
+    this.fxShaderModule = device.createShaderModule({ code: MODULE_FX_WGSL });
+    this.idleShaderModule = device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
+    this.fxBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    this.fxIdleBindGroupLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+      ]
+    });
+    this.fxPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxBindGroupLayout] }),
+      vertex: { module: this.fxShaderModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: this.fxShaderModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: 'rgba8unorm' }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
+    this.fxIdlePipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxIdleBindGroupLayout] }),
+      vertex: { module: this.idleShaderModule, entryPoint: 'vertexMain' },
+      fragment: {
+        module: this.idleShaderModule,
+        entryPoint: 'fragmentMain',
+        targets: [{ format: 'rgba8unorm' }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
   }
 
   /** True once at least one binding has been encoded and submitted. The splash
@@ -329,47 +388,14 @@ export class WebGpuEngine {
     const feedback = createFeedbackPair(this.device, w, h);
     const placeholderFb = this.placeholderFeedbackView!;
 
-    const shaderModule = this.device.createShaderModule({ code: MODULE_FX_WGSL });
-    const idleShaderModule = this.device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
-    const bindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-      ]
-    });
-    const idleBindGroupLayout = this.device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-        { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-      ]
-    });
-
-    const pipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-      vertex: { module: shaderModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: shaderModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }]
-      },
-      primitive: { topology: 'triangle-list' }
-    });
-    const idlePipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [idleBindGroupLayout] }),
-      vertex: { module: idleShaderModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: idleShaderModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }]
-      },
-      primitive: { topology: 'triangle-list' }
-    });
+    // Shared across every binding — see createModulePipelines(). A canvas that
+    // attaches before init finished still gets them, because the guard at the
+    // top of this method awaits init().
+    if (!this.fxPipeline) this.createModulePipelines(this.device);
+    const pipeline = this.fxPipeline!;
+    const idlePipeline = this.fxIdlePipeline!;
+    const bindGroupLayout = this.fxBindGroupLayout!;
+    const idleBindGroupLayout = this.fxIdleBindGroupLayout!;
 
     const uniformBuffer = this.device.createBuffer({
       // 40 f32/u32 words. The Uniforms struct fills 37 (aux3/aux4 for LEAK's
