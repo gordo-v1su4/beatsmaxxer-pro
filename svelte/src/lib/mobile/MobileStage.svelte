@@ -351,6 +351,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .overlay.floating {
+      transition-duration: 150ms;
+    }
+
     .xy {
       transition: none;
     }

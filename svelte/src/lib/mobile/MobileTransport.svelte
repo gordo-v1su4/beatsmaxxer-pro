@@ -324,7 +324,7 @@
     <div class="stepper stepper-wide">
       <button
         type="button"
-        aria-label="Advance less often"
+        aria-label="Decrease clip interval"
         onpointerdown={(e) => holdToRepeat(e, () => nudgeAdvance(-1))}
         onclick={(e) => keyActivate(e, () => nudgeAdvance(-1))}
         onpointerup={stopRepeat}
@@ -339,7 +339,7 @@
       </span>
       <button
         type="button"
-        aria-label="Advance more often"
+        aria-label="Increase clip interval"
         onpointerdown={(e) => holdToRepeat(e, () => nudgeAdvance(1))}
         onclick={(e) => keyActivate(e, () => nudgeAdvance(1))}
         onpointerup={stopRepeat}
