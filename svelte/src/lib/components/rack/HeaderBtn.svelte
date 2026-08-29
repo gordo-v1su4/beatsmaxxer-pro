@@ -11,6 +11,7 @@
 
 <button
   type="button"
+  class="header-btn"
   {onclick}
   onmouseenter={() => (hov = true)}
   onmouseleave={() => (hov = false)}
@@ -28,5 +29,15 @@
       ? '#7a8090'
       : '#3a4050'};font-family:var(--font-ui);font-weight:500;font-size:8px;letter-spacing:0.05em;display:flex;align-items:center;justify-content:center;box-shadow:{active
     ? `inset 0 1px 3px rgba(0,0,0,0.6),0 0 5px ${activeColor}33`
-    : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.08s"
+    : 'var(--control-shadow)'};transition:background var(--dur-control) var(--ease-out),border-color var(--dur-control) var(--ease-out),color var(--dur-control) var(--ease-out),box-shadow var(--dur-control) var(--ease-out),transform var(--dur-press) var(--ease-out)"
 >{label}</button>
+
+<style>
+  .header-btn:active {
+    transform: translateY(0.5px);
+    box-shadow: var(--control-shadow-pressed) !important;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .header-btn { transition-duration: 0ms !important; }
+  }
+</style>

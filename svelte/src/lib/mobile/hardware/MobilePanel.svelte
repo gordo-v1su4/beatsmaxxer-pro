@@ -60,9 +60,12 @@
     position: relative;
     /* The machined face. Three stops, not two — the mid stop at 55% is what
        gives it a rolled edge instead of a flat ramp. */
-    background: linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
-    border-top: 1px solid #23262a;
+    background:
+      linear-gradient(90deg, rgba(255, 255, 255, 0.012) 1px, transparent 1px) 0 0 / 48px 100%,
+      linear-gradient(180deg, #1c1f23 0%, #17191c 55%, #131518 100%);
+    border-top: 1px solid #2a2e33;
     border-bottom: 2px solid #0b0c0d;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
     padding: 9px 11px 11px;
   }
 

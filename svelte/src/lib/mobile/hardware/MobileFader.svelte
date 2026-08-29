@@ -252,7 +252,9 @@
     box-shadow:
       0 1px 3px rgba(0, 0, 0, 0.75),
       inset 0 1px 0 rgba(255, 255, 255, 0.07);
-    transition: box-shadow 90ms ease;
+    transition:
+      box-shadow var(--m-dur-fast, 140ms) var(--m-ease, ease-out),
+      transform var(--dur-press, 90ms) var(--m-ease, ease-out);
   }
   /* The grip. One line is enough at 15px wide. */
   .cap::before {
@@ -264,6 +266,7 @@
   }
 
   .track.is-dragging .cap {
+    transform: translate(-50%, calc(-50% + 0.5px));
     box-shadow:
       0 1px 5px rgba(0, 0, 0, 0.85),
       inset 0 1px 0 rgba(255, 255, 255, 0.1),
