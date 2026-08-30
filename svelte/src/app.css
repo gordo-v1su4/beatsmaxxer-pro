@@ -510,15 +510,15 @@ input[type='range']::-moz-range-thumb {
 /* Keep the complete performance surface inside a maximized laptop-height
    desktop window. Width/height ratios stay intact; only chrome whitespace and
    the program monitor's display footprint tighten. */
-@media (min-width: 961px) and (max-height: 980px) {
+@media (min-width: 961px) and (max-height: 900px) {
 	.main-viewer {
-		height: clamp(200px, 22vh, 320px) !important;
+		height: clamp(210px, 24vh, 260px) !important;
 	}
 	.top-rack-row {
-		min-height: 260px !important;
+		min-height: 270px !important;
 	}
 	.bottom-rack-row {
-		min-height: 170px !important;
+		min-height: 180px !important;
 	}
 }
 .rack-add-card {

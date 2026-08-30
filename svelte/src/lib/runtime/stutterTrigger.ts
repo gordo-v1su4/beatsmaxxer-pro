@@ -62,6 +62,28 @@ export function firingOnsetTimes(onsets: readonly number[], density: number): nu
   return onsets.filter((_, index) => noteFires(index, 100, density));
 }
 
+/** Most recent density-kept onset without rebuilding a filtered array every frame. */
+export function lastFiringOnsetTime(
+  onsets: readonly number[],
+  seconds: number,
+  density: number
+): number | null {
+  if (onsets.length === 0 || seconds < onsets[0] || density <= 0) return null;
+  if (density >= 1) return lastTriggerTime(onsets, seconds);
+
+  let lo = 0;
+  let hi = onsets.length - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (onsets[mid] <= seconds) lo = mid;
+    else hi = mid - 1;
+  }
+  for (let index = lo; index >= 0; index--) {
+    if (noteFires(index, 100, density)) return onsets[index] ?? null;
+  }
+  return null;
+}
+
 export function audioStutterTriggerAge(
   frame: Pick<TimelineFrame, 'beatPosition' | 'positionSeconds' | 'bpm' | 'playbackRate' | 'playing'>,
   onsets: readonly number[],
@@ -69,8 +91,7 @@ export function audioStutterTriggerAge(
   density: number
 ): number {
   if (!frame.playing || onsets.length === 0) return -1;
-  const times = firingOnsetTimes(onsets, density);
-  const triggerTime = lastTriggerTime(times, frame.positionSeconds);
+  const triggerTime = lastFiringOnsetTime(onsets, frame.positionSeconds, density);
   if (triggerTime === null) return -1;
   const bpm = frame.bpm / Math.max(0.01, frame.playbackRate);
   return Math.max(0, frame.beatPosition - beatAt(triggerTime, grid, bpm));
