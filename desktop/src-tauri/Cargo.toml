@@ -1,6 +1,6 @@
 [package]
 name = "beatsmaxxer-pro-desktop"
-version = "0.2.2"
+version = "0.2.4"
 description = "Beatsmaxxer Pro — Tauri desktop shell"
 authors = ["Beatsmaxxer Pro"]
 edition = "2021"
