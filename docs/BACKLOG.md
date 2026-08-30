@@ -176,12 +176,12 @@ unit tests pass, production build clean.
 
 ## Ship / infra
 
-- **Rename the Vercel project.** Change the project slug from
-  `beat-surfer-pro` to `beatsmaxxer-pro`, preserve `beatsmaxxing.com` and
-  `www.beatsmaxxing.com`, verify the new generated `*.vercel.app` aliases, and
-  remove the obsolete Beat Surfer aliases only after the new production URL is
-  confirmed. Do this alongside restoring the intended `main` UI/performance so
-  a naming change does not mask which commit is actually live.
+- **Vercel project rename — completed 2026-08-30.** Renamed project ID
+  `prj_7W0xfFnHFiHqAAbqwuBx0gDfrPQ4` from `beat-surfer-pro` to
+  `beatsmaxxer-pro` after the restored `main` UI/performance deployment reached
+  READY. `beatsmaxxer-pro.vercel.app`, `beatsmaxxing.com`, and
+  `www.beatsmaxxing.com` remain verified production domains; the old Beat
+  Surfer aliases remain temporarily as compatibility links.
 - **Releases.** Bump `version` in `desktop/src-tauri/tauri.conf.json`, commit,
   then `git tag vX.Y.Z && git push origin main vX.Y.Z`. Builds on a Windows
   runner (~6 min warm) and attaches installers to a **draft** release.
