@@ -312,6 +312,13 @@ export class AudioEngine implements IAudioEngine {
 
   stop(reason: AudioStopReason = 'operator') {
     this.invalidatePlaybackStart();
+    // Flush any coalesced tempo change rather than letting it land on a
+    // stopped transport, or on the next track after a replace-upload.
+    if (this.tempoCommitTimer !== null) {
+      clearTimeout(this.tempoCommitTimer);
+      this.tempoCommitTimer = null;
+    }
+    if (this.tempoCommitPending) this.commitTempo();
     this.lastStopReason = reason;
     this.stopCount += 1;
     this._playing = false;
@@ -638,9 +645,13 @@ export class AudioEngine implements IAudioEngine {
     const target = Math.max(60, Math.min(200, bpm));
     const ratio = target / this._analysisBpm;
     this._bpmLocked = true;
-    this.applyTempoRate(Math.max(0.5, Math.min(2, ratio)));
+    // _bpm before applyTempoRate, because the commit it schedules reads it.
+    // The direct setBeatGrid call that used to sit after this one is gone: it
+    // ran on every step of a hold and rebuilt the grid — which copies the whole
+    // beat array — on top of the decoder re-rate.
+    this._tempo = Math.max(0.5, Math.min(2, ratio));
     this._bpm = Math.round(this._analysisBpm * this._tempo);
-    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+    this.applyTempoRate(this._tempo);
   }
 
   unlockBPM() {
@@ -650,10 +661,69 @@ export class AudioEngine implements IAudioEngine {
   }
 
   /** Playback rate — shifts markers via source-time advance; does not re-analyze. */
+  /**
+   * How long a tempo sweep coalesces its expensive half.
+   *
+   * `applySoundTouchParams` writes `mediaElement.playbackRate`, and changing a
+   * media element's rate mid-stream makes the browser re-rate its decode
+   * pipeline — audible on a phone as the track skipping. That is why TEMPO and
+   * BPM skip while PITCH and KEY do not: pitch and key only write worklet
+   * params, so `tempo` is reassigned its existing value and the browser
+   * no-ops it.
+   *
+   * One skip per deliberate change is the cost of the control. A *sweep* is a
+   * different matter: hold-to-repeat accelerates to a step every 40ms, so
+   * holding + was writing a new playback rate twenty-five times a second and
+   * re-rating the decoder on each one — which is continuous stutter rather
+   * than one skip. 150ms cuts that to about six commits a second while still
+   * feeling immediate.
+   */
+  private static readonly TEMPO_COMMIT_INTERVAL_MS = 150;
+
+  private tempoCommitTimer: ReturnType<typeof setTimeout> | null = null;
+  private tempoCommitLastAt = 0;
+  private tempoCommitPending = false;
+
+  private nowMs() {
+    return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  /** The half of a tempo change that costs a decoder re-rate. */
+  private commitTempo() {
+    this.tempoCommitPending = false;
+    this.tempoCommitLastAt = this.nowMs();
+    this.syncSoundTouch();
+    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+  }
+
+  /**
+   * Leading edge, then coalesced: a single tap commits immediately so the
+   * control never feels laggy, and a sustained sweep commits on an interval
+   * with the final value always flushed at the end.
+   */
+  private scheduleTempoCommit() {
+    const elapsed = this.nowMs() - this.tempoCommitLastAt;
+    if (elapsed >= AudioEngine.TEMPO_COMMIT_INTERVAL_MS && this.tempoCommitTimer === null) {
+      this.commitTempo();
+      return;
+    }
+    this.tempoCommitPending = true;
+    if (this.tempoCommitTimer !== null) return;
+    this.tempoCommitTimer = setTimeout(
+      () => {
+        this.tempoCommitTimer = null;
+        if (this.tempoCommitPending) this.commitTempo();
+      },
+      Math.max(0, AudioEngine.TEMPO_COMMIT_INTERVAL_MS - elapsed),
+    );
+  }
+
   private applyTempoRate(rate: number) {
     this._tempo = rate;
+    // Cheap and artefact-free, so these stay immediate: the transport keeps
+    // exact time and the readout tracks the finger even while the decoder
+    // change below is being coalesced.
     audioTimeline.setPlaybackRate(rate);
-    this.syncSoundTouch();
     this.transportClock.queueImmediateParameter(
       "rate",
       this._tempo,
@@ -662,7 +732,7 @@ export class AudioEngine implements IAudioEngine {
     if (!this._bpmLocked) {
       this._bpm = Math.round(this._analysisBpm * this._tempo);
     }
-    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+    this.scheduleTempoCommit();
   }
 
   getState(): AudioEngineState {
