@@ -182,22 +182,23 @@ export class WebGpuEngine {
   private sampler: GPUSampler | null = null;
   private blitPipeline: GPURenderPipeline | null = null;
   private blitBindGroupLayout: GPUBindGroupLayout | null = null;
-  /**
-   * The FX and idle programs, built once for the whole device.
+  /** The module FX shader is ~100KB of WGSL and every canvas used to compile
+   * its own copy of it plus the idle derivation, so a desktop rack paid 22
+   * compilations of two identical programs before the first frame. Nothing in
+   * either pipeline varies per canvas — both render into an offscreen
+   * rgba8unorm feedback target, not the swapchain — so they are built once
+   * here and shared by every binding. Only the blit pipeline touches
+   * this.format, and it was already shared.
    *
-   * Nothing in either pipeline depends on the canvas: both render into a
-   * feedback texture that is always `rgba8unorm`, and both bind group layouts
-   * are written out literally below. They used to be rebuilt inside
-   * attachCanvas, which meant the 52KB module shader was compiled twice per
-   * canvas — twenty-two compiles to bring up a rack, and another two every time
-   * a canvas changed size. That is the whole of the "Compiling effect shaders"
-   * stall on the splash, and on a phone it is also what a URL-bar collapse
-   * costs, because a resize reattaches.
-   */
-  private fxPipeline: GPURenderPipeline | null = null;
-  private fxIdlePipeline: GPURenderPipeline | null = null;
+   * On the phone this is also what a resize costs: PGM reattaches to follow
+   * its box, so a URL bar collapsing used to recompile both programs mid
+   * performance. */
+  private fxShaderModule: GPUShaderModule | null = null;
+  private idleShaderModule: GPUShaderModule | null = null;
   private fxBindGroupLayout: GPUBindGroupLayout | null = null;
   private fxIdleBindGroupLayout: GPUBindGroupLayout | null = null;
+  private fxPipeline: GPURenderPipeline | null = null;
+  private fxIdlePipeline: GPURenderPipeline | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
   private initPromise: Promise<boolean> | null = null;
@@ -239,6 +240,8 @@ export class WebGpuEngine {
     this.sampler = null;
     this.blitPipeline = null;
     this.blitBindGroupLayout = null;
+    this.fxShaderModule = null;
+    this.idleShaderModule = null;
     this.fxPipeline = null;
     this.fxIdlePipeline = null;
     this.fxBindGroupLayout = null;
@@ -299,10 +302,16 @@ export class WebGpuEngine {
       },
       primitive: { topology: 'triangle-list' }
     });
+    this.createModulePipelines(this.device);
+    return true;
+  }
 
-    const shaderModule = this.device.createShaderModule({ code: MODULE_FX_WGSL });
-    const idleShaderModule = this.device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
-    this.fxBindGroupLayout = this.device.createBindGroupLayout({
+  /** Compile the shared module-FX programs. Called once from init so the cost
+   * lands during device acquisition rather than on the first canvas attach. */
+  private createModulePipelines(device: GPUDevice) {
+    this.fxShaderModule = device.createShaderModule({ code: MODULE_FX_WGSL });
+    this.idleShaderModule = device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
+    this.fxBindGroupLayout = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
@@ -311,7 +320,7 @@ export class WebGpuEngine {
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
       ]
     });
-    this.fxIdleBindGroupLayout = this.device.createBindGroupLayout({
+    this.fxIdleBindGroupLayout = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
@@ -320,30 +329,26 @@ export class WebGpuEngine {
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
       ]
     });
-    // Both FX pipelines target the feedback texture, never the swapchain, so
-    // 'rgba8unorm' is correct regardless of what this canvas's preferred format
-    // is. Only the blit above follows this.format.
-    this.fxPipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.fxBindGroupLayout] }),
-      vertex: { module: shaderModule, entryPoint: 'vertexMain' },
+    this.fxPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxBindGroupLayout] }),
+      vertex: { module: this.fxShaderModule, entryPoint: 'vertexMain' },
       fragment: {
-        module: shaderModule,
+        module: this.fxShaderModule,
         entryPoint: 'fragmentMain',
         targets: [{ format: 'rgba8unorm' }]
       },
       primitive: { topology: 'triangle-list' }
     });
-    this.fxIdlePipeline = this.device.createRenderPipeline({
-      layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.fxIdleBindGroupLayout] }),
-      vertex: { module: idleShaderModule, entryPoint: 'vertexMain' },
+    this.fxIdlePipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxIdleBindGroupLayout] }),
+      vertex: { module: this.idleShaderModule, entryPoint: 'vertexMain' },
       fragment: {
-        module: idleShaderModule,
+        module: this.idleShaderModule,
         entryPoint: 'fragmentMain',
         targets: [{ format: 'rgba8unorm' }]
       },
       primitive: { topology: 'triangle-list' }
     });
-    return true;
   }
 
   /** True once at least one binding has been encoded and submitted. The splash
@@ -458,8 +463,15 @@ export class WebGpuEngine {
     const feedback = createFeedbackPair(this.device, w, h);
     const placeholderFb = this.placeholderFeedbackView!;
 
-    // Shared across every canvas — see the fxPipeline field. A binding still
-    // carries its own reference so injected test bindings can substitute one.
+    // Shared across every binding — see createModulePipelines(). A canvas that
+    // attaches before init finished still gets them, because the guard at the
+    // top of this method awaits init(). The null check also covers the
+    // device-loss path: handleDeviceLost() drops everything the dead device
+    // produced, and the re-attach that follows rebuilds it here.
+    //
+    // A binding still carries its own pipeline references rather than reading
+    // the engine's, so injected test bindings can substitute one.
+    if (!this.fxPipeline) this.createModulePipelines(this.device);
     const pipeline = this.fxPipeline!;
     const idlePipeline = this.fxIdlePipeline!;
     const bindGroupLayout = this.fxBindGroupLayout!;
@@ -1008,6 +1020,8 @@ export class WebGpuEngine {
     for (const id of [...this.bindings.keys()]) {
       this.detachCanvas(id);
     }
+    this.fxShaderModule = null;
+    this.idleShaderModule = null;
     this.fxPipeline = null;
     this.fxIdlePipeline = null;
     this.fxBindGroupLayout = null;

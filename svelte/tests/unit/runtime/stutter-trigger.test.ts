@@ -3,6 +3,7 @@ import {
   advanceLiveOnsetStutter,
   audioStutterTriggerAge,
   firingOnsetTimes,
+  lastFiringOnsetTime,
   mergeStutterTriggerAge,
   stutterDivisionProgress,
   stutterInFreezePhase,
@@ -44,6 +45,16 @@ describe('stutterTrigger', () => {
     const dense = firingOnsetTimes([0, 0.1, 0.2, 0.3, 0.4], 0.2);
     expect(dense.length).toBeLessThan(5);
     expect(firingOnsetTimes([0, 0.1, 0.2], 1)).toHaveLength(3);
+  });
+
+  test('finds the latest density-kept onset without materializing the filtered list', () => {
+    const onsets = Array.from({ length: 128 }, (_, index) => index * 0.125);
+    for (const density of [0, 0.2, 0.55, 1]) {
+      for (const seconds of [0, 1.1, 7.75, 30]) {
+        const expected = firingOnsetTimes(onsets, density).filter((time) => time <= seconds).at(-1);
+        expect(lastFiringOnsetTime(onsets, seconds, density)).toBe(expected ?? null);
+      }
+    }
   });
 
   test('live onset stutter arms on rising flux', () => {

@@ -11,29 +11,28 @@ export async function invoke<T>(_cmd: string, _args?: Record<string, unknown>): 
  * `@tauri-apps/api/core` at the top of its module, and the web build aliases
  * that specifier to this file. `loadDesktopUpdaterAdapter` imports the plugin
  * dynamically and is only ever called from the native shell, but a dynamic
- * import is still resolved and bundled — so a stub that exported `invoke`
- * alone failed the web production build outright with two MISSING_EXPORTs,
- * while `vite dev` and `svelte-check` both stayed green.
+ * import is still resolved and bundled — so a stub exporting `invoke` alone
+ * failed the web production build outright with two MISSING_EXPORTs, while
+ * `vite dev` and `svelte-check` both stayed green.
  *
- * Nothing on the web ever constructs either of these; they are shaped to match
- * the real API so a caller that somehow reached one fails the same way `invoke`
- * does, rather than on a missing property.
+ * Shaped like the real thing rather than as throwing placeholders, because
+ * packages subclass Tauri resources at module evaluation time — that happens
+ * during bundling, before any guard could decide not to run it. The methods
+ * still go nowhere useful off Tauri: `close()` routes through `invoke`, which
+ * throws.
  */
 export class Resource {
-  get rid(): number {
-    throw new Error('Tauri Resource is unavailable in the web runtime');
-  }
+  constructor(readonly rid: number) {}
 
   async close(): Promise<void> {
-    throw new Error('Tauri Resource is unavailable in the web runtime');
+    return invoke('plugin:resources|close', { rid: this.rid });
   }
 }
 
+/**
+ * The updater constructs channels only after a native update download starts.
+ * This shape lets its module bundle for web without registering Tauri callbacks.
+ */
 export class Channel<T = unknown> {
-  id = 0;
   onmessage: (response: T) => void = () => {};
-
-  toJSON(): string {
-    throw new Error('Tauri Channel is unavailable in the web runtime');
-  }
 }
