@@ -46,9 +46,20 @@ afterEach(() => {
 });
 
 describe('render budget', () => {
-  test('stays off on the desktop rack', () => {
-    isMobileShell.set(false);
+  test('is off unless explicitly opted in', () => {
+    // Default on a phone: no ?budget=1, so nothing adjusts. The mechanism costs
+    // a black frame per change until it can resize without a re-attach.
+    isMobileShell.set(true);
     startRenderBudget('');
+    expect(renderBudgetState().enabled).toBe(false);
+
+    feed(10_000, 40, 200);
+    expect(get(renderScale)).toBe(1);
+  });
+
+  test('stays off on the desktop rack even when opted in', () => {
+    isMobileShell.set(false);
+    startRenderBudget('?budget=1');
     expect(renderBudgetState().enabled).toBe(false);
 
     feed(0, 40, 200);
@@ -59,7 +70,7 @@ describe('render budget', () => {
 
   test('stays off under a QA run on the phone', () => {
     isMobileShell.set(true);
-    startRenderBudget('?qa=1&qaAutoplay=1');
+    startRenderBudget('?budget=1&qa=1&qaAutoplay=1');
     expect(renderBudgetState().enabled).toBe(false);
 
     feed(0, 40, 200);
@@ -68,7 +79,7 @@ describe('render budget', () => {
 
   test('steps down on the phone when frames run long', () => {
     isMobileShell.set(true);
-    startRenderBudget('');
+    startRenderBudget('?budget=1');
     expect(renderBudgetState().enabled).toBe(true);
 
     // 40ms frames: worse than 30fps, well past the 22ms step-down threshold.
@@ -78,7 +89,7 @@ describe('render budget', () => {
 
   test('holds full resolution at 60fps', () => {
     isMobileShell.set(true);
-    startRenderBudget('');
+    startRenderBudget('?budget=1');
 
     feed(10_000, 16.7, 200);
     // 16.7ms is inside neither threshold: nothing to fix, nothing to reclaim.
@@ -87,7 +98,7 @@ describe('render budget', () => {
 
   test('will not drop a second step inside the downward dwell', () => {
     isMobileShell.set(true);
-    startRenderBudget('');
+    startRenderBudget('?budget=1');
 
     // 40ms frames clear the 22ms step-down threshold, and one window of them is
     // 800ms -- past the 700ms dwell, so the first drop lands.
@@ -103,7 +114,7 @@ describe('render budget', () => {
 
   test('ignores the gap left by a backgrounded page', () => {
     isMobileShell.set(true);
-    startRenderBudget('');
+    startRenderBudget('?budget=1');
 
     // One 30-second absence between two good frames must not be averaged in.
     let now = 10_000;
@@ -118,7 +129,7 @@ describe('render budget', () => {
 
   test('recovers resolution once the device has sustained headroom', () => {
     isMobileShell.set(true);
-    startRenderBudget('');
+    startRenderBudget('?budget=1');
 
     // Two full windows of 40ms frames, landing on a window boundary so no
     // expensive frame is left over to be averaged into the recovery below.

@@ -79,8 +79,26 @@ let lastFrameAt = 0;
  * than adding a second governor.
  */
 export function startRenderBudget(search = typeof window !== 'undefined' ? window.location.search : '') {
-  const isQaRun = new URLSearchParams(search).has('qa');
-  enabled = get(isMobileShell) && !isQaRun;
+  const params = new URLSearchParams(search);
+  /*
+   * Opt-in, because the mechanism currently costs a black frame per change.
+   *
+   * Changing the scale resizes the PGM canvas, and assigning canvas.width
+   * clears it; the re-attach that follows also destroys and rebuilds both
+   * feedback textures, so the trail history goes with it. One adjustment is
+   * therefore one black frame plus a reset trail, and a phone that is
+   * struggling can step down several times in a few seconds. That is a worse
+   * artefact than the judder this exists to prevent, and it matches the black
+   * frames reported from a real device.
+   *
+   * The honest fix is to render into a smaller feedback texture and blit it up
+   * to a canvas whose backing store never changes — then a scale change touches
+   * no swapchain and clears nothing. Until that exists this stays off, with the
+   * measurement, the thresholds and their tests kept intact so turning it on is
+   * a one-line change rather than a rewrite.
+   */
+  const optedIn = params.get('budget') === '1';
+  enabled = optedIn && get(isMobileShell) && !params.has('qa');
   stepIndex = 0;
   accumulatedMs = 0;
   frameCount = 0;

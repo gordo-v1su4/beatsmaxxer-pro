@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { Menu } from '@lucide/svelte';
   import { transportDisplay } from '$lib/stores/transportDisplay';
-  import { openDrawer, mobileToast } from './mobileUi';
+  import { mobileToast } from './mobileUi';
   import { isPerformPosture } from './mobileEnv';
 
   /**
@@ -22,17 +21,18 @@
   const floating = $derived($isPerformPosture);
 </script>
 
+<!--
+  The browser key is not here.
+
+  It used to sit in this row's left corner while the drawer it opens rises from
+  the bottom of the screen, so the control and the thing it controls were at
+  opposite ends of the viewport and the sheet appeared to come from nowhere.
+  A sheet should look like it comes from its button. The key now lives at the
+  left of the transport row, which is the bottom edge and also the reachable
+  end of a phone.
+-->
 <header class="mtb" class:floating>
   <div class="mtb-row">
-    <button
-      type="button"
-      class="mtb-menu"
-      aria-label="Open clip and effect browsers"
-      onclick={() => openDrawer('clips')}
-    >
-      <Menu size={20} />
-    </button>
-
     <div class="mtb-brand">
       <span class="mtb-word">BEATSMAXXER</span>
       <span class="mtb-pro">PRO</span>
@@ -82,7 +82,6 @@
   .mtb.floating .mtb-row {
     height: 44px;
   }
-  .mtb.floating .mtb-menu,
   .mtb.floating .mtb-bpm {
     pointer-events: auto;
   }
@@ -94,33 +93,6 @@
     gap: var(--m-gap, 8px);
     height: var(--m-topbar-h, 48px);
     padding: 0 8px;
-  }
-
-  .mtb-menu {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--m-tap, 44px);
-    height: var(--m-tap, 44px);
-    margin: 0;
-    padding: 0;
-    border: 1px solid;
-    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
-    border-radius: var(--m-radius, 2px);
-    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
-    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
-    color: var(--m-ink-dim, #8a93a0);
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .mtb-menu:active {
-    color: var(--m-ink, #e5e7eb);
-    background: color-mix(in srgb, var(--m-raised, #17191c) 92%, white 4%);
-  }
-  .mtb.floating .mtb-menu {
-    background: rgba(12, 14, 16, 0.45);
   }
 
   .mtb-brand {

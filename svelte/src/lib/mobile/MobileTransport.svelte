@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play, Square, Minus, Plus } from '@lucide/svelte';
+  import { Play, Square, Minus, Plus, Menu } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import VUMeter from '$lib/components/rack/VUMeter.svelte';
@@ -11,6 +11,7 @@
     type AdvanceMode
   } from './mobileSession';
   import { isPerformPosture } from './mobileEnv';
+  import { openDrawer } from './mobileUi';
 
   /**
    * The thumb strip — transport and the song controls, nothing else.
@@ -189,6 +190,23 @@
 
 <footer class="mt" class:perform>
   <div class="row">
+    <!--
+      The browser key, moved down from the top bar.
+
+      The drawer it opens is a bottom sheet, and the button that opens it was in
+      the opposite corner of the screen — so the sheet read as arriving from
+      nowhere. Here it sits at the bottom edge the sheet rises from, and on the
+      half of the phone a thumb can actually reach.
+    -->
+    <button
+      type="button"
+      class="browse"
+      aria-label="Open clip and effect browsers"
+      onclick={() => openDrawer('clips')}
+    >
+      <Menu size={20} />
+    </button>
+
     <button
       type="button"
       class="play"
@@ -371,6 +389,7 @@
   }
   /* Landscape floats these over the live canvas, so they take the tint rather
      than a per-frame backdrop blur — see --m-blur-over-picture. */
+  .mt.perform .browse,
   .mt.perform .play,
   .mt.perform .stepper {
     backdrop-filter: var(--m-blur-over-picture, none);
@@ -383,6 +402,31 @@
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  /* Same bevel family as PLAY but a step smaller and unlit, so the primary
+     action still reads first in the row. */
+  .browse {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--m-tap, 44px);
+    height: var(--m-tap, 44px);
+    padding: 0;
+    border: 1px solid;
+    border-color: var(--m-bevel-edge, #2a2e34 #16181a #121416 #16181a);
+    border-radius: var(--m-radius, 2px);
+    background: var(--m-bevel-face, linear-gradient(180deg, #1e2227 0%, #171a1e 55%, #131518 100%));
+    box-shadow: var(--m-bevel-in, inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -2px 3px rgba(0, 0, 0, 0.48));
+    color: var(--m-ink-dim, #8a93a0);
+    cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .browse:active {
+    color: var(--m-ink, #e5e7eb);
+    background: #14171a;
   }
 
   .play {

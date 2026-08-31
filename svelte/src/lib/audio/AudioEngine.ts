@@ -16,6 +16,9 @@ import type {
   TransportSample,
 } from "$lib/engine/contracts";
 import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
+import { get } from "svelte/store";
+import { audioLatencyHint } from "$lib/platform/desktopPerformance";
+import { isMobileShell } from "$lib/mobile/mobileEnv";
 import { audioTimeline, TransportClock, type TimelineFrame } from "$lib/transport";
 import {
   liveScheduleRuntime,
@@ -875,24 +878,20 @@ export class AudioEngine implements IAudioEngine {
     if (this.ctx) return;
 
     /**
-     * No forced sample rate.
+     * No forced sample rate, and a buffer sized for the machine.
      *
      * This asked for 44100 on every device. Phone audio hardware runs at 48000
      * — all iOS devices and effectively all Android — so the request did not
      * get 44.1k output, it got a resampler inserted between the graph and the
-     * speaker: continuous CPU in the audio thread and added output latency, on
-     * exactly the machines with the least of both to spare. Nothing depended on
-     * the value; AudioTimeline reads `context.sampleRate` off the context, and
-     * SoundTouch and the analysers are all rate-relative. Letting the hardware
-     * pick removes the resampler wherever the native rate is not 44.1k, and is
-     * a no-op where it is.
+     * speaker. Nothing depended on the value; AudioTimeline reads
+     * `context.sampleRate` off the context, and SoundTouch and the analysers
+     * are all rate-relative.
      *
-     * `latencyHint: 'interactive'` is the smallest buffer the device will give.
-     * This is a live instrument driving video off the same clock, so a shorter
-     * output buffer is the whole point; the default 'balanced' trades that away
-     * for power on a workload that is already GPU-bound.
+     * The latency hint is per-machine — see audioLatencyHint(). A phone gets a
+     * larger output buffer than a laptop, because the GPU is competing for the
+     * same budget and the smallest buffer is the one that underruns.
      */
-    this.ctx = new AudioContext({ latencyHint: 'interactive' });
+    this.ctx = new AudioContext({ latencyHint: audioLatencyHint(get(isMobileShell)) });
     audioTimeline.bindContext(this.ctx);
 
     this.analyserFull = this.ctx.createAnalyser();
