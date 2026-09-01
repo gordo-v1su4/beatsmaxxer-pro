@@ -67,14 +67,15 @@
     overflow: hidden;
     padding: 5px 8px;
     border: 1px solid #0c0d0f;
-    border-top-color: #101214;
+    border-top-color: #171a1e;
     border-radius: 2px;
     /* Cut into the face and lit from behind. */
     background: linear-gradient(180deg, #06080a, #0a0d0f 60%, #070909);
     box-shadow:
       inset 0 2px 5px rgba(0, 0, 0, 0.8),
       inset 0 0 12px color-mix(in srgb, var(--accent) 7%, transparent),
-      0 1px 0 rgba(255, 255, 255, 0.03);
+      0 1px 0 rgba(255, 255, 255, 0.045),
+      0 0 0 1px rgba(255, 255, 255, 0.008);
   }
 
   .value {

@@ -16,6 +16,9 @@ import type {
   TransportSample,
 } from "$lib/engine/contracts";
 import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
+import { get } from "svelte/store";
+import { audioLatencyHint } from "$lib/platform/desktopPerformance";
+import { isMobileShell } from "$lib/mobile/mobileEnv";
 import { audioTimeline, TransportClock, type TimelineFrame } from "$lib/transport";
 import {
   liveScheduleRuntime,
@@ -29,6 +32,32 @@ import {
 } from "$lib/audio/soundtouch";
 
 const DEFAULT_BPM = 128;
+
+/**
+ * The eight FFT band edges, flattened to one array so the per-frame band walk
+ * indexes a module constant instead of rebuilding nine arrays every frame.
+ * Pairs are [from, to] as fractions of the analyser's bin count.
+ */
+const FFT_BAND_EDGES = [
+  0.0, 0.02,
+  0.02, 0.05,
+  0.05, 0.1,
+  0.1, 0.18,
+  0.18, 0.3,
+  0.3, 0.48,
+  0.48, 0.7,
+  0.7, 1.0,
+] as const;
+const FFT_BAND_COUNT = FFT_BAND_EDGES.length / 2;
+
+/** Mean of `buf[from..to)`. Replaces a slice + reduce pair in the frame path. */
+function meanOfRange(buf: Uint8Array, from: number, to: number): number {
+  const end = Math.min(buf.length, to);
+  const start = Math.max(0, Math.min(from, end));
+  let sum = 0;
+  for (let i = start; i < end; i++) sum += buf[i];
+  return sum / Math.max(1, end - start);
+}
 
 /** Uploaded tracks stay paused until hosted analysis settles or fails closed. */
 export function isRhythmAnalysisReady(
@@ -155,6 +184,38 @@ export class AudioEngine implements IAudioEngine {
     audioTimeline.subscribe(this.tick, 0);
   }
 
+  /**
+   * Re-establish audio after the page comes back to the foreground.
+   *
+   * Locking a phone, switching apps, or backgrounding the tab interrupts the
+   * AudioContext: iOS suspends it outright, and Android may pause the media
+   * element with it. Nothing used to run on the way back, so the transport
+   * returned to a context whose `currentTime` had stopped — the picture was
+   * live, the play button still read as playing, and the song was silent with
+   * the playhead frozen. There is no way out of that from inside the app.
+   *
+   * Deliberately narrow: it only resumes what was already playing, and it never
+   * starts playback. A `resume()` outside a gesture can be rejected, so this
+   * reports whether it took rather than assuming it did — a refusal leaves the
+   * transport exactly as it was, and the user's next tap on PLAY goes through
+   * the real gesture path in `start()`.
+   */
+  async resumeAfterBackground(): Promise<boolean> {
+    if (!this._playing) return false;
+    const audioContext = this.ctx;
+    const mediaElement = this.mediaElement;
+    if (!audioContext) return false;
+    try {
+      if (audioContext.state === "suspended") await audioContext.resume();
+      if (audioContext.state !== "running") return false;
+      if (mediaElement?.paused && this._usingUploadedTrack) await mediaElement.play();
+      return true;
+    } catch {
+      // Rejected without a gesture. The transport is untouched; PLAY still works.
+      return false;
+    }
+  }
+
   async start() {
     if (this.activePlaybackStartGeneration !== null) return;
 
@@ -251,6 +312,13 @@ export class AudioEngine implements IAudioEngine {
 
   stop(reason: AudioStopReason = 'operator') {
     this.invalidatePlaybackStart();
+    // Flush any coalesced tempo change rather than letting it land on a
+    // stopped transport, or on the next track after a replace-upload.
+    if (this.tempoCommitTimer !== null) {
+      clearTimeout(this.tempoCommitTimer);
+      this.tempoCommitTimer = null;
+    }
+    if (this.tempoCommitPending) this.commitTempo();
     this.lastStopReason = reason;
     this.stopCount += 1;
     this._playing = false;
@@ -278,7 +346,10 @@ export class AudioEngine implements IAudioEngine {
     this._amplitude = 0;
     this._bassAmp = 0;
     this._highAmp = 0;
-    this._fftBands = new Array(8).fill(0);
+    // In place: the array identity is handed out by getState() and the frame
+    // path now writes through it, so replacing it here would leave whoever is
+    // already holding it reading a band set that never updates again.
+    this._fftBands.fill(0);
   }
 
   async loadAudioFile(file: File, options: AudioFileLoadOptions = {}) {
@@ -574,9 +645,13 @@ export class AudioEngine implements IAudioEngine {
     const target = Math.max(60, Math.min(200, bpm));
     const ratio = target / this._analysisBpm;
     this._bpmLocked = true;
-    this.applyTempoRate(Math.max(0.5, Math.min(2, ratio)));
+    // _bpm before applyTempoRate, because the commit it schedules reads it.
+    // The direct setBeatGrid call that used to sit after this one is gone: it
+    // ran on every step of a hold and rebuilt the grid — which copies the whole
+    // beat array — on top of the decoder re-rate.
+    this._tempo = Math.max(0.5, Math.min(2, ratio));
     this._bpm = Math.round(this._analysisBpm * this._tempo);
-    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+    this.applyTempoRate(this._tempo);
   }
 
   unlockBPM() {
@@ -586,10 +661,69 @@ export class AudioEngine implements IAudioEngine {
   }
 
   /** Playback rate — shifts markers via source-time advance; does not re-analyze. */
+  /**
+   * How long a tempo sweep coalesces its expensive half.
+   *
+   * `applySoundTouchParams` writes `mediaElement.playbackRate`, and changing a
+   * media element's rate mid-stream makes the browser re-rate its decode
+   * pipeline — audible on a phone as the track skipping. That is why TEMPO and
+   * BPM skip while PITCH and KEY do not: pitch and key only write worklet
+   * params, so `tempo` is reassigned its existing value and the browser
+   * no-ops it.
+   *
+   * One skip per deliberate change is the cost of the control. A *sweep* is a
+   * different matter: hold-to-repeat accelerates to a step every 40ms, so
+   * holding + was writing a new playback rate twenty-five times a second and
+   * re-rating the decoder on each one — which is continuous stutter rather
+   * than one skip. 150ms cuts that to about six commits a second while still
+   * feeling immediate.
+   */
+  private static readonly TEMPO_COMMIT_INTERVAL_MS = 150;
+
+  private tempoCommitTimer: ReturnType<typeof setTimeout> | null = null;
+  private tempoCommitLastAt = 0;
+  private tempoCommitPending = false;
+
+  private nowMs() {
+    return typeof performance !== "undefined" ? performance.now() : Date.now();
+  }
+
+  /** The half of a tempo change that costs a decoder re-rate. */
+  private commitTempo() {
+    this.tempoCommitPending = false;
+    this.tempoCommitLastAt = this.nowMs();
+    this.syncSoundTouch();
+    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+  }
+
+  /**
+   * Leading edge, then coalesced: a single tap commits immediately so the
+   * control never feels laggy, and a sustained sweep commits on an interval
+   * with the final value always flushed at the end.
+   */
+  private scheduleTempoCommit() {
+    const elapsed = this.nowMs() - this.tempoCommitLastAt;
+    if (elapsed >= AudioEngine.TEMPO_COMMIT_INTERVAL_MS && this.tempoCommitTimer === null) {
+      this.commitTempo();
+      return;
+    }
+    this.tempoCommitPending = true;
+    if (this.tempoCommitTimer !== null) return;
+    this.tempoCommitTimer = setTimeout(
+      () => {
+        this.tempoCommitTimer = null;
+        if (this.tempoCommitPending) this.commitTempo();
+      },
+      Math.max(0, AudioEngine.TEMPO_COMMIT_INTERVAL_MS - elapsed),
+    );
+  }
+
   private applyTempoRate(rate: number) {
     this._tempo = rate;
+    // Cheap and artefact-free, so these stay immediate: the transport keeps
+    // exact time and the readout tracks the finger even while the decoder
+    // change below is being coalesced.
     audioTimeline.setPlaybackRate(rate);
-    this.syncSoundTouch();
     this.transportClock.queueImmediateParameter(
       "rate",
       this._tempo,
@@ -598,7 +732,7 @@ export class AudioEngine implements IAudioEngine {
     if (!this._bpmLocked) {
       this._bpm = Math.round(this._analysisBpm * this._tempo);
     }
-    audioTimeline.setBeatGrid(this.beatGrid, this._bpm, this._bpm / this._tempo);
+    this.scheduleTempoCommit();
   }
 
   getState(): AudioEngineState {
@@ -813,7 +947,21 @@ export class AudioEngine implements IAudioEngine {
   private async ensureContext() {
     if (this.ctx) return;
 
-    this.ctx = new AudioContext({ sampleRate: 44100 });
+    /**
+     * No forced sample rate, and a buffer sized for the machine.
+     *
+     * This asked for 44100 on every device. Phone audio hardware runs at 48000
+     * — all iOS devices and effectively all Android — so the request did not
+     * get 44.1k output, it got a resampler inserted between the graph and the
+     * speaker. Nothing depended on the value; AudioTimeline reads
+     * `context.sampleRate` off the context, and SoundTouch and the analysers
+     * are all rate-relative.
+     *
+     * The latency hint is per-machine — see audioLatencyHint(). A phone gets a
+     * larger output buffer than a laptop, because the GPU is competing for the
+     * same budget and the smallest buffer is the one that underruns.
+     */
+    this.ctx = new AudioContext({ latencyHint: audioLatencyHint(get(isMobileShell)) });
     audioTimeline.bindContext(this.ctx);
 
     this.analyserFull = this.ctx.createAnalyser();
@@ -867,7 +1015,7 @@ export class AudioEngine implements IAudioEngine {
     this._beatPhase = transport.beatPhase;
 
     if (this.analyserFull) {
-      const td = new Uint8Array(this.analyserFull.fftSize);
+      const td = this.scratch(this.analyserFull.fftSize);
       this.analyserFull.getByteTimeDomainData(td);
       let sum = 0;
       for (let i = 0; i < td.length; i++) {
@@ -876,27 +1024,21 @@ export class AudioEngine implements IAudioEngine {
       }
       this._amplitude = Math.min(1, Math.sqrt(sum / td.length) * 1.8);
 
-      const fd = new Uint8Array(this.analyserFull.frequencyBinCount);
+      const fd = this.scratchFreq(this.analyserFull.frequencyBinCount);
       this.analyserFull.getByteFrequencyData(fd);
-      this._fftBands = this.computeBands(fd);
+      this.computeBandsInto(fd, this._fftBands);
     }
 
     if (this.analyserBass) {
-      const buf = new Uint8Array(this.analyserBass.frequencyBinCount);
+      const buf = this.scratchBass(this.analyserBass.frequencyBinCount);
       this.analyserBass.getByteFrequencyData(buf);
-      const bassSlice = buf.slice(0, Math.max(4, Math.floor(buf.length * 0.09)));
-      const avg =
-        bassSlice.reduce((a, b) => a + b, 0) / Math.max(1, bassSlice.length);
-      this._bassAmp = avg / 255;
+      this._bassAmp = meanOfRange(buf, 0, Math.max(4, Math.floor(buf.length * 0.09))) / 255;
     }
 
     if (this.analyserHigh) {
-      const buf = new Uint8Array(this.analyserHigh.frequencyBinCount);
+      const buf = this.scratchHigh(this.analyserHigh.frequencyBinCount);
       this.analyserHigh.getByteFrequencyData(buf);
-      const highSlice = buf.slice(Math.floor(buf.length * 0.52));
-      const avg =
-        highSlice.reduce((a, b) => a + b, 0) / Math.max(1, highSlice.length);
-      this._highAmp = avg / 255;
+      this._highAmp = meanOfRange(buf, Math.floor(buf.length * 0.52), buf.length) / 255;
     }
 
     const energy = this._bassAmp;
@@ -947,25 +1089,49 @@ export class AudioEngine implements IAudioEngine {
     this.advanceLiveSchedule(transport, onsetStrength);
   };
 
-  private computeBands(buf: Uint8Array): number[] {
-    const ranges = [
-      [0.0, 0.02],
-      [0.02, 0.05],
-      [0.05, 0.1],
-      [0.1, 0.18],
-      [0.18, 0.3],
-      [0.3, 0.48],
-      [0.48, 0.7],
-      [0.7, 1.0],
-    ];
+  /**
+   * Analyser scratch buffers, allocated once per size rather than per frame.
+   *
+   * tick() runs on every animation frame and used to allocate four Uint8Arrays
+   * (2048 + 1024 + 256 + 256 bytes), two slices of them, and computeBands'
+   * range table plus its result array — roughly twenty objects and 3.5KB of
+   * garbage, sixty times a second. Nothing downstream retains any of it, so it
+   * was pure collector pressure, and a phone pays for that in frame hitches
+   * rather than in throughput. Each getter reallocates only if the analyser's
+   * bin count actually changes, which it does not after setup.
+   */
+  private scratchTime = new Uint8Array(new ArrayBuffer(0));
+  private scratchFull = new Uint8Array(new ArrayBuffer(0));
+  private scratchLow = new Uint8Array(new ArrayBuffer(0));
+  private scratchTop = new Uint8Array(new ArrayBuffer(0));
 
-    return ranges.map(([from, to]) => {
-      const a = Math.floor(buf.length * from);
-      const b = Math.max(a + 1, Math.floor(buf.length * to));
+  private scratch(size: number) {
+    if (this.scratchTime.length !== size) this.scratchTime = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchTime;
+  }
+  private scratchFreq(size: number) {
+    if (this.scratchFull.length !== size) this.scratchFull = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchFull;
+  }
+  private scratchBass(size: number) {
+    if (this.scratchLow.length !== size) this.scratchLow = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchLow;
+  }
+  private scratchHigh(size: number) {
+    if (this.scratchTop.length !== size) this.scratchTop = new Uint8Array(new ArrayBuffer(size));
+    return this.scratchTop;
+  }
+
+  /** Fills `out` in place; same maths as the old computeBands, no allocation. */
+  private computeBandsInto(buf: Uint8Array, out: number[]): number[] {
+    for (let band = 0; band < FFT_BAND_COUNT; band++) {
+      const a = Math.floor(buf.length * FFT_BAND_EDGES[band * 2]);
+      const b = Math.max(a + 1, Math.floor(buf.length * FFT_BAND_EDGES[band * 2 + 1]));
       let sum = 0;
       for (let i = a; i < b; i++) sum += buf[i];
-      return Math.min(1, sum / Math.max(1, b - a) / 255);
-    });
+      out[band] = Math.min(1, sum / Math.max(1, b - a) / 255);
+    }
+    return out;
   }
 
   private snapBPM(bpm: number): number {

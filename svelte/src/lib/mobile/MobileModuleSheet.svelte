@@ -331,6 +331,20 @@
     border-radius: var(--m-radius-sheet, 20px) 0 0 var(--m-radius-sheet, 20px);
     box-shadow: -18px 0 48px rgba(0, 0, 0, 0.55);
     padding-right: var(--m-safe-right, 0px);
+    /*
+      Portrait keeps the glass. Landscape cannot afford it.
+
+      In portrait the sheet's backdrop is the shell's own static background, so
+      the blur is computed once and cached and costs nothing per frame. In
+      perform posture the stage is `position: fixed; inset: 0` and this panel
+      floats directly on it, which makes the backdrop a canvas that presents a
+      new texture every frame — the compositor then re-blurs the panel-sized
+      region every one of them, next to the effect the GPU is already running.
+      The tint alone carries the same separation against a moving picture.
+    */
+    backdrop-filter: var(--m-blur-over-picture, none);
+    -webkit-backdrop-filter: var(--m-blur-over-picture, none);
+    background: rgba(8, 10, 12, 0.62);
   }
 
   .sheet::before {

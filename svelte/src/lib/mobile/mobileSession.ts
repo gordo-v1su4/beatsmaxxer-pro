@@ -120,6 +120,54 @@ export async function toggleQueuedClip(clip: LibraryClip) {
   if (!get(stageClipId)) await loadStageClip(clip);
 }
 
+/**
+ * Which clip LINEAR would move to next, without moving to it.
+ *
+ * Exists so the next clip can be decoded before the bar it is needed on. Only
+ * LINEAR is predictable; RANDOM has no next until it picks one.
+ */
+function nextLinearClip(queue: LibraryClip[]): LibraryClip | null {
+  if (queue.length < 2) return null;
+  const currentIndex = queue.findIndex((c) => c.id === get(stageClipId));
+  return queue[(currentIndex + 1) % queue.length] ?? null;
+}
+
+/**
+ * Pull the next clip's bytes into the HTTP cache before the bar it needs them.
+ *
+ * `loadStageClip` is the one path that re-decodes, and on the phone it runs on
+ * the cut: LOADING CLIP appears every eight bars, on the beat, for as long as
+ * the file takes to arrive and open. Over a phone network the network is most
+ * of that, so fetching the same URL a bar early turns the cut's load into a
+ * cache hit.
+ *
+ * Deliberately a fetch and not a staged video element. VideoPool's element
+ * identity is a release invariant -- the eight-video proof counts live <video>
+ * elements before, during and after every cut -- so a speculative extra element
+ * would be a decode lane the architecture says does not exist. Bytes in the
+ * HTTP cache belong to nobody and change no ownership.
+ *
+ * File-backed clips are already local and are skipped.
+ */
+const warmedClipUrls = new Set<string>();
+
+async function prewarmNextClip(): Promise<void> {
+  if (get(advanceMode) !== 'linear') return;
+  const next = nextLinearClip(get(clipQueue));
+  if (!next || next.id === get(stageClipId)) return;
+  if (next.source.kind !== 'url') return;
+  const url = next.source.url;
+  if (warmedClipUrls.has(url)) return;
+  warmedClipUrls.add(url);
+  try {
+    await fetch(url, { cache: 'force-cache' });
+  } catch {
+    // Offline, or the clip has gone. The cut still works, it just pays what it
+    // used to; drop the mark so a later pass can try again.
+    warmedClipUrls.delete(url);
+  }
+}
+
 /** Next clip per `advanceMode`. Returns false when there is nowhere to go. */
 export async function advanceStageClip(force = false): Promise<boolean> {
   const queue = get(clipQueue);
@@ -159,6 +207,21 @@ export async function advanceStageClip(force = false): Promise<boolean> {
 export const advanceBars = writable(8);
 
 /**
+ * The choices offered for that, in bars.
+ *
+ * Labelled the way the desktop's PGM rail labels its quantize row (`1BR` is one
+ * bar) so the two surfaces name the same musical unit the same way. The rail's
+ * row starts below a bar, at `1BT`; this one does not, because a clip change is
+ * a decode. PGM cutting between already-decoded slots can afford a quarter-note
+ * boundary — swapping the single mobile slot's media cannot, and the prewarm
+ * that hides the load only runs a bar ahead.
+ *
+ * 16 bars is the top because past that the mode is effectively HOLD, and HOLD
+ * is already a button.
+ */
+export const CLIP_ADVANCE_BARS = [1, 2, 4, 8, 16] as const;
+
+/**
  * Drives LINEAR / RANDOM off the bar counter. Returns the teardown.
  *
  * Guarded on the bar *crossing* rather than on `bar % n === 0`, because the
@@ -177,6 +240,9 @@ export function startMobileClipAdvance(): () => void {
     if (previous < 0) return;
     if (get(advanceMode) === 'hold') return;
     const every = Math.max(1, get(advanceBars));
+    // One bar out, warm what the next cut will ask for. Idempotent and cheap
+    // once warm, so re-entering the same bar costs nothing.
+    if (bar % every === every - 1) void prewarmNextClip();
     if (bar % every !== 0) return;
     if (inFlight) return;
     inFlight = true;

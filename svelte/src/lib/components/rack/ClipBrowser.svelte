@@ -219,17 +219,27 @@
     padding: 0 5px;
     border: 1px solid #1e2226;
     border-radius: 2px;
-    background: #131517;
+    background: var(--control-face);
     color: #4a5260;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.1em;
     flex-shrink: 0;
+    box-shadow: var(--control-shadow);
+    transition:
+      background var(--dur-control) var(--ease-out),
+      border-color var(--dur-control) var(--ease-out),
+      color var(--dur-control) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
   }
   .cb-import:hover:not(:disabled) {
-    background: #1a1c1f;
+    background: var(--control-face-hover);
     color: #cfe0e2;
+  }
+  .cb-import:active:not(:disabled) {
+    transform: translateY(0.5px);
+    box-shadow: var(--control-shadow-pressed);
   }
   .cb-import:disabled {
     cursor: default;
@@ -271,7 +281,12 @@
     border: 1px solid #16181b;
     cursor: grab;
     user-select: none;
-    transition: background 0.12s, border-color 0.12s, transform 0.12s;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+    transition:
+      background var(--dur-control) var(--ease-out),
+      border-color var(--dur-control) var(--ease-out),
+      opacity var(--dur-control) var(--ease-out),
+      transform var(--dur-press) var(--ease-out);
   }
   .cb-tile:hover {
     background: #1a1c1f;
@@ -279,11 +294,11 @@
   }
   .cb-tile:active {
     cursor: grabbing;
-    transform: scale(0.97);
+    transform: translateY(0.5px);
   }
   .cb-tile:focus-visible {
-    outline: 1px solid #35e08a;
-    outline-offset: 1px;
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
   .cb-tile.is-mounted {
     border-color: #35e08a44;
@@ -399,5 +414,13 @@
     aspect-ratio: 16 / 9;
     object-fit: cover;
     border-radius: 1px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cb-import,
+    .cb-tile,
+    .cb-remove {
+      transition-duration: 0ms;
+    }
   }
 </style>

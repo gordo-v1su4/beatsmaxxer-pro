@@ -28,6 +28,16 @@ export const sheetState = writable<SheetState>('peek');
  */
 export const sheetDragY = writable(0);
 
+/**
+ * Is the picture itself a control surface right now?
+ *
+ * Off by default, and deliberately explicit. Touching the picture is not
+ * obviously a parameter gesture — on every other video app it is a scrub or a
+ * play toggle — so arming it is a decision the operator makes once, and the
+ * stage says which two parameters it just handed to their finger.
+ */
+export const macroPadArmed = writable(false);
+
 /** Browser sheet — clips, FX, song. Pulls up over the picture. */
 export const drawerOpen = writable(false);
 export type DrawerTab = 'fx' | 'clips' | 'song';

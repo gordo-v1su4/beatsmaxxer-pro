@@ -46,6 +46,23 @@ export default defineConfig(({ mode, command }) => {
 			// Tailscale cloud: DEV_HOST=0.0.0.0. Local/Tauri: bind IPv4 explicitly
 			// (default Vite can listen on ::1 only → ERR_CONNECTION_REFUSED on 127.0.0.1).
 			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1',
+			/*
+			 * Let a Tailscale hostname reach the dev server.
+			 *
+			 * This is how the phone gets at a local build. WebGPU requires a secure
+			 * context, so hitting the machine's Tailscale IP over plain http gives
+			 * a phone `navigator.gpu === undefined` and the no-GPU panel rather
+			 * than the app — the address has to be https. `tailscale serve` issues
+			 * a real certificate for the machine's `*.ts.net` name and proxies to
+			 * localhost, which satisfies that.
+			 *
+			 * Vite rejects requests whose Host header it does not recognise, so
+			 * without this the `.ts.net` request is answered with "Blocked request"
+			 * and never reaches the app. Dev only — `vite build` never reads it —
+			 * and scoped to the one suffix rather than opening the server to any
+			 * host.
+			 */
+			allowedHosts: ['.ts.net'],
 			fs: {
 				allow: ['..']
 			}

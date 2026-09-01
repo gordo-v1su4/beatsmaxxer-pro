@@ -8,9 +8,6 @@ import { writable, derived, get } from 'svelte/store';
  * that into a phone. So the two surfaces are two component trees, and this store
  * picks which one mounts.
  *
- * 820 rather than 960: the existing 960 block in app.css stacks the *desktop*
- * layout for narrow windows, and a laptop at 900px should still get the rack.
- *
  * The test is written on the *short* and *long* edges rather than on width and
  * height, because rotating a phone swaps the two and must not swap the shell.
  * The first version keyed landscape off `pointer: coarse`, and a 850x390 phone
@@ -24,7 +21,6 @@ import { writable, derived, get } from 'svelte/store';
  * 1180 on the long edge keeps the iPad out (1024x768 has a 768 short edge and
  * would already fail) while covering every phone in landscape.
  */
-const MOBILE_MAX_WIDTH = 820;
 const PHONE_MAX_SHORT_EDGE = 520;
 const PHONE_MAX_LONG_EDGE = 1180;
 
@@ -56,22 +52,23 @@ export const isPerformPosture = derived(
   ([mobile, o]) => mobile && o === 'landscape'
 );
 
-function evaluate(): boolean {
-  if (typeof window === 'undefined') return false;
-  const params = new URLSearchParams(window.location.search);
+export function mobileShellForViewport(width: number, height: number, search = ''): boolean {
+  const params = new URLSearchParams(search);
   // Both overrides exist so the shell can be reviewed on a desktop browser and
   // so a tablet user who wants the real rack can ask for it.
   if (params.get('mobile') === '1') return true;
   if (params.get('desktop') === '1') return false;
 
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  if (w <= MOBILE_MAX_WIDTH) return true;
   // Orientation-independent: a phone lying down is short on one edge whichever
   // way it is held, so the same device answers the same either way.
-  const short = Math.min(w, h);
-  const long = Math.max(w, h);
+  const short = Math.min(width, height);
+  const long = Math.max(width, height);
   return short <= PHONE_MAX_SHORT_EDGE && long <= PHONE_MAX_LONG_EDGE;
+}
+
+function evaluate(): boolean {
+  if (typeof window === 'undefined') return false;
+  return mobileShellForViewport(window.innerWidth, window.innerHeight, window.location.search);
 }
 
 /**

@@ -165,7 +165,7 @@
                 ? mod.accentColor + '99'
                 : '#1e2226'};border-radius:2px;cursor:pointer;box-shadow:{isActive
               ? `inset 0 2px 5px rgba(0,0,0,0.5), 0 0 10px ${mod.accentColor}33`
-              : 'inset 0 1px 2px rgba(0,0,0,0.4)'};transition:all 0.08s;flex-shrink:0"
+              : 'var(--control-shadow)'};transition:background var(--dur-control) var(--ease-out),border-color var(--dur-control) var(--ease-out),color var(--dur-control) var(--ease-out),box-shadow var(--dur-control) var(--ease-out),transform var(--dur-press) var(--ease-out);flex-shrink:0"
             onclick={() => handleSelect(mod.id)}
           >
             <span

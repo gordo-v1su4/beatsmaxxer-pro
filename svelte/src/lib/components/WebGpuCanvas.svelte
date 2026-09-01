@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
+  import { renderScale } from '$lib/runtime/renderBudget';
   import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 
   interface Props {
@@ -17,6 +18,9 @@
   let ready = $state(false);
   let visibilityObserver: IntersectionObserver | null = null;
   let sizeObserver: ResizeObserver | null = null;
+  /** Pending coalesced resize; 0 when none is queued. */
+  let resizeRaf = 0;
+  let stopDeviceLostWatch: (() => void) | null = null;
   const effectMode = $derived(
     SHADER_EFFECT_MODE[getModuleDef(moduleId)?.shaderKey ?? moduleId] ?? 0
   );
@@ -59,9 +63,13 @@
     if (rect.width < 1 || rect.height < 1) return PREVIEW_SIZE;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const scale = Math.min(1, PGM_MAX_WIDTH / (rect.width * dpr));
+    // The measured budget, which is 1 everywhere except a phone that is not
+    // keeping up (and under ?qa=, where the proof gates hash rendered PNGs and
+    // a size that depends on how the device felt would be nondeterministic).
+    const budget = $renderScale;
     return {
-      width: Math.max(320, Math.round(rect.width * dpr * scale)),
-      height: Math.max(180, Math.round(rect.height * dpr * scale))
+      width: Math.max(320, Math.round(rect.width * dpr * scale * budget)),
+      height: Math.max(180, Math.round(rect.height * dpr * scale * budget))
     };
   }
 
@@ -84,6 +92,17 @@
     if (!canvas) return;
     applySize();
     const ok = await attach();
+    // The engine drops every binding when the GPU device is lost — it cannot
+    // rebuild them itself, because the canvas elements belong to components.
+    // Without this the picture goes black on the first loss and stays black:
+    // ordinary behaviour on a phone that has been backgrounded, and the reason
+    // it is worth re-attaching rather than reporting.
+    stopDeviceLostWatch = webGpuEngine.onDeviceLost(() => {
+      ready = false;
+      void (async () => {
+        if (await attach()) webGpuEngine.setCanvasActive(id, true);
+      })();
+    });
     if (ok && typeof IntersectionObserver !== 'undefined') {
       visibilityObserver = new IntersectionObserver(([entry]) => {
         webGpuEngine.setCanvasActive(id, entry?.isIntersecting === true);
@@ -93,9 +112,19 @@
     // Only PGM is layout-sized, so only PGM needs to follow its box. Re-attaching
     // is the reallocation path: attachCanvas already destroys and rebuilds the
     // uniform buffer and both feedback textures, which are sized off the canvas.
+    //
+    // Coalesced to one attach per frame. A phone's URL bar collapsing is a
+    // continuous resize, not a single one, and every intermediate width used to
+    // reconfigure the swapchain and reallocate both feedback textures — mid
+    // performance, while the picture is live. Deferring to rAF means the run of
+    // resizes costs one reallocation at the size the box actually settles on.
     if (ok && id === 'pgm' && typeof ResizeObserver !== 'undefined') {
       sizeObserver = new ResizeObserver(() => {
-        if (applySize()) void attach();
+        if (resizeRaf !== 0) return;
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0;
+          if (applySize()) void attach();
+        });
       });
       sizeObserver.observe(canvas);
     }
@@ -104,6 +133,8 @@
   onDestroy(() => {
     visibilityObserver?.disconnect();
     sizeObserver?.disconnect();
+    stopDeviceLostWatch?.();
+    if (resizeRaf !== 0) cancelAnimationFrame(resizeRaf);
     webGpuEngine.detachCanvas(id);
   });
 
@@ -111,6 +142,18 @@
     if (!ready || id === 'pgm') return;
     webGpuEngine.setCanvasModule(id, moduleId);
     webGpuEngine.setCanvasAccent(id, color);
+  });
+
+  /**
+   * Follow the measured render budget. Only PGM is layout-sized and only the
+   * phone ever moves this, so on the rack the dependency is read once and the
+   * effect never runs again.
+   */
+  $effect(() => {
+    const scale = $renderScale;
+    if (!ready || id !== 'pgm' || !canvas) return;
+    void scale;
+    if (applySize()) void attach();
   });
 </script>
 
