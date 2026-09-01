@@ -50,4 +50,14 @@ describe('DesignCode-inspired instrument design contract', () => {
     expect(mobile).toContain('.key:active:not(:disabled)');
     expect(mobile).toContain('prefers-reduced-motion');
   });
+  test('keeps the top browser on the left and the module editor on the bottom', () => {
+    const drawer = read('src/lib/mobile/MobileDrawer.svelte');
+    const moduleSheet = read('src/lib/mobile/MobileModuleSheet.svelte');
+
+    expect(drawer).toContain('transform: translateX(-110%)');
+    expect(drawer).toContain('style={dragging ? `transform: translateX(${dragX}px);` : undefined}');
+    expect(moduleSheet).toContain(
+      'landscape ? `translate3d(${offset}px,0,0)` : `translate3d(0,${offset}px,0)`'
+    );
+  });
 });
