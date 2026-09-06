@@ -49,6 +49,9 @@ pnpm-lock.yaml
 .tmp/
 # Tauri regenerates these ACL/capability schemas on every build
 desktop/src-tauri/gen/
+# Local QA media (large; never commit zips or full tree)
+test_media/
+test_media.zip
 # Local UI prototypes — not QA media
 test_media/refining-beat-surfer-ui_*/
 docs/preview.png

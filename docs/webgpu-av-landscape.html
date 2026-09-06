@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebGPU AV project landscape — Beatsmaxxer Pro</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #151922;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #34d399;
+      --border: #2a3140;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #151922 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(1.5rem, 3vw, 2rem);
+    }
+    .lede {
+      margin: 0 0 1.5rem;
+      color: var(--muted);
+      max-width: 70ch;
+    }
+    figure {
+      margin: 0 0 1.75rem;
+      padding: 1rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    figure img, figure object {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
+    figcaption {
+      margin-top: 0.75rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    th, td {
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 600; }
+    a { color: var(--accent); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .callout {
+      margin-top: 1.25rem;
+      padding: 1rem 1.1rem;
+      border-left: 4px solid var(--accent);
+      background: rgba(52, 211, 153, 0.08);
+      border-radius: 0 10px 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>WebGPU AV project landscape</h1>
+    <p class="lede">
+      GitHits search summary for projects similar to Beatsmaxxer Pro
+      (SvelteKit 5 + WebGPU + live AV + beat-synced FX rack). Open this file locally
+      or embed the SVG in docs and README.
+    </p>
+
+    <figure>
+      <object data="./webgpu-av-landscape.svg" type="image/svg+xml" aria-label="WebGPU AV project landscape chart">
+        <img src="./webgpu-av-landscape.svg" alt="WebGPU AV project landscape chart" />
+      </object>
+      <figcaption>
+        Static chart file: <code>docs/webgpu-av-landscape.svg</code>
+      </figcaption>
+    </figure>
+
+    <div class="panel">
+      <table>
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Overlap</th>
+            <th>Gap vs Beatsmaxxer Pro</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="https://github.com/0langa/beatform">Beatform</a></td>
+            <td>WebGPU, beat sync, VJ/live performance, export</td>
+            <td>Desktop app; generative modes, not 8-slot live clip rack + PGM</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/walterlow/freecut">FreeCut</a></td>
+            <td>Browser WebGPU, <code>importExternalTexture</code>, GPU effects pipeline</td>
+            <td>Timeline NLE; no beat-quantized PGM director</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/disini/XGPU">XGPU</a></td>
+            <td>WebGPU helper library with video texture support</td>
+            <td>Infrastructure only, not a product</td>
+          </tr>
+          <tr>
+            <td><strong>Beatsmaxxer Pro</strong></td>
+            <td>SvelteKit + WebGPU-only rack + PGM + Essentia/Web Audio rhythm</td>
+            <td>No close public OSS peer for the full combo</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout">
+      <strong>Why not Mermaid in chat?</strong>
+      Many chat UIs do not render Mermaid blocks reliably. Use the SVG or this HTML file instead.
+    </div>
+  </main>
+</body>
+</html>
