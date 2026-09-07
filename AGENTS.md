@@ -86,6 +86,8 @@ Separate from `main` — do **not** merge desktop into main until promoted.
 
 ## Agent skills
 
+**Canonical skills** live in [`.agents/skills/`](./.agents/skills/) (committed). After clone or `bun install`, `bun run skills:link` creates [`.claude/skills/`](./.claude/skills/) junctions/symlinks so Cursor loads the same skills on any machine. Lockfile: [`skills-lock.json`](./skills-lock.json).
+
 ### Issue tracker
 
 Issues live in GitHub (`gordo-v1su4/beatsmaxxer-pro`) via the `gh` CLI. See [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md).

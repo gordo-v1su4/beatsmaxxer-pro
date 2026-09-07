@@ -57,6 +57,8 @@ test_media.zip
 test_media/refining-beat-surfer-ui_*/
 docs/preview.png
 .vercel
+# Generated Cursor skill links — canonical tree is .agents/skills (committed)
+.claude/
 .codex/*
 !.codex/agents/
 !.codex/agents/**

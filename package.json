@@ -4,7 +4,8 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "postinstall": "cd svelte && bun install",
+    "postinstall": "cd svelte && bun install && cd .. && bun run skills:link",
+    "skills:link": "bun run scripts/link-agent-skills.ts",
     "dev": "cd svelte && bun run dev",
     "build": "cd svelte && bun run build",
     "preview": "cd svelte && bun run preview",
