@@ -22,7 +22,7 @@ describe('WebGPU external-video texture contract', () => {
     const engine = readFileSync(join(renderingRoot, 'WebGpuEngine.ts'), 'utf8');
     const cache = readFileSync(join(renderingRoot, 'VideoTextureCache.ts'), 'utf8');
     expect(engine).not.toContain('copyExternalImageToTexture');
-    expect(engine).toContain("PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler'])");
+    expect(engine).toContain("PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler', 'speedramp'])");
     expect(cache).toContain('copyExternalImageToTexture');
     expect(cache).not.toContain('getContext(\'2d\')');
   });

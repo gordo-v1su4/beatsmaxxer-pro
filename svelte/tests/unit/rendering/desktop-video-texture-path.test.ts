@@ -9,10 +9,10 @@ describe('desktop video texture path', () => {
 
   test('keeps normal web modules on external textures', () => {
     expect(shouldUsePersistentVideoTexture('transition', false)).toBe(false);
-    expect(shouldUsePersistentVideoTexture('speedramp', false)).toBe(false);
   });
 
-  test('retains the persistent timesampler texture on web', () => {
+  test('uses persistent textures for time-remap modules on web', () => {
     expect(shouldUsePersistentVideoTexture('timesampler', false)).toBe(true);
+    expect(shouldUsePersistentVideoTexture('speedramp', false)).toBe(true);
   });
 });

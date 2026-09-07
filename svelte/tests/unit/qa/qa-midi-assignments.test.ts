@@ -40,7 +40,7 @@ describe('desktop QA MIDI assignments', () => {
     expect(() => validateQaMidiAssignments(inactive)).toThrow('inactive rack module');
   });
 
-  test('loads seven real parts into module layers and trigger sources only', async () => {
+  test('loads seven real parts into module layers without enabling triggers', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -71,7 +71,7 @@ describe('desktop QA MIDI assignments', () => {
       expect(layer?.identity?.startsWith(`${layer?.name}:`)).toBe(true);
       expect(layer?.notes.length, moduleId).toBeGreaterThan(0);
       expect(layer?.duration, moduleId).toBeGreaterThan(0);
-      expect(triggers[moduleId]).toBe('midi');
+      expect(triggers[moduleId]).toBeUndefined();
       expect(noteIsHighlighted(layer!.notes[0].time, layer!.notes[0].time, layer!.duration, false)).toBe(false);
     }
     expect(get(midiChannels)).toEqual([]);

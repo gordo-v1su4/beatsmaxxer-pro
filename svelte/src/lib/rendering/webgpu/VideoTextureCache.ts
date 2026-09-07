@@ -19,6 +19,17 @@ export class VideoTextureCache {
   upload(device: GPUDevice, key: string, source: HTMLVideoElement): GPUTextureView {
     const inFrame = this.frameViews.get(key);
     if (inFrame) return inFrame;
+    const stale = this.entries.get(key);
+    if (
+      source.seeking ||
+      source.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      if (stale?.source === source) {
+        this.frameViews.set(key, stale.view);
+        return stale.view;
+      }
+      throw new Error('video-texture-source-has-no-frame');
+    }
     const width = source.videoWidth;
     const height = source.videoHeight;
     if (width < 1 || height < 1) throw new Error('video-texture-source-has-no-frame');

@@ -192,6 +192,8 @@ let lastTimeSamplerAux = { aux1: 0, aux2: 2 };
 /** Fixed-step SPEEDRAMP source mapping, reset on generation changes/remount. */
 let speedRampSourceState: SpeedRampSourceState | null = null;
 let sequencerGeneration = -1;
+let lastQueuedPrewarmSlot: string | null = null;
+let lastPgmPrepSlot: string | null = null;
 let sequencerAbsoluteStep: number | null = null;
 /** Absolute bar the active section started on, so its length can be measured. */
 let sectionStartBar = 0;
@@ -582,7 +584,18 @@ export function startAppLoop() {
 
     const queued = get(queuedPgmSource);
     const queuedSlot = queued ? currentRackSlotForModule(queued) : null;
-    if (queuedSlot) void mediaRuntime.prewarmModule(queuedSlot).catch(() => {});
+    if (queuedSlot !== lastQueuedPrewarmSlot) {
+      lastQueuedPrewarmSlot = queuedSlot;
+      if (queuedSlot) void mediaRuntime.prewarmModule(queuedSlot).catch(() => {});
+    }
+
+    const prep = audioEngine.getPgmPreparation();
+    const prepSlot = prep.source ? currentRackSlotForModule(prep.source) : null;
+    if (prepSlot && prepSlot !== lastPgmPrepSlot) {
+      lastPgmPrepSlot = prepSlot;
+      void mediaRuntime.prewarmModule(prepSlot).catch(() => {});
+    }
+
     webGpuEngine.renderAll(frame);
   }, 10);
 
@@ -611,6 +624,8 @@ export function stopAppLoop() {
   speedRampSourceState = null;
   liveOnsetStutterState = null;
   manualFireByModule.clear();
+  lastQueuedPrewarmSlot = null;
+  lastPgmPrepSlot = null;
   if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
   rafId = 0;
 }

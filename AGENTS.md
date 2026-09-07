@@ -83,3 +83,25 @@ Separate from `main` — do **not** merge desktop into main until promoted.
 - Platform layer: `svelte/src/lib/platform/` + `VideoSourcePort`
 - UI matches verified `main` layout (no PresetBrowser middle column)
 - See [`desktop/README.md`](./desktop/README.md)
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub (`gordo-v1su4/beatsmaxxer-pro`) via the `gh` CLI. See [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md).
+
+### Triage labels
+
+Five canonical roles mapped to GitHub labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md).
+
+### Domain docs
+
+Single-context layout: root [`CONTEXT.md`](./CONTEXT.md) (glossary, three platforms) and `docs/adr/` when present. See [`docs/agents/domain.md`](./docs/agents/domain.md).
+
+### Continuity (read before multi-session work)
+
+Active research lane, done/not-done, and skill routing: [`docs/agents/continuity.md`](./docs/agents/continuity.md).
+
+### Linear (sprint board)
+
+Human tracking via the **Linear Cursor plugin**. Project: [Beatsmaxxer Pro](https://linear.app/v1su4/project/beatsmaxxer-pro-69c62284afc0). See [`docs/agents/linear.md`](./docs/agents/linear.md). Bootstrap script fallback: `bun run linear:bootstrap`.

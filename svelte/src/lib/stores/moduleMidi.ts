@@ -1,8 +1,6 @@
 import { parseMidi } from '$lib/audio/MidiParser';
 import { supportsModuleMidi } from '$lib/modules/midiContracts';
 import { midiLayers, type MidiLayer } from '$lib/stores/rack';
-import { syncMidiUiFromLoadedParts } from '$lib/stores/rackUi';
-import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
 
 /**
  * Parse a file into the one layer shape shared by rack controls, runtime, and
@@ -19,14 +17,12 @@ export async function parseModuleMidiFile(file: File): Promise<MidiLayer> {
   };
 }
 
-/** Attach one MIDI part to a module and make it the module's trigger source. */
+/** Attach one MIDI part to a module without switching its trigger source. */
 export async function attachModuleMidiFile(moduleId: string, file: File): Promise<MidiLayer> {
   if (!supportsModuleMidi(moduleId)) {
     throw new Error(`${moduleId} has no MIDI timing consumer`);
   }
   const layer = await parseModuleMidiFile(file);
   midiLayers.update((layers) => ({ ...layers, [moduleId]: layer }));
-  setModuleTriggerSource(moduleId, 'midi');
-  syncMidiUiFromLoadedParts();
   return layer;
 }

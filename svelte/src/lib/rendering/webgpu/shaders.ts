@@ -1,25 +1,7 @@
-const FULLSCREEN_VERTEX = /* wgsl */ `
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-}
-
-@vertex fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  var positions = array<vec2f, 3>(
-    vec2f(-1.0, -1.0),
-    vec2f(3.0, -1.0),
-    vec2f(-1.0, 3.0)
-  );
-  var output: VertexOutput;
-  let position = positions[vertexIndex];
-  output.position = vec4f(position, 0.0, 1.0);
-  output.uv = vec2f(position.x * 0.5 + 0.5, 1.0 - (position.y * 0.5 + 0.5));
-  return output;
-}
-`;
+import { WGSL_FULLSCREEN_VERTEX } from './shaders/wgslLib';
 
 export const TEST_PATTERN_WGSL =
-  FULLSCREEN_VERTEX +
+  WGSL_FULLSCREEN_VERTEX +
   /* wgsl */ `
 struct Uniforms {
   time: f32,
@@ -37,7 +19,7 @@ struct Uniforms {
 `;
 
 export const PASSTHROUGH_WGSL =
-  FULLSCREEN_VERTEX +
+  WGSL_FULLSCREEN_VERTEX +
   /* wgsl */ `
 @group(0) @binding(0) var sourceTex: texture_2d<f32>;
 @group(0) @binding(1) var sourceSampler: sampler;
@@ -48,7 +30,7 @@ export const PASSTHROUGH_WGSL =
 `;
 
 export const EXTERNAL_TEXTURE_INGEST_WGSL =
-  FULLSCREEN_VERTEX +
+  WGSL_FULLSCREEN_VERTEX +
   /* wgsl */ `
 fn srgbToLinear(value: vec3f) -> vec3f {
   let low = value / 12.92;
@@ -66,7 +48,7 @@ fn srgbToLinear(value: vec3f) -> vec3f {
 `;
 
 export const TIMESAMPLER_COMPOSITE_WGSL =
-  FULLSCREEN_VERTEX +
+  WGSL_FULLSCREEN_VERTEX +
   /* wgsl */ `
 struct EffectUniforms {
   mode: f32,

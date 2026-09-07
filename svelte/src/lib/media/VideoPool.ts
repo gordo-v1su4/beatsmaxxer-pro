@@ -53,6 +53,12 @@ export interface VideoCommitResult {
   previousReleased: Promise<void>;
 }
 
+interface ArmedVideoState {
+  trimStart: number;
+  ready: boolean;
+  promise?: Promise<void>;
+}
+
 /** Shared HTMLVideoElement pool — timeline-slaved playback and transactional hot-swap. */
 export class VideoPool {
   private videos = new Map<string, HTMLVideoElement>();
@@ -71,6 +77,7 @@ export class VideoPool {
   private syncStates = new Map<string, VideoSyncState>();
   private controlledSyncStates = new Map<string, ControlledVideoSyncState>();
   private moduleTimelineTargets = new Map<string, number>();
+  private armedStates = new Map<string, ArmedVideoState>();
 
   /** @deprecated Playback rate is supplied by TimelineFrame. */
   setGlobalRate(_rate: number) {}
@@ -134,6 +141,7 @@ export class VideoPool {
     this.syncStates.delete(candidate.moduleId);
     this.controlledSyncStates.delete(candidate.moduleId);
     this.moduleTimelineTargets.delete(candidate.moduleId);
+    this.armedStates.delete(candidate.moduleId);
     return {
       video: candidate.video,
       previousReleased:
@@ -232,30 +240,117 @@ export class VideoPool {
     return !!video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0;
   }
 
-  async prewarm(moduleId: string): Promise<void> {
-    const video = this.videos.get(this.sourceId(moduleId));
-    if (!video) return;
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) return;
-    await this.prewarmVideo(video);
+  /** True when arm-at-trim has parked a decoded frame at the trim point (paused). */
+  isArmedAtTrim(moduleId: string, trimStart = 0): boolean {
+    moduleId = this.sourceId(moduleId);
+    const video = this.videos.get(moduleId);
+    const state = this.armedStates.get(moduleId);
+    if (!video || !state?.ready || state.trimStart !== trimStart) return false;
+    if (!video.paused || video.videoWidth <= 0) return false;
+    const duration = video.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return false;
+    const target = this.trimTargetSeconds(trimStart, duration);
+    return Math.abs(video.currentTime - target) <= Math.max(1 / 120, duration * 0.00001);
   }
 
-  private async prewarmVideo(video: HTMLVideoElement, signal?: AbortSignal): Promise<void> {
-    if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      await this.eventWait(video, ['loadeddata'], signal, VIDEO_FRAME_TIMEOUT_MS);
+  /**
+   * Seek to trim start, wait for presentation (rVFC), and park paused so PGM cuts
+   * reveal a decoded frame instead of flashing stale/empty texture.
+   */
+  async armAtTrim(moduleId: string, trimStart = 0, signal?: AbortSignal): Promise<void> {
+    moduleId = this.sourceId(moduleId);
+    const video = this.videos.get(moduleId);
+    if (!video) return;
+
+    const state = this.armedStates.get(moduleId);
+    if (state?.trimStart === trimStart && state.ready && this.isArmedAtTrim(moduleId, trimStart)) {
+      return;
     }
+    if (state?.trimStart === trimStart && state.promise) {
+      await state.promise;
+      return;
+    }
+
+    const armed: ArmedVideoState = { trimStart, ready: false };
+    const operation = this.armVideoAtTrim(video, trimStart, signal)
+      .then(() => {
+        armed.ready = true;
+        armed.promise = undefined;
+      })
+      .catch((error) => {
+        if (this.armedStates.get(moduleId) === armed) this.armedStates.delete(moduleId);
+        throw error;
+      });
+    armed.promise = operation;
+    this.armedStates.set(moduleId, armed);
+    await operation;
+  }
+
+  async prewarm(moduleId: string): Promise<void> {
+    moduleId = this.sourceId(moduleId);
+    if (this.isArmedAtTrim(moduleId, 0)) return;
+    const video = this.videos.get(moduleId);
+    if (video && this.hasReadyFrame(moduleId) && this.isAtTrimTarget(video, 0)) {
+      this.armedStates.set(moduleId, { trimStart: 0, ready: true });
+      return;
+    }
+    await this.armAtTrim(moduleId, 0);
+  }
+
+  private isAtTrimTarget(video: HTMLVideoElement, trimStart: number) {
+    const duration = video.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return false;
+    const target = this.trimTargetSeconds(trimStart, duration);
+    return Math.abs(video.currentTime - target) <= Math.max(1 / 120, duration * 0.00001);
+  }
+
+  private trimTargetSeconds(trimStart: number, duration: number) {
+    const fraction = Math.max(0, Math.min(1, trimStart));
+    return fraction * duration;
+  }
+
+  private async armVideoAtTrim(
+    video: HTMLVideoElement,
+    trimStart: number,
+    signal?: AbortSignal
+  ): Promise<void> {
     try {
       try {
-        await this.bounded(video.play(), signal, VIDEO_FRAME_TIMEOUT_MS, 'video-play-timeout');
-      } catch (error) {
-        if (signal?.aborted || (error instanceof Error && error.message === 'video-play-timeout')) {
-          throw error;
-        }
-        // Autoplay rejection is acceptable; decoding can already have produced a frame.
+        video.pause();
+      } catch {
+        // Autoplay policies may reject pause on a never-played element; arm still proceeds.
       }
+
+      if (!Number.isFinite(video.duration) || video.duration <= 0) {
+        await this.eventWait(video, ['loadedmetadata'], signal, VIDEO_LOAD_TIMEOUT_MS);
+      }
+
+      const duration = video.duration;
+      if (!Number.isFinite(duration) || duration <= 0) {
+        throw new Error('video-arm-duration-unavailable');
+      }
+
+      const target = this.trimTargetSeconds(trimStart, duration);
+      const atTarget =
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        video.videoWidth > 0 &&
+        Math.abs(video.currentTime - target) <= Math.max(1 / 120, duration * 0.00001);
+
+      if (!atTarget) {
+        const seeked = this.eventWait(video, ['seeked'], signal, VIDEO_FRAME_TIMEOUT_MS);
+        video.currentTime = target;
+        await seeked;
+        await waitForPresentedVideoFrame(video, VIDEO_FRAME_TIMEOUT_MS, signal);
+      }
+
       await this.waitForDecodedFrame(video, signal);
     } finally {
       video.pause();
     }
+  }
+
+  private async prewarmVideo(video: HTMLVideoElement, signal?: AbortSignal): Promise<void> {
+    await this.armVideoAtTrim(video, 0, signal);
   }
 
   private waitForDecodedFrame(video: HTMLVideoElement, signal?: AbortSignal): Promise<void> {
@@ -528,6 +623,7 @@ export class VideoPool {
     this.syncStates.delete(moduleId);
     this.controlledSyncStates.delete(moduleId);
     this.moduleTimelineTargets.delete(moduleId);
+    this.armedStates.delete(moduleId);
     for (const pending of this.pending.values()) {
       if (pending.moduleId === moduleId) pending.controller.abort();
     }
@@ -559,3 +655,45 @@ export class VideoPool {
 }
 
 export const videoPool = new VideoPool();
+
+/** Wait until a seeked frame is presented — `seeked` alone can race the compositor. */
+export function waitForPresentedVideoFrame(
+  video: HTMLVideoElement,
+  timeoutMs = VIDEO_FRAME_TIMEOUT_MS,
+  signal?: AbortSignal
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let frameHandle: number | undefined;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', onAbort);
+      if (frameHandle !== undefined && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameHandle);
+      }
+      resolve();
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (frameHandle !== undefined && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameHandle);
+      }
+      reject(new Error('video-candidate-invalidated'));
+    };
+    const timeout = setTimeout(finish, timeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      frameHandle = video.requestVideoFrameCallback(finish);
+    } else {
+      queueMicrotask(() => queueMicrotask(finish));
+    }
+  });
+}

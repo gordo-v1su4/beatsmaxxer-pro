@@ -12,6 +12,7 @@ import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { resolveVideoSamplePath } from '$lib/qa/proofEnvironment';
 import { VideoTextureCache } from './VideoTextureCache';
+import { BlitBindGroupCache, TextureViewBindGroupCache } from './BindGroupCache';
 import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
 import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
@@ -108,7 +109,8 @@ interface BindingScheduleState {
   lastFrameIntervalMs: number | null;
 }
 
-const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler']);
+/** Modules that remap source time and seek often — external imports flash black. */
+const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler', 'speedramp']);
 
 /** Refresh the last-good-frame copy inside this window on both sides of an
  * HTMLVideo loop wrap, where the decoder can briefly report no current frame.
@@ -136,6 +138,13 @@ const LOOP_SEAM_CUT_COVER_SECONDS = 1;
  * not seconds: a wrap has no pending-cut marker to clear it, so a time window
  * would hold the clip's first second on its previous last frame. */
 const LOOP_WRAP_COVER_FRAMES = 2;
+
+/** Frames to hold the cached last-good frame after a PGM source change. */
+const PGM_CUT_COVER_FRAMES = 2;
+
+/** Frames to hold the cached last-good frame after a seek completes. The decoder
+ * can report HAVE_ENOUGH_DATA while the external texture is still empty. */
+const SEEK_GAP_COVER_FRAMES = 2;
 
 /** Backward jump in currentTime that counts as a wrap rather than float jitter.
  * A backward seek trips this too, which is correct — same empty-texture window. */
@@ -166,6 +175,9 @@ export class WebGpuEngine {
   /** Per-source loop-wrap state: last observed time, and the frame index through
    * which this source's seam still renders from the cached last-good frame. */
   private loopWrapCover = new Map<string, { lastTime: number; coverUntilFrame: number }>();
+  private seekGapCover = new Map<string, { wasSeeking: boolean; coverUntilFrame: number }>();
+  /** Per-source PGM cut cover budget — holds last-good frame across the cut. */
+  private pgmCutCover = new Map<string, number>();
   private taskExternalTextures: Map<HTMLVideoElement, GPUExternalTexture> | null = null;
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
@@ -201,6 +213,8 @@ export class WebGpuEngine {
   private fxIdlePipeline: GPURenderPipeline | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
+  private idleBindGroupCache = new TextureViewBindGroupCache();
+  private blitBindGroupCache = new BlitBindGroupCache();
   private initPromise: Promise<boolean> | null = null;
   private unsubscribeDeviceLost: (() => void) | null = null;
   /** Bumped on every device loss so a canvas can tell it must re-attach. */
@@ -252,9 +266,13 @@ export class WebGpuEngine {
     this.bindingSchedule.clear();
     this.renderDiag.clear();
     this.loopWrapCover.clear();
+    this.seekGapCover.clear();
+    this.pgmCutCover.clear();
     // destroy() on a resource of a lost device is a defined no-op, so the
     // normal teardown is safe here and keeps the cache's own bookkeeping right.
     this.videoTextureCache.dispose();
+    this.idleBindGroupCache.clear();
+    this.blitBindGroupCache.clear();
     this.deviceGeneration += 1;
     for (const listener of [...this.deviceLostListeners]) {
       try {
@@ -368,6 +386,7 @@ export class WebGpuEngine {
   setPgmLiveModule(moduleId: string, sourceId: string) {
     if (sourceId !== this.pgmLiveSourceId) {
       this.pendingPgmCut = { at: latencyMarkNow(), sourceId };
+      this.pgmCutCover.set(sourceId, Number.POSITIVE_INFINITY);
     }
     this.pgmLiveModuleId = moduleId;
     this.pgmLiveSourceId = sourceId;
@@ -561,6 +580,8 @@ export class WebGpuEngine {
     if (scheduled.length === 0) return;
     this.frameIndex += 1;
     this.markLoopWraps(scheduled);
+    this.markSeekGaps(scheduled);
+    this.markPgmCutCovers(scheduled);
     const encoder = this.device.createCommandEncoder();
     this.taskExternalTextures = new Map<HTMLVideoElement, GPUExternalTexture>();
     this.videoTextureCache.beginFrame();
@@ -612,6 +633,46 @@ export class WebGpuEngine {
   private isCoveringLoopWrap(sourceId: string) {
     const state = this.loopWrapCover.get(sourceId);
     return !!state && this.frameIndex < state.coverUntilFrame;
+  }
+
+  /** Detect seek start/end once per frame per source, before encoding bindings. */
+  private markSeekGaps(scheduled: Array<[string, CanvasBinding, string, string, string, string]>) {
+    const seen = new Set<string>();
+    for (const [, , , sourceId] of scheduled) {
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      const video = videoPool.get(sourceId);
+      if (!video) continue;
+      const seeking = video.seeking;
+      const state = this.seekGapCover.get(sourceId) ?? { wasSeeking: false, coverUntilFrame: 0 };
+      if (state.wasSeeking && !seeking) {
+        state.coverUntilFrame = this.frameIndex + SEEK_GAP_COVER_FRAMES;
+      }
+      state.wasSeeking = seeking;
+      this.seekGapCover.set(sourceId, state);
+    }
+  }
+
+  private isCoveringSeekGap(sourceId: string, video: HTMLVideoElement) {
+    if (video.seeking) return true;
+    const state = this.seekGapCover.get(sourceId);
+    return !!state && this.frameIndex < state.coverUntilFrame;
+  }
+
+  /** Arm PGM cut cover on the first render frame after a source change. */
+  private markPgmCutCovers(scheduled: Array<[string, CanvasBinding, string, string, string, string]>) {
+    for (const [id, , , sourceId] of scheduled) {
+      if (id !== 'pgm') continue;
+      const pending = this.pgmCutCover.get(sourceId);
+      if (pending === Number.POSITIVE_INFINITY) {
+        this.pgmCutCover.set(sourceId, this.frameIndex + PGM_CUT_COVER_FRAMES);
+      }
+    }
+  }
+
+  private isCoveringPgmCut(sourceId: string) {
+    const until = this.pgmCutCover.get(sourceId);
+    return until !== undefined && until !== Number.POSITIVE_INFINITY && this.frameIndex < until;
   }
 
   /** WHAT the binding is showing. Excludes anything that advances with the
@@ -809,10 +870,16 @@ export class WebGpuEngine {
     const approachingLoopEnd =
       hasTimedSource && duration - video!.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS;
     const justWrapped = hasTimedSource && video!.currentTime < LOOP_SEAM_CUT_COVER_SECONDS;
+    const pendingPgmTarget = this.pendingPgmCut?.sourceId === sourceId;
+    const canUploadFrame =
+      !!video &&
+      !video.seeking &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
     if (
       hasVideo &&
       video &&
-      (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView)
+      canUploadFrame &&
+      (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView || pendingPgmTarget)
     ) {
       try {
         cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
@@ -822,9 +889,13 @@ export class WebGpuEngine {
         // inspection and upload. Preserve the last successfully cached frame.
       }
     }
-    // A cut landing on a source that just wrapped can import an external
-    // texture that is still empty, presenting one black program frame. Cover
-    // exactly that frame from cache; the next frame goes back to live video.
+    // PGM cuts and drift-correction seeks can import an external texture that is
+    // still empty. Hold the last-good cached frame for a bounded window instead.
+    const coverPgmCut =
+      binding.bindingId === 'pgm' && this.isCoveringPgmCut(sourceId) && !!cachedVideoView;
+    const coverSeekGap =
+      !!video && this.isCoveringSeekGap(sourceId, video) && !!cachedVideoView;
+    // Legacy wrap-at-cut guard — still covers loop-start cuts on PGM.
     const coverCutSeam =
       binding.bindingId === 'pgm' &&
       this.pendingPgmCut?.sourceId === sourceId &&
@@ -832,6 +903,8 @@ export class WebGpuEngine {
       !!cachedVideoView;
     // The wrap itself, cut or not, on PGM and previews alike.
     const coverLoopWrap = this.isCoveringLoopWrap(sourceId) && !!cachedVideoView;
+    const coverFromCache =
+      coverPgmCut || coverSeekGap || coverCutSeam || coverLoopWrap;
     data[14] = shaderHasVideo;
     this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
 
@@ -852,17 +925,14 @@ export class WebGpuEngine {
     if (
       shaderHasVideo &&
       video &&
-      (preferPersistentVideoTexture || coverCutSeam || coverLoopWrap)
+      (preferPersistentVideoTexture || coverFromCache)
     ) {
       shaderHasVideo = cachedVideoView ? 1 : 0;
       data[14] = shaderHasVideo;
       this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
-      bindGroup = createIdleBindGroup(
-        this.device,
-        binding.idleBindGroupLayout,
-        binding.uniformBuffer,
+      bindGroup = this.getIdleBindGroup(
+        binding,
         cachedVideoView ?? binding.placeholderFeedbackView,
-        this.sampler,
         readView
       );
       cachedTextureBound = cachedVideoView !== null;
@@ -885,12 +955,9 @@ export class WebGpuEngine {
         shaderHasVideo = cachedVideoView ? 1 : 0;
         data[14] = shaderHasVideo;
         this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
-        bindGroup = createIdleBindGroup(
-          this.device,
-          binding.idleBindGroupLayout,
-          binding.uniformBuffer,
+        bindGroup = this.getIdleBindGroup(
+          binding,
           cachedVideoView ?? binding.placeholderFeedbackView,
-          this.sampler,
           readView
         );
         cachedTextureBound = cachedVideoView !== null;
@@ -900,23 +967,13 @@ export class WebGpuEngine {
       shaderHasVideo = 1;
       data[14] = 1;
       this.device.queue.writeBuffer(binding.uniformBuffer, 0, data);
-      bindGroup = createIdleBindGroup(
-        this.device,
-        binding.idleBindGroupLayout,
-        binding.uniformBuffer,
-        cachedVideoView,
-        this.sampler,
-        readView
-      );
+      bindGroup = this.getIdleBindGroup(binding, cachedVideoView, readView);
       pipeline = binding.idlePipeline;
       cachedTextureBound = true;
     } else {
-      bindGroup = createIdleBindGroup(
-        this.device,
-        binding.idleBindGroupLayout,
-        binding.uniformBuffer,
+      bindGroup = this.getIdleBindGroup(
+        binding,
         binding.placeholderFeedbackView,
-        this.sampler,
         readView
       );
     }
@@ -934,6 +991,8 @@ export class WebGpuEngine {
       cachedTextureUploaded,
       cachedTextureBound,
       coveredLoopWrap: coverLoopWrap && cachedTextureBound,
+      coveredSeekGap: coverSeekGap && cachedTextureBound,
+      coveredPgmCut: coverPgmCut && cachedTextureBound,
       samplePath: resolveVideoSamplePath(externalTextureBound, cachedTextureBound, Boolean(shaderHasVideo)),
       source: video?.currentSrc || video?.src || null,
       dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
@@ -979,13 +1038,15 @@ export class WebGpuEngine {
       swapFeedback(fb);
     }
 
-    const blitBindGroup = this.device.createBindGroup({
-      layout: binding.blitBindGroupLayout,
-      entries: [
-        { binding: 0, resource: blitSource },
-        { binding: 1, resource: this.sampler }
-      ]
-    });
+    const blitBindGroup = this.blitBindGroupCache.get(blitSource, () =>
+      this.device!.createBindGroup({
+        layout: binding.blitBindGroupLayout,
+        entries: [
+          { binding: 0, resource: blitSource },
+          { binding: 1, resource: this.sampler }
+        ]
+      })
+    );
 
     const canvasPass = encoder.beginRenderPass({
       colorAttachments: [
@@ -1005,6 +1066,29 @@ export class WebGpuEngine {
 
   getDevice() {
     return this.device;
+  }
+
+  private getIdleBindGroup(
+    binding: CanvasBinding,
+    videoView: GPUTextureView,
+    feedbackView: GPUTextureView
+  ): GPUBindGroup {
+    return this.idleBindGroupCache.get(videoView, feedbackView, () =>
+      createIdleBindGroup(
+        this.device!,
+        binding.idleBindGroupLayout,
+        binding.uniformBuffer,
+        videoView,
+        this.sampler!,
+        feedbackView
+      )
+    );
+  }
+
+  /** @internal Test hook for bind-group cache behavior. */
+  _resetBindGroupCachesForTests() {
+    this.idleBindGroupCache.clear();
+    this.blitBindGroupCache.clear();
   }
 
   /** Snapshot of what the renderer did on the last frame, per module. */
@@ -1034,6 +1118,8 @@ export class WebGpuEngine {
     this.bindingSchedule.clear();
     this.renderDiag.clear();
     this.loopWrapCover.clear();
+    this.seekGapCover.clear();
+    this.pgmCutCover.clear();
     this.videoTextureCache.dispose();
   }
 }

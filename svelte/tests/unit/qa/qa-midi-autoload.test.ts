@@ -5,14 +5,14 @@ import { midiUiOpen, setMidiUiOpen } from '$lib/stores/rackUi';
 import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
 
 describe('QA MIDI autoload', () => {
-  test('loads rack module parts by default on QA sessions', () => {
-    expect(shouldAutoloadQaMidi('?qa=1')).toBe(true);
-    expect(shouldAutoloadQaMidi('?qa=1&qaAutoplay=1')).toBe(true);
+  test('does not load rack module parts unless qaMidi=1', () => {
+    expect(shouldAutoloadQaMidi('?qa=1')).toBe(false);
+    expect(shouldAutoloadQaMidi('?qa=1&qaAutoplay=1')).toBe(false);
   });
 
-  test('opts out only with qaMidi=0', () => {
-    expect(shouldAutoloadQaMidi('?qa=1&qaMidi=0')).toBe(false);
-    expect(shouldAutoloadQaMidi('')).toBe(true);
+  test('opts in only with qaMidi=1', () => {
+    expect(shouldAutoloadQaMidi('?qa=1&qaMidi=1')).toBe(true);
+    expect(shouldAutoloadQaMidi('?qa=1&qaMidi=1&qaAutoplay=1')).toBe(true);
   });
 });
 

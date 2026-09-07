@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 /** `duration` is read-only on HTMLVideoElement, so the stand-in stays a plain
  * mutable object and is cast only where the pool hands it back. */
-const fakeVideo = { currentTime: 0, duration: 10 };
+const fakeVideo = { currentTime: 0, duration: 10, seeking: false };
 
 vi.mock('$lib/media/VideoPool', () => ({
   videoPool: {
@@ -24,6 +24,14 @@ function coveringWrap(engine: Engine, sourceId: string): boolean {
   );
 }
 
+function coveringSeekGap(engine: Engine, sourceId: string): boolean {
+  return (
+    engine as unknown as {
+      isCoveringSeekGap(id: string, video: HTMLVideoElement): boolean;
+    }
+  ).isCoveringSeekGap(sourceId, fakeVideo as unknown as HTMLVideoElement);
+}
+
 function buildEngine() {
   const engine = new WebGpuEngine();
   Object.assign(engine, {
@@ -43,6 +51,7 @@ describe('loop wrap cover', () => {
   beforeEach(() => {
     fakeVideo.currentTime = 0;
     fakeVideo.duration = 10;
+    fakeVideo.seeking = false;
   });
 
   test('first sight of a source is not treated as a wrap', () => {
@@ -108,5 +117,26 @@ describe('loop wrap cover', () => {
     fakeVideo.currentTime = 0;
     engine.renderAll(frame());
     expect(coveringWrap(engine, 'top-0')).toBe(false);
+  });
+
+  test('seeking covers until the seek completes plus the post-seek budget', () => {
+    const engine = buildEngine();
+    fakeVideo.currentTime = 4;
+    engine.renderAll(frame());
+    expect(coveringSeekGap(engine, 'top-0')).toBe(false);
+
+    fakeVideo.seeking = true;
+    engine.renderAll(frame());
+    expect(coveringSeekGap(engine, 'top-0')).toBe(true);
+
+    fakeVideo.seeking = false;
+    engine.renderAll(frame());
+    expect(coveringSeekGap(engine, 'top-0')).toBe(true);
+
+    engine.renderAll(frame());
+    expect(coveringSeekGap(engine, 'top-0')).toBe(true);
+
+    engine.renderAll(frame());
+    expect(coveringSeekGap(engine, 'top-0')).toBe(false);
   });
 });

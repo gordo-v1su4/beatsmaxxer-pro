@@ -68,3 +68,10 @@ docs/preview.png
 # Release artifacts downloaded for local testing (gh release download)
 *.msi
 *-setup.exe
+
+# Local WebGPU peer research clones (analyses in research/webgpu-peers/analyses/ are committed)
+research/webgpu-peers/repos/
+# Regeneratable GitHits sweep raw logs
+research/webgpu-peers/githits-sweep-log.txt
+research/webgpu-peers/githits-sweep-repos.txt
+research/webgpu-peers/githits-svelte-sweep.txt

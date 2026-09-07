@@ -1,6 +1,5 @@
-import { writable, derived, get } from 'svelte/store';
-import { rackTop, rackBottom, midiLayers } from '$lib/stores/rack';
-import { midiChannels } from '$lib/stores/midiChannels';
+import { writable, derived } from 'svelte/store';
+import { rackTop, rackBottom } from '$lib/stores/rack';
 import { setAllModuleTriggerSources } from '$lib/stores/midiTrigger';
 
 /** Per-module control collapse — preview-only strip when true. */
@@ -92,13 +91,8 @@ export function setMidiUiOpen(open: boolean) {
   if (!open) setAllModuleTriggerSources('audio');
 }
 
-/** Open perform-view MIDI lanes when arranger stems or module parts are present. */
-export function syncMidiUiFromLoadedParts() {
-  const hasModuleMidi = Object.values(get(midiLayers)).some(
-    (layer) => layer != null && layer.notes.length > 0
-  );
-  if (hasModuleMidi || get(midiChannels).length > 0) setMidiUiOpen(true);
-}
+/** Loaded parts stay available; the Top Bar AUD/MIDI toggle opens the surface. */
+export function syncMidiUiFromLoadedParts() {}
 
 export const topRowCompact = derived([rackTop, moduleCollapsed], ([top, collapsed]) => {
   if (top.length === 0) return false;

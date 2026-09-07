@@ -184,6 +184,8 @@ export interface WebGpuRenderDiagnostics {
   /** Rendered from cache to cover a loop wrap. Otherwise indistinguishable from
    * a healthy frame: the import succeeds and reports hasVideo, just empty. */
   coveredLoopWrap?: boolean;
+  coveredSeekGap?: boolean;
+  coveredPgmCut?: boolean;
   samplePath: WebGpuVideoSamplePath;
   source: string | null;
   dimensions: string | null;

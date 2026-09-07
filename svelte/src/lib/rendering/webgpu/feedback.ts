@@ -1,23 +1,7 @@
 /** Fullscreen blit — presents offscreen FX texture to canvas. */
-export const BLIT_WGSL = /* wgsl */ `
-struct VertexOutput {
-  @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-}
+import { WGSL_FULLSCREEN_VERTEX } from './shaders/wgslLib';
 
-@vertex fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
-  var positions = array<vec2f, 3>(
-    vec2f(-1.0, -1.0),
-    vec2f(3.0, -1.0),
-    vec2f(-1.0, 3.0)
-  );
-  var output: VertexOutput;
-  let position = positions[vertexIndex];
-  output.position = vec4f(position, 0.0, 1.0);
-  output.uv = vec2f(position.x * 0.5 + 0.5, 1.0 - (position.y * 0.5 + 0.5));
-  return output;
-}
-
+export const BLIT_WGSL = /* wgsl */ `${WGSL_FULLSCREEN_VERTEX}
 @group(0) @binding(0) var blitTex: texture_2d<f32>;
 @group(0) @binding(1) var blitSampler: sampler;
 

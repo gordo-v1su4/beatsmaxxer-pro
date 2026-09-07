@@ -1,0 +1,21 @@
+---
+description: Hermes vault → proxmox-home → BWS lookup order and secret rotation contract
+alwaysApply: true
+---
+
+# Homelab operator lookup
+
+**Vault** = `hermes-notebook-vault` (Obsidian) — big-picture index; points to **`proxmox-home`**. **Syncthing only — never push the vault to GitHub.**
+
+| Layer | Role | GitHub? |
+|-------|------|---------|
+| Hermes vault | Network map, service notes, pointers | **No** — Syncthing between machines |
+| `proxmox-home` | Canonical topology, `docs/endpoint-index.md`, BWS secret *names* | **Yes** |
+| BWS | Secret *values* — `agent-secrets run` / app env injection | **No** |
+| Live host | Final truth (SSH, Dockhand, `/health`) | — |
+
+**Rotate secrets:** update BWS + `proxmox-home` docs + Obsidian vault pointer in one session. Never commit values.
+
+**Skills (in `proxmox-home`):** `shared/skills/infrastructure-change-capture`, `add-bws-secret`, `homelab-runtime-check`.
+
+Canonical detail: `Documents/Github/proxmox-home/cursor/homelab-operator-context.md`.

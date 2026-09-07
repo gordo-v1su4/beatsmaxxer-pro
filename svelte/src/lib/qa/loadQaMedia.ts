@@ -142,7 +142,6 @@ export async function loadQaMediaFromManifest(
       if (result.status !== 'success') {
         throw new Error(result.status === 'failed' ? result.error : result.status);
       }
-      await videoPool.prewarm(slotId);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       errors.push(`${slotId}: ${msg}`);
@@ -162,7 +161,7 @@ export async function loadQaMediaFromManifest(
     }
   }
 
-  if (options?.midi !== false && manifest.midiAssignments?.length) {
+  if (options?.midi === true && manifest.midiAssignments?.length) {
     try {
       await loadQaMidiAssignments(manifest);
     } catch (err) {
@@ -179,9 +178,9 @@ export async function loadQaMediaFromManifest(
   }
 }
 
-/** Rack module parts load on every QA session unless `?qaMidi=0`. Arranger lanes always load. */
+/** Rack module parts load only when `?qaMidi=1`. Arranger lanes always load. */
 export function shouldAutoloadQaMidi(search: string): boolean {
-  return new URLSearchParams(search).get('qaMidi') !== '0';
+  return new URLSearchParams(search).get('qaMidi') === '1';
 }
 
 export async function fetchAndLoadQaMedia(options?: { midi?: boolean }) {

@@ -21,7 +21,8 @@
     "dev:desktop": "bash scripts/dev-desktop.sh",
     "build:desktop-frontend": "cd svelte && TAURI_ENV_PLATFORM=1 bun run build",
     "build:desktop": "bun run build:desktop-frontend && cd desktop && bunx tauri build",
-    "qa:secret-scan": "bun run scripts/secret-scan.ts"
+    "qa:secret-scan": "bun run scripts/secret-scan.ts",
+    "linear:bootstrap": "bun run scripts/linear-bootstrap.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",

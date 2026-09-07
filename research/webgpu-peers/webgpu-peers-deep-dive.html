@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WebGPU peers — deep dive · Beatsmaxxer Pro</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #151922;
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #34d399;
+      --warn: #fbbf24;
+      --border: #2a3140;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(circle at top, #151922 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    main { max-width: 980px; margin: 0 auto; padding: 1.5rem 1.1rem 3rem; }
+    h1 { margin: 0 0 0.35rem; font-size: clamp(1.45rem, 3vw, 1.95rem); }
+    h2 { margin: 2rem 0 0.75rem; font-size: 1.25rem; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; }
+    h3 { margin: 1.25rem 0 0.5rem; font-size: 1.05rem; color: var(--accent); }
+    .lede { margin: 0 0 1.25rem; color: var(--muted); max-width: 72ch; }
+    figure {
+      margin: 0 0 1.5rem;
+      padding: 0.85rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    figure img, figure object { display: block; width: 100%; height: auto; border-radius: 8px; }
+    figcaption { margin-top: 0.65rem; color: var(--muted); font-size: 0.88rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    a { color: var(--accent); }
+    code { font-size: 0.88em; background: #1f2937; padding: 0.1em 0.35em; border-radius: 4px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin: 1rem 0; }
+    .callout {
+      margin: 1rem 0;
+      padding: 0.9rem 1rem;
+      border-left: 4px solid var(--accent);
+      background: rgba(52, 211, 153, 0.08);
+      border-radius: 0 10px 10px 0;
+    }
+    .callout-warn { border-left-color: var(--warn); background: rgba(251, 191, 36, 0.08); }
+    ul { padding-left: 1.2rem; }
+    li { margin: 0.35rem 0; }
+    .tier { display: inline-block; font-size: 0.75rem; font-weight: 700; padding: 0.15em 0.5em; border-radius: 999px; margin-right: 0.35rem; }
+    .t1 { background: #064e3b; color: #6ee7b7; }
+    .t2 { background: #1e3a5f; color: #93c5fd; }
+    .t3 { background: #3f3f46; color: #d4d4d8; }
+    nav { margin-bottom: 1rem; font-size: 0.9rem; }
+    nav a { margin-right: 0.75rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <nav>
+      <a href="../../docs/webgpu-av-landscape.html">Landscape overview</a>
+      <a href="./README.md">research README</a>
+    </nav>
+
+    <h1>WebGPU peers — deep dive</h1>
+    <p class="lede">
+      Parallel GitHits + source analysis of five cloned repos. Goal: portable patterns for
+      Beatsmaxxer Pro (SvelteKit 5, WebGPU-only, eight-slot rack, beat-quantized PGM).
+      Clones live in <code>research/webgpu-peers/repos/</code> (gitignored).
+    </p>
+
+    <div class="callout">
+      <strong>Implementation backlog:</strong>
+      <a href="./IMPLEMENTATION-BACKLOG.md">IMPLEMENTATION-BACKLOG.md</a>
+      — tiered tasks, mobile vs desktop, open questions.
+    </div>
+
+    <figure>
+      <object data="./webgpu-peers-deep-dive.svg" type="image/svg+xml" aria-label="Peer landscape chart">
+        <img src="./webgpu-peers-deep-dive.svg" alt="Peer landscape chart" />
+      </object>
+      <figcaption>Static chart — open on phone without Mermaid.</figcaption>
+    </figure>
+
+    <h2>Search summary</h2>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr><th>Topic</th><th>Best hits</th><th>Gap for Beatsmaxxer</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WebGPU live VJ</td>
+            <td><a href="https://github.com/riskcapital/ghost-arcade">Ghost Arcade</a>, <a href="https://github.com/0langa/beatform">Beatform</a></td>
+            <td>No SvelteKit + 8 HTMLVideo slots + PGM combo</td>
+          </tr>
+          <tr>
+            <td><code>importExternalTexture</code></td>
+            <td><a href="https://github.com/webgpu/webgpu-samples">webgpu-samples</a>, <a href="https://github.com/walterlow/freecut">FreeCut</a></td>
+            <td>We already implement per-task import + idle copy</td>
+          </tr>
+          <tr>
+            <td>Shader / effect registry</td>
+            <td>FreeCut <code>gpu-effects/</code>, apssouza22 <code>effects/registry.ts</code></td>
+            <td>We use uber-shader + <code>effectMode</code> — optimal for 8 modules</td>
+          </tr>
+          <tr>
+            <td>Beat sync / rhythm</td>
+            <td>Beatform flux, Essentia.js, web-audio-beat-detector</td>
+            <td>Hosted Essentia + Web Audio fallback already in tree</td>
+          </tr>
+          <tr>
+            <td>Browser NLE WebGPU</td>
+            <td>FreeCut (2.1k ★), OpenCut (Rust compositor rewrite)</td>
+            <td>Timeline editor ≠ live rack; steal GPU paths only</td>
+          </tr>
+          <tr>
+            <td>Svelte + WebGPU</td>
+            <td><strong>Ghost Arcade (Svelte 5)</strong>, jpaquim/svelte-webgpu (stale)</td>
+            <td>Ghost Arcade is closest Svelte GPU app at product scale</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Cloned repos</h2>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr><th>Repo</th><th>License</th><th>Why cloned</th><th>Analysis</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><a href="https://github.com/0langa/beatform">beatform</a></td>
+            <td>MIT</td>
+            <td>Fixed feedback clock, wgslLib, pipeline cache</td>
+            <td><a href="./analyses/beatform.md">analyses/beatform.md</a></td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/riskcapital/ghost-arcade">ghost-arcade</a></td>
+            <td>AGPL-3.0</td>
+            <td>Svelte 5 VJ, ISF rack, VideoFrame output</td>
+            <td><a href="./analyses/ghost-arcade.md">analyses/ghost-arcade.md</a></td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/walterlow/freecut">freecut</a></td>
+            <td>MIT</td>
+            <td>Dual texture path, effect registry, compositor</td>
+            <td><a href="./analyses/freecut.md">analyses/freecut.md</a></td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/apssouza22/webgpu-video-rendering">webgpu-video-rendering</a></td>
+            <td>—</td>
+            <td>External→owned copy, small effect registry</td>
+            <td><a href="./analyses/webgpu-video-rendering.md">analyses/webgpu-video-rendering.md</a></td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/webgpu/webgpu-samples">webgpu-samples</a></td>
+            <td>BSD-3</td>
+            <td>Spec-canonical video + timestamp queries</td>
+            <td><a href="./analyses/webgpu-samples.md">analyses/webgpu-samples.md</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Texture path decision matrix</h2>
+    <p>Cross-peer rule aligned with our <code>WebGpuEngine</code> + <code>VideoTextureCache</code>:</p>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr><th>Scenario</th><th>API</th><th>Peer reference</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Live 8 slots + PGM (ready video)</td>
+            <td><code>importExternalTexture</code> per JS task</td>
+            <td>webgpu-samples, FreeCut live path</td>
+          </tr>
+          <tr>
+            <td>Seek gap / loop seam / last-good frame</td>
+            <td><code>copyExternalImageToTexture</code> → <code>texture_2d</code></td>
+            <td>FreeCut fallback, our VideoTextureCache</td>
+          </tr>
+          <tr>
+            <td>Multi-pass FX on same frame</td>
+            <td>Copy external → owned, then ping-pong</td>
+            <td>webgpu-video-rendering ExternalCopyPipeline</td>
+          </tr>
+          <tr>
+            <td>Cross-window PGM monitor</td>
+            <td>VideoFrame + importExternalTexture</td>
+            <td>Ghost Arcade videoFrameBridge</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Recommended changes for Beatsmaxxer</h2>
+
+    <h3><span class="tier t1">Tier 1</span> Low risk, latency / maintainability</h3>
+    <ul>
+      <li><strong>Split bind groups by frequency</strong> (Toji / FreeCut pattern): static sampler group + per-frame uniform/feedback/external group — cuts descriptor work across 8 previews + PGM.</li>
+      <li><strong>Extract <code>wgslLib.ts</code></strong> from <code>moduleFx.wgsl.ts</code> with golden shader snapshots (Beatform proves zero-drift testing).</li>
+      <li><strong><code>requestVideoFrameCallback</code></strong> on slots not tied to audio fixed-step — decode cadence vs blind rAF (webgpu-samples).</li>
+      <li><strong>Import pass <code>destRect</code> uniform</strong> for slot aspect-fit (FreeCut) — GPU-side crop/fit without canvas CSS hacks.</li>
+    </ul>
+
+    <h3><span class="tier t2">Tier 2</span> Determinism + QA</h3>
+    <ul>
+      <li><strong>Port Beatform <code>FixedFeedbackClock</code></strong> — unify feedback age with <code>timeline.fixedStepIndex</code> for export/QA determinism.</li>
+      <li><strong>Timestamp queries behind <code>__BMX_QA__</code></strong> — per-module FX pass timing (webgpu-samples <code>timestampQuery</code>).</li>
+      <li><strong>GPU histogram scope</strong> for QA autoload — compute aggregate only, no readback (webgpu-video-rendering scopes).</li>
+      <li><strong>Frame-drop guard</strong> optional when <code>queue</code> saturated — <code>gpuFrameBusy</code> pattern from video-rendering demo.</li>
+    </ul>
+
+    <h3><span class="tier t3">Tier 3</span> Future architecture</h3>
+    <ul>
+      <li><strong>ISF import path</strong> — Ghost Arcade parser for user shader slots (AGPL: reimplement API, don’t copy code).</li>
+      <li><strong>ExternalCopyPipeline</strong> for modules needing &gt;1 pass on live external texture.</li>
+      <li><strong>Pipeline cache</strong> if we add per-user WGSL (Beatform <code>WeakMap</code> keyed by preset object).</li>
+      <li><strong>Render bundles</strong> for stable blit pass when canvas size unchanged.</li>
+      <li><strong>WebCodecs + Mediabunny</strong> frame path for frame-accurate scrub (FreeCut) — only if HTMLVideo latency becomes limiting.</li>
+    </ul>
+
+    <h2>What we already do well</h2>
+    <div class="callout">
+      Peer review confirms Beatsmaxxer’s core bets are correct:
+      <strong>uber-shader + <code>effectMode</code></strong> (one compile, eight modules),
+      <strong>per-task <code>importExternalTexture</code></strong> with idle <code>texture_2d</code> fallback,
+      <strong>feedback ping-pong</strong> with degraded catch-up on stutter,
+      and <strong>audio-master transport</strong> via single <code>AppLoop</code>.
+      No React re-architecture needed — port WGSL and WebGPU API patterns only.
+    </div>
+
+    <h2>Skip list</h2>
+    <ul>
+      <li>C++/WASM compositor paths (OpenCut Rust rewrite) unless export-grade offline render becomes a goal.</li>
+      <li>Three.js WebGPURenderer — conflicts with WebGPU-only mandate.</li>
+      <li>Direct AGPL code copy from Ghost Arcade — study patterns, MIT-clean reimplementation.</li>
+      <li>Subgroups / multi-draw indirect — no win for eight fullscreen quads today.</li>
+    </ul>
+
+    <h2>GitHits-validated extras (not cloned)</h2>
+    <ul>
+      <li><a href="https://github.com/kaltwrk/spektral">kaltwrk/spektral</a> — pipeline cache + dynamic WGSL (MIT).</li>
+      <li><a href="https://github.com/vijaypemmaraju/rondocode">rondocode/shaderviz</a> — spectrum/waveform GPU textures (MIT).</li>
+      <li><a href="https://github.com/Ableton/web-audio-sequencing">Ableton/web-audio-sequencing</a> — beat transport reference (MIT).</li>
+      <li><a href="https://github.com/kbrandwijk/webgpu-video-shaders">kbrandwijk/webgpu-video-shaders</a> — libplacebo-style deband/color WGSL.</li>
+      <li><a href="https://github.com/Sportinger/MasterSelects">MasterSelects</a> — HTMLVideo + WebGPU NLE pitfall research docs.</li>
+      <li><a href="https://github.com/shenghaoc/localcut">localcut</a> — smaller FreeCut-family NLE (MIT).</li>
+      <li><a href="https://github.com/disini/XGPU">disini/XGPU</a> — VideoTexture helper library.</li>
+      <li><a href="https://github.com/BabylonJS/Babylon.js">Babylon.js</a> — <code>webgpuCacheBindGroups</code>, external texture manager.</li>
+      <li><a href="https://github.com/jberg/butterchurn">butterchurn</a> — bass/mid/treb envelope semantics (WebGL).</li>
+      <li><a href="https://github.com/MTG/essentia.js">essentia.js</a> — WASM rhythm (AGPL).</li>
+    </ul>
+    <p class="lede">GitHits VJ clip-rack query returned <strong>no matches</strong> — confirms Beatsmaxxer's combo is still unique in public OSS.</p>
+
+    <p class="lede" style="margin-top: 2rem;">
+      Refresh clones: <code>.\research\webgpu-peers\clone-peers.ps1 -Refresh</code>
+    </p>
+  </main>
+</body>
+</html>
