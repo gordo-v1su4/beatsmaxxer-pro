@@ -12,9 +12,6 @@
     },
     "api/analyze/[endpoint].ts": {
       "maxDuration": 120
-    },
-    "api/storage/upload/index.ts": {
-      "maxDuration": 60
     }
   },
   "rewrites": [
@@ -28,7 +25,7 @@
     },
     {
       "source": "/__api/storage/upload",
-      "destination": "/api/storage/upload"
+      "destination": "/api/analyze/storage-upload"
     },
     {
       "source": "/__api/gate",

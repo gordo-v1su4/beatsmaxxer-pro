@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { analysisHandlerConfig, handleAnalysisProxy } from "./handler.js";
+import { handleStorageUpload } from "../storage/handler.js";
 
 export const config = analysisHandlerConfig;
 
@@ -11,5 +12,9 @@ function firstQueryValue(value: string | string[] | undefined) {
 
 export default async function handler(req: RouteRequest, res: ServerResponse) {
   const endpoint = firstQueryValue(req.query.endpoint)?.trim() ?? "";
+  if (endpoint === "storage-upload") {
+    await handleStorageUpload(req, res);
+    return;
+  }
   await handleAnalysisProxy(req, res, endpoint);
 }
