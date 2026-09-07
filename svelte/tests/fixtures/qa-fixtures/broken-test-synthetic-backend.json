@@ -4,7 +4,7 @@
   "provenance": {
     "schemaVersion": 3,
     "captureId": "12345678-1234-4234-8234-123456789abc",
-    "capturedAt": "2026-09-07T10:34:16.329Z",
+    "capturedAt": "2026-09-07T10:41:28.049Z",
     "source": {
       "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -81,7 +81,7 @@
     "freshness": {
       "policy": "release-proof-24h.v1",
       "maxAgeMs": 86400000,
-      "expiresAt": "2026-09-08T10:34:16.329Z"
+      "expiresAt": "2026-09-08T10:41:28.049Z"
     }
   }
 }

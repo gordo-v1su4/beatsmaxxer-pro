@@ -1,30 +1,23 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import {
-  analysisProxyConfigFromEnv,
-  proxyAnalysisRequest,
-} from "./policy.js";
+import { analysisProxyConfigFromEnv, proxyAnalysisRequest } from "./policy.js";
 
-export const config = { api: { bodyParser: false }, maxDuration: 120 };
-
-type RouteRequest = IncomingMessage & { query: { path?: string | string[] } };
+export const analysisHandlerConfig = { api: { bodyParser: false }, maxDuration: 120 };
 
 function firstHeader(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function endpointFromQuery(path: string | string[] | undefined): string {
-  if (!path) return "";
-  return (Array.isArray(path) ? path : [path]).join("/");
-}
-
-export default async function handler(req: RouteRequest, res: ServerResponse) {
+export async function handleAnalysisProxy(
+  req: IncomingMessage,
+  res: ServerResponse,
+  endpoint: string,
+) {
   const startedAt = Date.now();
   const clientAbort = new AbortController();
   const onAborted = () => clientAbort.abort();
   req.once("aborted", onAborted);
 
   try {
-    const endpoint = endpointFromQuery(req.query.path);
     const result = await proxyAnalysisRequest(
       {
         method: req.method,

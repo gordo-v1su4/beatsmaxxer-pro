@@ -4,7 +4,13 @@
   "buildCommand": "cd svelte && bun run build",
   "outputDirectory": "svelte/build",
   "functions": {
-    "api/analyze/[...path].ts": {
+    "api/analyze/studio/jobs/index.ts": {
+      "maxDuration": 120
+    },
+    "api/analyze/studio/jobs/[id].ts": {
+      "maxDuration": 30
+    },
+    "api/analyze/[endpoint].ts": {
       "maxDuration": 120
     }
   },
