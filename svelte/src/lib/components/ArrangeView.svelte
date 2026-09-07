@@ -77,6 +77,7 @@
   let showBeatGrid = $state(true);
   let selectedSectionIndices = $state<Set<number>>(new Set([0]));
   let openSectionKindIndex = $state<number | null>(null);
+  let kindMenuRect = $state<{ top: number; left: number; width: number } | null>(null);
 
   const slotCount = $derived($rackTop.length + $rackBottom.length);
   const totalSteps = $derived($arrangementTotalSteps);
@@ -170,8 +171,9 @@
     if (openSectionKindIndex === null) return;
     const close = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target?.closest('.arr-section-kind')) return;
+      if (target?.closest('.arr-section-kind') || target?.closest('.arr-kind-menu-portal')) return;
       openSectionKindIndex = null;
+      kindMenuRect = null;
     };
     window.addEventListener('pointerdown', close, true);
     return () => window.removeEventListener('pointerdown', close, true);
@@ -182,15 +184,39 @@
     return SECTION_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? 'Section';
   }
 
-  function toggleSectionKindMenu(index: number, event?: Event) {
+  function openSectionKindMenu(index: number, anchor: HTMLElement, event?: Event) {
     event?.stopPropagation();
-    openSectionKindIndex = openSectionKindIndex === index ? null : index;
+    const rect = anchor.getBoundingClientRect();
+    kindMenuRect = { top: rect.bottom + 3, left: rect.left, width: Math.max(rect.width, 72) };
+    openSectionKindIndex = index;
+  }
+
+  function toggleSectionKindMenu(index: number, anchor: HTMLElement, event?: Event) {
+    event?.stopPropagation();
+    if (openSectionKindIndex === index) {
+      openSectionKindIndex = null;
+      kindMenuRect = null;
+      return;
+    }
+    openSectionKindMenu(index, anchor, event);
   }
 
   function pickSectionKind(index: number, kind: SectionKind, event?: Event) {
     event?.stopPropagation();
     updateSectionKind(index, kind);
     openSectionKindIndex = null;
+    kindMenuRect = null;
+  }
+
+  function zoomAnchorSeconds() {
+    if ($transportDisplay.playing) return $transportDisplay.time;
+    return (viewport.startSeconds + viewport.endSeconds) / 2;
+  }
+
+  function onTimelineWheel(event: WheelEvent) {
+    event.preventDefault();
+    if (event.deltaY < 0) zoomIn();
+    else zoomOut();
   }
 
   function viewPct(seconds: number) {
@@ -207,13 +233,13 @@
   }
 
   function zoomIn() {
-    const next = zoomViewportAround(viewport, timeline, 1.35, $transportDisplay.time);
+    const next = zoomViewportAround(viewport, timeline, 1.35, zoomAnchorSeconds());
     viewStartS = next.startSeconds;
     viewEndS = next.endSeconds;
   }
 
   function zoomOut() {
-    const next = zoomViewportAround(viewport, timeline, 1 / 1.35, $transportDisplay.time);
+    const next = zoomViewportAround(viewport, timeline, 1 / 1.35, zoomAnchorSeconds());
     if (isFullViewport(next, timeline)) {
       resetViewport();
       return;
@@ -451,7 +477,7 @@
 
     <span class="arr-zoom" role="group" aria-label="Timeline zoom">
       <button type="button" class="arr-btn" onclick={zoomOut} disabled={!isFramed} aria-label="Zoom out">−</button>
-      <span>{zoomFactor.toFixed(1)}×</span>
+      <span title="Scroll wheel on the timeline also zooms">{zoomFactor.toFixed(1)}×</span>
       <button type="button" class="arr-btn" onclick={zoomIn} disabled={zoomFactor >= 64} aria-label="Zoom in">+</button>
     </span>
 
@@ -555,8 +581,8 @@
     />
   </header>
 
-  <div class="arr-scroll">
-   <div class="arr-canvas">
+  <div class="arr-scroll" onwheel={onTimelineWheel}>
+   <div class="arr-canvas" style="width:{isFramed ? Math.min(zoomFactor * 100, 6400) : 100}%">
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
@@ -607,39 +633,18 @@
                 aria-haspopup="listbox"
                 aria-expanded={openSectionKindIndex === i}
                 aria-label="{section.name} part type"
-                onclick={(event) => toggleSectionKindMenu(i, event)}
+                onclick={(event) => toggleSectionKindMenu(i, event.currentTarget as HTMLElement, event)}
                 onkeydown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     event.stopPropagation();
-                    toggleSectionKindMenu(i, event);
+                    toggleSectionKindMenu(i, event.currentTarget as HTMLElement, event);
                   }
                 }}
               >
-                {sectionKindLabel(section)}
+                <span class="arr-kind-label">{sectionKindLabel(section)}</span>
+                <span class="arr-kind-chevron" aria-hidden="true">▾</span>
               </span>
-              {#if openSectionKindIndex === i}
-                <div class="arr-kind-menu" role="listbox" aria-label="{section.name} part type">
-                  {#each SECTION_KIND_OPTIONS as option (option.value)}
-                    <span
-                      role="option"
-                      tabindex="0"
-                      class="arr-kind-option"
-                      class:is-active={sectionKindOf(section) === option.value}
-                      aria-selected={sectionKindOf(section) === option.value}
-                      onclick={(event) => pickSectionKind(i, option.value, event)}
-                      onkeydown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          pickSectionKind(i, option.value, event);
-                        }
-                      }}
-                    >
-                      {option.label}
-                    </span>
-                  {/each}
-                </div>
-              {/if}
             </span>
             <span class="arr-section-bars">{section.bars}b</span>
           </button>
@@ -799,6 +804,30 @@
     <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {timePct($transportDisplay.time) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
    </div>
   </div>
+
+  {#if openSectionKindIndex !== null && kindMenuRect}
+    {@const menuSection = $arrangement[openSectionKindIndex]}
+    <div
+      class="arr-kind-menu-portal"
+      role="listbox"
+      aria-label="{menuSection?.name ?? 'Section'} part type"
+      style="top:{kindMenuRect.top}px;left:{kindMenuRect.left}px;min-width:{kindMenuRect.width}px"
+      onclick={(event) => event.stopPropagation()}
+    >
+      {#each SECTION_KIND_OPTIONS as option (option.value)}
+        <button
+          type="button"
+          class="arr-kind-option"
+          class:is-active={menuSection && sectionKindOf(menuSection) === option.value}
+          role="option"
+          aria-selected={menuSection && sectionKindOf(menuSection) === option.value}
+          onclick={(event) => pickSectionKind(openSectionKindIndex!, option.value, event)}
+        >
+          {option.label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 </section>
 
 <style>
@@ -946,6 +975,8 @@
   .arr-row-sections {
     height: 30px;
     margin-bottom: 3px;
+    position: relative;
+    z-index: 4;
   }
   /* Follows .arr-bar's line-height — an 11px row clipped the taller numbers. */
   .arr-row-ruler {
@@ -1037,6 +1068,7 @@
   .arr-sections {
     position: relative;
     min-height: 30px;
+    overflow: visible;
   }
   .arr-section-loading {
     position: absolute;
@@ -1075,7 +1107,9 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    min-width: 28px;
+    min-width: 52px;
+    overflow: visible;
+    z-index: 2;
     border: 1px solid color-mix(in srgb, var(--sec-hue, #14b8a6) 22%, rgba(255, 255, 255, 0.14));
     background: color-mix(in srgb, var(--sec-hue, #14b8a6) 14%, rgba(255, 255, 255, 0.05));
     backdrop-filter: blur(14px) saturate(1.15);
@@ -1112,18 +1146,21 @@
   .arr-section-kind {
     position: relative;
     flex: 1;
-    min-width: 0;
+    min-width: 44px;
     display: flex;
   }
   .arr-kind-trigger {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3px;
     width: 100%;
     min-width: 0;
     padding: 1px 4px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.08);
-    color: #eef4f7;
+    background: rgba(255, 255, 255, 0.1);
+    color: #f2f7fa;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
@@ -1131,39 +1168,49 @@
     text-transform: uppercase;
     text-align: left;
     cursor: pointer;
-    backdrop-filter: blur(12px) saturate(1.25);
-    -webkit-backdrop-filter: blur(12px) saturate(1.25);
+    backdrop-filter: blur(14px) saturate(1.35);
+    -webkit-backdrop-filter: blur(14px) saturate(1.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
   .arr-kind-trigger:hover,
   .arr-kind-trigger:focus-visible {
-    border-color: rgba(255, 255, 255, 0.32);
-    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.36);
+    background: rgba(255, 255, 255, 0.16);
     outline: none;
   }
-  .arr-kind-menu {
-    position: absolute;
-    top: calc(100% + 2px);
-    left: 0;
-    z-index: 30;
+  .arr-kind-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .arr-kind-chevron {
+    flex-shrink: 0;
+    opacity: 0.72;
+    font-size: 8px;
+    line-height: 1;
+  }
+  .arr-kind-menu-portal {
+    position: fixed;
+    z-index: 2000;
     display: flex;
     flex-direction: column;
     gap: 1px;
-    min-width: 100%;
-    padding: 3px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 3px;
-    background: rgba(10, 12, 14, 0.52);
-    backdrop-filter: blur(16px) saturate(1.3);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 4px;
+    background: rgba(12, 14, 16, 0.55);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   }
   .arr-kind-option {
     display: block;
-    padding: 3px 5px;
+    width: 100%;
+    padding: 4px 6px;
     border: 0;
     border-radius: 2px;
     background: transparent;
-    color: #d8e4ea;
+    color: #e8f0f4;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
@@ -1174,12 +1221,12 @@
   }
   .arr-kind-option:hover,
   .arr-kind-option:focus-visible {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.12);
     outline: none;
   }
   .arr-kind-option.is-active {
-    background: rgba(20, 184, 166, 0.22);
-    color: #f2fbfd;
+    background: rgba(20, 184, 166, 0.28);
+    color: #f6fcfd;
   }
   .arr-section-bars {
     flex-shrink: 0;
