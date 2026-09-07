@@ -80,9 +80,11 @@ export async function uploadToMediaGateway(
   form.set("bucket", config.bucket);
   form.set("folder", input.folder);
   form.set("preserveFilename", input.preserveFilename ? "true" : "false");
+  const bytes = input.body instanceof Uint8Array ? input.body : new Uint8Array(input.body);
+  const blobBody = Buffer.from(bytes);
   form.set(
     "file",
-    new Blob([input.body instanceof Uint8Array ? input.body : new Uint8Array(input.body)], {
+    new Blob([blobBody], {
       type: input.contentType,
     }),
     input.filename,
