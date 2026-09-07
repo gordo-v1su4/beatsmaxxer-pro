@@ -31,6 +31,17 @@ console.log("File:", songPath);
 console.log("Size:", bytes.byteLength, `(${(bytes.byteLength / 1_048_576).toFixed(2)} MiB)`);
 console.log("Chunked:", bytes.byteLength > DIRECT_MAX);
 
+function requestHeaders(cookie = "", extra = {}) {
+  const headers = { ...extra };
+  if (cookie) headers.Cookie = cookie;
+  if (!baseUrl.includes("localhost") && !baseUrl.includes("127.0.0.1")) {
+    headers.Origin = baseUrl;
+    headers.Referer = `${baseUrl}/`;
+    headers["sec-fetch-site"] = "same-origin";
+  }
+  return headers;
+}
+
 async function readJson(response) {
   const text = await response.text();
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${text.slice(0, 600)}`);
@@ -41,11 +52,17 @@ async function unlockGate() {
   if (!pin) return "";
   const response = await fetch(`${baseUrl}/__api/gate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...requestHeaders(),
+    },
     body: JSON.stringify({ pin }),
   });
   const setCookie = response.headers.get("set-cookie");
-  if (!response.ok) throw new Error(`Gate unlock failed: HTTP ${response.status}`);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Gate unlock failed: HTTP ${response.status} ${text.slice(0, 200)}`);
+  }
   return setCookie?.split(";")[0] ?? "";
 }
 
@@ -65,7 +82,7 @@ async function uploadChunks(cookie) {
     url.searchParams.set("filename", file.name);
     const response = await fetch(url, {
       method: "POST",
-      headers: cookie ? { Cookie: cookie } : {},
+      headers: requestHeaders(cookie),
       body: form,
       signal: AbortSignal.timeout(120_000),
     });
@@ -88,10 +105,7 @@ async function uploadChunks(cookie) {
 }
 
 const cookie = await unlockGate();
-const headers = {
-  "Idempotency-Key": randomUUID(),
-  ...(cookie ? { Cookie: cookie } : {}),
-};
+const headers = requestHeaders(cookie, { "Idempotency-Key": randomUUID() });
 
 let submitBody;
 if (file.size > DIRECT_MAX) {
@@ -121,7 +135,7 @@ while (job.status !== "completed" && job.status !== "failed") {
   await new Promise((r) => setTimeout(r, 3000));
   job = await readJson(
     await fetch(`${baseUrl}/__api/analyze/studio/jobs/${encodeURIComponent(submit.id)}`, {
-      headers: cookie ? { Cookie: cookie } : {},
+      headers: requestHeaders(cookie),
       signal: AbortSignal.timeout(60_000),
     }),
   );
