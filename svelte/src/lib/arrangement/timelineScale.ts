@@ -16,6 +16,19 @@ export interface RulerBarMark {
  * One horizontal coordinate system for sections, ruler, playhead, and lanes.
  * Anchored at time 0 — no negative-step padding before bar 1.
  */
+/** Wall-clock offset of the analysed downbeat — song/file time 0 is bar 1. */
+export function beatGridSongOffset(beatGrid: readonly number[]): number {
+  return beatGrid.length >= 2 ? beatGrid[0]! : 0;
+}
+
+/** Shift Essentia's beat grid so bar 1 beat 1 lands at file time 0. */
+export function anchorBeatGridToSongStart(beatGrid: readonly number[]): readonly number[] {
+  if (beatGrid.length < 2) return beatGrid;
+  const off = beatGrid[0]!;
+  if (off <= 1e-9) return beatGrid;
+  return beatGrid.map((t) => Math.max(0, t - off));
+}
+
 export function songTimeline(
   durationSeconds: number,
   beatGrid: readonly number[],
@@ -31,6 +44,104 @@ export function songTimeline(
 export function timePercent(seconds: number, timeline: SongTimeline): number {
   if (timeline.durationSeconds <= 0) return 0;
   return Math.min(100, Math.max(0, (seconds / timeline.durationSeconds) * 100));
+}
+
+/** Visible time window on the arrangement timeline (DAW-style horizontal zoom). */
+export interface TimelineViewport {
+  startSeconds: number;
+  endSeconds: number;
+}
+
+export function fullTimelineViewport(timeline: SongTimeline): TimelineViewport {
+  return { startSeconds: 0, endSeconds: timeline.durationSeconds };
+}
+
+export function viewportSpan(viewport: TimelineViewport): number {
+  return Math.max(viewport.endSeconds - viewport.startSeconds, 1e-6);
+}
+
+export function isFullViewport(viewport: TimelineViewport, timeline: SongTimeline): boolean {
+  const full = timeline.durationSeconds;
+  return viewport.startSeconds <= 1e-4 && Math.abs(viewport.endSeconds - full) < 0.05;
+}
+
+export function viewportZoomFactor(viewport: TimelineViewport, timeline: SongTimeline): number {
+  return timeline.durationSeconds / viewportSpan(viewport);
+}
+
+/** Map wall-clock seconds into 0–100% of the visible viewport. */
+export function viewTimePercent(seconds: number, viewport: TimelineViewport): number {
+  const span = viewportSpan(viewport);
+  return Math.min(100, Math.max(0, ((seconds - viewport.startSeconds) / span) * 100));
+}
+
+export function viewSecondsFromFraction(fraction: number, viewport: TimelineViewport): number {
+  const span = viewportSpan(viewport);
+  return viewport.startSeconds + fraction * span;
+}
+
+/** Zoom in/out around an anchor while clamping to the song bounds. */
+export function zoomViewportAround(
+  viewport: TimelineViewport,
+  timeline: SongTimeline,
+  factor: number,
+  anchorSeconds: number,
+): TimelineViewport {
+  const full = timeline.durationSeconds;
+  const span = viewportSpan(viewport);
+  const newSpan = Math.min(full, Math.max(full / 64, span / factor));
+  const anchorFrac = span > 0 ? (anchorSeconds - viewport.startSeconds) / span : 0.5;
+  let start = anchorSeconds - anchorFrac * newSpan;
+  let end = start + newSpan;
+  if (start < 0) {
+    start = 0;
+    end = newSpan;
+  }
+  if (end > full) {
+    end = full;
+    start = Math.max(0, full - newSpan);
+  }
+  return { startSeconds: start, endSeconds: end };
+}
+
+export function frameViewportFromSeconds(
+  startSeconds: number,
+  endSeconds: number,
+  timeline: SongTimeline,
+  paddingRatio = 0.06,
+): TimelineViewport {
+  const span = Math.max(endSeconds - startSeconds, 0.5);
+  const pad = span * paddingRatio;
+  const full = timeline.durationSeconds;
+  return {
+    startSeconds: Math.max(0, startSeconds - pad),
+    endSeconds: Math.min(full, endSeconds + pad),
+  };
+}
+
+/** Every beat boundary inside the viewport — Ableton-style beat grid. */
+export function rulerBeatTicks(
+  viewport: TimelineViewport,
+  beatGrid: readonly number[],
+  bpm: number,
+): number[] {
+  const start = Math.max(0, viewport.startSeconds - 0.01);
+  const end = viewport.endSeconds + 0.01;
+  const grid = anchorBeatGridToSongStart(beatGrid);
+  if (grid.length >= 2) {
+    const times: number[] = [];
+    for (const t of grid) {
+      if (t >= start && t <= end) times.push(t);
+    }
+    return times;
+  }
+  const period = 60 / bpm;
+  const times: number[] = [];
+  const first = Math.floor(start / period) * period;
+  for (let t = first; t <= end; t += period) {
+    if (t >= start) times.push(t);
+  }
+  return times;
 }
 
 export function barStartSeconds(
@@ -50,7 +161,7 @@ export function barNumberAtTime(
   return Math.max(1, Math.floor(beat / 4) + 1);
 }
 
-/** Major ruler labels on the beat grid (bar 1 at the first downbeat). */
+/** Major ruler labels on the beat grid (bar 1 at file time 0). */
 export function rulerBarMarks(
   timeline: SongTimeline,
   beatGrid: readonly number[],
@@ -108,10 +219,13 @@ export function arrangementStepToSeconds(
 
     const section = sections[i]!;
     if (section.timeStartS != null && section.timeEndS != null) {
+      const off = beatGridSongOffset(beatGrid);
+      const sectionStart = i === 0 ? 0 : Math.max(0, section.timeStartS - off);
+      const sectionEnd = Math.max(sectionStart, section.timeEndS - off);
       const barsInto = bar - startBar;
-      const span = section.timeEndS - section.timeStartS;
+      const span = sectionEnd - sectionStart;
       const barDur = span / section.bars;
-      return section.timeStartS + barsInto * barDur + (sixteenth / ARRANGEMENT_STEPS) * barDur;
+      return sectionStart + barsInto * barDur + (sixteenth / ARRANGEMENT_STEPS) * barDur;
     }
     return stepSeconds(step, beatGrid, bpm);
   }
@@ -148,21 +262,53 @@ export function stepPercent(step: number, scale: ArrangementTimelineScale) {
 }
 
 export function secondsStep(seconds: number, beatGrid: readonly number[], bpm: number) {
-  return beatAt(seconds, beatGrid, bpm) * 4;
+  const grid = anchorBeatGridToSongStart(beatGrid);
+  const songSeconds = Math.max(0, seconds - beatGridSongOffset(beatGrid));
+  return beatAt(songSeconds, grid, bpm) * 4;
 }
 
 export function stepSeconds(step: number, beatGrid: readonly number[], bpm: number) {
+  const grid = anchorBeatGridToSongStart(beatGrid);
   const beat = step / 4;
-  if (beatGrid.length < 2) return Math.max(0, (beat * 60) / bpm);
+  if (grid.length < 2) return Math.max(0, (beat * 60) / bpm);
   if (beat <= 0) {
-    const span = beatGrid[1]! - beatGrid[0]!;
-    return Math.max(0, beatGrid[0]! + beat * span);
+    const span = grid[1]! - grid[0]!;
+    return Math.max(0, grid[0]! + beat * span);
   }
-  const lo = Math.min(Math.floor(beat), beatGrid.length - 1);
-  if (lo >= beatGrid.length - 1) {
-    const span = beatGrid.at(-1)! - beatGrid.at(-2)!;
-    return Math.max(0, beatGrid.at(-1)! + (beat - (beatGrid.length - 1)) * span);
+  const lo = Math.min(Math.floor(beat), grid.length - 1);
+  if (lo >= grid.length - 1) {
+    const span = grid.at(-1)! - grid.at(-2)!;
+    return Math.max(0, grid.at(-1)! + (beat - (grid.length - 1)) * span);
   }
   const fraction = beat - lo;
-  return beatGrid[lo]! + (beatGrid[lo + 1]! - beatGrid[lo]!) * fraction;
+  return grid[lo]! + (grid[lo + 1]! - grid[lo]!) * fraction;
+}
+
+/** Pan the visible window so the playhead stays in view while zoomed. */
+export function followPlayheadViewport(
+  viewport: TimelineViewport,
+  timeline: SongTimeline,
+  playheadSeconds: number,
+  marginRatio = 0.18,
+): TimelineViewport | null {
+  const span = viewportSpan(viewport);
+  if (span <= 0 || isFullViewport(viewport, timeline)) return null;
+  const margin = span * marginRatio;
+  const start = viewport.startSeconds;
+  const end = viewport.endSeconds;
+  if (playheadSeconds >= start + margin && playheadSeconds <= end - margin) return null;
+
+  let nextStart = start;
+  if (playheadSeconds < start + margin) {
+    nextStart = Math.max(0, playheadSeconds - margin);
+  } else if (playheadSeconds > end - margin) {
+    nextStart = Math.max(0, playheadSeconds - span + margin);
+  }
+  let nextEnd = nextStart + span;
+  if (nextEnd > timeline.durationSeconds) {
+    nextEnd = timeline.durationSeconds;
+    nextStart = Math.max(0, nextEnd - span);
+  }
+  if (Math.abs(nextStart - start) < 1e-4 && Math.abs(nextEnd - end) < 1e-4) return null;
+  return { startSeconds: nextStart, endSeconds: nextEnd };
 }

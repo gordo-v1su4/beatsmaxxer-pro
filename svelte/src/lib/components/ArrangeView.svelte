@@ -28,18 +28,27 @@
   import {
     arrangementStepToSeconds,
     barNumberAtTime,
+    beatGridSongOffset,
+    frameViewportFromSeconds,
+    isFullViewport,
+    followPlayheadViewport,
     rulerBarMarks,
     rulerBarTicks,
+    rulerBeatTicks,
     secondsStep,
     secondsToCutStep,
     songTimeline,
     stepSeconds,
-    timePercent,
+    viewSecondsFromFraction,
+    viewTimePercent,
+    viewportZoomFactor,
+    zoomViewportAround,
   } from '$lib/arrangement/timelineScale';
   import {
     ARRANGEMENT_STEPS,
     activeSectionIndex,
     arrangement,
+    arrangementLoopRegion,
     arrangementStructureStatus,
     arrangementTotalSteps,
     autoBank,
@@ -62,7 +71,11 @@
   let midiInput = $state<HTMLInputElement>();
   /** Which slot a click on empty track paints. */
   let paintSlot = $state(0);
-  let zoom = $state(1);
+  /** Visible time window — replaces width-only zoom. */
+  let viewStartS = $state(0);
+  let viewEndS = $state<number | null>(null);
+  let showBeatGrid = $state(true);
+  let selectedSectionIndices = $state<Set<number>>(new Set([0]));
 
   const slotCount = $derived($rackTop.length + $rackBottom.length);
   const totalSteps = $derived($arrangementTotalSteps);
@@ -74,15 +87,117 @@
       $transportDisplay.bpm || 120,
     ),
   );
+  const viewport = $derived({
+    startSeconds: viewStartS,
+    endSeconds: viewEndS ?? timeline.durationSeconds,
+  });
+  const zoomFactor = $derived(viewportZoomFactor(viewport, timeline));
+  const isFramed = $derived(!isFullViewport(viewport, timeline));
+  const bpm = $derived($transportDisplay.bpm || 120);
+
   const rulerMarks = $derived(
-    rulerBarMarks(timeline, $analysisBeatGrid, $transportDisplay.bpm || 120),
+    rulerBarMarks(timeline, $analysisBeatGrid, bpm).filter(
+      (mark) => mark.timeSeconds >= viewport.startSeconds && mark.timeSeconds <= viewport.endSeconds,
+    ),
   );
   const rulerTicks = $derived(
-    rulerBarTicks(timeline, $analysisBeatGrid, $transportDisplay.bpm || 120),
+    rulerBarTicks(timeline, $analysisBeatGrid, bpm).filter(
+      (tick) => tick >= viewport.startSeconds && tick <= viewport.endSeconds,
+    ),
   );
+  const beatGridTicks = $derived(rulerBeatTicks(viewport, $analysisBeatGrid, bpm));
+
+  $effect(() => {
+    const duration = timeline.durationSeconds;
+    if (viewEndS != null && viewEndS > duration) viewEndS = duration;
+    if (viewStartS >= duration) {
+      viewStartS = 0;
+      viewEndS = null;
+    }
+  });
+
+  /** Keep the playhead in frame while zoomed — during playback and after seeks. */
+  $effect(() => {
+    if (!isFramed || viewEndS == null) return;
+    const next = followPlayheadViewport(viewport, timeline, $transportDisplay.time);
+    if (!next) return;
+    viewStartS = next.startSeconds;
+    viewEndS = next.endSeconds;
+  });
+
+  function viewPct(seconds: number) {
+    return viewTimePercent(seconds, viewport);
+  }
 
   function timePct(seconds: number) {
-    return timePercent(seconds, timeline);
+    return viewPct(seconds);
+  }
+
+  function resetViewport() {
+    viewStartS = 0;
+    viewEndS = null;
+  }
+
+  function zoomIn() {
+    const next = zoomViewportAround(viewport, timeline, 1.35, $transportDisplay.time);
+    viewStartS = next.startSeconds;
+    viewEndS = next.endSeconds;
+  }
+
+  function zoomOut() {
+    const next = zoomViewportAround(viewport, timeline, 1 / 1.35, $transportDisplay.time);
+    if (isFullViewport(next, timeline)) {
+      resetViewport();
+      return;
+    }
+    viewStartS = next.startSeconds;
+    viewEndS = next.endSeconds;
+  }
+
+  function frameSelection() {
+    if (selectedSectionIndices.size === 0) return;
+    const bands = sectionBands.filter((_, i) => selectedSectionIndices.has(i));
+    if (bands.length === 0) return;
+    const start = Math.min(...bands.map((b) => b.startSeconds));
+    const end = Math.max(...bands.map((b) => b.endSeconds));
+    const framed = frameViewportFromSeconds(start, end, timeline);
+    viewStartS = framed.startSeconds;
+    viewEndS = framed.endSeconds;
+  }
+
+  function toggleLoopSelection() {
+    if ($arrangementLoopRegion) {
+      arrangementLoopRegion.set(null);
+      return;
+    }
+    if (selectedSectionIndices.size > 0) {
+      const bands = sectionBands.filter((_, i) => selectedSectionIndices.has(i));
+      if (bands.length === 0) return;
+      arrangementLoopRegion.set({
+        startSeconds: Math.min(...bands.map((b) => b.startSeconds)),
+        endSeconds: Math.max(...bands.map((b) => b.endSeconds)),
+      });
+      return;
+    }
+    arrangementLoopRegion.set({
+      startSeconds: viewport.startSeconds,
+      endSeconds: viewport.endSeconds,
+    });
+  }
+
+  function handleSectionClick(i: number, event: MouseEvent, band: { startSeconds: number }) {
+    if ((event.target as HTMLElement).closest('.arr-section-edit')) return;
+    event.stopPropagation();
+    if (event.shiftKey) {
+      const next = new Set(selectedSectionIndices);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      selectedSectionIndices = next;
+      return;
+    }
+    selectedSectionIndices = new Set([i]);
+    selectSection(i);
+    audioEngine.seek(band.startSeconds);
   }
 
   /** Absolute sixteenth on the beat grid — used for cut placement. */
@@ -94,7 +209,7 @@
     const track = event.currentTarget as HTMLElement;
     const rect = track.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    audioEngine.seek(fraction * timeline.durationSeconds);
+    audioEngine.seek(viewSecondsFromFraction(fraction, viewport));
   }
 
   function seekAtKeyboard(event: KeyboardEvent) {
@@ -132,11 +247,12 @@
    */
   const TICK_BUCKETS = 720;
   function bucketTicks(times: readonly number[]): number[] {
-    if (timeline.durationSeconds <= 0) return [];
+    const span = viewport.endSeconds - viewport.startSeconds;
+    if (span <= 0) return [];
     const seen = new Uint8Array(TICK_BUCKETS);
     for (const t of times) {
-      if (!Number.isFinite(t) || t < 0 || t > timeline.durationSeconds) continue;
-      seen[Math.min(TICK_BUCKETS - 1, Math.floor((t / timeline.durationSeconds) * TICK_BUCKETS))] = 1;
+      if (!Number.isFinite(t) || t < viewport.startSeconds || t > viewport.endSeconds) continue;
+      seen[Math.min(TICK_BUCKETS - 1, Math.floor(((t - viewport.startSeconds) / span) * TICK_BUCKETS))] = 1;
     }
     const out: number[] = [];
     for (let i = 0; i < TICK_BUCKETS; i++) if (seen[i]) out.push((i / TICK_BUCKETS) * 100);
@@ -199,13 +315,21 @@
   const sectionBands = $derived.by(() => {
     const bpm = $transportDisplay.bpm || 120;
     const grid = $analysisBeatGrid;
+    const gridOffset = beatGridSongOffset(grid);
     return $arrangement.map((section, i) => {
-      const startSeconds =
+      let startSeconds =
         section.timeStartS ??
         stepSeconds($sectionStarts[i]! * ARRANGEMENT_STEPS, grid, bpm);
-      const endSeconds =
+      let endSeconds =
         section.timeEndS ??
         stepSeconds(($sectionStarts[i]! + section.bars) * ARRANGEMENT_STEPS, grid, bpm);
+      if (section.timeStartS != null && gridOffset > 0) {
+        startSeconds = Math.max(0, section.timeStartS - gridOffset);
+      }
+      if (section.timeEndS != null && gridOffset > 0) {
+        endSeconds = Math.max(startSeconds, section.timeEndS - gridOffset);
+      }
+      if (i === 0) startSeconds = 0;
       const leftPct = timePct(startSeconds);
       const widthPct = Math.max(0, timePct(endSeconds) - leftPct);
       return {
@@ -214,6 +338,7 @@
         hue: section.hue,
         startBar: barNumberAtTime(startSeconds, grid, bpm),
         startSeconds,
+        endSeconds,
         leftPct,
         widthPct,
       };
@@ -225,7 +350,7 @@
     const track = event.currentTarget as HTMLElement;
     const rect = track.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    const seconds = fraction * timeline.durationSeconds;
+    const seconds = viewSecondsFromFraction(fraction, viewport);
     const step = secondsToCutStep(
       seconds,
       $analysisBeatGrid,
@@ -235,6 +360,23 @@
     toggleCut(step, slotIndex);
   }
 </script>
+
+{#snippet beatGridOverlay()}
+  {#if showBeatGrid}
+    {#each beatGridTicks as tick (tick)}
+      <span class="arr-beat-grid" style="left:{viewPct(tick)}%"></span>
+    {/each}
+  {/if}
+{/snippet}
+
+{#snippet loopRegionOverlay()}
+  {#if $arrangementLoopRegion}
+    <span
+      class="arr-loop-region"
+      style="left:{viewPct($arrangementLoopRegion.startSeconds)}%;width:{Math.max(0, viewPct($arrangementLoopRegion.endSeconds) - viewPct($arrangementLoopRegion.startSeconds))}%"
+    ></span>
+  {/if}
+{/snippet}
 
 {#snippet sectionOverlay()}
   {#each sectionBands as band, i (band.id)}
@@ -265,10 +407,39 @@
     >PERFORM</button>
 
     <span class="arr-zoom" role="group" aria-label="Timeline zoom">
-      <button type="button" class="arr-btn" onclick={() => (zoom = Math.max(1, zoom - 0.5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
-      <span>{zoom.toFixed(1)}×</span>
-      <button type="button" class="arr-btn" onclick={() => (zoom = Math.min(8, zoom + 0.5))} disabled={zoom >= 8} aria-label="Zoom in">+</button>
+      <button type="button" class="arr-btn" onclick={zoomOut} disabled={!isFramed} aria-label="Zoom out">−</button>
+      <span>{zoomFactor.toFixed(1)}×</span>
+      <button type="button" class="arr-btn" onclick={zoomIn} disabled={zoomFactor >= 64} aria-label="Zoom in">+</button>
     </span>
+
+    <button
+      type="button"
+      class="arr-btn"
+      disabled={selectedSectionIndices.size === 0}
+      onclick={frameSelection}
+      title="Zoom the timeline to the selected sections (Shift+click to multi-select)"
+    >FRAME</button>
+    <button
+      type="button"
+      class="arr-btn"
+      disabled={!isFramed}
+      onclick={resetViewport}
+      title="Show the full song"
+    >FIT ALL</button>
+    <button
+      type="button"
+      class="arr-btn"
+      data-active={$arrangementLoopRegion != null}
+      onclick={toggleLoopSelection}
+      title="Loop the selected sections, or the visible range if none selected"
+    >{$arrangementLoopRegion ? 'LOOP ON' : 'LOOP'}</button>
+    <button
+      type="button"
+      class="arr-btn"
+      data-active={showBeatGrid}
+      onclick={() => (showBeatGrid = !showBeatGrid)}
+      title="Toggle beat grid lines"
+    >GRID</button>
 
     <button
       type="button"
@@ -342,7 +513,7 @@
   </header>
 
   <div class="arr-scroll">
-   <div class="arr-canvas" style="width:{zoom * 100}%">
+   <div class="arr-canvas">
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
@@ -353,22 +524,17 @@
         {#each sectionBands as band, i (band.id)}
           {@const section = $arrangement[i]}
           {@const on = i === $activeSectionIndex}
+          {@const picked = selectedSectionIndices.has(i)}
           <button
             type="button"
             class="arr-section arr-section-abs"
             data-active={on}
-            style="left:{band.leftPct}%;width:{band.widthPct}%;{on
+            data-selected={picked}
+            style="left:{band.leftPct}%;width:{band.widthPct}%;--sec-hue:{section.hue};{on
               ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
               : ''}"
-            onclick={(event) => {
-              if ((event.target as HTMLElement).closest('.arr-section-edit')) return;
-              event.stopPropagation();
-              selectSection(i);
-              audioEngine.seek(
-                band.startSeconds,
-              );
-            }}
-            title="{section.name} — {section.bars} bars, from bar {band.startBar}"
+            onclick={(event) => handleSectionClick(i, event, band)}
+            title="{section.name} — {section.bars} bars, from bar {band.startBar}. Shift+click to multi-select."
           >
             <label
               class="arr-section-edit arr-section-color-wrap"
@@ -416,6 +582,7 @@
     <div class="arr-row arr-row-ruler">
       <span class="arr-gutter"></span>
       <div class="arr-track arr-ruler" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
+        {@render beatGridOverlay()}
         {#each rulerTicks as tick (tick)}
           <span class="arr-bar-tick" style="left:{timePct(tick)}%"></span>
         {/each}
@@ -449,6 +616,8 @@
           title="Click to place a cut on {info?.name ?? slotName(slotIndex)}; Enter or Space places one at the playhead"
         >
           {@render sectionOverlay()}
+          {@render loopRegionOverlay()}
+          {@render beatGridOverlay()}
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
               class="arr-cut"
@@ -465,6 +634,8 @@
       <span class="arr-gutter arr-gutter-chan">AUDIO</span>
       <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
         {@render sectionOverlay()}
+        {@render loopRegionOverlay()}
+        {@render beatGridOverlay()}
         {#each audioTicks as left, i (i)}
           <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
         {/each}
@@ -503,6 +674,8 @@
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="{layer.name} — click to seek; Enter or Space seeks to the playhead">
           {@render sectionOverlay()}
+          {@render loopRegionOverlay()}
+          {@render beatGridOverlay()}
           {#each ticks as left, i (i)}
             <span
               class="arr-tick arr-tick-module"
@@ -529,6 +702,8 @@
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
           {@render sectionOverlay()}
+          {@render loopRegionOverlay()}
+          {@render beatGridOverlay()}
           {#each ticks as left, i (i)}
             <span
               class="arr-tick"
@@ -821,18 +996,21 @@
   .arr-section[data-active='true'] {
     border-color: color-mix(in srgb, var(--sec-hue, #14b8a6) 45%, #1a1c1e);
   }
+  .arr-section[data-selected='true'] {
+    box-shadow: inset 0 0 0 1px rgba(184, 212, 220, 0.55);
+  }
   .arr-section-abs {
     position: absolute;
     top: 0;
     bottom: 0;
     min-width: 28px;
-    border: 1px solid color-mix(in srgb, var(--sec-hue, #14b8a6) 28%, transparent);
-    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 10%, rgba(10, 12, 14, 0.5));
-    backdrop-filter: blur(8px) saturate(0.85);
-    -webkit-backdrop-filter: blur(8px) saturate(0.85);
+    border: 1px solid color-mix(in srgb, var(--sec-hue, #14b8a6) 22%, rgba(255, 255, 255, 0.14));
+    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 14%, rgba(255, 255, 255, 0.05));
+    backdrop-filter: blur(14px) saturate(1.15);
+    -webkit-backdrop-filter: blur(14px) saturate(1.15);
   }
   .arr-section:hover {
-    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 16%, rgba(14, 16, 18, 0.58));
+    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 18%, rgba(255, 255, 255, 0.08));
   }
   .arr-section-tick {
     width: 8px;
@@ -868,22 +1046,23 @@
     width: 100%;
     min-width: 0;
     padding: 1px 2px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 2px;
-    background: rgba(8, 10, 12, 0.5);
-    color: #d0dde2;
+    background: rgba(255, 255, 255, 0.06);
+    color: #e8eef2;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     cursor: pointer;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
   }
   .arr-section-select:hover,
   .arr-section-select:focus-visible {
-    border-color: #14b8a6;
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.1);
     outline: none;
   }
   .arr-section-bars {
@@ -919,6 +1098,27 @@
     color: #8b979d;
     font-variant-numeric: tabular-nums;
     line-height: 13px;
+  }
+
+  .arr-beat-grid {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.045);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .arr-loop-region {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    border: 1px solid rgba(20, 184, 166, 0.32);
+    background: rgba(20, 184, 166, 0.05);
+    box-sizing: border-box;
+    z-index: 0;
   }
 
   /* Hatched span where analysis never reached. Reads as absent data rather

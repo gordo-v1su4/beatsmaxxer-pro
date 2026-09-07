@@ -383,6 +383,14 @@ export function rewindArrangement() {
   if (get(autoBank)) applySectionBank(get(arrangement)[0]);
 }
 
+/** When set, playback loops between these wall-clock seconds (arrangement focus). */
+export interface ArrangementLoopRegion {
+  startSeconds: number;
+  endSeconds: number;
+}
+
+export const arrangementLoopRegion = writable<ArrangementLoopRegion | null>(null);
+
 /** The module a pattern step points at, resolved against the live rack. */
 export function moduleForStep(step: number): string | null {
   const section = get(activeSection);
