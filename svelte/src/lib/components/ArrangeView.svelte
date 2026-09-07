@@ -182,13 +182,13 @@
     return SECTION_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? 'Section';
   }
 
-  function toggleSectionKindMenu(index: number, event: MouseEvent) {
-    event.stopPropagation();
+  function toggleSectionKindMenu(index: number, event?: Event) {
+    event?.stopPropagation();
     openSectionKindIndex = openSectionKindIndex === index ? null : index;
   }
 
-  function pickSectionKind(index: number, kind: SectionKind, event: MouseEvent) {
-    event.stopPropagation();
+  function pickSectionKind(index: number, kind: SectionKind, event?: Event) {
+    event?.stopPropagation();
     updateSectionKind(index, kind);
     openSectionKindIndex = null;
   }
@@ -600,29 +600,43 @@
               class="arr-section-edit arr-section-kind"
               onclick={(event) => event.stopPropagation()}
             >
-              <button
-                type="button"
+              <span
+                role="button"
+                tabindex="0"
                 class="arr-kind-trigger"
                 aria-haspopup="listbox"
                 aria-expanded={openSectionKindIndex === i}
                 aria-label="{section.name} part type"
                 onclick={(event) => toggleSectionKindMenu(i, event)}
+                onkeydown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleSectionKindMenu(i, event);
+                  }
+                }}
               >
                 {sectionKindLabel(section)}
-              </button>
+              </span>
               {#if openSectionKindIndex === i}
                 <div class="arr-kind-menu" role="listbox" aria-label="{section.name} part type">
                   {#each SECTION_KIND_OPTIONS as option (option.value)}
-                    <button
-                      type="button"
+                    <span
+                      role="option"
+                      tabindex="0"
                       class="arr-kind-option"
                       class:is-active={sectionKindOf(section) === option.value}
-                      role="option"
                       aria-selected={sectionKindOf(section) === option.value}
                       onclick={(event) => pickSectionKind(i, option.value, event)}
+                      onkeydown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          pickSectionKind(i, option.value, event);
+                        }
+                      }}
                     >
                       {option.label}
-                    </button>
+                    </span>
                   {/each}
                 </div>
               {/if}
@@ -1102,6 +1116,7 @@
     display: flex;
   }
   .arr-kind-trigger {
+    display: block;
     width: 100%;
     min-width: 0;
     padding: 1px 4px;
@@ -1143,6 +1158,7 @@
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
   }
   .arr-kind-option {
+    display: block;
     padding: 3px 5px;
     border: 0;
     border-radius: 2px;
