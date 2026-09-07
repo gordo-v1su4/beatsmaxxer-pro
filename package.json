@@ -25,10 +25,10 @@
     "linear:bootstrap": "bun run scripts/linear-bootstrap.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.19.17",
+    "@types/node": "^24.0.0",
     "typescript": "^6.0.3"
   },
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   }
 }
