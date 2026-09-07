@@ -76,15 +76,56 @@
   let viewEndS = $state<number | null>(null);
   let showBeatGrid = $state(true);
   let selectedSectionIndices = $state<Set<number>>(new Set([0]));
+  let openSectionKindIndex = $state<number | null>(null);
 
   const slotCount = $derived($rackTop.length + $rackBottom.length);
   const totalSteps = $derived($arrangementTotalSteps);
   const totalBars = $derived(totalSteps / ARRANGEMENT_STEPS);
+  const bpm = $derived($transportDisplay.bpm || 120);
+
+  function resolveSectionBounds(
+    sections: readonly (typeof $arrangement)[number][],
+    starts: readonly number[],
+    grid: readonly number[],
+    tempo: number,
+  ) {
+    const gridOffset = beatGridSongOffset(grid);
+    return sections.map((section, i) => {
+      let startSeconds =
+        section.timeStartS ??
+        stepSeconds(starts[i]! * ARRANGEMENT_STEPS, grid, tempo);
+      let endSeconds =
+        section.timeEndS ??
+        stepSeconds((starts[i]! + section.bars) * ARRANGEMENT_STEPS, grid, tempo);
+      if (section.timeStartS != null && gridOffset > 0) {
+        startSeconds = Math.max(0, section.timeStartS - gridOffset);
+      }
+      if (section.timeEndS != null && gridOffset > 0) {
+        endSeconds = Math.max(startSeconds, section.timeEndS - gridOffset);
+      }
+      if (i === 0) startSeconds = 0;
+      return {
+        id: section.id,
+        name: section.name,
+        hue: section.hue,
+        startBar: barNumberAtTime(startSeconds, grid, tempo),
+        startSeconds,
+        endSeconds,
+      };
+    });
+  }
+
+  const sectionBounds = $derived(
+    resolveSectionBounds($arrangement, $sectionStarts, $analysisBeatGrid, bpm),
+  );
+  const arrangementDuration = $derived(
+    sectionBounds.reduce((max, band) => Math.max(max, band.endSeconds), 0),
+  );
   const timeline = $derived(
     songTimeline(
-      $transportDisplay.duration,
+      Math.max($transportDisplay.duration, arrangementDuration),
       $analysisBeatGrid,
-      $transportDisplay.bpm || 120,
+      bpm,
     ),
   );
   const viewport = $derived({
@@ -93,7 +134,6 @@
   });
   const zoomFactor = $derived(viewportZoomFactor(viewport, timeline));
   const isFramed = $derived(!isFullViewport(viewport, timeline));
-  const bpm = $derived($transportDisplay.bpm || 120);
 
   const rulerMarks = $derived(
     rulerBarMarks(timeline, $analysisBeatGrid, bpm).filter(
@@ -109,21 +149,49 @@
 
   $effect(() => {
     const duration = timeline.durationSeconds;
+    if (duration <= 1e-3) return;
     if (viewEndS != null && viewEndS > duration) viewEndS = duration;
-    if (viewStartS >= duration) {
+    if (viewEndS != null && viewStartS >= duration - 1e-3) {
       viewStartS = 0;
       viewEndS = null;
     }
   });
 
-  /** Keep the playhead in frame while zoomed — during playback and after seeks. */
+  /** Keep the playhead in frame while zoomed during playback only. */
   $effect(() => {
-    if (!isFramed || viewEndS == null) return;
+    if (!isFramed || viewEndS == null || !$transportDisplay.playing) return;
     const next = followPlayheadViewport(viewport, timeline, $transportDisplay.time);
     if (!next) return;
     viewStartS = next.startSeconds;
     viewEndS = next.endSeconds;
   });
+
+  $effect(() => {
+    if (openSectionKindIndex === null) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('.arr-section-kind')) return;
+      openSectionKindIndex = null;
+    };
+    window.addEventListener('pointerdown', close, true);
+    return () => window.removeEventListener('pointerdown', close, true);
+  });
+
+  function sectionKindLabel(section: (typeof $arrangement)[number]) {
+    const kind = sectionKindOf(section);
+    return SECTION_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? 'Section';
+  }
+
+  function toggleSectionKindMenu(index: number, event: MouseEvent) {
+    event.stopPropagation();
+    openSectionKindIndex = openSectionKindIndex === index ? null : index;
+  }
+
+  function pickSectionKind(index: number, kind: SectionKind, event: MouseEvent) {
+    event.stopPropagation();
+    updateSectionKind(index, kind);
+    openSectionKindIndex = null;
+  }
 
   function viewPct(seconds: number) {
     return viewTimePercent(seconds, viewport);
@@ -312,38 +380,13 @@
   });
 
   /** Section spans on the full song timeline — wall-clock seconds from file start. */
-  const sectionBands = $derived.by(() => {
-    const bpm = $transportDisplay.bpm || 120;
-    const grid = $analysisBeatGrid;
-    const gridOffset = beatGridSongOffset(grid);
-    return $arrangement.map((section, i) => {
-      let startSeconds =
-        section.timeStartS ??
-        stepSeconds($sectionStarts[i]! * ARRANGEMENT_STEPS, grid, bpm);
-      let endSeconds =
-        section.timeEndS ??
-        stepSeconds(($sectionStarts[i]! + section.bars) * ARRANGEMENT_STEPS, grid, bpm);
-      if (section.timeStartS != null && gridOffset > 0) {
-        startSeconds = Math.max(0, section.timeStartS - gridOffset);
-      }
-      if (section.timeEndS != null && gridOffset > 0) {
-        endSeconds = Math.max(startSeconds, section.timeEndS - gridOffset);
-      }
-      if (i === 0) startSeconds = 0;
-      const leftPct = timePct(startSeconds);
-      const widthPct = Math.max(0, timePct(endSeconds) - leftPct);
-      return {
-        id: section.id,
-        name: section.name,
-        hue: section.hue,
-        startBar: barNumberAtTime(startSeconds, grid, bpm),
-        startSeconds,
-        endSeconds,
-        leftPct,
-        widthPct,
-      };
-    });
-  });
+  const sectionBands = $derived(
+    sectionBounds.map((band) => ({
+      ...band,
+      leftPct: timePct(band.startSeconds),
+      widthPct: Math.max(0, timePct(band.endSeconds) - timePct(band.startSeconds)),
+    })),
+  );
 
   /** Click anywhere on a lane to place a cut on the nearest sixteenth. */
   function paintAt(event: MouseEvent, slotIndex: number) {
@@ -557,20 +600,32 @@
               class="arr-section-edit arr-section-kind"
               onclick={(event) => event.stopPropagation()}
             >
-              <select
-                class="arr-section-select"
-                value={sectionKindOf(section)}
+              <button
+                type="button"
+                class="arr-kind-trigger"
+                aria-haspopup="listbox"
+                aria-expanded={openSectionKindIndex === i}
                 aria-label="{section.name} part type"
-                onchange={(event) => {
-                  event.stopPropagation();
-                  updateSectionKind(i, event.currentTarget.value as SectionKind);
-                }}
-                onclick={(event) => event.stopPropagation()}
+                onclick={(event) => toggleSectionKindMenu(i, event)}
               >
-                {#each SECTION_KIND_OPTIONS as option (option.value)}
-                  <option value={option.value}>{option.label}</option>
-                {/each}
-              </select>
+                {sectionKindLabel(section)}
+              </button>
+              {#if openSectionKindIndex === i}
+                <div class="arr-kind-menu" role="listbox" aria-label="{section.name} part type">
+                  {#each SECTION_KIND_OPTIONS as option (option.value)}
+                    <button
+                      type="button"
+                      class="arr-kind-option"
+                      class:is-active={sectionKindOf(section) === option.value}
+                      role="option"
+                      aria-selected={sectionKindOf(section) === option.value}
+                      onclick={(event) => pickSectionKind(i, option.value, event)}
+                    >
+                      {option.label}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
             </span>
             <span class="arr-section-bars">{section.bars}b</span>
           </button>
@@ -758,10 +813,13 @@
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-    height: 30px;
-    padding: 0 10px;
+    min-height: 30px;
+    padding: 4px 10px;
     border-bottom: 1px solid #141618;
     background: linear-gradient(180deg, #101214, #0c0d0f);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
   }
   .arr-title {
     font-family: var(--font-ui);
@@ -1038,32 +1096,74 @@
     padding: 0;
   }
   .arr-section-kind {
+    position: relative;
     flex: 1;
     min-width: 0;
     display: flex;
   }
-  .arr-section-select {
+  .arr-kind-trigger {
     width: 100%;
     min-width: 0;
-    padding: 1px 2px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    padding: 1px 4px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.06);
-    color: #e8eef2;
+    background: rgba(255, 255, 255, 0.08);
+    color: #eef4f7;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+    text-align: left;
     cursor: pointer;
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.25);
+    -webkit-backdrop-filter: blur(12px) saturate(1.25);
   }
-  .arr-section-select:hover,
-  .arr-section-select:focus-visible {
-    border-color: rgba(255, 255, 255, 0.28);
+  .arr-kind-trigger:hover,
+  .arr-kind-trigger:focus-visible {
+    border-color: rgba(255, 255, 255, 0.32);
+    background: rgba(255, 255, 255, 0.12);
+    outline: none;
+  }
+  .arr-kind-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 100%;
+    padding: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+    background: rgba(10, 12, 14, 0.52);
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  }
+  .arr-kind-option {
+    padding: 3px 5px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: #d8e4ea;
+    font-family: var(--font-ui);
+    font-size: 7px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+  }
+  .arr-kind-option:hover,
+  .arr-kind-option:focus-visible {
     background: rgba(255, 255, 255, 0.1);
     outline: none;
+  }
+  .arr-kind-option.is-active {
+    background: rgba(20, 184, 166, 0.22);
+    color: #f2fbfd;
   }
   .arr-section-bars {
     flex-shrink: 0;
