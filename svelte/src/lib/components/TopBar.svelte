@@ -11,11 +11,13 @@
   import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
+  import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import {
     readHostedAnalysisPreference,
     setHostedAnalysisPreference,
     type HostedAnalysisPreference
   } from '$lib/audio/hostedAnalysisPreference';
+  import { arrangementStructureStatus } from '$lib/stores/arrangement';
 
   interface Props {
     onRandomize: () => void;
@@ -108,6 +110,47 @@
       return `Rhythm analysis succeeded — beat grid from Essentia (analyze once, shift in real time)${conf}`;
     }
     return td.analysisError ?? 'Rhythm analysis status';
+  });
+
+  const arrVisible = $derived(td.analysisStatus === 'ready');
+
+  const arrLabel = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return 'ARR·…';
+      case 'ready':
+        return 'ARR·OK';
+      case 'error':
+        return 'ARR·ERR';
+      default:
+        return 'ARR·TPL';
+    }
+  });
+
+  const arrColor = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return '#38bdf8';
+      case 'ready':
+        return '#4ade80';
+      case 'error':
+        return '#ef4444';
+      default:
+        return '#6b7280';
+    }
+  });
+
+  const arrTitle = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return 'Detecting song sections for the arrangement strip (second Essentia pass)';
+      case 'ready':
+        return 'Arrangement sections seeded from Essentia structure analysis';
+      case 'error':
+        return 'Section detection failed — arrangement keeps the default template strips';
+      default:
+        return 'Default arrangement template — waiting for or skipped section detection';
+    }
   });
 
   function snapTempo(value: number) {
@@ -222,7 +265,7 @@
 </script>
 
 <div class="topbar-shell">
-  <input bind:this={audioInput} type="file" accept="audio/*" class="hidden" onchange={handleAudioUpload} />
+  <input bind:this={audioInput} type="file" accept={AUDIO_FILE_ACCEPT} class="hidden" onchange={handleAudioUpload} />
   <input bind:this={clipsInput} type="file" accept="video/*" multiple class="hidden" onchange={handleClipsUpload} />
 
   <div class="topbar-row">
@@ -353,6 +396,13 @@
       <Disc3 size={10} />
       {rhyLabel}
     </div>
+
+    {#if arrVisible}
+      <div class="rhy-badge" title={arrTitle} style="border-color:{arrColor}33;color:{arrColor}">
+        <ListMusic size={10} />
+        {arrLabel}
+      </div>
+    {/if}
 
     <button type="button" onclick={handleTap} class="tap-btn" data-flash={tapFlash}>TAP</button>
 
@@ -593,9 +643,9 @@
     >
       <h2 id="analysis-consent-title">Analyze this upload?</h2>
       <p id="analysis-consent-description">
-        Analyze loads the song locally and sends a bounded, prepared excerpt to the configured
-        hosted analysis service. Repository evidence does not establish that service's retention
-        or ownership terms.
+        Analyze uploads the full MP3 to the hosted Studio service (rhythm + song structure on GPU).
+        Other audio formats are not supported for analysis yet. Local-only playback can use any audio
+        format your browser decodes.
       </p>
       <p class="analysis-consent-file">{pendingAudioFile.name}</p>
       <label class="analysis-consent-remember">

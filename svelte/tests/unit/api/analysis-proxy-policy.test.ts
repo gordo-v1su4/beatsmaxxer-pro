@@ -214,6 +214,49 @@ describe("analysis proxy policy", () => {
     expect(parseMultipartContentType("multipart/form-data")).toBeNull();
   });
 
+  it("proxies Studio job submission to the upstream service", async () => {
+    const fetch = vi.fn(async () => new Response('{"id":"job-1","status":"queued","stage":"queued"}', {
+      status: 202,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      { ...request(), endpoint: "studio/jobs", idempotencyKey: "idem-1" },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(202);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://analysis.invalid/analyze/studio/jobs",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "X-API-Key": "server-secret",
+          "Idempotency-Key": "idem-1",
+        }),
+      }),
+    );
+  });
+
+  it("proxies Studio job polling with GET", async () => {
+    const fetch = vi.fn(async () => new Response('{"id":"job-1","status":"running","stage":"structure"}', {
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      {
+        method: "GET",
+        endpoint: "studio/jobs/job-1",
+        body: stream(),
+      },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(200);
+    expect(fetch).toHaveBeenCalledWith(
+      "https://analysis.invalid/analyze/studio/jobs/job-1",
+      expect.objectContaining({ method: "GET" }),
+    );
+  });
+
   it("accepts at the total request limit and forwards bytes and credential exactly once", async () => {
     const payload = new Uint8Array([4, 3, 2, 1]);
     const fetch = vi.fn(async (_url: string, init?: RequestInit) => {

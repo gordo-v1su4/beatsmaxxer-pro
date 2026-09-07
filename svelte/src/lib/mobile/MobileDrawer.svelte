@@ -11,6 +11,7 @@
   import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import { listCatalog, type ModuleCategory, type ModuleDefinition } from '$lib/modules/catalog';
   import { transportDisplay } from '$lib/stores/transportDisplay';
+  import { arrangementStructureStatus } from '$lib/stores/arrangement';
   import MobileClipGrid from './MobileClipGrid.svelte';
   import ModulePosterTile from './ModulePosterTile.svelte';
   import { activeModuleId, setActiveModuleById } from './mobileSession';
@@ -95,6 +96,47 @@
         return td.analysisError ?? 'Analysis failed — following in real time';
       default:
         return td.usingUploadedTrack ? 'Preparing…' : 'Load a track to drive the effects';
+    }
+  });
+
+  const arrVisible = $derived(td.analysisStatus === 'ready');
+
+  const arrLabel = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return 'ARR·…';
+      case 'ready':
+        return 'ARR·OK';
+      case 'error':
+        return 'ARR·ERR';
+      default:
+        return 'ARR·TPL';
+    }
+  });
+
+  const arrColor = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return '#38bdf8';
+      case 'ready':
+        return '#4ade80';
+      case 'error':
+        return '#ef4444';
+      default:
+        return '#6b7280';
+    }
+  });
+
+  const arrNote = $derived.by(() => {
+    switch ($arrangementStructureStatus) {
+      case 'loading':
+        return 'Detecting sections for the arrangement strip…';
+      case 'ready':
+        return 'Arrangement sections from Essentia structure';
+      case 'error':
+        return 'Section detection failed — default template strips';
+      default:
+        return 'Arrangement uses the built-in template until sections are detected';
     }
   });
 
@@ -344,7 +386,7 @@
               </span>
             </div>
             <div class="song-stat">
-              <span class="song-label">ANALYSIS</span>
+              <span class="song-label">RHYTHM</span>
               <span
                 class="song-rhy"
                 style="border-color:{rhyColor}55;color:{rhyColor}"
@@ -353,9 +395,21 @@
                 {rhyLabel}
               </span>
             </div>
+            {#if arrVisible}
+              <div class="song-stat">
+                <span class="song-label">SECTIONS</span>
+                <span
+                  class="song-rhy"
+                  style="border-color:{arrColor}55;color:{arrColor}"
+                  title={arrNote}
+                >
+                  {arrLabel}
+                </span>
+              </div>
+            {/if}
           </div>
 
-          <p class="song-note">{rhyNote}</p>
+          <p class="song-note">{arrVisible && $arrangementStructureStatus === 'loading' ? arrNote : rhyNote}</p>
         </div>
 
         <p class="song-hint">

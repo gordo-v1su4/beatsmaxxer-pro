@@ -4,8 +4,8 @@
   "buildCommand": "cd svelte && bun run build",
   "outputDirectory": "svelte/build",
   "functions": {
-    "api/analyze/[endpoint].ts": {
-      "maxDuration": 30
+    "api/analyze/[...path].ts": {
+      "maxDuration": 120
     }
   },
   "rewrites": [
@@ -14,8 +14,8 @@
       "destination": "/favicon.svg"
     },
     {
-      "source": "/__api/analyze/:endpoint",
-      "destination": "/api/analyze/:endpoint"
+      "source": "/__api/analyze/:path*",
+      "destination": "/api/analyze/:path*"
     },
     {
       "source": "/__api/gate",

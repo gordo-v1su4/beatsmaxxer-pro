@@ -1,39 +1,68 @@
-/** Keep uploads under Vercel's ~4.5 MB serverless body limit (multipart overhead included). */
-const ANALYSIS_UPLOAD_MAX_BYTES = 3_400_000;
-const ANALYSIS_SAMPLE_RATE_HZ = 22_050;
-const ANALYSIS_MAX_DURATION_S = 90;
+/** Keep rhythm uploads under Vercel's ~4.5 MB serverless body limit (multipart overhead included). */
+const RHYTHM_UPLOAD_MAX_BYTES = 3_400_000;
+const RHYTHM_SAMPLE_RATE_HZ = 22_050;
+const RHYTHM_MAX_DURATION_S = 90;
 
-export async function prepareAnalysisUpload(file: File): Promise<File> {
+/** Structure can use a lower rate and larger dev proxy budget to cover full songs. */
+const STRUCTURE_UPLOAD_MAX_BYTES = 12_000_000;
+const STRUCTURE_SAMPLE_RATE_HZ = 11_025;
+const STRUCTURE_MAX_DURATION_S = 600;
+
+/** all-in-one benefits from higher sample rate; keep within dev proxy upload budget. */
+const STRUCTURE_ALLIN1_SAMPLE_RATE_HZ = 22_050;
+
+export type AnalysisUploadProfile = "rhythm" | "structure" | "structure-allin1";
+
+export interface PrepareAnalysisUploadOptions {
+  profile?: AnalysisUploadProfile;
+}
+
+export async function prepareAnalysisUpload(
+  file: File,
+  options: PrepareAnalysisUploadOptions = {},
+): Promise<File> {
+  const profile = options.profile ?? "rhythm";
+  const maxBytes = profile === "rhythm" ? RHYTHM_UPLOAD_MAX_BYTES : STRUCTURE_UPLOAD_MAX_BYTES;
+  const maxDurationS = profile === "rhythm" ? RHYTHM_MAX_DURATION_S : STRUCTURE_MAX_DURATION_S;
+  const preferredSampleRate =
+    profile === "structure-allin1"
+      ? STRUCTURE_ALLIN1_SAMPLE_RATE_HZ
+      : profile === "structure"
+        ? STRUCTURE_SAMPLE_RATE_HZ
+        : RHYTHM_SAMPLE_RATE_HZ;
+  const suffix =
+    profile === "structure-allin1" ? "structure-allin1" : profile === "structure" ? "structure" : "analysis";
+
   const ctx = new AudioContext();
   try {
     const decoded = await ctx.decodeAudioData(await file.arrayBuffer());
     const trimmedFrames = Math.min(
       decoded.length,
-      Math.floor(ANALYSIS_MAX_DURATION_S * decoded.sampleRate),
+      Math.floor(maxDurationS * decoded.sampleRate),
     );
     if (trimmedFrames <= 0) {
       throw new Error("Audio file has no decodable samples for analysis.");
     }
 
     let durationSeconds = trimmedFrames / decoded.sampleRate;
-    let sampleRate = ANALYSIS_SAMPLE_RATE_HZ;
+    let sampleRate = preferredSampleRate;
     let pcm = resampleToMonoPcm16(decoded, trimmedFrames, sampleRate);
 
-    while (estimateWavBytes(pcm.byteLength) > ANALYSIS_UPLOAD_MAX_BYTES && durationSeconds > 15) {
+    while (estimateWavBytes(pcm.byteLength) > maxBytes && durationSeconds > 15) {
       durationSeconds *= 0.75;
       const frames = Math.min(decoded.length, Math.floor(durationSeconds * decoded.sampleRate));
       pcm = resampleToMonoPcm16(decoded, frames, sampleRate);
     }
 
-    if (estimateWavBytes(pcm.byteLength) > ANALYSIS_UPLOAD_MAX_BYTES) {
-      sampleRate = 16_000;
+    if (estimateWavBytes(pcm.byteLength) > maxBytes && sampleRate > 8_000) {
+      sampleRate = 8_000;
       const frames = Math.min(decoded.length, Math.floor(durationSeconds * decoded.sampleRate));
       pcm = resampleToMonoPcm16(decoded, frames, sampleRate);
     }
 
     const wav = encodeWavMono16(pcm, sampleRate);
     const stem = file.name.replace(/\.[^.]+$/, "") || "upload";
-    return new File([wav], `${stem}-analysis.wav`, { type: "audio/wav" });
+    return new File([wav], `${stem}-${suffix}.wav`, { type: "audio/wav" });
   } finally {
     await ctx.close();
   }

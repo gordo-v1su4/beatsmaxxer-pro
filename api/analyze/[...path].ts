@@ -1,14 +1,20 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-// Extension is required: the repo is "type": "module" and Vercel compiles this
-// function with node16 resolution. TypeScript maps ./policy.js to ./policy.ts.
-import { analysisProxyConfigFromEnv, proxyAnalysisRequest } from "./policy.js";
+import {
+  analysisProxyConfigFromEnv,
+  proxyAnalysisRequest,
+} from "./policy.js";
 
-export const config = { api: { bodyParser: false } };
+export const config = { api: { bodyParser: false }, maxDuration: 120 };
 
-type RouteRequest = IncomingMessage & { query: { endpoint?: string | string[] } };
+type RouteRequest = IncomingMessage & { query: { path?: string | string[] } };
 
 function firstHeader(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function endpointFromQuery(path: string | string[] | undefined): string {
+  if (!path) return "";
+  return (Array.isArray(path) ? path : [path]).join("/");
 }
 
 export default async function handler(req: RouteRequest, res: ServerResponse) {
@@ -18,13 +24,14 @@ export default async function handler(req: RouteRequest, res: ServerResponse) {
   req.once("aborted", onAborted);
 
   try {
-    const endpoint = Array.isArray(req.query.endpoint) ? req.query.endpoint[0] : req.query.endpoint;
+    const endpoint = endpointFromQuery(req.query.path);
     const result = await proxyAnalysisRequest(
       {
         method: req.method,
         endpoint,
         contentType: req.headers["content-type"],
         contentLength: req.headers["content-length"],
+        idempotencyKey: firstHeader(req.headers["idempotency-key"]),
         origin: firstHeader(req.headers.origin),
         host: firstHeader(req.headers.host) ?? firstHeader(req.headers["x-forwarded-host"]),
         forwardedProto: firstHeader(req.headers["x-forwarded-proto"]),
@@ -40,7 +47,9 @@ export default async function handler(req: RouteRequest, res: ServerResponse) {
     res.setHeader("Content-Type", result.contentType);
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    if (result.status === 405) res.setHeader("Allow", "POST");
+    if (result.status === 405) {
+      res.setHeader("Allow", endpoint.startsWith("studio/jobs/") ? "GET" : "POST");
+    }
     res.end(result.body);
     console.info("[analysis-proxy] completed", {
       endpoint,

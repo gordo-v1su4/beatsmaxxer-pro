@@ -11,17 +11,40 @@ Uploaded audio routes through SoundTouch for independent pitch and tempo:
 
 The processor asset is copied to `static/soundtouch-processor.js` during preparation.
 
-# Hosted rhythm analysis
+## Hosted rhythm + structure analysis (Studio jobs)
 
 Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit:
 
 ```bash
 ESSENTIA_ANALYSIS_ENABLED=true
-ESSENTIA_API_BASE_URL=https://approved-analysis-service.example
+ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev
 ESSENTIA_API_KEY=server-only-secret
 ```
 
-The browser always calls the same-origin `/__api/analyze/fast` and `/__api/analyze/rhythm` routes. The Vite development proxy or Vercel function injects the credential on the server; no `VITE_ESSENTIA_API_URL`, `VITE_ESSENTIA_API_BASE_URL`, or `VITE_ESSENTIA_API_KEY` alias is supported. The key is never compiled into the browser bundle.
+The browser calls same-origin Studio routes:
+
+- `POST /__api/analyze/studio/jobs` — submit full **MP3** (no re-encode)
+- `GET /__api/analyze/studio/jobs/{id}` — poll until `completed`
+
+The Vite dev proxy or Vercel function injects `X-API-Key`; the key is never compiled into the browser bundle.
+
+**MP3 only for now.** WAV and other formats work for local-only playback but are rejected on the ANALYZE path.
+
+### Upload size
+
+Full MP3 uploads are allowed up to **12 MiB** through the proxy. Typical masters (~7 MiB) fit. Vercel may require a plan that allows request bodies above the default ~4.5 MiB limit.
+
+### Timeout ladder
+
+| Layer | Limit | Notes |
+|---|---|---|
+| Studio submit (upstream) | 120 s | Large MP3 upload |
+| Studio poll (upstream) | 30 s per GET |
+| Vercel function | 120 s | `vercel.json` `maxDuration` |
+| Client submit | 120 s | `AbortSignal.timeout` on POST |
+| Client poll loop | 30 min | Resumes by job id on refresh is not implemented yet |
+
+Legacy `POST /__api/analyze/rhythm` remains for desktop/Tauri; the web app uses Studio only.
 
 ### Which variables each stage needs
 
@@ -35,21 +58,18 @@ The build gate (`isAnalysisUploadPathEnabled`) deliberately ignores the key. The
 
 On Vercel, set all three in **Project → Settings → Environment Variables** for the Production environment. `ESSENTIA_ANALYSIS_ENABLED` and `ESSENTIA_API_BASE_URL` must be readable by the build; changing either requires a redeploy, because they are compiled into the bundle.
 
-### Timeout ladder
+### Timeout ladder (legacy rhythm desktop path)
 
-Each layer must outlast the one below it, so the innermost failure is the one reported:
+Each layer must outlast the one below it for the Tauri/desktop rhythm proxy:
 
 | Layer | Limit | Set in |
 |---|---|---|
 | Upstream Essentia call | 15 s | `ANALYSIS_UPSTREAM_TIMEOUT_MS` |
-| Vercel function | 30 s | `vercel.json` → `functions.maxDuration` |
-| Browser fetch | 40 s | `ANALYSIS_FETCH_TIMEOUT_MS` |
+| Vercel function | 120 s | `vercel.json` → `functions.maxDuration` |
 
-Vercel's default function limit is 10 s, which cut requests off before the upstream timeout could report anything useful; `maxDuration` must stay above the upstream timeout plus upload time. Uploads are capped client-side at 3.4 MB to stay under Vercel's ~4.5 MB request body limit.
+When hosted analysis is enabled, the selected **MP3** leaves the browser and is sent to Essentia Studio. If hosted analysis is disabled or fails, local playback continues and realtime analysis is used as the fallback.
 
-When hosted analysis is enabled, the selected audio (or a smaller prepared WAV) leaves the browser and is sent to the configured service. This repository cannot promise the upstream service's retention or deletion behavior. If hosted analysis is disabled or fails, local playback continues and realtime analysis is used as the fallback.
-
-The proxy accepts only `POST` to `fast` or `rhythm`, and only an outer `multipart/form-data` envelope with a valid boundary. It forwards the bounded multipart bytes opaquely; it does **not** parse the inner part or claim file-type validation. Total requests are limited to 3,500,000 bytes, upstream responses to 1,000,000 bytes, upstream time to 15 seconds, and concurrent requests to two per server instance. Errors returned to the browser are stable and sanitized.
+The proxy accepts `POST` studio job submission and `GET` job polling, plus legacy `POST` `rhythm` / `fast`. Total upload requests are limited to **12,000,000** bytes, upstream responses to **2,000,000** bytes, and concurrent requests to two per server instance.
 
 ## Production safeguards
 

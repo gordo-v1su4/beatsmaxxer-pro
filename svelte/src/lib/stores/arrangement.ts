@@ -1,5 +1,14 @@
 import { derived, get, writable } from 'svelte/store';
+import {
+  arrangementFromStructureSections,
+  type EssentiaStructureSection,
+} from '$lib/arrangement/seedFromStructure';
 import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop } from '$lib/stores/rack';
+
+export type ArrangementStructureStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+/** Background Essentia structure fetch for the arrangement strip only. */
+export const arrangementStructureStatus = writable<ArrangementStructureStatus>('idle');
 
 /**
  * A song section — the verse/chorus layer above the 16-step grid.
@@ -31,6 +40,9 @@ export interface ArrangementSection {
    * would not — the pattern would break exactly when the bank made it interesting.
    */
   pattern: (number | null)[];
+  /** Essentia wall-clock span — lanes align to these on the full song timeline. */
+  timeStartS?: number;
+  timeEndS?: number;
 }
 
 /** Total rack slots across both rows — the range a pattern step can address. */
@@ -126,9 +138,45 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   }
 ];
 
-export const arrangement = writable<ArrangementSection[]>(
-  DEFAULT_ARRANGEMENT.map((s) => ({ ...s, pattern: [...s.pattern] }))
-);
+function cloneDefaultArrangement(): ArrangementSection[] {
+  return DEFAULT_ARRANGEMENT.map((section) => ({
+    ...section,
+    bank: { top: [...section.bank.top], bottom: [...section.bank.bottom] },
+    pattern: [...section.pattern],
+  }));
+}
+
+export const arrangement = writable<ArrangementSection[]>(cloneDefaultArrangement());
+
+/** Restore the built-in demo arrangement before a new hosted analysis pass. */
+export function resetArrangementToDefault() {
+  arrangementStructureStatus.set('idle');
+  arrangement.set(cloneDefaultArrangement());
+  cuts.set(unrollDefaultCuts(get(arrangement)));
+  activeSectionIndex.set(0);
+  barInSection.set(0);
+}
+
+/**
+ * Replace section strips from Essentia structure (bar-snapped). Cut patterns stay
+ * empty until the operator paints them; banks follow label templates.
+ */
+export function applyStructureToArrangement(
+  sections: readonly EssentiaStructureSection[],
+  beats: readonly number[],
+  bpm: number,
+) {
+  const seeded = arrangementFromStructureSections(sections, beats, bpm);
+  if (seeded.length === 0) {
+    arrangementStructureStatus.set('error');
+    return;
+  }
+  arrangement.set(seeded);
+  cuts.set(unrollDefaultCuts(seeded));
+  activeSectionIndex.set(0);
+  barInSection.set(0);
+  arrangementStructureStatus.set('ready');
+}
 
 /**
  * A cut placed in the song, not in a repeating bar.

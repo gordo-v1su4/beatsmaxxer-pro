@@ -1,3 +1,27 @@
+/** Idle previews share placeholder texture views; key on the per-canvas uniform
+    buffer first so each rack slot keeps its own effect mode and accent. */
+export class IdleBindGroupCache {
+  private perUniform = new WeakMap<GPUBuffer, TextureViewBindGroupCache>();
+
+  get(
+    uniformBuffer: GPUBuffer,
+    primaryView: GPUTextureView,
+    secondaryView: GPUTextureView,
+    create: () => GPUBindGroup
+  ): GPUBindGroup {
+    let cache = this.perUniform.get(uniformBuffer);
+    if (!cache) {
+      cache = new TextureViewBindGroupCache();
+      this.perUniform.set(uniformBuffer, cache);
+    }
+    return cache.get(primaryView, secondaryView, create);
+  }
+
+  clear() {
+    this.perUniform = new WeakMap();
+  }
+}
+
 /** Reuse bind groups while GPU texture view identity stays stable (Spektral pattern). */
 export class TextureViewBindGroupCache {
   private cache = new WeakMap<GPUTextureView, WeakMap<GPUTextureView, GPUBindGroup>>();

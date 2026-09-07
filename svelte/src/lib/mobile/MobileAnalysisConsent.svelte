@@ -40,9 +40,9 @@
   >
     <h2 id="mobile-consent-title">Analyze this upload?</h2>
     <p id="mobile-consent-description">
-      Analyze loads the song locally and sends a bounded, prepared excerpt to the configured
-      hosted analysis service. Repository evidence does not establish that service's retention
-      or ownership terms.
+      Analyze uploads the full MP3 to the hosted Studio service (rhythm + song structure).
+      Other formats are not supported for analysis yet. Local-only playback can use any audio
+      your browser decodes.
     </p>
     <p class="consent-file">{fileName}</p>
 

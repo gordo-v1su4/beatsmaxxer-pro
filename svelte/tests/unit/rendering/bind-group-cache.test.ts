@@ -1,5 +1,27 @@
 import { describe, expect, test, vi } from 'vitest';
-import { BlitBindGroupCache, TextureViewBindGroupCache } from '$lib/rendering/webgpu/BindGroupCache';
+import { BlitBindGroupCache, IdleBindGroupCache, TextureViewBindGroupCache } from '$lib/rendering/webgpu/BindGroupCache';
+
+describe('IdleBindGroupCache', () => {
+  test('isolates bind groups per uniform buffer for the same texture views', () => {
+    const cache = new IdleBindGroupCache();
+    const uniformA = {} as GPUBuffer;
+    const uniformB = {} as GPUBuffer;
+    const videoView = {} as GPUTextureView;
+    const feedbackView = {} as GPUTextureView;
+    const create = vi.fn(
+      (() => {
+        let count = 0;
+        return () => ({ id: `idle-${++count}` }) as GPUBindGroup;
+      })(),
+    );
+
+    const slotA = cache.get(uniformA, videoView, feedbackView, create);
+    const slotB = cache.get(uniformB, videoView, feedbackView, create);
+
+    expect(slotA).not.toBe(slotB);
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe('TextureViewBindGroupCache', () => {
   test('reuses bind groups for the same view pair', () => {

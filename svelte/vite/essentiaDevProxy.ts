@@ -52,12 +52,14 @@ export function essentiaDevProxyPlugin(
 				req.once('aborted', onAborted);
 				try {
 					const requestUrl = new URL(req.url || '/', 'http://127.0.0.1');
+					const endpoint = requestUrl.pathname.replace(/^\/+/, '');
 					const result = await proxyAnalysisRequest(
 						{
 							method: req.method,
-							endpoint: requestUrl.pathname.replace(/^\/+/, ''),
+							endpoint,
 							contentType: req.headers['content-type'],
 							contentLength: req.headers['content-length'],
+							idempotencyKey: req.headers['idempotency-key'] as string | undefined,
 							cookieHeader: req.headers.cookie,
 							body: req,
 							signal: clientAbort.signal
@@ -69,7 +71,9 @@ export function essentiaDevProxyPlugin(
 					if (!result || res.destroyed || res.writableEnded) return;
 					res.statusCode = result.status;
 					res.setHeader('Content-Type', result.contentType);
-					if (result.status === 405) res.setHeader('Allow', 'POST');
+					if (result.status === 405) {
+						res.setHeader('Allow', endpoint.startsWith('studio/jobs/') ? 'GET' : 'POST');
+					}
 					res.end(result.body);
 				} finally {
 					req.off('aborted', onAborted);

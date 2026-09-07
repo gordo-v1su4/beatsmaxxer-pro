@@ -5,7 +5,8 @@ export {
   ensureSoundTouchRegistered,
 } from "./soundtouch";
 export type { SoundTouchHandle } from "./soundtouch";
-export { fetchEssentiaRhythmAnalysis, normalizeRhythmAnalysis } from "./essentia";
-export type { EssentiaRhythmAnalysis } from "./essentia";
+export { fetchEssentiaRhythmAnalysis, normalizeRhythmAnalysis, normalizeStructureAnalysis } from "./essentia";
+export type { EssentiaRhythmAnalysis, EssentiaStructureAnalysis, EssentiaStructureSection } from "./essentia";
+export { isStudioMp3File, prepareStudioUpload, STUDIO_UPLOAD_MAX_BYTES } from "./prepareStudioUpload";
 export { parseMidi } from "./MidiParser";
 export type { MidiData, MidiNote } from "./MidiParser";

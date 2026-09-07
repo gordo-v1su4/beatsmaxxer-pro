@@ -49,6 +49,20 @@ describe("prepareAnalysisUpload", () => {
   );
 
   test.runIf(typeof AudioContext !== "undefined")(
+    "structure profile keeps more of the song at a lower sample rate",
+    async () => {
+      const wav = buildToneWav(180);
+      const source = new File([wav], "album-track.wav", { type: "audio/wav" });
+
+      const prepared = await prepareAnalysisUpload(source, { profile: "structure" });
+
+      expect(prepared.name).toBe("album-track-structure.wav");
+      expect(prepared.size).toBeLessThanOrEqual(12_000_000);
+      expect(prepared.size).toBeGreaterThan(3_400_000);
+    },
+  );
+
+  test.runIf(typeof AudioContext !== "undefined")(
     "shrinks large uploads below the Vercel proxy budget",
     async () => {
       const wav = buildToneWav(120);

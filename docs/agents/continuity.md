@@ -1,6 +1,6 @@
 # Agent continuity — where to pick up
 
-**Last updated:** 2026-09-07 (post `/grill-me` session)  
+**Last updated:** 2026-09-07 (WebGPU sprint landed; arrangement deferred)  
 **Read this first** when using Matt Pocock skills on this repo.
 
 Also read root [`CONTEXT.md`](../../CONTEXT.md) for glossary, three-platform model, and product north star.
@@ -17,14 +17,16 @@ Also read root [`CONTEXT.md`](../../CONTEXT.md) for glossary, three-platform mod
 
 ## Current sprint (confirmed)
 
-**Forcing function:** Platform 2 — web rack (`bun run dev`). **Branch:** `main` for all engine work. **Tauri:** out of scope this sprint. **Mobile 1.1** (internal render scale): deferred.
+**Forcing function:** Platform 2 — web rack (`bun run dev`). **Branch:** `main` for all engine work. **Tauri:** out of scope. **Mobile 1.1** (internal render scale): deferred.
 
-### Sequence
+**WebGPU Engine Sprint implement lane (V1S-59–61): shipped on `main`.** Next active lane TBD (Matt Pocock skills, splash V1S-64, or peer backlog tier 1).
 
-1. **Research day** — deepen analyses for **7 clones** (FreeCut + Beatform first; then spektral + kbrandwijk)
-2. **Arm-at-trim + rVFC** — Ghost pattern, AGPL clean-room (`VideoPool` / `PgmDirector`)
-3. **Bind group frequency split** (1.2)
-4. **`wgslLib` + golden tests** (1.3)
+### Sequence (completed)
+
+1. **Research day** — 7 clones (FreeCut, Beatform, Spektral, webgpu-video-shaders, etc.)
+2. **Arm-at-trim + rVFC** — `VideoPool` (Ghost pattern, AGPL clean-room)
+3. **Bind group frequency split** — `BindGroupCache.ts`
+4. **`wgslLib` + golden tests**
 
 ### Arm-at-trim acceptance
 
@@ -74,20 +76,24 @@ Read Ghost Arcade for ideas; implement clean-room — no pasted or close-paraphr
 - [x] `/grill-me` — sprint order, WebGPU-only policy, 7-clone research scope
 - [x] Research day (V1S-55–58) — `analyses/freecut.md`, `beatform.md`, `spektral.md`, `webgpu-video-shaders.md` (file:line citations + Beatsmaxxer mapping)
 - [x] Ghost Arcade dissection (V1S-62, pre-sprint) — `analyses/ghost-arcade.md` (arm-at-trim, rVFC; feeds V1S-59)
+- [x] V1S-59 arm-at-trim + rVFC — `VideoPool.ts` + tests
+- [x] V1S-60 bind group cache — `BindGroupCache.ts` + `WebGpuEngine.ts`
+- [x] V1S-61 `wgslLib` + golden shader tests
+- [x] PGM cut-cover / seek-gap fixes — `VideoTextureCache`, `AppLoop`
 
 ---
 
-## Not done — next actions
+## Backlog (explicitly deferred — do not start)
 
-| Priority | Task | Output | Linear |
-|----------|------|--------|--------|
-| 1 | Implement arm-at-trim + rVFC | `VideoPool.ts`, possibly `PgmDirector.ts` + tests | V1S-59 |
-| 2 | Bind groups (1.2) — donors: FreeCut + Spektral | `WebGpuEngine.ts` | V1S-60 |
-| 3 | wgslLib (1.3) — donor: Beatform | `shaders/wgslLib.ts` + golden tests | V1S-61 |
+| Linear | Topic | Notes |
+|--------|-------|-------|
+| [V1S-64](https://linear.app/v1su4/issue/V1S-64) | Splash screen | Min duration on revisit (~5–6s), better animation |
 
-**Research donors (do not re-run):** FreeCut/V1S-60 bind cache; Beatform/V1S-61 `wgslLib` + golden tests; Spektral/V1S-60 `compute-bindgroup-cache.ts`; `webgpu-video-shaders` is **LGPL** — future catalog only.
+**Arrangement seeding (V1S-63, shipped):** After `/analyze/rhythm` lands, background `/analyze/structure` seeds arrangement strips (bar-snapped, label-colored). Perform page unchanged; ARRANGE shows “Detecting sections…” while loading.
 
-**Out of scope this sprint:** Tauri 60fps profiling, mobile internal render scale (1.1), spektral/kbrandwijk **implementation** (research only).
+**Research donors (do not re-run):** FreeCut bind cache; Beatform `wgslLib`; Spektral pipeline cache (research only); `webgpu-video-shaders` is **LGPL** — future catalog only.
+
+**Out of scope until pulled:** Tauri 60fps profiling, mobile internal render scale (1.1), arrangement lane, Essentia structure seeding.
 
 ---
 
@@ -125,18 +131,16 @@ See [`linear.md`](./linear.md) for the full issue table and blocker chain.
 
 ## Hosted Essentia analysis
 
-Rhythm/structure analysis uses the **hosted** `essentia-endpoint` service (not local Essentia in the browser).
+Rhythm/structure analysis uses the **hosted** `essentia-endpoint` service on VM100 `app-vm` — not local Docker and not in-browser Essentia.
 
 | Item | Value |
 |------|--------|
 | **Public URL** | `https://essentia.v1su4.dev` |
-| **Host** | VM100 **`app-vm`** (Proxmox homelab), Dockhand-managed |
+| **Client env** | `ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev`, `ESSENTIA_API_KEY` (server-side proxy only) |
 | **Service repo** | `essentia-endpoint` (sibling) |
-| **Client env** | `ESSENTIA_API_BASE_URL`, `ESSENTIA_API_KEY` (server-side proxy only) |
+| **Client routes** | `POST /__api/analyze/studio/jobs` + `GET /__api/analyze/studio/jobs/{id}` (full MP3, GPU allin1 structure) |
 
-**Infra lookup order:** Hermes notebook vault (Obsidian) → **`proxmox-home`** repo (`docs/endpoint-index.md`, `docs/app-vm-dockhand-runbook.md`) → BWS for secret values.
-
-Deploy runbook: `essentia-endpoint/docs/DOCKHAND.md`.
+Deploy runbook: `essentia-endpoint/docs/DOCKHAND.md`. Queue/GPU details: `essentia-endpoint/docs/STUDIO_AUDIO_JOBS.md`.
 
 ---
 

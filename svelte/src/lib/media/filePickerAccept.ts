@@ -18,5 +18,8 @@
 export const AUDIO_FILE_ACCEPT =
   'audio/*,.mp3,.wav,.wave,.m4a,.aac,.flac,.ogg,.oga,.opus,.aif,.aiff,.mp4,.weba';
 
+/** Hosted Studio analysis — full MP3 only (no re-encode). */
+export const HOSTED_ANALYSIS_AUDIO_ACCEPT = '.mp3,audio/mpeg,audio/mp3';
+
 export const VIDEO_FILE_ACCEPT =
   'video/*,.mp4,.m4v,.mov,.webm,.mkv,.avi,.mpg,.mpeg,.3gp,.qt';

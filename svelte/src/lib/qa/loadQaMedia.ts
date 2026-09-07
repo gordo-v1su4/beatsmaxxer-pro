@@ -103,7 +103,7 @@ export async function loadQaMidiChannels(manifest: QaManifest): Promise<void> {
 
 export async function loadQaMediaFromManifest(
   manifest: QaManifest,
-  options?: { midi?: boolean }
+  options?: { midi?: boolean; arrangerMidi?: boolean }
 ) {
   const clips = manifest.clips ?? [];
   const slotIds = activeRackSlotIds();
@@ -151,7 +151,7 @@ export async function loadQaMediaFromManifest(
 
   videoPool.tick(false);
 
-  if (manifest.midis?.length) {
+  if (options?.arrangerMidi === true && manifest.midis?.length) {
     try {
       await loadQaMidiChannels(manifest);
     } catch (err) {
@@ -178,12 +178,17 @@ export async function loadQaMediaFromManifest(
   }
 }
 
-/** Rack module parts load only when `?qaMidi=1`. Arranger lanes always load. */
+/** Rack module parts load only when `?qaMidi=1`. Arranger stem lanes are opt-in too. */
 export function shouldAutoloadQaMidi(search: string): boolean {
   return new URLSearchParams(search).get('qaMidi') === '1';
 }
 
-export async function fetchAndLoadQaMedia(options?: { midi?: boolean }) {
+/** Arrangement MIDI stem lanes — optional; arrangement works from the song alone. */
+export function shouldAutoloadQaArrangerMidi(search: string): boolean {
+  return new URLSearchParams(search).get('qaArrangerMidi') === '1';
+}
+
+export async function fetchAndLoadQaMedia(options?: { midi?: boolean; arrangerMidi?: boolean }) {
   const res = await fetch('/qa-media/manifest.json');
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
   const manifest = (await res.json()) as QaManifest;

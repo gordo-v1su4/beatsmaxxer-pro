@@ -4,8 +4,17 @@ import {
   normalizeLegacySyncAnalysis,
 } from "$lib/analysis/adapters/legacySync";
 import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
+import { fetchEssentiaStudioAnalysis } from "$lib/audio/studioJobs";
+import {
+  normalizeStructureAnalysis,
+  type EssentiaStructureAnalysis,
+  type EssentiaStructureSection,
+} from "$lib/audio/structureNormalize";
 import { isTauriRuntime } from "$lib/platform/runtime";
 import { isDesktopEssentiaConfigured, tauriInvoke } from "$lib/platform/tauriInvoke";
+
+export type { EssentiaStructureSection, EssentiaStructureAnalysis };
+export { normalizeStructureAnalysis };
 
 export interface EssentiaRhythmAnalysis {
   bpm: number;
@@ -18,16 +27,7 @@ export interface EssentiaRhythmAnalysis {
     curve: number[];
   };
   onsets: number[];
-  structure?: {
-    sections: Array<{
-      start: number;
-      end: number;
-      label: string;
-      duration: number;
-      energy: number;
-    }>;
-    boundaries: number[];
-  };
+  structure?: EssentiaStructureAnalysis;
   analysisResult: AnalysisResultV1;
   provider: AnalysisResultV1["effective"]["provider"];
   verified: boolean;
@@ -47,12 +47,7 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
   if (!isHostedAnalysisEnabled()) {
     throw new Error("Hosted analysis is disabled. Local playback and realtime analysis remain available.");
   }
-  const analysisFile = await prepareAnalysisUpload(file);
-  const result = await fetchLegacySyncAnalysis(analysisFile, {
-    endpointFor: createHostedAnalysisEndpoint,
-    engineHint: "essentia",
-  });
-  return toRhythmAnalysis(result);
+  return fetchEssentiaStudioAnalysis(file);
 }
 
 async function fetchEssentiaViaTauri(analysisFile: File): Promise<EssentiaRhythmAnalysis> {
@@ -69,12 +64,14 @@ export function isHostedAnalysisEnabled() {
 }
 
 export function createHostedAnalysisEndpoint(
-  endpointName: "fast" | "rhythm",
+  endpointName: "fast" | "rhythm" | "studio/jobs",
   origin = window.location.origin,
 ) {
-  // Same-origin proxy in dev (Vite) and production (Vercel /api rewrite).
-  // The upstream Essentia service requires X-API-Key, which must not ship to the browser.
   return new URL(`/__api/analyze/${endpointName}`, origin);
+}
+
+export function createHostedStudioJobEndpoint(jobId: string, origin = window.location.origin) {
+  return new URL(`/__api/analyze/studio/jobs/${encodeURIComponent(jobId)}`, origin);
 }
 
 export function normalizeRhythmAnalysis(payload: unknown): EssentiaRhythmAnalysis {
@@ -102,7 +99,7 @@ function toRhythmAnalysis(result: AnalysisResultV1): EssentiaRhythmAnalysis {
             energy: 0,
           })),
           boundaries: [
-            structuralSegments[0].start_time_s,
+            structuralSegments[0]!.start_time_s,
             ...structuralSegments.map((segment) => segment.end_time_s),
           ],
         }

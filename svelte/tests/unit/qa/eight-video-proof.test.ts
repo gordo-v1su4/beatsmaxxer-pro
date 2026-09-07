@@ -276,7 +276,7 @@ describe('eight-video research benchmark gate', () => {
     value.networkRequests = ['http://127.0.0.1:5194/'];
     const blockers = evaluateEightVideoProof(value).blockers;
     expect(blockers).toContain('Redline did not complete the consented Essentia rhythm path with a usable BPM');
-    expect(blockers).toContain('expected exactly one same-origin Essentia rhythm analysis request');
+    expect(blockers).toContain('expected at least one same-origin Essentia rhythm analysis request');
   });
 
   test('accepts a persistent real-video cache during a timesampler seek gap', () => {

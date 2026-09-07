@@ -449,19 +449,26 @@ export function evaluateEightVideoProof(report: EightVideoProofReport) {
   const analysisRequests = report.networkRequests.filter((request) => {
     try {
       const url = new URL(request);
-      return ['127.0.0.1', 'localhost'].includes(url.hostname) && /^\/__api\/analyze\/(?:fast|rhythm)$/.test(url.pathname);
+      return ['127.0.0.1', 'localhost'].includes(url.hostname) && /^\/__api\/analyze\/(?:fast|rhythm|structure)$/.test(url.pathname);
     } catch {
       return false;
     }
   });
-  fail(analysisRequests.length !== 1 || !analysisRequests[0]?.endsWith('/__api/analyze/rhythm'),
-    'expected exactly one same-origin Essentia rhythm analysis request');
+  fail(
+    analysisRequests.length < 1 ||
+      !analysisRequests.some((request) => request.endsWith('/__api/analyze/rhythm')),
+    'expected at least one same-origin Essentia rhythm analysis request',
+  );
+  fail(
+    analysisRequests.some((request) => request.endsWith('/__api/analyze/fast')),
+    'expected rhythm-only analysis path, not /analyze/fast',
+  );
   fail(report.networkRequests.some((request) => {
     if (/^(?:blob:|data:)/.test(request)) return false;
     try {
       const url = new URL(request);
       if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return true;
-      if (/^\/__api\/analyze\/(?:fast|rhythm)$/.test(url.pathname)) return false;
+      if (/^\/__api\/analyze\/(?:fast|rhythm|structure)$/.test(url.pathname)) return false;
       return /^\/(?:__api|api)\/analyze(?:\/|$)/.test(url.pathname);
     } catch {
       return !/^(?:blob:|data:)/.test(request);

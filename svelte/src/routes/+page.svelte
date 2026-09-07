@@ -42,7 +42,7 @@
   import { supportsModuleMidi } from '$lib/modules/midiContracts';
   import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import { fetchAndLoadQaMedia, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
+  import { fetchAndLoadQaMedia, shouldAutoloadQaArrangerMidi, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
@@ -171,7 +171,10 @@
         // bank. Fanning the manifest across slots leaves the phone's grid empty,
         // so each shell seeds itself the way its own import path would.
         if (get(isMobileShell)) await seedMobileQaClips();
-        else await fetchAndLoadQaMedia({ midi: shouldAutoloadQaMidi(window.location.search) });
+        else await fetchAndLoadQaMedia({
+          midi: shouldAutoloadQaMidi(window.location.search),
+          arrangerMidi: shouldAutoloadQaArrangerMidi(window.location.search),
+        });
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
         stepQa.note('failed');

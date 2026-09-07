@@ -8,9 +8,12 @@ import {
 } from "../gate/policy.js";
 
 export const ANALYSIS_PROXY_ENABLE_ENV = "ESSENTIA_ANALYSIS_ENABLED";
-export const ANALYSIS_MAX_REQUEST_BYTES = 3_500_000;
-export const ANALYSIS_MAX_RESPONSE_BYTES = 1_000_000;
+/** Full MP3 uploads (~7 MiB typical). Vercel may require Pro for bodies above ~4.5 MiB. */
+export const ANALYSIS_MAX_REQUEST_BYTES = 12_000_000;
+export const ANALYSIS_MAX_RESPONSE_BYTES = 2_000_000;
 export const ANALYSIS_UPSTREAM_TIMEOUT_MS = 15_000;
+export const ANALYSIS_STUDIO_SUBMIT_TIMEOUT_MS = 120_000;
+export const ANALYSIS_STUDIO_POLL_TIMEOUT_MS = 30_000;
 export const ANALYSIS_MAX_CONCURRENT_REQUESTS = 2;
 
 export type AnalysisEndpoint = "fast" | "rhythm";
@@ -27,6 +30,7 @@ export interface AnalysisProxyRequest {
   endpoint?: string;
   contentType?: string;
   contentLength?: string;
+  idempotencyKey?: string;
   origin?: string;
   host?: string;
   forwardedProto?: string;
@@ -151,28 +155,69 @@ function isRequestUnlocked(request: AnalysisProxyRequest, gate: AccessGateConfig
   return isValidSessionToken(parseCookie(request.cookieHeader, ACCESS_COOKIE_NAME), gate);
 }
 
+function parseProxyRoute(endpoint: string | undefined) {
+  if (!endpoint) return null;
+  if (endpoint === "studio/jobs") return { kind: "studio-submit" as const };
+  const poll = endpoint.match(/^studio\/jobs\/([^/]+)$/);
+  if (poll?.[1]) return { kind: "studio-poll" as const, jobId: poll[1] };
+  if (endpoint === "fast" || endpoint === "rhythm") {
+    return { kind: "legacy" as const, name: endpoint as AnalysisEndpoint };
+  }
+  return null;
+}
+
+function guardAnalysisProxy(
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  accessGate: AccessGateConfig,
+): AnalysisProxyResponse | null {
+  if (config.deploymentMode === "production" && !isTrustedSameOriginRequest(request)) {
+    return jsonError(403, "cross_origin_forbidden");
+  }
+  if (!isRequestUnlocked(request, accessGate)) return jsonError(401, "access_locked");
+  if (!config.enabled) return jsonError(503, "analysis_disabled");
+  if (!isAnalysisProxyConfigured(config)) return jsonError(503, "analysis_unavailable");
+  return null;
+}
+
 export async function proxyAnalysisRequest(
   request: AnalysisProxyRequest,
   config: AnalysisProxyConfig,
   options: AnalysisProxyOptions = {},
   accessGate: AccessGateConfig = accessGateConfigFromEnv(process.env),
 ): Promise<AnalysisProxyResponse | null> {
-  const endpoint = request.endpoint;
-  if (endpoint !== "fast" && endpoint !== "rhythm") return jsonError(404, "not_found", "Analysis endpoint not found.");
-  if (request.method !== "POST") return jsonError(405, "method_not_allowed", "Only POST analysis requests are supported.");
-  // The Vercel production route is additionally protected by an IP-keyed WAF
-  // rate limit. Keep this same-origin check in the function as defense in depth
-  // and reject before reading a user upload or contacting the upstream service.
-  if (config.deploymentMode === "production" && !isTrustedSameOriginRequest(request)) {
-    return jsonError(403, "cross_origin_forbidden");
+  const route = parseProxyRoute(request.endpoint);
+  if (!route) return jsonError(404, "not_found", "Analysis endpoint not found.");
+
+  const guard = guardAnalysisProxy(request, config, accessGate);
+  if (guard) return guard;
+
+  if (route.kind === "studio-submit") {
+    if (request.method !== "POST") {
+      return jsonError(405, "method_not_allowed", "Only POST studio job submissions are supported.");
+    }
+    return proxyStudioJobSubmit(request, config, options);
   }
-  // The access gate is the only control here that a request cannot simply assert
-  // its way past: Origin and Sec-Fetch-Site are attacker-controlled outside a
-  // browser, whereas this cookie requires having entered the PIN. When no PIN is
-  // configured the gate is disabled and this is a no-op.
-  if (!isRequestUnlocked(request, accessGate)) return jsonError(401, "access_locked");
-  if (!config.enabled) return jsonError(503, "analysis_disabled");
-  if (!isAnalysisProxyConfigured(config)) return jsonError(503, "analysis_unavailable");
+
+  if (route.kind === "studio-poll") {
+    if (request.method !== "GET") {
+      return jsonError(405, "method_not_allowed", "Only GET studio job polling is supported.");
+    }
+    return proxyStudioJobPoll(route.jobId, request, config, options);
+  }
+
+  if (request.method !== "POST") {
+    return jsonError(405, "method_not_allowed", "Only POST analysis requests are supported.");
+  }
+  return proxyLegacyAnalysisRequest(request, config, options, route.name);
+}
+
+async function proxyLegacyAnalysisRequest(
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  options: AnalysisProxyOptions,
+  endpoint: AnalysisEndpoint,
+): Promise<AnalysisProxyResponse | null> {
   if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
 
   const maxRequestBytes = options.maxRequestBytes ?? ANALYSIS_MAX_REQUEST_BYTES;
@@ -196,9 +241,6 @@ export async function proxyAnalysisRequest(
   try {
     const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
     if (controller.signal.aborted) return null;
-    // Nothing readable behind a declared Content-Length means the host drained
-    // the stream first. Name that rather than forwarding an empty envelope and
-    // surfacing it as an opaque upstream rejection.
     if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
 
     let upstream: Response;
@@ -222,29 +264,8 @@ export async function proxyAnalysisRequest(
       await upstream.body?.cancel().catch(() => undefined);
       return mapUpstreamFailure(upstream.status);
     }
-    if (!isJsonContentType(upstream.headers.get("content-type"))) {
-      await upstream.body?.cancel().catch(() => undefined);
-      return jsonError(502, "upstream_unavailable");
-    }
 
-    try {
-      const responseBytes = await readBoundedResponse(
-        upstream,
-        options.maxResponseBytes ?? ANALYSIS_MAX_RESPONSE_BYTES,
-        controller.signal,
-      );
-      const responseText = new TextDecoder().decode(responseBytes);
-      JSON.parse(responseText);
-      return { status: upstream.status, contentType: "application/json", body: responseText };
-    } catch (error) {
-      if (error instanceof LimitExceededError) {
-        controller.abort("upstream_response_too_large");
-        return jsonError(502, "upstream_response_too_large");
-      }
-      if (request.signal?.aborted) return null;
-      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
-      return jsonError(502, "upstream_unavailable");
-    }
+    return await forwardJsonUpstream(upstream, controller, request, options);
   } catch (error) {
     if (error instanceof LimitExceededError) {
       controller.abort("upload_too_large");
@@ -257,6 +278,145 @@ export async function proxyAnalysisRequest(
     clearTimeout(timeout);
     request.signal?.removeEventListener("abort", abortFromClient);
     activeRequests -= 1;
+  }
+}
+
+async function proxyStudioJobSubmit(
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  options: AnalysisProxyOptions,
+): Promise<AnalysisProxyResponse | null> {
+  if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
+
+  const maxRequestBytes = options.maxRequestBytes ?? ANALYSIS_MAX_REQUEST_BYTES;
+  const declaredLength = parseContentLength(request.contentLength);
+  if (declaredLength !== null && declaredLength > maxRequestBytes) {
+    return jsonError(413, "upload_too_large");
+  }
+
+  const maxConcurrent = options.maxConcurrentRequests ?? ANALYSIS_MAX_CONCURRENT_REQUESTS;
+  if (activeRequests >= maxConcurrent) return jsonError(429, "analysis_busy");
+  activeRequests += 1;
+
+  const controller = new AbortController();
+  const abortFromClient = () => controller.abort("client_disconnected");
+  request.signal?.addEventListener("abort", abortFromClient, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort("upstream_timeout"),
+    options.timeoutMs ?? ANALYSIS_STUDIO_SUBMIT_TIMEOUT_MS,
+  );
+
+  try {
+    const body = await readBoundedBody(request.body, maxRequestBytes, controller.signal);
+    if (controller.signal.aborted) return null;
+    if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
+
+    const headers: Record<string, string> = {
+      "Content-Type": request.contentType!,
+      "X-API-Key": config.apiKey,
+    };
+    if (request.idempotencyKey) headers["Idempotency-Key"] = request.idempotencyKey;
+
+    let upstream: Response;
+    try {
+      upstream = await (options.fetch ?? globalThis.fetch)(`${config.apiBaseUrl}/analyze/studio/jobs`, {
+        method: "POST",
+        headers,
+        body,
+        signal: controller.signal,
+      });
+    } catch {
+      if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+      return jsonError(502, "upstream_unavailable");
+    }
+
+    return await forwardJsonUpstream(upstream, controller, request, options);
+  } catch (error) {
+    if (error instanceof LimitExceededError) {
+      controller.abort("upload_too_large");
+      return jsonError(413, "upload_too_large");
+    }
+    if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+    if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+    return jsonError(400, "invalid_request", "Analysis request could not be read.");
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromClient);
+    activeRequests -= 1;
+  }
+}
+
+async function proxyStudioJobPoll(
+  jobId: string,
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  options: AnalysisProxyOptions,
+): Promise<AnalysisProxyResponse | null> {
+  const controller = new AbortController();
+  const abortFromClient = () => controller.abort("client_disconnected");
+  request.signal?.addEventListener("abort", abortFromClient, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort("upstream_timeout"),
+    options.timeoutMs ?? ANALYSIS_STUDIO_POLL_TIMEOUT_MS,
+  );
+
+  try {
+    let upstream: Response;
+    try {
+      upstream = await (options.fetch ?? globalThis.fetch)(
+        `${config.apiBaseUrl}/analyze/studio/jobs/${encodeURIComponent(jobId)}`,
+        {
+          method: "GET",
+          headers: { "X-API-Key": config.apiKey },
+          signal: controller.signal,
+        },
+      );
+    } catch {
+      if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+      return jsonError(502, "upstream_unavailable");
+    }
+
+    return await forwardJsonUpstream(upstream, controller, request, options);
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromClient);
+  }
+}
+
+async function forwardJsonUpstream(
+  upstream: Response,
+  controller: AbortController,
+  request: AnalysisProxyRequest,
+  options: AnalysisProxyOptions,
+): Promise<AnalysisProxyResponse | null> {
+  if (!upstream.ok) {
+    await upstream.body?.cancel().catch(() => undefined);
+    return mapUpstreamFailure(upstream.status);
+  }
+  if (!isJsonContentType(upstream.headers.get("content-type"))) {
+    await upstream.body?.cancel().catch(() => undefined);
+    return jsonError(502, "upstream_unavailable");
+  }
+
+  try {
+    const responseBytes = await readBoundedResponse(
+      upstream,
+      options.maxResponseBytes ?? ANALYSIS_MAX_RESPONSE_BYTES,
+      controller.signal,
+    );
+    const responseText = new TextDecoder().decode(responseBytes);
+    JSON.parse(responseText);
+    return { status: upstream.status, contentType: "application/json", body: responseText };
+  } catch (error) {
+    if (error instanceof LimitExceededError) {
+      controller.abort("upstream_response_too_large");
+      return jsonError(502, "upstream_response_too_large");
+    }
+    if (request.signal?.aborted) return null;
+    if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+    return jsonError(502, "upstream_unavailable");
   }
 }
 

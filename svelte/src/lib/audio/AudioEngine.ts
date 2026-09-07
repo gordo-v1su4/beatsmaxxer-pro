@@ -16,6 +16,11 @@ import type {
   TransportSample,
 } from "$lib/engine/contracts";
 import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
+import {
+  applyStructureToArrangement,
+  arrangementStructureStatus,
+  resetArrangementToDefault,
+} from "$lib/stores/arrangement";
 import { get } from "svelte/store";
 import { audioLatencyHint } from "$lib/platform/desktopPerformance";
 import { isMobileShell } from "$lib/mobile/mobileEnv";
@@ -362,10 +367,14 @@ export class AudioEngine implements IAudioEngine {
     this.objectUrl = URL.createObjectURL(file);
     this.attachMediaElement(this.objectUrl, file.name);
     this.prepareUploadedTrack(file.name, options.hostedAnalysis === true);
+    if (options.hostedAnalysis === true) {
+      resetArrangementToDefault();
+    }
     this.uploadedTrackLoadGeneration += 1;
 
     if (options.hostedAnalysis !== true) {
       this.analysisRequestId += 1;
+      arrangementStructureStatus.set("idle");
       return;
     }
 
@@ -375,6 +384,9 @@ export class AudioEngine implements IAudioEngine {
       const analysis = await fetchEssentiaRhythmAnalysis(file);
       if (requestId !== this.analysisRequestId) return;
       this.applyRhythmAnalysis(analysis);
+      if (analysis.structure) {
+        this.applyStructureForArrangement(analysis.structure, requestId, analysis.beats, analysis.bpm);
+      }
     } catch (error) {
       if (requestId !== this.analysisRequestId) return;
       this.applyRealtimeFallback(error);
@@ -414,6 +426,7 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisDuration = 0;
     this._analysisError = null;
+    resetArrangementToDefault();
   }
 
   tapTempo() {
@@ -1172,6 +1185,29 @@ export class AudioEngine implements IAudioEngine {
     this._analysisDuration = analysis.duration;
     this._analysisError = null;
     this.syncSoundTouch();
+  }
+
+  private applyStructureForArrangement(
+    structure: { sections: { start: number; end: number; label: string; duration: number; energy: number }[] },
+    requestId: number,
+    beats: readonly number[],
+    bpm: number,
+  ) {
+    if (requestId !== this.analysisRequestId) return;
+    arrangementStructureStatus.set("loading");
+    if (import.meta.env.DEV) {
+      console.info("[AudioEngine] Studio structure", structure.sections.length, "sections");
+    }
+    applyStructureToArrangement(structure.sections, beats, bpm);
+    if (import.meta.env.DEV && requestId === this.analysisRequestId) {
+      console.table(
+        structure.sections.map((section) => ({
+          label: section.label,
+          start: section.start.toFixed(2),
+          end: section.end.toFixed(2),
+        })),
+      );
+    }
   }
 
   private setAnalysisOnsets(onsets: readonly number[] | undefined) {

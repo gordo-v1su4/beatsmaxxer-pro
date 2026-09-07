@@ -35,6 +35,7 @@
     ARRANGEMENT_STEPS,
     activeSectionIndex,
     arrangement,
+    arrangementStructureStatus,
     arrangementTotalSteps,
     autoBank,
     barInSection,
@@ -206,6 +207,32 @@
     return lanes;
   });
 
+  /** Section spans on the full song timeline — one coordinate system for SONG + lanes. */
+  const sectionBands = $derived.by(() =>
+    $arrangement.map((section, i) => {
+      const bpm = $transportDisplay.bpm || 120;
+      const grid = $analysisBeatGrid;
+      const startStep =
+        section.timeStartS != null
+          ? secondsStep(section.timeStartS, grid, bpm)
+          : $sectionStarts[i]! * ARRANGEMENT_STEPS;
+      const endStep =
+        section.timeEndS != null
+          ? secondsStep(section.timeEndS, grid, bpm)
+          : ($sectionStarts[i]! + section.bars) * ARRANGEMENT_STEPS;
+      const leftPct = pct(startStep);
+      const widthPct = Math.max(0, pct(endStep) - leftPct);
+      return {
+        id: section.id,
+        name: section.name,
+        hue: section.hue,
+        startBar: $sectionStarts[i]! + 1,
+        leftPct,
+        widthPct,
+      };
+    }),
+  );
+
   /** Click anywhere on a lane to place a cut on the nearest sixteenth. */
   function paintAt(event: MouseEvent, slotIndex: number) {
     const track = event.currentTarget as HTMLElement;
@@ -214,6 +241,23 @@
     toggleCut(Math.round(fraction * totalSteps), slotIndex);
   }
 </script>
+
+{#snippet sectionOverlay()}
+  {#each sectionBands as band, i (band.id)}
+    <span
+      class="arr-sec-band"
+      style="left:{band.leftPct}%;width:{band.widthPct}%;--sec-hue:{band.hue}"
+      title="{band.name} — from bar {band.startBar}"
+    ></span>
+    {#if i > 0}
+      <span
+        class="arr-sec-split"
+        style="left:{band.leftPct}%;--sec-hue:{band.hue}"
+        title="{band.name}"
+      ></span>
+    {/if}
+  {/each}
+{/snippet}
 
 <section class="arrange">
   <header class="arr-head">
@@ -309,17 +353,31 @@
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
       <div class="arr-track arr-sections" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
-        {#each $arrangement as section, i (section.id)}
+        {#if $arrangementStructureStatus === 'loading'}
+          <span class="arr-section-loading">Detecting sections…</span>
+        {/if}
+        {#each sectionBands as band, i (band.id)}
+          {@const section = $arrangement[i]}
           {@const on = i === $activeSectionIndex}
           <button
             type="button"
-            class="arr-section"
+            class="arr-section arr-section-abs"
             data-active={on}
-            style="flex-grow:{section.bars};{on
+            style="left:{band.leftPct}%;width:{band.widthPct}%;{on
               ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
               : ''}"
-            onclick={(event) => { event.stopPropagation(); selectSection(i); audioEngine.seek(stepSeconds($sectionStarts[i] * ARRANGEMENT_STEPS, $analysisBeatGrid, $transportDisplay.bpm || 120)); }}
-            title="{section.name} — {section.bars} bars, from bar {$sectionStarts[i] + 1}"
+            onclick={(event) => {
+              event.stopPropagation();
+              selectSection(i);
+              audioEngine.seek(
+                stepSeconds(
+                  section.timeStartS ?? $sectionStarts[i]! * ARRANGEMENT_STEPS,
+                  $analysisBeatGrid,
+                  $transportDisplay.bpm || 120,
+                ),
+              );
+            }}
+            title="{section.name} — {section.bars} bars, from bar {band.startBar}"
           >
             <span class="arr-section-tick" style="background:{section.hue}"></span>
             <span class="arr-section-name" style="color:{on ? section.hue : '#7d9196'}">
@@ -364,14 +422,7 @@
           onkeydown={(event) => paintAtKeyboard(event, slotIndex)}
           title="Click to place a cut on {info?.name ?? slotName(slotIndex)}; Enter or Space places one at the playhead"
         >
-          {#each $arrangement as section, i (section.id)}
-            <span
-              class="arr-lane-sec"
-              style="left:{pct($sectionStarts[i] * ARRANGEMENT_STEPS)}%;width:{pct(
-                section.bars * ARRANGEMENT_STEPS
-              )}%"
-            ></span>
-          {/each}
+          {@render sectionOverlay()}
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
               class="arr-cut"
@@ -387,6 +438,7 @@
     <div class="arr-row arr-row-chan">
       <span class="arr-gutter arr-gutter-chan">AUDIO</span>
       <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
+        {@render sectionOverlay()}
         {#each audioTicks as left, i (i)}
           <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
         {/each}
@@ -424,6 +476,7 @@
           <small>{source === 'midi' ? 'MIDI' : 'AUD'} · {keptCount}/{layer.notes.length}</small>
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="{layer.name} — click to seek; Enter or Space seeks to the playhead">
+          {@render sectionOverlay()}
           {#each ticks as left, i (i)}
             <span
               class="arr-tick arr-tick-module"
@@ -449,6 +502,7 @@
           <small>{keptCount}/{channel.noteCount}</small>
         </button>
         <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
+          {@render sectionOverlay()}
           {#each ticks as left, i (i)}
             <span
               class="arr-tick"
@@ -708,21 +762,42 @@
   }
 
   .arr-sections {
+    position: relative;
+    min-height: 24px;
+  }
+  .arr-section-loading {
+    position: absolute;
+    inset: 0;
     display: flex;
-    gap: 2px;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-ui);
+    font-size: 8px;
+    letter-spacing: 0.08em;
+    color: #7d9196;
+    background: rgba(8, 10, 12, 0.72);
+    pointer-events: none;
+    z-index: 2;
   }
   .arr-section {
     position: relative;
     display: flex;
     align-items: center;
     gap: 5px;
-    flex-basis: 0;
     min-width: 0;
     padding: 0 6px;
     border: 1px solid #1a1c1e;
     border-radius: 2px;
     background: #0f1113;
     text-align: left;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .arr-section-abs {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 28px;
   }
   .arr-section:hover {
     background: #16181b;
@@ -790,15 +865,29 @@
     background: #0d0f11;
     cursor: crosshair;
   }
-  /* Section bands behind the cuts, so a lane still reads as verse/chorus. */
-  .arr-lane-sec {
+
+  /* Section bands + split lines — cut lanes, AUDIO, and MIDI stems share this. */
+  .arr-sec-band {
     position: absolute;
     top: 0;
     bottom: 0;
-    border-right: 1px solid #141719;
+    pointer-events: none;
+    border-right: 1px solid color-mix(in srgb, var(--sec-hue) 32%, transparent);
+    background: color-mix(in srgb, var(--sec-hue) 7%, transparent);
   }
-  .arr-lane-sec:nth-child(even) {
-    background: rgba(255, 255, 255, 0.014);
+  .arr-sec-band:nth-of-type(odd) {
+    background: color-mix(in srgb, var(--sec-hue) 12%, transparent);
+  }
+  .arr-sec-split {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    margin-left: -1px;
+    border-left: 2px solid color-mix(in srgb, var(--sec-hue) 72%, #ffffff);
+    opacity: 0.85;
+    pointer-events: none;
+    z-index: 1;
   }
 
   /* A cut is a mark at a moment, not a filled cell — sixteen bars of chorus can
@@ -810,6 +899,7 @@
     width: 3px;
     margin-left: -1px;
     border-radius: 1px;
+    z-index: 2;
   }
 
   .arr-chan {
@@ -826,6 +916,7 @@
     width: 1px;
     background: #4fd6e8;
     opacity: 0.75;
+    z-index: 2;
   }
   .arr-tick-audio {
     background: #55696e;

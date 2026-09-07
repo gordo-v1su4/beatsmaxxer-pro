@@ -4,6 +4,7 @@ import {
   onSharedWebGpuDeviceLost
 } from './SharedGpuDevice';
 import { MODULE_FX_IDLE_WGSL, MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
+import { IdleBindGroupCache } from './BindGroupCache';
 import { BLIT_WGSL, advanceFeedbackTo, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
 import { parseAccentColor } from '$lib/modules/registry';
@@ -12,7 +13,7 @@ import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { resolveVideoSamplePath } from '$lib/qa/proofEnvironment';
 import { VideoTextureCache } from './VideoTextureCache';
-import { BlitBindGroupCache, TextureViewBindGroupCache } from './BindGroupCache';
+import { BlitBindGroupCache } from './BindGroupCache';
 import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
 import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
@@ -213,7 +214,7 @@ export class WebGpuEngine {
   private fxIdlePipeline: GPURenderPipeline | null = null;
   private placeholderFeedback: GPUTexture | null = null;
   private placeholderFeedbackView: GPUTextureView | null = null;
-  private idleBindGroupCache = new TextureViewBindGroupCache();
+  private idleBindGroupCache = new IdleBindGroupCache();
   private blitBindGroupCache = new BlitBindGroupCache();
   private initPromise: Promise<boolean> | null = null;
   private unsubscribeDeviceLost: (() => void) | null = null;
@@ -1073,7 +1074,7 @@ export class WebGpuEngine {
     videoView: GPUTextureView,
     feedbackView: GPUTextureView
   ): GPUBindGroup {
-    return this.idleBindGroupCache.get(videoView, feedbackView, () =>
+    return this.idleBindGroupCache.get(binding.uniformBuffer, videoView, feedbackView, () =>
       createIdleBindGroup(
         this.device!,
         binding.idleBindGroupLayout,

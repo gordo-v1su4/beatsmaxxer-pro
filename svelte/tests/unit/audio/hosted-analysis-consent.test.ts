@@ -20,13 +20,20 @@ describe('hosted analysis consent boundary', () => {
     );
   });
 
-  test('analysis preparation never passes through the original upload', () => {
+  test('Studio upload passes through the original MP3', () => {
+    const preparation = source('audio/prepareStudioUpload.ts');
+
+    expect(preparation).toContain('return file;');
+    expect(preparation).toContain('MP3 uploads only');
+    expect(preparation).toContain('STUDIO_UPLOAD_MAX_BYTES');
+  });
+
+  test('legacy rhythm preparation still re-encodes for desktop', () => {
     const preparation = source('audio/prepareAnalysisUpload.ts');
 
     expect(preparation).not.toContain('return file;');
-    expect(preparation).toContain('ANALYSIS_MAX_DURATION_S');
-    expect(preparation).toContain('ANALYSIS_UPLOAD_MAX_BYTES');
-    expect(preparation).toContain('`${stem}-analysis.wav`');
+    expect(preparation).toContain('RHYTHM_UPLOAD_MAX_BYTES');
+    expect(preparation).toContain('`${stem}-${suffix}.wav`');
   });
 
   test('URL/QA loading does not invoke hosted analysis', () => {
@@ -45,8 +52,8 @@ describe('hosted analysis consent boundary', () => {
 
     expect(topBar).toContain("resolveAudioUpload(choice: 'analyze' | 'local' | 'cancel')");
     expect(topBar).toContain("hostedAnalysis: choice === 'analyze'");
-    expect(topBar).toContain('bounded, prepared excerpt');
-    expect(topBar).toContain("does not establish that service's retention");
+    expect(topBar).toContain('full MP3');
+    expect(topBar).toContain('not supported for analysis yet');
     expect(topBar).toContain('>ANALYZE</button>');
     expect(topBar).toContain('>LOCAL ONLY</button>');
     expect(topBar).toContain('>CANCEL</button>');
