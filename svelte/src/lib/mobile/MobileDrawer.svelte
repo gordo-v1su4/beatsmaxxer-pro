@@ -12,6 +12,11 @@
   import { listCatalog, type ModuleCategory, type ModuleDefinition } from '$lib/modules/catalog';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { arrangementStructureStatus } from '$lib/stores/arrangement';
+  import {
+    analysisStatusFootnote,
+    arrangementStatusBadge,
+    rhythmStatusBadge,
+  } from '$lib/audio/analysisStatusBadges';
   import MobileClipGrid from './MobileClipGrid.svelte';
   import ModulePosterTile from './ModulePosterTile.svelte';
   import { activeModuleId, setActiveModuleById } from './mobileSession';
@@ -52,93 +57,24 @@
 
   // Lifted verbatim from TopBar so the phone and the rack never disagree about
   // what the analyser is doing.
-  const rhyLabel = $derived.by(() => {
-    switch (td.analysisStatus) {
-      case 'analyzing':
-        return 'RHY·…';
-      case 'ready':
-        return 'RHY·OK';
-      case 'fallback':
-        return 'RHY·RT';
-      case 'error':
-        return 'RHY·ERR';
-      default:
-        return td.usingUploadedTrack ? 'RHY·…' : 'RHY·OFF';
-    }
-  });
+  const rhythmBadge = $derived(
+    rhythmStatusBadge({
+      analysisStatus: td.analysisStatus,
+      usingUploadedTrack: td.usingUploadedTrack,
+      analysisConfidence: td.analysisConfidence,
+      analysisError: td.analysisError,
+    }),
+  );
 
-  const rhyColor = $derived.by(() => {
-    switch (td.analysisStatus) {
-      case 'analyzing':
-        return '#f59e0b';
-      case 'ready':
-        return '#4ade80';
-      case 'fallback':
-        return '#38bdf8';
-      case 'error':
-        return '#ef4444';
-      default:
-        return td.usingUploadedTrack ? '#f59e0b' : '#4a5060';
-    }
-  });
+  const arrangementBadge = $derived(
+    arrangementStatusBadge({
+      analysisStatus: td.analysisStatus,
+      structureStatus: $arrangementStructureStatus,
+      usingUploadedTrack: td.usingUploadedTrack,
+    }),
+  );
 
-  const rhyNote = $derived.by(() => {
-    switch (td.analysisStatus) {
-      case 'analyzing':
-        return 'Finding the beat grid…';
-      case 'ready':
-        return td.analysisConfidence != null
-          ? `Beat grid locked · ${Math.round(td.analysisConfidence * 100)}% confidence`
-          : 'Beat grid locked';
-      case 'fallback':
-        return 'Following the beat in real time';
-      case 'error':
-        return td.analysisError ?? 'Analysis failed — following in real time';
-      default:
-        return td.usingUploadedTrack ? 'Preparing…' : 'Load a track to drive the effects';
-    }
-  });
-
-  const arrVisible = $derived(td.analysisStatus === 'ready');
-
-  const arrLabel = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return 'ARR·…';
-      case 'ready':
-        return 'ARR·OK';
-      case 'error':
-        return 'ARR·ERR';
-      default:
-        return 'ARR·TPL';
-    }
-  });
-
-  const arrColor = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return '#38bdf8';
-      case 'ready':
-        return '#4ade80';
-      case 'error':
-        return '#ef4444';
-      default:
-        return '#6b7280';
-    }
-  });
-
-  const arrNote = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return 'Detecting sections for the arrangement strip…';
-      case 'ready':
-        return 'Arrangement sections from Essentia structure';
-      case 'error':
-        return 'Section detection failed — default template strips';
-      default:
-        return 'Arrangement uses the built-in template until sections are detected';
-    }
-  });
+  const songNote = $derived(analysisStatusFootnote(rhythmBadge, arrangementBadge));
 
   let audioInput = $state<HTMLInputElement>();
   let loadingTrack = $state(false);
@@ -389,27 +325,27 @@
               <span class="song-label">RHYTHM</span>
               <span
                 class="song-rhy"
-                style="border-color:{rhyColor}55;color:{rhyColor}"
-                title={rhyNote}
+                data-tone={rhythmBadge.tone}
+                style="border-color:{rhythmBadge.color}55;color:{rhythmBadge.color}"
+                title={rhythmBadge.title}
               >
-                {rhyLabel}
+                {rhythmBadge.label}
               </span>
             </div>
-            {#if arrVisible}
-              <div class="song-stat">
-                <span class="song-label">SECTIONS</span>
-                <span
-                  class="song-rhy"
-                  style="border-color:{arrColor}55;color:{arrColor}"
-                  title={arrNote}
-                >
-                  {arrLabel}
-                </span>
-              </div>
-            {/if}
+            <div class="song-stat">
+              <span class="song-label">SECTIONS</span>
+              <span
+                class="song-rhy"
+                data-tone={arrangementBadge.tone}
+                style="border-color:{arrangementBadge.color}55;color:{arrangementBadge.color}"
+                title={arrangementBadge.title}
+              >
+                {arrangementBadge.label}
+              </span>
+            </div>
           </div>
 
-          <p class="song-note">{arrVisible && $arrangementStructureStatus === 'loading' ? arrNote : rhyNote}</p>
+          <p class="song-note">{songNote}</p>
         </div>
 
         <p class="song-hint">
@@ -722,6 +658,11 @@
     font-weight: 500;
     letter-spacing: 0.12em;
     line-height: 1.2;
+  }
+
+  .song-rhy[data-tone='idle'],
+  .song-rhy[data-tone='muted'] {
+    opacity: 0.58;
   }
 
   .song-note {

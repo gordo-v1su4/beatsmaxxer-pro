@@ -18,6 +18,10 @@
     type HostedAnalysisPreference
   } from '$lib/audio/hostedAnalysisPreference';
   import { arrangementStructureStatus } from '$lib/stores/arrangement';
+  import {
+    arrangementStatusBadge,
+    rhythmStatusBadge,
+  } from '$lib/audio/analysisStatusBadges';
 
   interface Props {
     onRandomize: () => void;
@@ -73,85 +77,22 @@
   const beatOn = $derived(td.beatPhase < 0.15);
   const beatInBar = $derived(Math.floor(td.beat) % 4);
 
-  const rhyLabel = $derived.by(() => {
-    switch (td.analysisStatus) {
-      case 'analyzing':
-        return 'RHY·…';
-      case 'ready':
-        return 'RHY·OK';
-      case 'fallback':
-        return 'RHY·RT';
-      case 'error':
-        return 'RHY·ERR';
-      default:
-        return td.usingUploadedTrack ? 'RHY·…' : 'RHY·OFF';
-    }
-  });
+  const rhythmBadge = $derived(
+    rhythmStatusBadge({
+      analysisStatus: td.analysisStatus,
+      usingUploadedTrack: td.usingUploadedTrack,
+      analysisConfidence: td.analysisConfidence,
+      analysisError: td.analysisError,
+    }),
+  );
 
-  const rhyColor = $derived.by(() => {
-    switch (td.analysisStatus) {
-      case 'analyzing':
-        return '#f59e0b';
-      case 'ready':
-        return '#4ade80';
-      case 'fallback':
-        return '#38bdf8';
-      case 'error':
-        return '#ef4444';
-      default:
-        return td.usingUploadedTrack ? '#f59e0b' : '#4a5060';
-    }
-  });
-
-  const rhyTitle = $derived.by(() => {
-    if (td.analysisStatus === 'ready') {
-      const conf =
-        td.analysisConfidence != null ? ` · ${Math.round(td.analysisConfidence * 100)}% conf` : '';
-      return `Rhythm analysis succeeded — beat grid from Essentia (analyze once, shift in real time)${conf}`;
-    }
-    return td.analysisError ?? 'Rhythm analysis status';
-  });
-
-  const arrVisible = $derived(td.analysisStatus === 'ready');
-
-  const arrLabel = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return 'ARR·…';
-      case 'ready':
-        return 'ARR·OK';
-      case 'error':
-        return 'ARR·ERR';
-      default:
-        return 'ARR·TPL';
-    }
-  });
-
-  const arrColor = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return '#38bdf8';
-      case 'ready':
-        return '#4ade80';
-      case 'error':
-        return '#ef4444';
-      default:
-        return '#6b7280';
-    }
-  });
-
-  const arrTitle = $derived.by(() => {
-    switch ($arrangementStructureStatus) {
-      case 'loading':
-        return 'Detecting song sections for the arrangement strip (second Essentia pass)';
-      case 'ready':
-        return 'Arrangement sections seeded from Essentia structure analysis';
-      case 'error':
-        return 'Section detection failed — arrangement keeps the default template strips';
-      default:
-        return 'Default arrangement template — waiting for or skipped section detection';
-    }
-  });
+  const arrangementBadge = $derived(
+    arrangementStatusBadge({
+      analysisStatus: td.analysisStatus,
+      structureStatus: $arrangementStructureStatus,
+      usingUploadedTrack: td.usingUploadedTrack,
+    }),
+  );
 
   function snapTempo(value: number) {
     const clamped = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, value));
@@ -392,17 +333,25 @@
       </div>
     </div>
 
-    <div class="rhy-badge" title={rhyTitle} style="border-color:{rhyColor}33;color:{rhyColor}">
+    <div
+      class="rhy-badge"
+      data-tone={rhythmBadge.tone}
+      title={rhythmBadge.title}
+      style="border-color:{rhythmBadge.color}33;color:{rhythmBadge.color}"
+    >
       <Disc3 size={10} />
-      {rhyLabel}
+      {rhythmBadge.label}
     </div>
 
-    {#if arrVisible}
-      <div class="rhy-badge" title={arrTitle} style="border-color:{arrColor}33;color:{arrColor}">
-        <ListMusic size={10} />
-        {arrLabel}
-      </div>
-    {/if}
+    <div
+      class="rhy-badge"
+      data-tone={arrangementBadge.tone}
+      title={arrangementBadge.title}
+      style="border-color:{arrangementBadge.color}33;color:{arrangementBadge.color}"
+    >
+      <ListMusic size={10} />
+      {arrangementBadge.label}
+    </div>
 
     <button type="button" onclick={handleTap} class="tap-btn" data-flash={tapFlash}>TAP</button>
 
@@ -1203,6 +1152,11 @@
     min-width: 62px;
     box-sizing: border-box;
     justify-content: center;
+  }
+
+  .rhy-badge[data-tone='idle'],
+  .rhy-badge[data-tone='muted'] {
+    opacity: 0.58;
   }
 
   .tap-btn {
