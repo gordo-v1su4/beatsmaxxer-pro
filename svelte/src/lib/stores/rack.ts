@@ -70,6 +70,14 @@ export function currentRackSlotForModule(
   return bottomIndex >= 0 ? rackSlotId('bottom', bottomIndex) : null;
 }
 
+/** Rack slot id → arrangement lane index 0–9 (top row then bottom row). */
+export function rackSlotIndex(slotId: string): number | null {
+  const match = /^(top|bottom)-([0-4])$/.exec(slotId);
+  if (!match) return null;
+  const index = Number(match[2]);
+  return match[1] === 'top' ? index : index + MAX_RACK_SLOTS_PER_ROW;
+}
+
 /** Effect module currently rendered by a stable media/decode slot. */
 export function currentRackModuleForSlot(
   slotId: string,

@@ -2,6 +2,10 @@
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { sequencerArmed } from '$lib/stores/sequencer';
+  import {
+    beginArrangementRecording,
+    endArrangementRecording,
+  } from '$lib/arrangement/recorder';
   import { viewMode } from '$lib/stores/rackUi';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
@@ -51,6 +55,9 @@
     arrangementLoopRegion,
     arrangementStructureStatus,
     arrangementTotalSteps,
+    arrangementClips,
+    arrangementRecording,
+    arrangementTriggers,
     autoBank,
     barInSection,
     clearCutsBetween,
@@ -405,6 +412,49 @@
     return lanes;
   });
 
+  const playheadSeconds = $derived($transportDisplay.time);
+
+  /** PGM occupancy clips — open ends extend to the playhead while REC is on. */
+  const clipsBySlot = $derived.by(() => {
+    const lanes: Array<Array<{ id: string; start: number; end: number }>> = Array.from(
+      { length: slotCount },
+      () => [],
+    );
+    for (const clip of $arrangementClips) {
+      if (clip.slotIndex < 0 || clip.slotIndex >= slotCount) continue;
+      const end =
+        clip.endSeconds ??
+        ($arrangementRecording ? playheadSeconds : clip.startSeconds);
+      lanes[clip.slotIndex].push({
+        id: clip.id,
+        start: clip.startSeconds,
+        end: Math.max(clip.startSeconds, end),
+      });
+    }
+    return lanes;
+  });
+
+  const triggersBySlot = $derived.by(() => {
+    const lanes: Array<Array<{ id: string; seconds: number }>> = Array.from(
+      { length: slotCount },
+      () => [],
+    );
+    for (const mark of $arrangementTriggers) {
+      if (mark.slotIndex < 0 || mark.slotIndex >= slotCount) continue;
+      lanes[mark.slotIndex].push({ id: mark.id, seconds: mark.seconds });
+    }
+    return lanes;
+  });
+
+  const showRecordedLanes = $derived(
+    $arrangementRecording || $arrangementClips.length > 0 || $arrangementTriggers.length > 0,
+  );
+
+  function toggleArrangementRecording() {
+    if ($arrangementRecording) endArrangementRecording(playheadSeconds);
+    else beginArrangementRecording(playheadSeconds);
+  }
+
   /** Section spans on the full song timeline — wall-clock seconds from file start. */
   const sectionBands = $derived(
     sectionBounds.map((band) => ({
@@ -467,7 +517,7 @@
 <section class="arrange">
   <header class="arr-head">
     <span class="arr-title">ARRANGEMENT</span>
-    <span class="arr-sub">{totalBars} BARS · {$cuts.length} CUTS</span>
+    <span class="arr-sub">{totalBars} BARS · {$cuts.length} CUTS{#if showRecordedLanes} · {$arrangementClips.length} CLIPS{/if}</span>
     <button
       type="button"
       class="arr-btn"
@@ -510,6 +560,13 @@
       title="Toggle beat grid lines"
     >GRID</button>
 
+    <button
+      type="button"
+      class="arr-btn arr-btn-rec"
+      data-active={$arrangementRecording}
+      onclick={toggleArrangementRecording}
+      title="Record PGM lane occupancy and effect fires onto the timeline"
+    >{$arrangementRecording ? 'REC ●' : 'REC'}</button>
     <button
       type="button"
       class="arr-btn"
@@ -692,6 +749,20 @@
           {@render sectionOverlay()}
           {@render loopRegionOverlay()}
           {@render beatGridOverlay()}
+          {#if showRecordedLanes}
+            {#each clipsBySlot[slotIndex] ?? [] as clip (clip.id)}
+              <span
+                class="arr-clip"
+                style="left:{timePct(clip.start)}%;width:{Math.max(0.4, timePct(clip.end) - timePct(clip.start))}%;--clip-color:{info?.color ?? '#5f7378'}"
+              ></span>
+            {/each}
+            {#each triggersBySlot[slotIndex] ?? [] as mark (mark.id)}
+              <span
+                class="arr-trigger"
+                style="left:{timePct(mark.seconds)}%;--trigger-color:{info?.color ?? '#5f7378'}"
+              ></span>
+            {/each}
+          {/if}
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
               class="arr-cut"
@@ -902,6 +973,11 @@
     border-color: #35e08a55;
     background: #35e08a14;
     color: #4ade80;
+  }
+  .arr-btn-rec[data-active='true'] {
+    border-color: #ff4d6d88;
+    background: #ff4d6d18;
+    color: #ff8fa3;
   }
   .arr-btn-load {
     margin-left: auto;
@@ -1332,6 +1408,34 @@
 
   /* A cut is a mark at a moment, not a filled cell — sixteen bars of chorus can
      hold 256 of them and they must not merge into a bar. */
+  .arr-clip {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    border-radius: 2px;
+    z-index: 1;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--clip-color) 42%, transparent);
+    border: 1px solid color-mix(in srgb, var(--clip-color) 55%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    background-image: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, var(--clip-color) 18%, transparent) 0 4px,
+      transparent 4px 8px
+    );
+  }
+  .arr-trigger {
+    position: absolute;
+    top: 1px;
+    bottom: 1px;
+    width: 1px;
+    margin-left: -0.5px;
+    z-index: 3;
+    pointer-events: none;
+    background: var(--trigger-color);
+    opacity: 0.92;
+    box-shadow: 0 0 4px color-mix(in srgb, var(--trigger-color) 70%, transparent);
+  }
   .arr-cut {
     position: absolute;
     top: 2px;

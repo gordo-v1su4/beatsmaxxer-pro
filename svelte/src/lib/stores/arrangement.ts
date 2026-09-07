@@ -391,6 +391,26 @@ export interface ArrangementLoopRegion {
 
 export const arrangementLoopRegion = writable<ArrangementLoopRegion | null>(null);
 
+/** Shaded PGM occupancy region on an arrangement lane (Ableton-style clip paint). */
+export interface ArrangementClip {
+  id: string;
+  slotIndex: number;
+  startSeconds: number;
+  /** null while recording — UI extends to the playhead. */
+  endSeconds: number | null;
+}
+
+/** Vertical mark when an effect fires during recording. */
+export interface ArrangementTrigger {
+  id: string;
+  slotIndex: number;
+  seconds: number;
+}
+
+export const arrangementRecording = writable(false);
+export const arrangementClips = writable<ArrangementClip[]>([]);
+export const arrangementTriggers = writable<ArrangementTrigger[]>([]);
+
 /** The module a pattern step points at, resolved against the live rack. */
 export function moduleForStep(step: number): string | null {
   const section = get(activeSection);

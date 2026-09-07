@@ -68,6 +68,7 @@ import {
 } from '$lib/runtime/stutterTrigger';
 import { midiUiOpen } from '$lib/stores/rackUi';
 import { recordFrame, startRenderBudget, stopRenderBudget } from '$lib/runtime/renderBudget';
+import { tickArrangementRecorder } from '$lib/arrangement/recorder';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
 
 let running = false;
@@ -558,11 +559,13 @@ export function startAppLoop() {
       getVideoSourcePort().tick(false);
     }
     const layers = get(videoLayers);
+    const triggerAges: Record<string, number> = {};
     for (const id of moduleIds) {
       const triggerAge =
         id === 'tapdelay'
           ? tapdelay.age
           : mergeTriggerAge(midiAges[id], fireAges[id]);
+      triggerAges[id] = triggerAge;
       webGpuEngine.setModuleParams(id, {
         ...paramsForGpu(id, params[id] ?? {}),
         triggerAge
@@ -574,11 +577,14 @@ export function startAppLoop() {
         livePgm === 'tapdelay'
           ? tapdelay.age
           : mergeTriggerAge(midiAges[livePgm], fireAges[livePgm]);
+      triggerAges[livePgm] = triggerAge;
       webGpuEngine.setModuleParams(livePgm, {
         ...paramsForGpu(livePgm, params[livePgm] ?? {}),
         triggerAge
       });
     }
+
+    tickArrangementRecorder(frame, moduleIds, triggerAges);
 
     runSequencer(frame);
 
