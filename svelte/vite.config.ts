@@ -5,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
 import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
+import { accessGateConfigFromEnv } from '../api/gate/policy';
+import { mediaGatewayConfigFromEnv } from '../api/lib/mediaGateway';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -12,6 +14,11 @@ const repoRoot = path.resolve(__dirname, '..');
 export default defineConfig(({ mode, command }) => {
 	const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_PLATFORM);
 	const env = loadEnv(mode, repoRoot, '');
+	if (command === 'serve') {
+		for (const [key, value] of Object.entries(env)) {
+			if (value) process.env[key] = value;
+		}
+	}
 	const essentiaProxyConfig = analysisProxyConfigFromEnv(
 		env,
 		command === 'serve' ? 'development' : 'production'
@@ -34,7 +41,11 @@ export default defineConfig(({ mode, command }) => {
 			// Options live in svelte.config.js — passing any here makes SvelteKit
 			// ignore that file, which svelte-kit sync and svelte-check still read.
 			sveltekit(),
-			essentiaDevProxyPlugin(essentiaProxyConfig)
+			essentiaDevProxyPlugin(
+				essentiaProxyConfig,
+				accessGateConfigFromEnv(env),
+				mediaGatewayConfigFromEnv(env),
+			)
 		],
 		define: {
 			__APP_ESSENTIA_ANALYSIS_ENABLED__: JSON.stringify(essentiaEnabled),

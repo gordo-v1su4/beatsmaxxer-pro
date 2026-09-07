@@ -6,6 +6,14 @@ import {
   parseCookie,
   type AccessGateConfig,
 } from "../gate/policy.js";
+import { deleteGatewayObjects, mediaGatewayConfigFromEnv } from "../lib/mediaGateway.js";
+import {
+  buildStudioMultipartBody,
+  parseStudioChunkManifest,
+  reassembleStudioChunks,
+  STUDIO_MANIFEST_MAX_BYTES,
+  validateStudioChunkManifest,
+} from "../lib/studioChunkManifest.js";
 
 export const ANALYSIS_PROXY_ENABLE_ENV = "ESSENTIA_ANALYSIS_ENABLED";
 /** Full MP3 uploads (~7 MiB typical). Vercel may require Pro for bodies above ~4.5 MiB. */
@@ -60,6 +68,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   analysis_unavailable: "Hosted analysis is unavailable. Local playback and realtime analysis remain available.",
   cross_origin_forbidden: "Hosted analysis requests must come from this application.",
   invalid_content_type: "Analysis uploads must use multipart/form-data with a valid boundary.",
+  invalid_manifest: "Chunk manifest is invalid or does not match staged upload metadata.",
   upload_too_large: "Analysis upload exceeds the allowed request size.",
   analysis_busy: "Hosted analysis is busy. Try again later or use realtime analysis.",
   request_body_unavailable: "The analysis upload could not be read by the server. Realtime analysis remains available.",
@@ -111,6 +120,10 @@ export function isAnalysisUploadPathEnabled(config: Pick<AnalysisProxyConfig, "e
   } catch {
     return false;
   }
+}
+
+export function isJsonContentType(value: string | undefined): boolean {
+  return Boolean(value && /^application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)/i.test(value));
 }
 
 export function parseMultipartContentType(value: string | undefined): string | null {
@@ -286,6 +299,9 @@ async function proxyStudioJobSubmit(
   config: AnalysisProxyConfig,
   options: AnalysisProxyOptions,
 ): Promise<AnalysisProxyResponse | null> {
+  if (isJsonContentType(request.contentType)) {
+    return proxyStudioJobManifestSubmit(request, config, options);
+  }
   if (!parseMultipartContentType(request.contentType)) return jsonError(415, "invalid_content_type");
 
   const maxRequestBytes = options.maxRequestBytes ?? ANALYSIS_MAX_REQUEST_BYTES;
@@ -347,6 +363,110 @@ async function proxyStudioJobSubmit(
   }
 }
 
+async function proxyStudioJobManifestSubmit(
+  request: AnalysisProxyRequest,
+  config: AnalysisProxyConfig,
+  options: AnalysisProxyOptions,
+): Promise<AnalysisProxyResponse | null> {
+  const gateway = mediaGatewayConfigFromEnv(process.env);
+  const manifestError = validateStudioChunkManifestGateway(gateway);
+  if (manifestError) return manifestError;
+
+  const declaredLength = parseContentLength(request.contentLength);
+  if (declaredLength !== null && declaredLength > STUDIO_MANIFEST_MAX_BYTES) {
+    return jsonError(413, "upload_too_large");
+  }
+
+  const maxConcurrent = options.maxConcurrentRequests ?? ANALYSIS_MAX_CONCURRENT_REQUESTS;
+  if (activeRequests >= maxConcurrent) return jsonError(429, "analysis_busy");
+  activeRequests += 1;
+
+  const controller = new AbortController();
+  const abortFromClient = () => controller.abort("client_disconnected");
+  request.signal?.addEventListener("abort", abortFromClient, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort("upstream_timeout"),
+    options.timeoutMs ?? ANALYSIS_STUDIO_SUBMIT_TIMEOUT_MS,
+  );
+
+  try {
+    const body = await readBoundedBody(request.body, STUDIO_MANIFEST_MAX_BYTES, controller.signal);
+    if (controller.signal.aborted) return null;
+    if (body.byteLength === 0) return jsonError(500, "request_body_unavailable");
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(body));
+    } catch {
+      return jsonError(400, "invalid_manifest");
+    }
+
+    const manifest = parseStudioChunkManifest(parsed);
+    if (!manifest) return jsonError(400, "invalid_manifest");
+
+    const validationCode = validateStudioChunkManifest(
+      manifest,
+      gateway,
+      options.maxRequestBytes ?? ANALYSIS_MAX_REQUEST_BYTES,
+    );
+    if (validationCode) return jsonError(400, validationCode);
+
+    const mp3Bytes = await reassembleStudioChunks(manifest, gateway, options);
+    const multipart = buildStudioMultipartBody(manifest.filename, mp3Bytes);
+
+    const headers: Record<string, string> = {
+      "Content-Type": multipart.contentType,
+      "X-API-Key": config.apiKey,
+    };
+    if (request.idempotencyKey) headers["Idempotency-Key"] = request.idempotencyKey;
+
+    let upstream: Response;
+    try {
+      upstream = await (options.fetch ?? globalThis.fetch)(`${config.apiBaseUrl}/analyze/studio/jobs`, {
+        method: "POST",
+        headers,
+        body: multipart.body as BodyInit,
+        signal: controller.signal,
+      });
+    } catch {
+      if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+      if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+      return jsonError(502, "upstream_unavailable");
+    }
+
+    const result = await forwardJsonUpstream(upstream, controller, request, options);
+    if (result?.status && result.status >= 200 && result.status < 300) {
+      await deleteGatewayObjects(
+        gateway,
+        manifest.chunks.map((chunk) => chunk.object_key),
+        options,
+      ).catch(() => undefined);
+    }
+    return result;
+  } catch (error) {
+    if (error instanceof LimitExceededError) {
+      controller.abort("upload_too_large");
+      return jsonError(413, "upload_too_large");
+    }
+    if (request.signal?.aborted || controller.signal.reason === "client_disconnected") return null;
+    if (controller.signal.reason === "upstream_timeout") return jsonError(504, "upstream_timeout");
+    return jsonError(400, "invalid_manifest", "Chunk manifest could not be processed.");
+  } finally {
+    clearTimeout(timeout);
+    request.signal?.removeEventListener("abort", abortFromClient);
+    activeRequests -= 1;
+  }
+}
+
+function validateStudioChunkManifestGateway(
+  gateway: ReturnType<typeof mediaGatewayConfigFromEnv>,
+): AnalysisProxyResponse | null {
+  if (!gateway.url || !gateway.token || !gateway.bucket || !gateway.userId || !gateway.uploadPrefix) {
+    return jsonError(503, "analysis_unavailable", "Chunk staging is not configured for hosted analysis.");
+  }
+  return null;
+}
+
 async function proxyStudioJobPoll(
   jobId: string,
   request: AnalysisProxyRequest,
@@ -395,7 +515,7 @@ async function forwardJsonUpstream(
     await upstream.body?.cancel().catch(() => undefined);
     return mapUpstreamFailure(upstream.status);
   }
-  if (!isJsonContentType(upstream.headers.get("content-type"))) {
+  if (!isJsonContentType(upstream.headers.get("content-type") ?? undefined)) {
     await upstream.body?.cancel().catch(() => undefined);
     return jsonError(502, "upstream_unavailable");
   }
@@ -480,10 +600,6 @@ function parseContentLength(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value.trim())) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function isJsonContentType(value: string | null) {
-  return Boolean(value && /^application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)/i.test(value));
 }
 
 function mapUpstreamFailure(status: number) {

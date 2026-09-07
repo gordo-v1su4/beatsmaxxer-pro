@@ -6,6 +6,8 @@ import {
 } from '../../api/analyze/policy';
 import { handleAccessGate } from '../../api/gate/handler';
 import { accessGateConfigFromEnv, type AccessGateConfig } from '../../api/gate/policy';
+import { handleStorageUpload } from '../../api/storage/handler';
+import { mediaGatewayConfigFromEnv, type MediaGatewayConfig } from '../../api/lib/mediaGateway';
 
 async function readJsonBody(req: NodeJS.ReadableStream): Promise<unknown> {
 	const chunks: Buffer[] = [];
@@ -20,7 +22,8 @@ async function readJsonBody(req: NodeJS.ReadableStream): Promise<unknown> {
 
 export function essentiaDevProxyPlugin(
 	config: AnalysisProxyConfig,
-	gate: AccessGateConfig = accessGateConfigFromEnv(process.env)
+	gate: AccessGateConfig = accessGateConfigFromEnv(process.env),
+	mediaGateway: MediaGatewayConfig = mediaGatewayConfigFromEnv(process.env),
 ): Plugin {
 	return {
 		name: 'essentia-dev-proxy',
@@ -44,6 +47,10 @@ export function essentiaDevProxyPlugin(
 				res.setHeader('Cache-Control', 'no-store');
 				if (result.setCookie) res.setHeader('Set-Cookie', result.setCookie);
 				res.end(result.body);
+			});
+
+			server.middlewares.use('/__api/storage/upload', async (req, res) => {
+				await handleStorageUpload(req, res, mediaGateway);
 			});
 
 			server.middlewares.use('/__api/analyze', async (req, res) => {

@@ -237,6 +237,60 @@ describe("analysis proxy policy", () => {
     );
   });
 
+  it("reassembles staged chunks from a JSON manifest before submitting to Studio", async () => {
+    const uploadId = "33333333-3333-4333-8333-333333333333";
+    const prefix = `media-uploads/source-audio/chunks/${uploadId}`;
+    const manifest = {
+      schema_version: "studio-chunk-manifest-v1",
+      upload_id: uploadId,
+      filename: "track.mp3",
+      content_type: "audio/mpeg",
+      total_bytes: 4,
+      chunks: [
+        { index: 0, object_key: `${prefix}/00000.part`, size: 2 },
+        { index: 1, object_key: `${prefix}/00001.part`, size: 2 },
+      ],
+    };
+    vi.stubEnv("MEDIA_GATEWAY_URL", "https://media.invalid");
+    vi.stubEnv("MEDIA_GATEWAY_TOKEN", "gateway-secret");
+    vi.stubEnv("MEDIA_GATEWAY_BUCKET", "beatsmaxxer-pro");
+    vi.stubEnv("MEDIA_GATEWAY_USER_ID", "beatsmaxxer-pro");
+    vi.stubEnv("MEDIA_GATEWAY_UPLOAD_PREFIX", "media-uploads");
+
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.startsWith("https://s3.v1su4.dev/")) {
+        if (url.endsWith("00000.part")) return new Response(new Uint8Array([1, 2]));
+        if (url.endsWith("00001.part")) return new Response(new Uint8Array([3, 4]));
+      }
+      if (url === "https://media.invalid/delete") {
+        return new Response(JSON.stringify({ deleted: 2, failed: 0, results: [] }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      expect(url).toBe("https://analysis.invalid/analyze/studio/jobs");
+      expect(new Headers(init?.headers).get("X-API-Key")).toBe("server-secret");
+      expect(new Headers(init?.headers).get("Content-Type")).toContain("multipart/form-data");
+      return new Response('{"id":"job-2","status":"queued","stage":"queued"}', {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    const result = await proxyAnalysisRequest(
+      {
+        method: "POST",
+        endpoint: "studio/jobs",
+        contentType: "application/json",
+        body: stream(new TextEncoder().encode(JSON.stringify(manifest))),
+      },
+      enabledConfig,
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(202);
+    expect(fetch).toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it("proxies Studio job polling with GET", async () => {
     const fetch = vi.fn(async () => new Response('{"id":"job-1","status":"running","stage":"structure"}', {
       headers: { "Content-Type": "application/json" },

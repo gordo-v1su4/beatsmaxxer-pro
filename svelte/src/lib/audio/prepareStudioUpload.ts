@@ -1,5 +1,7 @@
 /** Matches api/analyze/policy.ts ANALYSIS_MAX_REQUEST_BYTES. */
 export const STUDIO_UPLOAD_MAX_BYTES = 12_000_000;
+/** Safe under Vercel Hobby incoming body limit; larger files use chunked staging. */
+export const STUDIO_DIRECT_UPLOAD_MAX_BYTES = 4_000_000;
 
 export function isStudioMp3File(file: File): boolean {
   const name = file.name.trim().toLowerCase();

@@ -6,6 +6,10 @@ import {
 import type { EssentiaRhythmAnalysis } from "$lib/audio/essentia";
 import { prepareStudioUpload } from "$lib/audio/prepareStudioUpload";
 import {
+  shouldUseChunkedStudioUpload,
+  uploadStudioChunks,
+} from "$lib/audio/chunkedStudioUpload";
+import {
   normalizeStructureAnalysis,
   type EssentiaStructureAnalysis,
 } from "$lib/audio/structureNormalize";
@@ -95,16 +99,38 @@ function jobErrorMessage(payload: unknown, status: number): string {
 export async function fetchEssentiaStudioAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
   const uploadFile = prepareStudioUpload(file);
   const idempotencyKey = crypto.randomUUID();
-  const formData = new FormData();
-  formData.set("file", uploadFile, uploadFile.name);
 
-  const submitResponse = await fetch(studioJobsUrl().toString(), {
-    method: "POST",
-    headers: { "Idempotency-Key": idempotencyKey },
-    body: formData,
-    cache: "no-store",
-    signal: AbortSignal.timeout(STUDIO_SUBMIT_TIMEOUT_MS),
-  });
+  let submitResponse: Response;
+  if (shouldUseChunkedStudioUpload(uploadFile.size)) {
+    const manifest = await uploadStudioChunks(uploadFile, {
+      onProgress: (uploaded, total) => {
+        if (import.meta.env.DEV) {
+          console.info(`[Studio] uploaded chunk ${uploaded}/${total}`);
+        }
+      },
+    });
+    submitResponse = await fetch(studioJobsUrl().toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(manifest),
+      cache: "no-store",
+      signal: AbortSignal.timeout(STUDIO_SUBMIT_TIMEOUT_MS),
+    });
+  } else {
+    const formData = new FormData();
+    formData.set("file", uploadFile, uploadFile.name);
+    submitResponse = await fetch(studioJobsUrl().toString(), {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: formData,
+      cache: "no-store",
+      signal: AbortSignal.timeout(STUDIO_SUBMIT_TIMEOUT_MS),
+    });
+  }
+
   const submitPayload = await readJson(submitResponse);
   if (!submitResponse.ok) {
     throw new Error(jobErrorMessage(submitPayload, submitResponse.status));

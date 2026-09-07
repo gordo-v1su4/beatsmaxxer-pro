@@ -23,7 +23,8 @@ ESSENTIA_API_KEY=server-only-secret
 
 The browser calls same-origin Studio routes:
 
-- `POST /__api/analyze/studio/jobs` — submit full **MP3** (no re-encode)
+- `POST /__api/analyze/studio/jobs` — submit full **MP3** (no re-encode) or a JSON chunk manifest
+- `POST /__api/storage/upload` — stage 3 MiB MP3 chunks in RustFS before manifest submit
 - `GET /__api/analyze/studio/jobs/{id}` — poll until `completed`
 
 The Vite dev proxy or Vercel function injects `X-API-Key`; the key is never compiled into the browser bundle.
@@ -32,7 +33,21 @@ The Vite dev proxy or Vercel function injects `X-API-Key`; the key is never comp
 
 ### Upload size
 
-Full MP3 uploads are allowed up to **12 MiB** through the proxy. Typical masters (~7 MiB) fit. Vercel may require a plan that allows request bodies above the default ~4.5 MiB limit.
+Direct multipart uploads are limited to **4 MiB** so they stay under Vercel Hobby incoming body limits. Larger MP3s use **3 MiB chunks** staged in RustFS (`beatsmaxxer-pro` bucket) via `POST /__api/storage/upload`, then a small JSON manifest through `POST /__api/analyze/studio/jobs`. The function reassembles the full MP3 server-side and forwards it to Essentia Studio — no downsampling.
+
+Total hosted analysis size remains capped at **12 MiB**. Typical masters (~7 MiB) use the chunked path on production.
+
+Server-only RustFS gateway variables (required for chunked uploads):
+
+```bash
+MEDIA_GATEWAY_URL=https://media.v1su4.dev
+MEDIA_GATEWAY_TOKEN=<from BWS homelab-rustfs>
+MEDIA_GATEWAY_BUCKET=beatsmaxxer-pro
+MEDIA_GATEWAY_USER_ID=beatsmaxxer-pro
+MEDIA_GATEWAY_UPLOAD_PREFIX=media-uploads
+```
+
+Chunk object keys: `media-uploads/source-audio/chunks/<upload-id>/NNNNN.part`
 
 ### Timeout ladder
 
