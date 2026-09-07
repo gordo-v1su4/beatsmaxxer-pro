@@ -29,6 +29,7 @@ export async function handleAnalysisProxy(
         host: firstHeader(req.headers.host) ?? firstHeader(req.headers["x-forwarded-host"]),
         forwardedProto: firstHeader(req.headers["x-forwarded-proto"]),
         fetchSite: firstHeader(req.headers["sec-fetch-site"]),
+        referer: firstHeader(req.headers.referer),
         cookieHeader: firstHeader(req.headers.cookie),
         body: req,
         signal: clientAbort.signal,

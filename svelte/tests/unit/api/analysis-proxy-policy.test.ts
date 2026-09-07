@@ -172,10 +172,21 @@ describe("analysis proxy policy", () => {
       forwardedProto: "https",
       fetchSite: "same-origin",
     })).toBe(true);
+    expect(isTrustedSameOriginRequest({
+      host: "app.example",
+      forwardedProto: "https",
+      fetchSite: "same-origin",
+    })).toBe(true);
+    expect(isTrustedSameOriginRequest({
+      host: "app.example",
+      forwardedProto: "https",
+      referer: "https://app.example/",
+    })).toBe(true);
     expect(isTrustedSameOriginRequest({ origin: "https://evil.example", host: "app.example" })).toBe(false);
     expect(isTrustedSameOriginRequest({ origin: "http://app.example", host: "app.example", forwardedProto: "https" })).toBe(false);
     expect(isTrustedSameOriginRequest({ origin: "https://app.example", host: "app.example", fetchSite: "cross-site" })).toBe(false);
     expect(isTrustedSameOriginRequest({ origin: "not a URL", host: "app.example" })).toBe(false);
+    expect(isTrustedSameOriginRequest({ host: "app.example" })).toBe(false);
   });
 
   it("fails closed before fetch when disabled or missing server configuration", async () => {
@@ -309,6 +320,26 @@ describe("analysis proxy policy", () => {
       "https://analysis.invalid/analyze/studio/jobs/job-1",
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("accepts production studio polls when Origin is omitted but Sec-Fetch-Site is same-origin", async () => {
+    const fetch = vi.fn(async () => new Response('{"id":"job-1","status":"completed","stage":"done"}', {
+      headers: { "Content-Type": "application/json" },
+    }));
+    const result = await proxyAnalysisRequest(
+      {
+        method: "GET",
+        endpoint: "studio/jobs/job-1",
+        host: "www.beatsmaxxing.com",
+        forwardedProto: "https",
+        fetchSite: "same-origin",
+        body: stream(),
+      },
+      { ...enabledConfig, deploymentMode: "production" },
+      { fetch: fetch as typeof globalThis.fetch },
+    );
+    expect(result?.status).toBe(200);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("accepts at the total request limit and forwards bytes and credential exactly once", async () => {

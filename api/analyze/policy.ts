@@ -43,6 +43,7 @@ export interface AnalysisProxyRequest {
   host?: string;
   forwardedProto?: string;
   fetchSite?: string;
+  referer?: string;
   cookieHeader?: string;
   body: AsyncIterable<Uint8Array>;
   signal?: AbortSignal;
@@ -137,30 +138,61 @@ export function parseMultipartContentType(value: string | undefined): string | n
     : null;
 }
 
+function requestHost(host: string | undefined): string | null {
+  const value = host?.split(",")[0]?.trim().toLowerCase();
+  return value || null;
+}
+
+function requestProtocol(forwardedProto: string | undefined, fallback?: string): string | null {
+  const forwarded = forwardedProto?.split(",")[0]?.trim().toLowerCase();
+  if (forwarded) return `${forwarded}:`;
+  return fallback ?? null;
+}
+
+function urlMatchesTrustedHost(url: URL, host: string, protocol: string | null): boolean {
+  return (
+    url.host.toLowerCase() === host &&
+    (!protocol || url.protocol === protocol) &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash
+  );
+}
+
 export function isTrustedSameOriginRequest(request: Pick<
   AnalysisProxyRequest,
-  "origin" | "host" | "forwardedProto" | "fetchSite"
+  "origin" | "host" | "forwardedProto" | "fetchSite" | "referer"
 >) {
-  if (!request.origin || !request.host) return false;
-  if (request.fetchSite && request.fetchSite !== "same-origin") return false;
+  const host = requestHost(request.host);
+  if (!host) return false;
+  if (request.fetchSite === "cross-site") return false;
 
-  try {
-    const origin = new URL(request.origin);
-    const forwardedProto = request.forwardedProto?.split(",")[0]?.trim().toLowerCase();
-    const expectedProtocol = forwardedProto ? `${forwardedProto}:` : origin.protocol;
-    const host = request.host.split(",")[0]?.trim().toLowerCase();
-    return (
-      Boolean(host) &&
-      origin.protocol === expectedProtocol &&
-      origin.host.toLowerCase() === host &&
-      !origin.username &&
-      !origin.password &&
-      !origin.search &&
-      !origin.hash
-    );
-  } catch {
-    return false;
+  const protocol = requestProtocol(request.forwardedProto);
+
+  // Same-origin GET polls (studio job status) often omit Origin; browsers still
+  // send Sec-Fetch-Site: same-origin.
+  if (request.fetchSite === "same-origin") return true;
+
+  if (request.origin) {
+    try {
+      const origin = new URL(request.origin);
+      return urlMatchesTrustedHost(origin, host, protocol ?? origin.protocol);
+    } catch {
+      return false;
+    }
   }
+
+  if (request.referer) {
+    try {
+      const referer = new URL(request.referer);
+      return urlMatchesTrustedHost(referer, host, protocol ?? referer.protocol);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function isRequestUnlocked(request: AnalysisProxyRequest, gate: AccessGateConfig) {

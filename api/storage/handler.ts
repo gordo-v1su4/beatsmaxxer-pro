@@ -27,6 +27,7 @@ export async function handleStorageUpload(
         host: firstHeader(req.headers.host) ?? firstHeader(req.headers["x-forwarded-host"]),
         forwardedProto: firstHeader(req.headers["x-forwarded-proto"]),
         fetchSite: firstHeader(req.headers["sec-fetch-site"]),
+        referer: firstHeader(req.headers.referer),
         cookieHeader: firstHeader(req.headers.cookie),
         uploadId: requestUrl.searchParams.get("uploadId") ?? undefined,
         chunkIndex: requestUrl.searchParams.get("chunkIndex") ?? undefined,
