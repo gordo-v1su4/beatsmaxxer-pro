@@ -71,7 +71,7 @@ Legacy `POST /__api/analyze/rhythm` remains for desktop/Tauri; the web app uses 
 
 The build gate (`isAnalysisUploadPathEnabled`) deliberately ignores the key. The key is a runtime-only secret and a deployment may legitimately withhold it from the build step; when the build demanded it, the production bundle compiled the upload path off and `ANALYZE` failed with no diagnostic. The function still applies the full `isAnalysisProxyConfigured` check and answers `503 analysis_unavailable` when the credential is genuinely missing, so a misconfiguration is visible instead of silent.
 
-On Vercel, set all three in **Project → Settings → Environment Variables** for the Production environment. `ESSENTIA_ANALYSIS_ENABLED` and `ESSENTIA_API_BASE_URL` must be readable by the build; changing either requires a redeploy, because they are compiled into the bundle.
+On Vercel, set all three in **Project → Settings → Environment Variables** for the Production environment. `ESSENTIA_ANALYSIS_ENABLED` and `ESSENTIA_API_BASE_URL` must be readable by the build, because they are compiled into the bundle (`__APP_ESSENTIA_ANALYSIS_ENABLED__`). `svelte/vite.config.ts` merges `process.env` with `.env` files so Vercel-injected values are not missed. Changing either build variable requires a redeploy.
 
 ### Timeout ladder (legacy rhythm desktop path)
 

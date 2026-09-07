@@ -13,7 +13,10 @@ const repoRoot = path.resolve(__dirname, '..');
 
 export default defineConfig(({ mode, command }) => {
 	const isTauriBuild = Boolean(process.env.TAURI_ENV_PLATFORM || process.env.TAURI_PLATFORM);
-	const env = loadEnv(mode, repoRoot, '');
+	// Vercel/CI inject ESSENTIA_* into process.env at build time; loadEnv only reads
+	// .env files. Merge so __APP_ESSENTIA_ANALYSIS_ENABLED__ matches production settings.
+	const fileEnv = loadEnv(mode, repoRoot, '');
+	const env: Record<string, string | undefined> = { ...fileEnv, ...process.env };
 	if (command === 'serve') {
 		for (const [key, value] of Object.entries(env)) {
 			if (value) process.env[key] = value;
