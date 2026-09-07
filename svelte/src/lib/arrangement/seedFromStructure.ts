@@ -1,5 +1,11 @@
 import type { ArrangementSection } from '$lib/stores/arrangement';
 import { DEFAULT_ARRANGEMENT } from '$lib/stores/arrangement';
+import {
+  formatSectionName,
+  hueForSectionKind,
+  inferSectionKind,
+  renumberSectionLabels,
+} from '$lib/arrangement/sectionKinds';
 
 export interface EssentiaStructureSection {
   start: number;
@@ -14,24 +20,18 @@ const BEATS_PER_BAR = 4;
 const LABEL_TEMPLATE: Record<string, string> = {
   intro: 'intro',
   verse: 'verse1',
+  'pre-chorus': 'verse1',
+  prechorus: 'verse1',
   chorus: 'chorus1',
+  hook: 'chorus1',
   bridge: 'bridge',
   outro: 'outro',
   solo: 'bridge',
   inst: 'bridge',
   break: 'bridge',
+  breakdown: 'bridge',
   section: 'verse1',
   full: 'verse1',
-};
-
-const LABEL_HUE: Record<string, string> = {
-  intro: '#4fd6e8',
-  verse: '#35e08a',
-  chorus: '#ff6bb0',
-  bridge: '#ffb454',
-  outro: '#9d7bff',
-  section: '#35e08a',
-  full: '#35e08a',
 };
 
 function medianBeatInterval(beats: readonly number[]): number | null {
@@ -127,17 +127,11 @@ export function alignStructureSectionsToBarGrid(
   });
 }
 
-function templateForLabel(
-  label: string,
-  labelCounts: Map<string, number>,
-): ArrangementSection {
+function templateForLabel(label: string): ArrangementSection {
   const key = label.trim().toLowerCase();
   const templateId = LABEL_TEMPLATE[key] ?? 'verse1';
   const template =
     DEFAULT_ARRANGEMENT.find((section) => section.id === templateId) ?? DEFAULT_ARRANGEMENT[1]!;
-
-  const count = (labelCounts.get(key) ?? 0) + 1;
-  labelCounts.set(key, count);
 
   return {
     ...template,
@@ -146,15 +140,7 @@ function templateForLabel(
       bottom: [...template.bank.bottom],
     },
     pattern: Array.from({ length: template.pattern.length }, () => null),
-    hue: LABEL_HUE[key] ?? template.hue,
   };
-}
-
-function formatSectionName(label: string, index: number): string {
-  const base = label.trim().toUpperCase();
-  if (base === 'SECTION' || base === 'FULL') return `SECTION ${index}`;
-  if (base === 'VERSE' || base === 'CHORUS') return `${base} ${index}`;
-  return base;
 }
 
 /**
@@ -169,21 +155,23 @@ export function arrangementFromStructureSections(
   if (sections.length === 0) return [];
 
   const aligned = alignStructureSectionsToBarGrid(sections, beats);
-  const labelSeen = new Map<string, number>();
-  return aligned.map((section, index) => {
-    const key = section.label.trim().toLowerCase();
-    const template = templateForLabel(section.label, labelSeen);
-    const labelIndex = labelSeen.get(key) ?? 1;
+  const seeded = aligned.map((section, index) => {
+    const kind = inferSectionKind(section.label);
+    const template = templateForLabel(section.label);
     const bars = sectionSpanToBars(section.start, section.end, beats, bpm);
-    const slug = key.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
+    const slug = kind.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
 
     return {
       ...template,
       id: `${slug}-${index}`,
-      name: formatSectionName(section.label, labelIndex),
+      kind,
+      name: formatSectionName(kind, 1),
+      hue: hueForSectionKind(kind),
       bars,
       timeStartS: section.start,
       timeEndS: section.end,
     };
   });
+
+  return renumberSectionLabels(seeded);
 }

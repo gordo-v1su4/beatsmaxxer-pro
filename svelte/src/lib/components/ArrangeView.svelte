@@ -44,8 +44,15 @@
     moduleForSlotIndex,
     sectionStarts,
     selectSection,
-    toggleCut
+    toggleCut,
+    updateSectionHue,
+    updateSectionKind,
   } from '$lib/stores/arrangement';
+  import {
+    SECTION_KIND_OPTIONS,
+    sectionKindOf,
+    type SectionKind,
+  } from '$lib/arrangement/sectionKinds';
 
   let midiInput = $state<HTMLInputElement>();
   /** Which slot a click on empty track paints. */
@@ -367,6 +374,7 @@
               ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
               : ''}"
             onclick={(event) => {
+              if ((event.target as HTMLElement).closest('.arr-section-edit')) return;
               event.stopPropagation();
               selectSection(i);
               audioEngine.seek(
@@ -379,9 +387,41 @@
             }}
             title="{section.name} — {section.bars} bars, from bar {band.startBar}"
           >
-            <span class="arr-section-tick" style="background:{section.hue}"></span>
-            <span class="arr-section-name" style="color:{on ? section.hue : '#7d9196'}">
-              {section.name}
+            <label
+              class="arr-section-edit arr-section-color-wrap"
+              title="Section color"
+              onclick={(event) => event.stopPropagation()}
+            >
+              <span class="arr-section-tick" style="background:{section.hue}"></span>
+              <input
+                type="color"
+                class="arr-section-color"
+                value={section.hue}
+                aria-label="{section.name} color"
+                oninput={(event) => {
+                  event.stopPropagation();
+                  updateSectionHue(i, event.currentTarget.value);
+                }}
+              />
+            </label>
+            <span
+              class="arr-section-edit arr-section-kind"
+              onclick={(event) => event.stopPropagation()}
+            >
+              <select
+                class="arr-section-select"
+                value={sectionKindOf(section)}
+                aria-label="{section.name} part type"
+                onchange={(event) => {
+                  event.stopPropagation();
+                  updateSectionKind(i, event.currentTarget.value as SectionKind);
+                }}
+                onclick={(event) => event.stopPropagation()}
+              >
+                {#each SECTION_KIND_OPTIONS as option (option.value)}
+                  <option value={option.value}>{option.label}</option>
+                {/each}
+              </select>
             </span>
             <span class="arr-section-bars">{section.bars}b</span>
           </button>
@@ -671,7 +711,7 @@
     flex-shrink: 0;
   }
   .arr-row-sections {
-    height: 24px;
+    height: 30px;
     margin-bottom: 3px;
   }
   /* Follows .arr-bar's line-height — an 11px row clipped the taller numbers. */
@@ -763,7 +803,7 @@
 
   .arr-sections {
     position: relative;
-    min-height: 24px;
+    min-height: 30px;
   }
   .arr-section-loading {
     position: absolute;
@@ -783,15 +823,18 @@
     position: relative;
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     min-width: 0;
-    padding: 0 6px;
+    padding: 0 5px;
     border: 1px solid #1a1c1e;
     border-radius: 2px;
     background: #0f1113;
     text-align: left;
     box-sizing: border-box;
     overflow: hidden;
+  }
+  .arr-section[data-active='true'] {
+    border-color: color-mix(in srgb, var(--sec-hue, #14b8a6) 45%, #1a1c1e);
   }
   .arr-section-abs {
     position: absolute;
@@ -803,22 +846,57 @@
     background: #16181b;
   }
   .arr-section-tick {
-    width: 2px;
-    height: 11px;
+    width: 8px;
+    height: 8px;
     flex-shrink: 0;
     border-radius: 1px;
+    pointer-events: none;
   }
-  .arr-section-name {
+  .arr-section-color-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    margin: 0;
+    cursor: pointer;
+  }
+  .arr-section-color {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    border: 0;
+    padding: 0;
+  }
+  .arr-section-kind {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+  .arr-section-select {
+    width: 100%;
+    min-width: 0;
+    padding: 1px 2px;
+    border: 1px solid #23282d;
+    border-radius: 2px;
+    background: #0a0c0d;
+    color: #b8c7cc;
     font-family: var(--font-ui);
-    font-size: 8px;
+    font-size: 7px;
     font-weight: 500;
-    letter-spacing: 0.1em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .arr-section-select:hover,
+  .arr-section-select:focus-visible {
+    border-color: #14b8a6;
+    outline: none;
   }
   .arr-section-bars {
-    margin-left: auto;
+    flex-shrink: 0;
     font-family: var(--font-ui);
     font-size: 6.5px;
     color: #55696e;

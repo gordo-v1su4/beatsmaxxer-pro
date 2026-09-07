@@ -3,6 +3,12 @@ import {
   arrangementFromStructureSections,
   type EssentiaStructureSection,
 } from '$lib/arrangement/seedFromStructure';
+import {
+  hueForSectionKind,
+  inferSectionKind,
+  renumberSectionLabels,
+  type SectionKind,
+} from '$lib/arrangement/sectionKinds';
 import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop } from '$lib/stores/rack';
 
 export type ArrangementStructureStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -21,6 +27,8 @@ export const arrangementStructureStatus = writable<ArrangementStructureStatus>('
 export interface ArrangementSection {
   id: string;
   name: string;
+  /** Operator-facing part type (verse, hook, outro, …). Drives default hue + label. */
+  kind?: SectionKind;
   /** Length in bars. Drives both the arrangement strip's width and the advance. */
   bars: number;
   /** Section accent, used for the strip and the active-section readouts. */
@@ -62,6 +70,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'intro',
     name: 'INTRO',
+    kind: 'intro',
     bars: 8,
     hue: '#4fd6e8',
     bank: {
@@ -73,6 +82,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'verse1',
     name: 'VERSE 1',
+    kind: 'verse',
     bars: 16,
     hue: '#35e08a',
     bank: {
@@ -84,6 +94,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'chorus1',
     name: 'CHORUS 1',
+    kind: 'chorus',
     bars: 16,
     hue: '#ff6bb0',
     bank: {
@@ -95,6 +106,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'verse2',
     name: 'VERSE 2',
+    kind: 'verse',
     bars: 16,
     hue: '#35e08a',
     bank: {
@@ -106,6 +118,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'bridge',
     name: 'BRIDGE',
+    kind: 'bridge',
     bars: 8,
     hue: '#ffb454',
     bank: {
@@ -117,6 +130,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'chorus2',
     name: 'CHORUS 2',
+    kind: 'chorus',
     bars: 16,
     hue: '#ff6bb0',
     bank: {
@@ -128,6 +142,7 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
   {
     id: 'outro',
     name: 'OUTRO',
+    kind: 'outro',
     bars: 8,
     hue: '#9d7bff',
     bank: {
@@ -338,6 +353,26 @@ export function clearActiveSectionPattern() {
         ? { ...section, pattern: Array.from({ length: ARRANGEMENT_STEPS }, () => null) }
         : section
     )
+  );
+}
+
+/** Change a strip's part type; re-labels the whole song so ordinals stay in order. */
+export function updateSectionKind(index: number, kind: SectionKind) {
+  arrangement.update((sections) => {
+    if (index < 0 || index >= sections.length) return sections;
+    const next = sections.map((section, i) =>
+      i === index
+        ? { ...section, kind, hue: hueForSectionKind(kind) }
+        : section,
+    );
+    return renumberSectionLabels(next);
+  });
+}
+
+/** Override strip accent without changing the detected part type. */
+export function updateSectionHue(index: number, hue: string) {
+  arrangement.update((sections) =>
+    sections.map((section, i) => (i === index ? { ...section, hue } : section)),
   );
 }
 
