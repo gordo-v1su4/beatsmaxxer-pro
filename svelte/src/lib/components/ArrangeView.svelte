@@ -71,6 +71,7 @@
   } from '$lib/stores/arrangement';
   import {
     SECTION_KIND_OPTIONS,
+    SECTION_KIND_HUE,
     sectionKindOf,
     type SectionKind,
   } from '$lib/arrangement/sectionKinds';
@@ -664,6 +665,7 @@
           >
             <label
               class="arr-section-edit arr-section-color-wrap"
+              style="--sec-hue:{section.hue}"
               title="Section color"
               onclick={(event) => event.stopPropagation()}
             >
@@ -687,6 +689,7 @@
                 role="button"
                 tabindex="0"
                 class="arr-kind-trigger"
+                style="--sec-hue:{section.hue}"
                 aria-haspopup="listbox"
                 aria-expanded={openSectionKindIndex === i}
                 aria-label="{section.name} part type"
@@ -882,7 +885,7 @@
       class="arr-kind-menu-portal"
       role="listbox"
       aria-label="{menuSection?.name ?? 'Section'} part type"
-      style="top:{kindMenuRect.top}px;left:{kindMenuRect.left}px;min-width:{kindMenuRect.width}px"
+      style="top:{kindMenuRect.top}px;left:{kindMenuRect.left}px;min-width:{kindMenuRect.width}px;--sec-hue:{menuSection?.hue ?? '#7d9196'}"
       onclick={(event) => event.stopPropagation()}
     >
       {#each SECTION_KIND_OPTIONS as option (option.value)}
@@ -894,7 +897,8 @@
           aria-selected={menuSection && sectionKindOf(menuSection) === option.value}
           onclick={(event) => pickSectionKind(openSectionKindIndex!, option.value, event)}
         >
-          {option.label}
+          <span class="arr-kind-swatch" style="background:{SECTION_KIND_HUE[option.value]}"></span>
+          <span class="arr-kind-option-label">{option.label}</span>
         </button>
       {/each}
     </div>
@@ -1195,11 +1199,12 @@
     background: color-mix(in srgb, var(--sec-hue, #14b8a6) 18%, rgba(255, 255, 255, 0.08));
   }
   .arr-section-tick {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     flex-shrink: 0;
     border-radius: 1px;
     pointer-events: none;
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec-hue, #14b8a6) 55%, transparent);
   }
   .arr-section-color-wrap {
     position: relative;
@@ -1232,26 +1237,24 @@
     gap: 3px;
     width: 100%;
     min-width: 0;
-    padding: 1px 4px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    color: #f2f7fa;
+    padding: 0 1px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: color-mix(in srgb, var(--sec-hue, #cfe0e2) 82%, #ffffff);
     font-family: var(--font-ui);
     font-size: 7px;
-    font-weight: 500;
+    font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     text-align: left;
     cursor: pointer;
-    backdrop-filter: blur(14px) saturate(1.35);
-    -webkit-backdrop-filter: blur(14px) saturate(1.35);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    box-shadow: none;
   }
   .arr-kind-trigger:hover,
   .arr-kind-trigger:focus-visible {
-    border-color: rgba(255, 255, 255, 0.36);
-    background: rgba(255, 255, 255, 0.16);
+    color: var(--sec-hue, #cfe0e2);
+    background: transparent;
     outline: none;
   }
   .arr-kind-label {
@@ -1270,23 +1273,24 @@
     z-index: 2000;
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    padding: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    border-radius: 4px;
-    background: rgba(12, 14, 16, 0.55);
-    backdrop-filter: blur(18px) saturate(1.4);
-    -webkit-backdrop-filter: blur(18px) saturate(1.4);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    gap: 0;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--sec-hue, #7d9196) 42%, rgba(255, 255, 255, 0.12));
+    border-radius: 3px;
+    background: rgba(8, 10, 12, 0.94);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
   }
   .arr-kind-option {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 5px;
     width: 100%;
-    padding: 4px 6px;
+    padding: 5px 7px;
     border: 0;
-    border-radius: 2px;
+    border-radius: 0;
     background: transparent;
-    color: #e8f0f4;
+    color: #d5e0e6;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
@@ -1295,14 +1299,29 @@
     text-align: left;
     cursor: pointer;
   }
+  .arr-kind-swatch {
+    width: 7px;
+    height: 7px;
+    flex-shrink: 0;
+    border-radius: 1px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  }
+  .arr-kind-option-label {
+    flex: 1;
+    min-width: 0;
+  }
   .arr-kind-option:hover,
   .arr-kind-option:focus-visible {
-    background: rgba(255, 255, 255, 0.12);
+    background: color-mix(in srgb, var(--sec-hue, #7d9196) 16%, transparent);
+    color: color-mix(in srgb, var(--sec-hue, #e8f0f4) 75%, #ffffff);
     outline: none;
   }
   .arr-kind-option.is-active {
-    background: rgba(20, 184, 166, 0.28);
-    color: #f6fcfd;
+    background: color-mix(in srgb, var(--sec-hue, #7d9196) 32%, transparent);
+    color: color-mix(in srgb, var(--sec-hue, #f6fcfd) 80%, #ffffff);
+  }
+  .arr-kind-option.is-active .arr-kind-swatch {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec-hue, #7d9196) 70%, #ffffff);
   }
   .arr-section-bars {
     flex-shrink: 0;
