@@ -26,10 +26,15 @@
   import { analysisBeatGrid, analysisOnsets } from '$lib/stores/triggerLane';
   import { audioEngine } from '$lib/audio';
   import {
-    arrangementTimelineScale,
+    arrangementStepToSeconds,
+    barNumberAtTime,
+    rulerBarMarks,
+    rulerBarTicks,
     secondsStep,
-    stepPercent,
-    stepSeconds
+    secondsToCutStep,
+    songTimeline,
+    stepSeconds,
+    timePercent,
   } from '$lib/arrangement/timelineScale';
   import {
     ARRANGEMENT_STEPS,
@@ -62,30 +67,34 @@
   const slotCount = $derived($rackTop.length + $rackBottom.length);
   const totalSteps = $derived($arrangementTotalSteps);
   const totalBars = $derived(totalSteps / ARRANGEMENT_STEPS);
-  const scale = $derived(arrangementTimelineScale(
-    totalSteps,
-    $transportDisplay.duration,
-    $analysisBeatGrid,
-    $transportDisplay.bpm || 120
-  ));
+  const timeline = $derived(
+    songTimeline(
+      $transportDisplay.duration,
+      $analysisBeatGrid,
+      $transportDisplay.bpm || 120,
+    ),
+  );
+  const rulerMarks = $derived(
+    rulerBarMarks(timeline, $analysisBeatGrid, $transportDisplay.bpm || 120),
+  );
+  const rulerTicks = $derived(
+    rulerBarTicks(timeline, $analysisBeatGrid, $transportDisplay.bpm || 120),
+  );
 
-  /** Absolute sixteenth the transport is on — the whole view's x cursor. */
-  const playStep = $derived(secondsStep(
-    $transportDisplay.time,
-    $analysisBeatGrid,
-    $transportDisplay.bpm || 120
-  ));
-
-  function pct(step: number) {
-    return stepPercent(step, scale);
+  function timePct(seconds: number) {
+    return timePercent(seconds, timeline);
   }
+
+  /** Absolute sixteenth on the beat grid — used for cut placement. */
+  const playStep = $derived(
+    secondsStep($transportDisplay.time, $analysisBeatGrid, $transportDisplay.bpm || 120),
+  );
 
   function seekAt(event: MouseEvent) {
     const track = event.currentTarget as HTMLElement;
     const rect = track.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    const step = scale.startStep + fraction * scale.totalSteps;
-    audioEngine.seek(stepSeconds(step, $analysisBeatGrid, $transportDisplay.bpm || 120));
+    audioEngine.seek(fraction * timeline.durationSeconds);
   }
 
   function seekAtKeyboard(event: KeyboardEvent) {
@@ -114,33 +123,6 @@
   }
 
   /**
-   * Seconds to an absolute sixteenth, via the hosted beat grid when there is
-   * one. Constant BPM would put the back half of a drifting track in the wrong
-   * bar, which on a song-length view is visible as the ticks sliding away from
-   * the bar lines.
-   */
-  function stepAtSeconds(seconds: number) {
-    const grid = $analysisBeatGrid;
-    const bpm = $transportDisplay.bpm || 120;
-    if (grid.length < 2) return (seconds * bpm) / 60 * 4;
-    if (seconds <= grid[0]) return 0;
-    const last = grid.length - 1;
-    if (seconds >= grid[last]) {
-      const span = grid[last] - grid[last - 1];
-      return (span > 0 ? last + (seconds - grid[last]) / span : last) * 4;
-    }
-    let lo = 0;
-    let hi = last;
-    while (hi - lo > 1) {
-      const mid = (lo + hi) >> 1;
-      if (grid[mid] <= seconds) lo = mid;
-      else hi = mid;
-    }
-    const span = grid[hi] - grid[lo];
-    return (span > 0 ? lo + (seconds - grid[lo]) / span : lo) * 4;
-  }
-
-  /**
    * Thin a tick list down to what a lane can actually draw.
    *
    * Drums is 918 onsets; at a few hundred pixels of lane that is more marks than
@@ -150,12 +132,11 @@
    */
   const TICK_BUCKETS = 720;
   function bucketTicks(times: readonly number[]): number[] {
-    if (totalSteps <= 0) return [];
+    if (timeline.durationSeconds <= 0) return [];
     const seen = new Uint8Array(TICK_BUCKETS);
     for (const t of times) {
-      const step = stepAtSeconds(t);
-      if (!Number.isFinite(step) || step < 0 || step >= totalSteps) continue;
-      seen[Math.min(TICK_BUCKETS - 1, Math.floor((step / totalSteps) * TICK_BUCKETS))] = 1;
+      if (!Number.isFinite(t) || t < 0 || t > timeline.durationSeconds) continue;
+      seen[Math.min(TICK_BUCKETS - 1, Math.floor((t / timeline.durationSeconds) * TICK_BUCKETS))] = 1;
     }
     const out: number[] = [];
     for (let i = 0; i < TICK_BUCKETS; i++) if (seen[i]) out.push((i / TICK_BUCKETS) * 100);
@@ -173,7 +154,7 @@
    */
   const analysisEndPct = $derived(
     $transportDisplay.analysisDuration > 0
-      ? pct(secondsStep($transportDisplay.analysisDuration, $analysisBeatGrid, $transportDisplay.bpm || 120))
+      ? timePct($transportDisplay.analysisDuration)
       : 0
   );
   const analysisTruncated = $derived(
@@ -214,38 +195,44 @@
     return lanes;
   });
 
-  /** Section spans on the full song timeline — one coordinate system for SONG + lanes. */
-  const sectionBands = $derived.by(() =>
-    $arrangement.map((section, i) => {
-      const bpm = $transportDisplay.bpm || 120;
-      const grid = $analysisBeatGrid;
-      const startStep =
-        section.timeStartS != null
-          ? secondsStep(section.timeStartS, grid, bpm)
-          : $sectionStarts[i]! * ARRANGEMENT_STEPS;
-      const endStep =
-        section.timeEndS != null
-          ? secondsStep(section.timeEndS, grid, bpm)
-          : ($sectionStarts[i]! + section.bars) * ARRANGEMENT_STEPS;
-      const leftPct = pct(startStep);
-      const widthPct = Math.max(0, pct(endStep) - leftPct);
+  /** Section spans on the full song timeline — wall-clock seconds from file start. */
+  const sectionBands = $derived.by(() => {
+    const bpm = $transportDisplay.bpm || 120;
+    const grid = $analysisBeatGrid;
+    return $arrangement.map((section, i) => {
+      const startSeconds =
+        section.timeStartS ??
+        stepSeconds($sectionStarts[i]! * ARRANGEMENT_STEPS, grid, bpm);
+      const endSeconds =
+        section.timeEndS ??
+        stepSeconds(($sectionStarts[i]! + section.bars) * ARRANGEMENT_STEPS, grid, bpm);
+      const leftPct = timePct(startSeconds);
+      const widthPct = Math.max(0, timePct(endSeconds) - leftPct);
       return {
         id: section.id,
         name: section.name,
         hue: section.hue,
-        startBar: $sectionStarts[i]! + 1,
+        startBar: barNumberAtTime(startSeconds, grid, bpm),
+        startSeconds,
         leftPct,
         widthPct,
       };
-    }),
-  );
+    });
+  });
 
   /** Click anywhere on a lane to place a cut on the nearest sixteenth. */
   function paintAt(event: MouseEvent, slotIndex: number) {
     const track = event.currentTarget as HTMLElement;
     const rect = track.getBoundingClientRect();
     const fraction = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    toggleCut(Math.round(fraction * totalSteps), slotIndex);
+    const seconds = fraction * timeline.durationSeconds;
+    const step = secondsToCutStep(
+      seconds,
+      $analysisBeatGrid,
+      $transportDisplay.bpm || 120,
+      totalSteps,
+    );
+    toggleCut(step, slotIndex);
   }
 </script>
 
@@ -378,11 +365,7 @@
               event.stopPropagation();
               selectSection(i);
               audioEngine.seek(
-                stepSeconds(
-                  section.timeStartS ?? $sectionStarts[i]! * ARRANGEMENT_STEPS,
-                  $analysisBeatGrid,
-                  $transportDisplay.bpm || 120,
-                ),
+                band.startSeconds,
               );
             }}
             title="{section.name} — {section.bars} bars, from bar {band.startBar}"
@@ -433,8 +416,11 @@
     <div class="arr-row arr-row-ruler">
       <span class="arr-gutter"></span>
       <div class="arr-track arr-ruler" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
-        {#each Array(Math.max(0, Math.ceil(totalBars / 4))) as _, i (i)}
-          <span class="arr-bar" style="left:{pct(i * 4 * ARRANGEMENT_STEPS)}%">{i * 4 + 1}</span>
+        {#each rulerTicks as tick (tick)}
+          <span class="arr-bar-tick" style="left:{timePct(tick)}%"></span>
+        {/each}
+        {#each rulerMarks as mark (mark.label)}
+          <span class="arr-bar" style="left:{timePct(mark.timeSeconds)}%">{mark.label}</span>
         {/each}
       </div>
     </div>
@@ -466,7 +452,7 @@
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
               class="arr-cut"
-              style="left:{pct(cut.step)}%;background:{info?.color ?? '#5f7378'}"
+              style="left:{timePct(arrangementStepToSeconds(cut.step, $arrangement, $sectionStarts, $analysisBeatGrid, $transportDisplay.bpm || 120))}%;background:{info?.color ?? '#5f7378'}"
             ></span>
           {/each}
         </div>
@@ -566,7 +552,7 @@
     {/if}
 
     <!-- One playhead for the whole view, over every lane at once. -->
-    <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {pct(playStep) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
+    <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {timePct($transportDisplay.time) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
    </div>
   </div>
 </section>
@@ -826,9 +812,8 @@
     gap: 4px;
     min-width: 0;
     padding: 0 5px;
-    border: 1px solid #1a1c1e;
     border-radius: 2px;
-    background: #0f1113;
+    background: transparent;
     text-align: left;
     box-sizing: border-box;
     overflow: hidden;
@@ -841,9 +826,13 @@
     top: 0;
     bottom: 0;
     min-width: 28px;
+    border: 1px solid color-mix(in srgb, var(--sec-hue, #14b8a6) 28%, transparent);
+    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 10%, rgba(10, 12, 14, 0.5));
+    backdrop-filter: blur(8px) saturate(0.85);
+    -webkit-backdrop-filter: blur(8px) saturate(0.85);
   }
   .arr-section:hover {
-    background: #16181b;
+    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 16%, rgba(14, 16, 18, 0.58));
   }
   .arr-section-tick {
     width: 8px;
@@ -879,16 +868,18 @@
     width: 100%;
     min-width: 0;
     padding: 1px 2px;
-    border: 1px solid #23282d;
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 2px;
-    background: #0a0c0d;
-    color: #b8c7cc;
+    background: rgba(8, 10, 12, 0.5);
+    color: #d0dde2;
     font-family: var(--font-ui);
     font-size: 7px;
     font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     cursor: pointer;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
   }
   .arr-section-select:hover,
   .arr-section-select:focus-visible {
@@ -905,6 +896,14 @@
 
   .arr-ruler {
     border-bottom: 1px solid #16181b;
+  }
+  .arr-bar-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 1px solid #1e2428;
+    pointer-events: none;
   }
   /* Was 6px in #3c464a: below a readable size and barely above the lane
      colour, so bar positions could not be read at a glance while performing.
