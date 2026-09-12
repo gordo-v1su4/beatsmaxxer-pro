@@ -275,3 +275,9 @@ New surface:
 - `?splash=hold` keeps the title card up for design work.
 - Analysis only sees the first 90 seconds of a track
   (`prepareAnalysisUpload.ts`), capped by Vercel's serverless body limit.
+
+## Tomorrow — September 13, 2026: playback follow-up
+
+- [ ] [#24 — Preloaded WebGPU, musical triggers and independent ramps](https://github.com/gordo-v1su4/beatsmaxxer-pro/issues/24). Review the accepted zig-swap experiment at noon. Use/create clips with sustained motion, tune analyzed onset/vocal-activity/RMS triggers, preserve switching across all clips with independent ramps, and assess 24fps output backed by denser pre-interpolated frames. Check preload time and memory budgets before production integration. Full capacity/soak validation remains outstanding.
+
+Evidence and checkpoints: [zig-swap musical playback notes](https://github.com/gordo-v1su4/zig-swap/blob/gordo/v1s-77-78-79-parallel/docs/musical-playback-benchmark.md). This is a follow-up item; no production playback code is changed by this entry.
