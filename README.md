@@ -18,6 +18,9 @@ bun run test:local   # full local suite (unit + build + browser gates)
 bun run build        # single-file → svelte/build/
 ```
 
+Playback comparisons from the zig-swap experiment: `bun run benchmark:prepare`,
+then open `/benchmark` on the dev server. See [benchmark commands and scoring](docs/PLAYBACK-BENCHMARK.md).
+
 ### QA mode (auto-load 8 clips + song)
 
 ```bash

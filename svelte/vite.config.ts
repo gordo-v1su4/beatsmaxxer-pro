@@ -7,6 +7,7 @@ import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essen
 import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
 import { accessGateConfigFromEnv } from '../api/gate/policy';
 import { mediaGatewayConfigFromEnv } from '../api/lib/mediaGateway';
+import { playbackBenchmarkPlugin } from './vite/playbackBenchmark';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -40,6 +41,7 @@ export default defineConfig(({ mode, command }) => {
 		// ours. Relative asset paths (what Tauri needs) come from kit.paths.relative,
 		// which is on by default.
 		plugins: [
+			playbackBenchmarkPlugin(),
 			tailwindcss(),
 			// Options live in svelte.config.js — passing any here makes SvelteKit
 			// ignore that file, which svelte-kit sync and svelte-check still read.

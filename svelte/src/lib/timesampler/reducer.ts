@@ -263,7 +263,7 @@ function applyQueuedParams(state: TimeSamplerState, boundaryBeat: number): void 
   if (modeChanged) {
     state.pongDirection = 1;
   }
-  state.nextBoundaryBeat = boundaryBeat + state.jumpSizeBeats;
+  state.nextBoundaryBeat = boundaryAfter(boundaryBeat, state.jumpSizeBeats, state.feel);
 }
 
 function sequenceAdvance(state: TimeSamplerState, sliceCount: number): number {
@@ -489,7 +489,7 @@ export function reduceTimeSampler(
       acceptTriggersThrough(boundaryTime);
       processBoundary(state, sample, boundaryBeat, boundaryTime);
       if (state.nextBoundaryBeat === boundaryBeat) {
-        state.nextBoundaryBeat = boundaryBeat + state.jumpSizeBeats;
+        state.nextBoundaryBeat = boundaryAfter(boundaryBeat, state.jumpSizeBeats, state.feel);
       }
     }
 
@@ -579,7 +579,7 @@ export function reduceTimeSampler(
       jumpReason = boundary.reason;
       accent = boundary.accent;
       if (state.nextBoundaryBeat === boundaryBeat) {
-        state.nextBoundaryBeat = boundaryBeat + state.jumpSizeBeats;
+        state.nextBoundaryBeat = boundaryAfter(boundaryBeat, state.jumpSizeBeats, state.feel);
       }
     }
 
