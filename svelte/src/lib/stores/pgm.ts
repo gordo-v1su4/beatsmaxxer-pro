@@ -18,6 +18,12 @@ export const queuedPgmSource = writable<ModuleType | null>(null);
 export const intervalBeats = writable(4);
 export const feel = writable<PgmFeel>(0);
 export const autoRandom = writable(false);
+export const linearOrder = writable(false);
+export type ClipOrder = 'hold' | 'linear' | 'random';
+export function setClipOrder(order: ClipOrder) {
+  linearOrder.set(order === 'linear');
+  autoRandom.set(order === 'random');
+}
 
 export function formatQuantizeLabel(beats: number, f: PgmFeel): string {
   const base = PGM_INTERVALS.find((o) => o.beats === beats)?.label ?? `${beats}BT`;

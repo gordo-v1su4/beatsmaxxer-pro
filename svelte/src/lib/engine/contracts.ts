@@ -165,7 +165,7 @@ export interface IWebGpuPresenter {
   isReady(): boolean;
 }
 
-export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'test-card' | 'unsupported';
+export type WebGpuVideoSamplePath = 'external-texture' | 'cached-video-texture' | 'resident-frame-bank' | 'test-card' | 'unsupported';
 
 export interface WebGpuRenderDiagnostics {
   bindingId: string;

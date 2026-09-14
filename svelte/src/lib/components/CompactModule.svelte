@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OnAirBadge from './rack/OnAirBadge.svelte';
   import { Upload, X } from '@lucide/svelte';
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import type { VideoLayer } from '$lib/engine/contracts';
@@ -96,7 +97,7 @@
   class="rack-module"
   data-bmx-module-id={mod.id}
   class:is-collapsed={collapsed}
-  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden;box-shadow:{isOnAir ? `inset 0 0 0 1px ${mod.accentColor}66, inset 0 0 18px ${mod.accentColor}14` : 'none'}"
+  style="background:#131416;border-right:1px solid #0d0e0f;opacity:{$bypassed[mod.id] ? 0.55 : 1};filter:{$bypassed[mod.id] ? 'saturate(0.15) brightness(0.6)' : 'none'};position:relative;overflow:hidden"
   ondragenter={(e) => {
     e.preventDefault();
     if (e.dataTransfer?.types.includes('Files')) {
@@ -120,7 +121,8 @@
   <!-- Header matches EffectModule exactly. "Compact" is about how much control
        surface the row carries; the title bar is the same object in both. -->
   <div
-    style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0"
+    class="module-live-header" class:is-on-air={isOnAir} style:--module-accent={mod.accentColor}
+    style="display:flex;align-items:center;padding:0 5px;height:26px;gap:3px;flex-shrink:0"
   >
     <ModuleGrip {onHeaderPointerDown} />
     <span
@@ -128,13 +130,7 @@
     >
       {mod.name}
     </span>
-    {#if isOnAir}
-      <span
-        style="font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
-      >
-        ON AIR
-      </span>
-    {/if}
+    {#if isOnAir}<OnAirBadge />{/if}
     <div style="flex:1"></div>
     <button
       type="button"

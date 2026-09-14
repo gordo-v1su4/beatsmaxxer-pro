@@ -3,7 +3,8 @@
   import ModulePalette from '$lib/components/ModulePalette.svelte';
   import ClipBrowser from '$lib/components/rack/ClipBrowser.svelte';
   import { clipLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
-  import { fxLibOpen, showSideRailTab, sideRailTab, type SideRailTab } from '$lib/stores/rackUi';
+  import { fxLibOpen, showSideRailTab, sideRailTab, viewMode, type SideRailTab } from '$lib/stores/rackUi';
+  import TimingPalette from './timing/TimingPalette.svelte';
   import type { RackRow } from '$lib/stores/drag';
 
   interface Props {
@@ -93,7 +94,7 @@
     </div>
 
     {#if $sideRailTab === 'fx'}
-      <ModulePalette />
+      {#if $viewMode==='timing'}<TimingPalette/>{:else}<ModulePalette />{/if}
     {:else}
       <ClipBrowser bind:this={browser} {onAssignClip} />
     {/if}
@@ -106,7 +107,7 @@
       title="FX modules and clip bank"
     >
       <ChevronRight size={12} />
-      <span class="rail-expand-label">{$sideRailTab === 'fx' ? 'FX' : 'CLIPS'}</span>
+      <span class="rail-expand-label">FX / CLIPS</span>
     </button>
   {/if}
 </aside>

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
+  import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
   import { probeWebGpu } from '$lib/rendering/webgpu/capability';
@@ -285,7 +287,7 @@
        song; performing wants the picture. Stacked in one window each made the
        other worse, so ARRANGE replaces the workspace rather than docking under
        it. The engine keeps running underneath either way. -->
-  <div class="rack-workspace" style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
+  <div class="rack-workspace" class:timing-workspace={$viewMode==='timing'} style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
     <div
       class="side-panels"
       style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
@@ -303,10 +305,11 @@
 
     <div class="rack-main">
       <MainViewer modules={rackModules} />
+      {#if $viewMode==='timing'}<TimingSections/>{/if}
 
       <div
         class="rack-row top-rack-row"
-        style="height:auto;flex-shrink:0;min-height:{$topRowCompact ? 'unset' : '300px'};transition:min-height 0.2s ease"
+        style="height:auto;flex-shrink:0;min-height:{($viewMode==='timing' || $topRowCompact) ? 'unset' : '300px'};transition:min-height 0.2s ease"
       >
         {#each $rackTop as moduleId, i (`top-${i}`)}
           <RackSlot
@@ -329,7 +332,7 @@
 
       <div
         class="rack-row bottom-rack-row"
-        style="height:auto;flex-shrink:0;min-height:{$bottomRowCompact ? 'unset' : '196px'};border-top:2px solid #0d0e0f;transition:min-height 0.2s ease"
+        style="height:auto;flex-shrink:0;min-height:{($viewMode==='timing' || $bottomRowCompact) ? 'unset' : '196px'};border-top:2px solid #0d0e0f;transition:min-height 0.2s ease"
       >
         {#each $rackBottom as moduleId, i (`bottom-${i}`)}
           <RackSlot
@@ -350,6 +353,7 @@
         {/each}
       </div>
 
+      {#if $viewMode==='timing'}<TimingPanel/>{/if}
     </div>
 
     <ScrewRail side="right" class="hide-on-mobile" />

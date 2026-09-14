@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { selectedArrangementSections } from '$lib/stores/arrangement';
+  import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { sequencerArmed } from '$lib/stores/sequencer';
@@ -6,7 +8,7 @@
     beginArrangementRecording,
     endArrangementRecording,
   } from '$lib/arrangement/recorder';
-  import { viewMode } from '$lib/stores/rackUi';
+  import { viewMode, playbackWorkspace } from '$lib/stores/rackUi';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
     rackTop,
@@ -83,7 +85,7 @@
   let viewStartS = $state(0);
   let viewEndS = $state<number | null>(null);
   let showBeatGrid = $state(true);
-  let selectedSectionIndices = $state<Set<number>>(new Set([0]));
+
   let openSectionKindIndex = $state<number | null>(null);
   let kindMenuRect = $state<{ top: number; left: number; width: number } | null>(null);
 
@@ -91,38 +93,6 @@
   const totalSteps = $derived($arrangementTotalSteps);
   const totalBars = $derived(totalSteps / ARRANGEMENT_STEPS);
   const bpm = $derived($transportDisplay.bpm || 120);
-
-  function resolveSectionBounds(
-    sections: readonly (typeof $arrangement)[number][],
-    starts: readonly number[],
-    grid: readonly number[],
-    tempo: number,
-  ) {
-    const gridOffset = beatGridSongOffset(grid);
-    return sections.map((section, i) => {
-      let startSeconds =
-        section.timeStartS ??
-        stepSeconds(starts[i]! * ARRANGEMENT_STEPS, grid, tempo);
-      let endSeconds =
-        section.timeEndS ??
-        stepSeconds((starts[i]! + section.bars) * ARRANGEMENT_STEPS, grid, tempo);
-      if (section.timeStartS != null && gridOffset > 0) {
-        startSeconds = Math.max(0, section.timeStartS - gridOffset);
-      }
-      if (section.timeEndS != null && gridOffset > 0) {
-        endSeconds = Math.max(startSeconds, section.timeEndS - gridOffset);
-      }
-      if (i === 0) startSeconds = 0;
-      return {
-        id: section.id,
-        name: section.name,
-        hue: section.hue,
-        startBar: barNumberAtTime(startSeconds, grid, tempo),
-        startSeconds,
-        endSeconds,
-      };
-    });
-  }
 
   const sectionBounds = $derived(
     resolveSectionBounds($arrangement, $sectionStarts, $analysisBeatGrid, bpm),
@@ -257,8 +227,8 @@
   }
 
   function frameSelection() {
-    if (selectedSectionIndices.size === 0) return;
-    const bands = sectionBands.filter((_, i) => selectedSectionIndices.has(i));
+    if ($selectedArrangementSections.size === 0) return;
+    const bands = sectionBands.filter((_, i) => $selectedArrangementSections.has(i));
     if (bands.length === 0) return;
     const start = Math.min(...bands.map((b) => b.startSeconds));
     const end = Math.max(...bands.map((b) => b.endSeconds));
@@ -272,8 +242,8 @@
       arrangementLoopRegion.set(null);
       return;
     }
-    if (selectedSectionIndices.size > 0) {
-      const bands = sectionBands.filter((_, i) => selectedSectionIndices.has(i));
+    if ($selectedArrangementSections.size > 0) {
+      const bands = sectionBands.filter((_, i) => $selectedArrangementSections.has(i));
       if (bands.length === 0) return;
       arrangementLoopRegion.set({
         startSeconds: Math.min(...bands.map((b) => b.startSeconds)),
@@ -291,14 +261,14 @@
     if ((event.target as HTMLElement).closest('.arr-section-edit')) return;
     event.stopPropagation();
     if (event.shiftKey) {
-      const next = new Set(selectedSectionIndices);
+      const next = new Set($selectedArrangementSections);
       if (next.has(i)) next.delete(i);
       else next.add(i);
-      selectedSectionIndices = next;
+      $selectedArrangementSections = next;
       return;
     }
-    selectedSectionIndices = new Set([i]);
-    selectSection(i);
+    $selectedArrangementSections = new Set([i]);
+    selectSection(i,$playbackWorkspace!=='timing');
     audioEngine.seek(band.startSeconds);
   }
 
@@ -535,7 +505,7 @@
     <button
       type="button"
       class="arr-btn"
-      disabled={selectedSectionIndices.size === 0}
+      disabled={$selectedArrangementSections.size === 0}
       onclick={frameSelection}
       title="Zoom the timeline to the selected sections (Shift+click to multi-select)"
     >FRAME</button>
@@ -651,7 +621,7 @@
         {#each sectionBands as band, i (band.id)}
           {@const section = $arrangement[i]}
           {@const on = i === $activeSectionIndex}
-          {@const picked = selectedSectionIndices.has(i)}
+          {@const picked = $selectedArrangementSections.has(i)}
           <button
             type="button"
             class="arr-section arr-section-abs"

@@ -7,6 +7,7 @@ import {
   intervalBeats,
   feel,
   autoRandom,
+  linearOrder,
   commitPgmCut
 } from '$lib/stores/pgm';
 import {
@@ -18,6 +19,8 @@ import {
   rackTop,
   videoLayers
 } from '$lib/stores/rack';
+import { playbackWorkspace } from '$lib/stores/rackUi';
+import { timingStatus } from '$lib/stores/timing';
 
 /** Beat-quantized PGM cuts via AudioEngine live schedule — no React rAF promotion. */
 class PgmDirector {
@@ -38,11 +41,20 @@ class PgmDirector {
 
     const sync = () => this.syncSchedule();
     this.unsubs = [
-      pgmSource.subscribe(sync),
+      pgmSource.subscribe((source) => {
+        // A direct source selection is authoritative. Rack changes still use
+        // normalizeSelection to preserve the physical slot on effect swaps.
+        const slot = currentRackSlotForModule(source);
+        if (slot) this.liveSourceId = slot;
+        sync();
+      }),
       queuedPgmSource.subscribe(sync),
       intervalBeats.subscribe(sync),
       feel.subscribe(sync),
       autoRandom.subscribe(sync),
+      linearOrder.subscribe(sync),
+      playbackWorkspace.subscribe(sync),
+      timingStatus.subscribe(sync),
       bypassed.subscribe(sync),
       videoLayers.subscribe(sync),
       rackTop.subscribe(sync),
@@ -64,8 +76,10 @@ class PgmDirector {
   private playableSources(): string[] {
     const layers = get(videoLayers);
     const bypass = get(bypassed);
+    const timing = get(playbackWorkspace) === 'timing';
+    const status = get(timingStatus);
     return currentRackAssignments()
-      .filter(({ slotId, moduleId }) => !!layers[slotId] && !bypass[moduleId])
+      .filter(({ slotId, moduleId }) => !!layers[slotId] && (timing ? status[slotId]?.state === 'ready' : !bypass[moduleId]))
       .map(({ moduleId }) => moduleId);
   }
 
@@ -79,6 +93,7 @@ class PgmDirector {
       sources,
       queued: queued && sources.includes(queued) ? queued : null,
       autoRandom: get(autoRandom),
+      linear: get(linearOrder),
       intervalBeats: get(intervalBeats),
       feel: get(feel)
     });

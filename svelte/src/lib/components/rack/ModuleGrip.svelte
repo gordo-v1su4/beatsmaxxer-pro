@@ -3,9 +3,10 @@
 
   interface Props {
     onHeaderPointerDown?: (e: PointerEvent) => void;
+    title?: string;
   }
 
-  let { onHeaderPointerDown }: Props = $props();
+  let { onHeaderPointerDown, title = 'Drag to reorder' }: Props = $props();
 </script>
 
 <!-- The only place a module can be picked up from. The drag used to live on the
@@ -15,7 +16,7 @@
 <div
   data-drag-handle
   onpointerdown={onHeaderPointerDown}
-  title="Drag to reorder"
+  {title}
   style="display:flex;align-items:center;gap:3px;flex-shrink:0;cursor:grab;align-self:stretch;padding-right:2px"
 >
   <Screw />

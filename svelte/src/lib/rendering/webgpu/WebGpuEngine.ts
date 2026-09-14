@@ -17,6 +17,7 @@ import { BlitBindGroupCache } from './BindGroupCache';
 import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
 import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
+import type { TimingTextureProvider } from '$lib/runtime/timing/contracts';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -183,6 +184,8 @@ export class WebGpuEngine {
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
   private pgmLiveSourceId = 'top-0';
+  private timingTextures: TimingTextureProvider | null = null;
+  private timingVersion = 0;
   private paused = false;
   private frameCtx: FrameContext = {
     beat: 0,
@@ -580,9 +583,11 @@ export class WebGpuEngine {
 
     if (scheduled.length === 0) return;
     this.frameIndex += 1;
-    this.markLoopWraps(scheduled);
-    this.markSeekGaps(scheduled);
-    this.markPgmCutCovers(scheduled);
+    if (!this.timingTextures) {
+      this.markLoopWraps(scheduled);
+      this.markSeekGaps(scheduled);
+      this.markPgmCutCovers(scheduled);
+    }
     const encoder = this.device.createCommandEncoder();
     this.taskExternalTextures = new Map<HTMLVideoElement, GPUExternalTexture>();
     this.videoTextureCache.beginFrame();
@@ -681,6 +686,8 @@ export class WebGpuEngine {
       stale — a different module, source, parameter set, or canvas size. */
   private bindingStateKey(binding: CanvasBinding, moduleId: string, sourceId: string) {
     return [
+      this.timingVersion,
+      this.timingTextures?.(sourceId)?.pts ?? 'empty',
       moduleId,
       sourceId,
       this.renderParamVersions.get(moduleId) ?? 0,
@@ -807,6 +814,10 @@ export class WebGpuEngine {
     sourceId: string
   ) {
     if (!this.device || !this.sampler) return;
+    if (this.timingTextures) {
+      this.encodeTimingBinding(encoder, binding, sourceId);
+      return;
+    }
 
     const def = getModuleDef(moduleId);
     const rp = this.renderParams.get(moduleId) ?? {};
@@ -1063,6 +1074,50 @@ export class WebGpuEngine {
     canvasPass.setBindGroup(0, blitBindGroup);
     canvasPass.draw(3);
     canvasPass.end();
+  }
+
+  /** A separate processing path, sharing canvases, cadence and the GPU device. */
+  setTimingTextures(provider: TimingTextureProvider | null) {
+    if (provider === this.timingTextures) return;
+    this.timingTextures = provider;
+    this.timingVersion++;
+    this.bindingSchedule.clear();
+  }
+
+  private encodeTimingBinding(encoder: GPUCommandEncoder, binding: CanvasBinding, sourceId: string) {
+    const selected = this.timingTextures?.(sourceId) ?? null;
+    const pass = encoder.beginRenderPass({ colorAttachments: [{
+      view: binding.context.getCurrentTexture().createView(),
+      clearValue: { r: 0.02, g: 0.025, b: 0.03, a: 1 }, loadOp: 'clear', storeOp: 'store'
+    }] });
+    if (selected && this.device && this.sampler) {
+      const group = this.blitBindGroupCache.get(selected.view, () => this.device!.createBindGroup({
+        layout: binding.blitBindGroupLayout,
+        entries: [{ binding: 0, resource: selected.view }, { binding: 1, resource: this.sampler! }]
+      }));
+      pass.setPipeline(binding.blitPipeline);
+      pass.setBindGroup(0, group);
+      pass.draw(3);
+    }
+    pass.end();
+    const frame = this.frameCtx.timeline;
+    this.renderDiag.set(binding.bindingId, {
+      bindingId: binding.bindingId, effectModuleId: selected?.effect ?? 'off', sourceId,
+      canvas: `${binding.canvas.width}x${binding.canvas.height}`,
+      cssSize: `${binding.canvas.clientWidth}x${binding.canvas.clientHeight}`,
+      effectMode: 0, hasVideo: selected ? 1 : 0,
+      externalTextureImported: false, externalTextureBound: false,
+      cachedTextureUploaded: false, cachedTextureBound: false,
+      samplePath: selected ? 'resident-frame-bank' : 'unsupported', source: sourceId,
+      dimensions: selected ? `${selected.width}x${selected.height}` : null,
+      videoSize: selected ? `${selected.width}x${selected.height}` : null,
+      frameId: frame?.frameId ?? null, feedback: 'none', mix: 1,
+      timelineFrameId: frame?.frameId ?? null, timelineGeneration: frame?.generation ?? null,
+      fixedStepIndex: frame?.fixedStepIndex ?? null, feedbackDegraded: false, feedbackSkippedSteps: 0,
+      uniformHash: `timing:${selected?.pts ?? 'loading'}`, renderCount: 0, skippedRenderCount: 0,
+      targetFps: 0, frameIntervalMs: null, lastRenderContextTimeSeconds: frame?.contextTimeSeconds ?? 0,
+      renderedThisFrame: true, skipReason: 'none'
+    });
   }
 
   getDevice() {

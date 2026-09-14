@@ -32,6 +32,23 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Verify desktop release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $packageVersion = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version
+          $cargo = Get-Content desktop/src-tauri/Cargo.toml -Raw
+          $lock = Get-Content desktop/src-tauri/Cargo.lock -Raw
+          $cargoVersion = [regex]::Match($cargo, '(?m)^version = "([^"]+)"').Groups[1].Value
+          $lockVersion = [regex]::Match($lock, 'name = "beatsmaxxer-pro-desktop"\s+version = "([^"]+)"').Groups[1].Value
+          if (@($packageVersion, $cargoVersion, $lockVersion) | Where-Object { $_ -ne $version }) {
+            throw 'Desktop package, Cargo manifest, lockfile and Tauri versions must match.'
+          }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Release tag must be v$version."
+          }
+          Write-Output "Desktop release version: $version"
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

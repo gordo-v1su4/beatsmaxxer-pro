@@ -393,3 +393,24 @@ describe("central deterministic PGM schedule", () => {
     expect(atPair.pgm.selected).not.toBeNull();
   });
 });
+
+
+describe('linear PGM ordering',()=>{
+  test('prepares the next source, wraps and gives manual queued cuts priority across skipped boundaries',()=>{
+    const runtime=new LiveScheduleRuntime<string>();
+    const config={active:'a',sources:['a','c','d'],queued:null as string|null,autoRandom:false,linear:true,intervalBeats:1,feel:0 as const};
+    runtime.configurePgm(config);runtime.advance(transport(0),[]);
+    expect(runtime.getPgmPreparation().source).toBe('c');
+    expect(runtime.advance(transport(1),[]).pgm.selected).toBe('c');
+    runtime.configurePgm({...config,active:'d'});
+    expect(runtime.advance(transport(2),[]).pgm.selected).toBe('a');
+    runtime.configurePgm({...config,queued:'d'});
+    expect(runtime.advance(transport(5),[]).pgm).toMatchObject({selected:'d',consumedQueued:true});
+  });
+  test('zero or one source never creates automatic cuts',()=>{
+    for(const sources of [[],['a']]){
+      const runtime=new LiveScheduleRuntime<string>();runtime.configurePgm({active:'a',sources,queued:null,autoRandom:false,linear:true,intervalBeats:1,feel:0});
+      runtime.advance(transport(0),[]);expect(runtime.getPgmPreparation().source).toBeNull();expect(runtime.advance(transport(4),[]).pgm.selected).toBeNull();
+    }
+  });
+});

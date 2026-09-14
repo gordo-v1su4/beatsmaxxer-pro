@@ -418,6 +418,17 @@ input[type='range']::-moz-range-thumb {
 	padding-bottom: 1px;
 }
 
+/* Both workspaces mark the live source on its header, in its effect color. */
+.module-live-header {
+	background: linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);
+	border-top: 1px solid #252729;
+	border-bottom: 1px solid #0d0e0f;
+}
+.module-live-header.is-on-air {
+	background: linear-gradient(180deg,color-mix(in srgb,var(--module-accent) 26%,#1e2124),color-mix(in srgb,var(--module-accent) 15%,#141618));
+	border-top-color: color-mix(in srgb,var(--module-accent) 50%,#252729);
+}
+
 .module-preview {
 	position: relative;
 	width: 100%;
@@ -617,4 +628,29 @@ input[type='range']::-moz-range-thumb {
 	font-weight: 500;
 	letter-spacing: 0.1em;
 	color: #252b31;
+}
+
+/* Timing has preview-only rows at every desktop height. */
+.timing-workspace .rack-row { min-height: 0 !important; }
+.timing-workspace .rack-slot { min-height: 0; }
+.timing-workspace .timing-card { flex: 1; min-width: 0; }
+
+/* Timing cards have a shared editor, so they can fit the available width. */
+.app-viewport:has(.timing-workspace) { scrollbar-gutter: stable; }
+.app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
+.timing-workspace .rack-main { min-width: 0; }
+.timing-workspace {
+	--timing-viewer-height: clamp(260px, 28vh, 460px);
+	--timing-plot-height: clamp(120px, 14vh, 200px);
+}
+/* Budget the cards around the shared Perform monitor; never resize that monitor. */
+@media (min-width: 961px) and (max-height: 980px) {
+	.timing-workspace { --timing-viewer-height: clamp(200px, 22vh, 320px); }
+}
+@media (min-width: 961px) and (max-height: 900px) {
+	.timing-workspace { --timing-viewer-height: clamp(210px, 24vh, 260px); }
+}
+@media (min-width: 961px) {
+	.timing-workspace .rack-row { grid-template-columns: repeat(5, minmax(0, clamp(144px, calc((100dvh - var(--timing-viewer-height) - var(--timing-plot-height) - 538px) * 8 / 9), 420px))); }
+	.timing-workspace .rack-slot { min-width: 0; }
 }

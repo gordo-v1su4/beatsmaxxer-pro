@@ -2,13 +2,14 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode } from '$lib/stores/rackUi';
+  import { canUndoTiming, canRedoTiming, undoTiming, redoTiming } from '$lib/stores/timing';
+  import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import TopMenu from '$lib/components/rack/TopMenu.svelte';
   import DesktopUpdater from '$lib/components/DesktopUpdater.svelte';
-  import { FACTORY_PRESETS, selectedPreset, selectPreset, type PresetName } from '$lib/stores/presets';
+  import { autoRandom, linearOrder, setClipOrder, type ClipOrder } from '$lib/stores/pgm';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
   import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
@@ -396,17 +397,15 @@
     </div>
 
     <div class="topbar-actions">
-    <TopBtn
-      label={$viewMode === 'arrange' ? 'PERFORM' : 'ARRANGE'}
-      accent
-      active={$viewMode === 'arrange'}
-      title={$viewMode === 'arrange'
-        ? 'Back to the rack and the program monitor'
-        : 'Open the arrangement sequencer — cuts and trigger lanes across the song'}
-      onclick={() => viewMode.set($viewMode === 'arrange' ? 'perform' : 'arrange')}
-    >
-      {#snippet icon()}<ListMusic size={10} />{/snippet}
-    </TopBtn>
+    <div class="workspace-tabs" aria-label="Workspace">
+      {#each ['perform','arrange','timing'] as mode}
+        <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} onclick={()=>{
+          viewMode.set(mode as 'perform'|'arrange'|'timing');
+          if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
+        }}/>
+      {/each}
+    </div>
+    <label class="clip-order">ORDER <select aria-label="Clip order" value={$autoRandom?'random':$linearOrder?'linear':'hold'} onchange={(e)=>setClipOrder(e.currentTarget.value as ClipOrder)}><option value="hold">HOLD</option><option value="linear">LINEAR</option><option value="random">RANDOM</option></select></label>
 
     <TopMenu
       id="edit"
@@ -416,10 +415,10 @@
       title="Undo, randomize, and clear the rack"
     >
       <div class="menu-row">
-        <TopBtn label="UNDO" onclick={undoRackParams} disabled={!$canUndo}>
+        <TopBtn label="UNDO" onclick={$viewMode==='timing'?undoTiming:undoRackParams} disabled={$viewMode==='timing'?!$canUndoTiming:!$canUndo}>
           {#snippet icon()}<Undo2 size={10} />{/snippet}
         </TopBtn>
-        <TopBtn label="REDO" onclick={redoRackParams} disabled={!$canRedo}>
+        <TopBtn label="REDO" onclick={$viewMode==='timing'?redoTiming:redoRackParams} disabled={$viewMode==='timing'?!$canRedoTiming:!$canRedo}>
           {#snippet icon()}<Redo2 size={10} />{/snippet}
         </TopBtn>
       </div>
@@ -445,27 +444,6 @@
       </TopBtn>
     </TopMenu>
 
-    <TopMenu
-      id="presets"
-      label="PRESETS"
-      openId={openMenu}
-      onOpen={(id) => (openMenu = id)}
-      title="Factory rack macros — {$selectedPreset}"
-    >
-      {#each FACTORY_PRESETS as preset (preset)}
-        <button
-          type="button"
-          class="preset-item"
-          data-active={$selectedPreset === preset}
-          onclick={() => {
-            selectPreset(preset);
-            openMenu = null;
-          }}
-        >
-          {preset}
-        </button>
-      {/each}
-    </TopMenu>
 
     <TopMenu
       id="view"
@@ -1273,48 +1251,6 @@
     accent-color: #22c55e;
   }
 
-  .preset-select {
-    height: 26px;
-    width: 128px;
-    min-width: 128px;
-    max-width: 128px;
-    padding: 0 6px;
-    background: linear-gradient(180deg, #141618, #0e1012);
-    border: 1px solid #252729;
-    border-radius: 3px;
-    color: #94a3b8;
-    font-family: var(--font-ui);
-    font-size: 8px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .preset-item {
-    height: 22px;
-    padding: 0 8px;
-    text-align: left;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 2px;
-    color: #7a8090;
-    font-family: var(--font-ui);
-    font-size: 9px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-  }
-  .preset-item:hover {
-    background: #1a1c1f;
-    color: #cfe0e2;
-  }
-  .preset-item[data-active='true'] {
-    color: #22c55e;
-    border-color: #22c55e33;
-    background: #22c55e12;
-  }
-
   .hold-btn {
     height: 26px;
     width: 26px;
@@ -1423,4 +1359,7 @@
       transition-duration: 0ms;
     }
   }
+
+.workspace-tabs{display:flex;gap:2px}.clip-order{display:flex;align-items:center;gap:4px;color:#586a71;font:7px var(--font-ui)}.clip-order select{background:#13191a;border:1px solid #283234;color:#78b9ae;font:8px var(--font-ui);padding:5px 4px;border-radius:2px}
+
 </style>

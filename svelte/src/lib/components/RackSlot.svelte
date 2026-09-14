@@ -21,6 +21,8 @@ import {
   import { pgmSource } from '$lib/stores/pgm';
   import { clipDragState } from '$lib/stores/clipDrag';
   import { get } from 'svelte/store';
+  import { viewMode } from '$lib/stores/rackUi';
+  import TimingCard from './timing/TimingCard.svelte';
 
   interface Props {
     row: RackRow;
@@ -167,7 +169,9 @@ import {
   {/if}
 
   {#if mod}
-    {#if compact}
+    {#if $viewMode === 'timing'}
+      <TimingCard slot={slotCanvasId} moduleId={mod.id} onAir={isOnAir} {onVideoUpload} {onVideosUpload} {onClearVideo} />
+    {:else if compact}
       <CompactModule
         {mod}
         {params}

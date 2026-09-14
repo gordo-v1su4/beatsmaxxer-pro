@@ -16,6 +16,10 @@
   } from '$lib/stores/rack';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { audioEngine } from '$lib/audio';
+  import { playbackWorkspace } from '$lib/stores/rackUi';
+  import { timingSettings, timingLive } from '$lib/stores/timing';
+  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
+  import { timingEffectAccent } from './timing/presentation';
 
   interface Props {
     modules: ModuleDefinition[];
@@ -29,11 +33,15 @@
   );
   const clip = $derived(sourceSlot ? $videoLayers[sourceSlot] : null);
   const params = $derived(live ? ($moduleParams[live.id] ?? {}) : {});
-  const liveColor = $derived(parseAccentColor(live?.accentColor ?? '#38bdf8'));
   const isBypassed = $derived(live ? ($bypassed[live.id] ?? false) : false);
   const td = $derived($transportDisplay);
   const clock = $derived(td.hud.clock);
   const sampler = $derived(td.hud.sampler);
+  const timing = $derived($playbackWorkspace === 'timing');
+  const timingConfig = $derived(sourceSlot ? $timingSettings.clips[sourceSlot] ?? defaultClipTiming(sourceSlot) : defaultClipTiming());
+  const timingPosition = $derived(sourceSlot ? $timingLive[sourceSlot] : null);
+  const accent = $derived(timing ? timingEffectAccent(timingConfig.effect) : live?.accentColor ?? '#38bdf8');
+  const liveColor = $derived(parseAccentColor(accent));
 
   function seekFromHud(event: MouseEvent) {
     if (event.shiftKey) {
@@ -55,20 +63,22 @@
   {#if live}
     <aside class="pgm-gutter pgm-gutter-left">
       <span class="pgm-kicker">PROGRAM</span>
-      <span class="pgm-module" style="color:{live.accentColor}">{live.name}</span>
-      {#if isBypassed}
+      <span class="pgm-module" style="color:{accent}">{timing ? timingConfig.effect === 'ramp' ? 'SPEEDRAMP' : timingConfig.effect.toUpperCase() : live.name}</span>
+      {#if timing}
+        <span class="pgm-state">PER CLIP · {timingPosition?.rate.toFixed(2) ?? '1.00'}×</span>
+      {:else if isBypassed}
         <span class="pgm-state is-bypassed">BYPASSED</span>
       {:else}
         <span class="pgm-state">MIX {Math.round(params.mix ?? 50)}%</span>
       {/if}
-      <span class="pgm-rule" style="background:{live.accentColor}33"></span>
+      <span class="pgm-rule" style="background:{accent}33"></span>
       <span class="pgm-kicker">SOURCE</span>
       <span class="pgm-source" title={clip ? clip.name : 'Test pattern'}>
         {clip ? clip.name : 'TEST PATTERN'}
       </span>
     </aside>
 
-    <div class="pgm-screen" style="border-color:{live.accentColor}44">
+    <div class="pgm-screen" style="border-color:{accent}44">
       <WebGpuCanvas id="pgm" moduleId={live.id} color={liveColor} class="absolute inset-0 w-full h-full" />
       {#if $screenFxViewer}<ScreenOverlay variant="viewer" />{/if}
     </div>
@@ -95,8 +105,13 @@
           {clock.reasonLabel} · G{clock.generation}
         </span>
       </div>
-      {#if sampler}
-        <span class="pgm-rule" style="background:{live.accentColor}33"></span>
+      {#if timing}
+        <span class="pgm-rule" style="background:#70cfc433"></span>
+        <span class="pgm-kicker">CLIP TIMING</span>
+        <span class="pgm-state">SRC {timingPosition?.sourceSeconds.toFixed(2) ?? '0.00'}s</span>
+        <span class="pgm-source">{$timingSettings.outputFps} FPS OUTPUT</span>
+      {:else if sampler}
+        <span class="pgm-rule" style="background:{accent}33"></span>
         <span class="pgm-kicker">SAMPLER</span>
         <span class="pgm-state" data-sampler-slice="{sampler.slice}/{sampler.sliceCount}">
           {sampler.mode} {sampler.slice}/{sampler.sliceCount}
@@ -108,10 +123,10 @@
           {sampler.jumpLabel} · J{sampler.jumpGeneration}
         </span>
       {/if}
-      <span class="pgm-rule" style="background:{live.accentColor}33"></span>
+      <span class="pgm-rule" style="background:{accent}33"></span>
       <div class="pgm-meters">
-        <VUMeter value={td.bassAmp * 100} color={live.accentColor} />
-        <VUMeter value={td.amplitude * 200} color={live.accentColor} />
+        <VUMeter value={td.bassAmp * 100} color={accent} />
+        <VUMeter value={td.amplitude * 200} color={accent} />
         <div class="pgm-meter-legend">
           <span>BASS</span>
           <span>PEAK</span>

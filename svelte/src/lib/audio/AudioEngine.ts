@@ -403,9 +403,11 @@ export class AudioEngine implements IAudioEngine {
     this.analysisRequestId += 1;
     this.attachMediaElement(url, trackName);
     this.prepareUploadedTrack(trackName, false);
+    this.uploadedTrackLoadGeneration += 1;
   }
 
   clearUploadedTrack() {
+    this.uploadedTrackLoadGeneration += 1;
     this.stop('clear-upload');
     this.disposeMediaElement();
 
@@ -1157,8 +1159,14 @@ export class AudioEngine implements IAudioEngine {
     );
   }
 
+  /** Apply locally supplied rhythm only after the caller verifies its matching song. */
+  applyPreparedRhythm(analysis: {bpm:number;beats:number[];onsets:number[];duration:number}) {
+    if(!Number.isFinite(analysis.bpm)||analysis.bpm<=0||!Number.isFinite(analysis.duration)||analysis.duration<=0||analysis.beats.length<2||analysis.beats.some((b,i)=>!Number.isFinite(b)||b<0||(i>0&&b<=analysis.beats[i-1])))throw new Error('Invalid prepared song grid');
+    this.applyRhythmAnalysis({...analysis,keyIndex:0,confidence:0});
+  }
+
   private applyRhythmAnalysis(
-    analysis: Awaited<ReturnType<typeof fetchEssentiaRhythmAnalysis>>,
+    analysis: {bpm:number;beats:number[];onsets:number[];duration:number;keyIndex?:number;confidence:number},
   ) {
     const bpm = Math.max(60, Math.min(200, analysis.bpm));
     this._analysisBpm = bpm;

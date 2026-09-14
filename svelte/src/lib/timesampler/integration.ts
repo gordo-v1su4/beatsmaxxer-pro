@@ -44,6 +44,7 @@ export interface PgmScheduleInput<T> {
   sources: readonly T[];
   queued: T | null;
   autoRandom: boolean;
+  linear?: boolean;
   intervalBeats: number;
   feel: PgmFeel;
 }
@@ -352,6 +353,9 @@ export class LiveScheduleRuntime<T = string> {
     if (input.queued !== null) {
       return { source: input.queued, boundaryBeat: this.pgmNextBoundary };
     }
+    if (input.linear && !input.autoRandom && input.sources.length > 1) {
+      return { source: input.sources[(input.sources.indexOf(input.active)+1)%input.sources.length], boundaryBeat: this.pgmNextBoundary };
+    }
     if (!input.autoRandom) {
       return { source: null, boundaryBeat: this.pgmNextBoundary };
     }
@@ -378,7 +382,7 @@ export class LiveScheduleRuntime<T = string> {
     }
 
     const configurationKey =
-      `${input.intervalBeats}:${input.feel}:${input.autoRandom}`;
+      `${input.intervalBeats}:${input.feel}:${input.autoRandom}:${input.linear ?? false}`;
     const discontinuity =
       this.pgmGeneration !== transport.discontinuityGeneration;
     const configurationChanged =
@@ -409,7 +413,9 @@ export class LiveScheduleRuntime<T = string> {
         selected = input.queued;
         consumedQueued = true;
         this.pgmInput = { ...input, queued: null };
-      } else if (input.autoRandom) {
+      } else if (input.queued === null && input.linear && !input.autoRandom && input.sources.length > 1) {
+        selected = input.sources[(input.sources.indexOf(selected ?? input.active)+1)%input.sources.length];
+      } else if (input.queued === null && input.autoRandom) {
         const candidates = input.sources.filter(
           (source) => source !== (selected ?? input.active),
         );

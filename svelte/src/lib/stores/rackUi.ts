@@ -42,8 +42,13 @@ export function setAllModulesCollapsed(ids: string[], collapsed: boolean) {
  * performing wants the picture and nothing else. Stacked in one window they
  * each made the other worse. They are two activities, so they are two screens.
  */
-export type ViewMode = 'perform' | 'arrange';
+export type ViewMode = 'perform' | 'arrange' | 'timing';
 export const viewMode = writable<ViewMode>('perform');
+/** Arrange edits the active workflow without implicitly switching its renderer. */
+export const playbackWorkspace = writable<'perform' | 'timing'>('perform');
+viewMode.subscribe(mode => {
+  if (mode !== 'arrange') playbackWorkspace.set(mode);
+});
 
 /**
  * Strip the performance view back to the picture: rack modules to previews and

@@ -324,12 +324,12 @@ export function applySectionBank(section: ArrangementSection) {
 }
 
 /** Jump to a section, recalling its bank when auto-bank is on. */
-export function selectSection(index: number) {
+export function selectSection(index: number, recallBank = true) {
   const sections = get(arrangement);
   if (index < 0 || index >= sections.length) return;
   activeSectionIndex.set(index);
   barInSection.set(0);
-  if (get(autoBank)) applySectionBank(sections[index]);
+  if (recallBank && get(autoBank)) applySectionBank(sections[index]);
 }
 
 /** Paint or clear one step of the active section. */
@@ -418,3 +418,6 @@ export function moduleForStep(step: number): string | null {
   if (slotIndex == null) return null;
   return moduleForSlotIndex(get(rackTop), get(rackBottom), slotIndex);
 }
+
+/** Shared section rehearsal selection in Arrange and Timing. */
+export const selectedArrangementSections = writable<Set<number>>(new Set([0]));

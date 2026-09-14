@@ -15,6 +15,9 @@ import { audioTimeline } from '$lib/transport';
 import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
 import { getLatencySamples } from '$lib/qa/performance';
+import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
+import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
+import { playbackWorkspace } from '$lib/stores/rackUi';
 
 export interface BmxQaSnapshot {
   webgpu: boolean;
@@ -217,6 +220,13 @@ export function installBmxQaHook() {
   document.body.appendChild(proofOverlay);
 
   const api = {
+    /** Read-only production Timing diagnostics; does not run the benchmark harness. */
+    timingSnapshot() {
+      return { workspace:get(playbackWorkspace), ...timingRuntime.diagnostics,
+        settings:get(timingSettings),status:get(timingStatus),live:get(timingLive),
+        render:webGpuEngine.getRenderDiagnostics(),
+        htmlVideos:Object.fromEntries(activeRackSlotIds().map(slot=>{const video=videoPool.get(slot);return [slot,{paused:video?.paused,time:video?.currentTime}];})) };
+    },
     snapshot: buildSnapshot,
     /** Assign a module to a rack slot through the production domain path. */
     assignModule(row: 'top' | 'bottom', slotIndex: number, moduleId: string) {

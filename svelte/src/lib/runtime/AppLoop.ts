@@ -1,4 +1,7 @@
+import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
 import { get } from 'svelte/store';
+import { playbackWorkspace } from '$lib/stores/rackUi';
+import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
@@ -27,6 +30,7 @@ import {
 import {
   ARRANGEMENT_STEPS,
   activeSectionIndex,
+  sectionStarts,
   applySectionBank,
   arrangement,
   arrangementTotalSteps,
@@ -306,6 +310,12 @@ function runArrangement(frame: TimelineFrame, generationChanged: boolean) {
   const sections = get(arrangement);
   if (sections.length === 0) return;
 
+  if (get(playbackWorkspace) === 'timing') {
+    const bounds = resolveSectionBounds(sections,get(sectionStarts),get(analysisBeatGrid),frame.bpm);
+    const index = bounds.findIndex(b=>frame.positionSeconds>=b.startSeconds&&frame.positionSeconds<b.endSeconds);
+    if(index>=0){activeSectionIndex.set(index);barInSection.set(Math.max(0,Math.floor((frame.positionSeconds-bounds[index].startSeconds)/frame.beatIntervalSeconds/4)));}
+    return;
+  }
   const bar = Math.max(0, Math.floor(frame.beatPosition / 4));
 
   if (generationChanged) {
@@ -370,7 +380,7 @@ function runSequencer(frame: TimelineFrame) {
     if (target && targetSlot && target !== selected) {
       selected = target;
       selectPgmSource(target);
-      void mediaRuntime.prewarmModule(targetSlot).catch(() => {});
+      if (get(playbackWorkspace) !== 'timing') void mediaRuntime.prewarmModule(targetSlot).catch(() => {});
     }
   }
 }
@@ -493,7 +503,7 @@ function configureTimeSampler() {
     midiNotes: tsMidi?.notes,
     midiDurationSeconds: tsMidi?.duration,
     onsetSensitivity: (tsParams.chance ?? 60) / 100,
-    bypassed: !timeSamplerSlot || get(bypassed).timesampler === true
+    bypassed: get(playbackWorkspace) === 'timing' || !timeSamplerSlot || get(bypassed).timesampler === true
   });
 }
 
@@ -527,6 +537,19 @@ export function startAppLoop() {
       pitchSemitones: sound.keySemitones + sound.pitchSemitones,
       timeline: frame
     });
+
+    const timing = get(playbackWorkspace) === 'timing';
+    timingRuntime.setActive(timing, webGpuEngine.getDevice());
+    webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);
+    if (timing) {
+      // Source videos stay registered for Perform, but do not decode or seek
+      // during resident Timing playback. The bank owns source-time selection.
+      getVideoSourcePort().tick(false);
+      timingRuntime.tick(frame);
+      runSequencer(frame);
+      webGpuEngine.renderAll(frame);
+      return;
+    }
 
     const assignments = currentRackAssignments(get(rackTop), get(rackBottom));
     const moduleIds = assignments.map(({ moduleId }) => moduleId);
@@ -620,6 +643,8 @@ export function startAppLoop() {
 
 export function stopAppLoop() {
   running = false;
+  timingRuntime.dispose();
+  webGpuEngine.setTimingTextures(null);
   stopRenderBudget();
   unsubscribeTimeline?.();
   unsubscribeTimeline = null;

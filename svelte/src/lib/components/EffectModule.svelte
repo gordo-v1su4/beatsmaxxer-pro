@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OnAirBadge from './rack/OnAirBadge.svelte';
   import { Upload } from '@lucide/svelte';
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import type { VideoLayer } from '$lib/engine/contracts';
@@ -117,7 +118,8 @@
   }}
 >
   <div
-    style="display:flex;align-items:center;padding:0 5px;height:26px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618 100%);border-bottom:1px solid #0d0e0f;border-top:1px solid #252729;gap:3px;flex-shrink:0"
+    class="module-live-header" class:is-on-air={isOnAir} style:--module-accent={mod.accentColor}
+    style="display:flex;align-items:center;padding:0 5px;height:26px;gap:3px;flex-shrink:0"
   >
     <ModuleGrip {onHeaderPointerDown} />
     <span
@@ -125,13 +127,7 @@
     >
       {mod.name}
     </span>
-    {#if isOnAir}
-      <span
-        style="font-family:var(--font-ui);font-size:6.5px;font-weight:500;letter-spacing:0.1em;color:#ef4444;background:#ef444418;border:1px solid #ef444455;border-radius:2px;padding:0 3px;box-shadow:0 0 6px #ef444433;flex-shrink:0"
-      >
-        ON AIR
-      </span>
-    {/if}
+    {#if isOnAir}<OnAirBadge />{/if}
     <button
       type="button"
       onclick={() => toggleModuleCollapsed(mod.id)}
@@ -194,11 +190,6 @@
         text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
         color={mod.accentColor}
       />
-      {#if isOnAir && td.beatPhase < 0.08 && td.playing}
-        <div
-          style="position:absolute;inset:0;z-index:4;pointer-events:none;border:1px solid {mod.accentColor}44;box-shadow:inset 0 0 12px {mod.accentColor}22"
-        ></div>
-      {/if}
     </div>
   </div>
 
