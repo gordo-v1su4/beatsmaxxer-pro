@@ -124,8 +124,8 @@ Default horizontal snap is 32nd notes, with visible matching subdivisions and a 
 
 Verification: 22 focused curve, clock, trigger-parity and history tests pass; production build passes. A regression originally failed because the old smooth interpolation flattened at each intermediate rising point; the updated curve passes continuous-slope and numerical-integral checks. Saved COSINE parity tests explicitly choose COSINE rather than the new editable default. Browser checks confirmed zero page overflow, equal Ramp/Stutter geometry, three anchors for UP, and actual Delete followed by Undo restoring the user's entire curve exactly. No benchmark or interpolation job reran. Earlier Svelte check retained nine pre-existing errors/fourteen warnings.
 
-### Desktop v0.2.5 release preparation and shared viewer size
+### Desktop v0.2.6 release preparation and shared viewer size
 
 - Removed Timing's smaller main-viewer height override. The program monitor now uses Perform's existing responsive sizing; the Timing thumbnail budget accommodates that monitor.
 - In the existing in-app browser at 1917 x 1574 CSS pixels, both Perform and Timing measured 757.604 x 425.417 for the program canvas and 440.755 for its containing band. Timing horizontal and vertical overflow were both zero. Browser window dimensions were not changed.
-- Desktop package, Tauri configuration, Cargo manifest and lockfile are 0.2.5. The release workflow now rejects mismatched versions or a tag that does not match the bundled version.
+- Desktop package, Tauri configuration, Cargo manifest and lockfile are 0.2.6. The release workflow rejects mismatched versions or a tag that does not match the bundled version.

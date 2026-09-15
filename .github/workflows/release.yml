@@ -2,8 +2,7 @@ name: Release
 
 # Push a version tag to cut a release:
 #   git tag v0.2.0 && git push origin v0.2.0
-# The job builds the installers and attaches them to a DRAFT GitHub release, so
-# nothing is public until you review the artifacts and press Publish.
+# The job builds the installers and attaches them to a public GitHub release.
 #
 # "Run workflow" from the Actions tab builds the same artifacts without
 # publishing anything — useful for checking a build before tagging.
@@ -89,7 +88,7 @@ jobs:
             Download the Windows installer below.
 
             This desktop build is updater-enabled. Production WebGPU proof remains tracked separately in svelte/docs/SHIP_PLAN.md.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
           uploadUpdaterSignatures: true
