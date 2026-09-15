@@ -635,7 +635,8 @@ input[type='range']::-moz-range-thumb {
 .timing-workspace .rack-slot { min-height: 0; }
 .timing-workspace .timing-card { flex: 1; min-width: 0; }
 
-/* Timing cards have a shared editor, so they can fit the available width. */
+/* Timing cards use the same fixed 16:9 rack geometry as Perform. The shared
+   editor below may scroll independently; it must not shrink the viewed clips. */
 .app-viewport:has(.timing-workspace) { scrollbar-gutter: stable; }
 .app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
 .timing-workspace .rack-main { min-width: 0; }
@@ -651,6 +652,10 @@ input[type='range']::-moz-range-thumb {
 	.timing-workspace { --timing-viewer-height: clamp(210px, 24vh, 260px); }
 }
 @media (min-width: 961px) {
-	.timing-workspace .rack-row { grid-template-columns: repeat(5, minmax(0, clamp(144px, calc((100dvh - var(--timing-viewer-height) - var(--timing-plot-height) - 538px) * 8 / 9), 420px))); }
+	.timing-workspace .rack-row { grid-template-columns: repeat(5, minmax(var(--rack-module-width), var(--rack-module-max))); }
 	.timing-workspace .rack-slot { min-width: 0; }
+	/* The native desktop surface is fixed-height. Keep the viewed 16:9 media
+	   geometry intact and spend the saved vertical space in the editor plot. */
+	.timing-workspace { --timing-plot-height: 120px; }
+	.app-viewport { overflow-x: auto; overflow-y: hidden; }
 }

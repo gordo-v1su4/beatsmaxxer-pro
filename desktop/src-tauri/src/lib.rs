@@ -7,7 +7,9 @@ mod essentia;
 /// dimensions are converted to logical pixels first, so Windows DPI scaling
 /// cannot turn a physical-pixel measurement into an almost-fullscreen window.
 const WINDOW_WIDTH_RATIO: f64 = 0.75;
-const WINDOW_HEIGHT_RATIO: f64 = 0.75;
+// Use the full usable monitor height so the two rack rows and timing editor
+// open together without leaving the lower workspace behind a scroll edge.
+const WINDOW_HEIGHT_RATIO: f64 = 1.0;
 const MIN_WINDOW_WIDTH: f64 = 960.0;
 const MIN_WINDOW_HEIGHT: f64 = 600.0;
 
@@ -87,11 +89,11 @@ mod tests {
     fn preferred_startup_size_is_relative_to_the_active_monitor() {
         assert_eq!(
             preferred_window_size(LogicalSize::new(1920.0, 1080.0)),
-            LogicalSize::new(1440.0, 810.0)
+            LogicalSize::new(1440.0, 1008.0)
         );
         assert_eq!(
             preferred_window_size(LogicalSize::new(2560.0, 1440.0)),
-            LogicalSize::new(1920.0, 1080.0)
+            LogicalSize::new(1920.0, 1368.0)
         );
     }
 }

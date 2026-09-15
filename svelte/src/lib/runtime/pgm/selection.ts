@@ -6,6 +6,16 @@ import { selectedTimingSlot, timingEditorCollapsed, timingStatus } from '$lib/st
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 
+/** Timing selection edits a clip before its resident bank is ready. */
+export function canSelectRackSource(input: {
+  slot: string | null;
+  hasVideo: boolean;
+  timing: boolean;
+  bypassed: boolean;
+}) {
+  return !!input.slot && input.hasVideo && (input.timing || !input.bypassed);
+}
+
 export function pgmSourceAvailable(id: string): boolean {
   const slot = currentRackSlotForModule(id);
   return !!slot && !!get(videoLayers)[slot] && (get(viewMode) === 'timing'

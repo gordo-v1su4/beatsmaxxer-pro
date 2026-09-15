@@ -19,7 +19,7 @@ import { rackTop, rackBottom, videoLayers } from '$lib/stores/rack';
 import { viewMode } from '$lib/stores/rackUi';
 import { selectedTimingSlot, timingStatus } from '$lib/stores/timing';
 import { transportDisplay } from '$lib/stores/transportDisplay';
-import { selectRackSource } from '$lib/runtime/pgm/selection';
+import { canSelectRackSource, selectRackSource } from '$lib/runtime/pgm/selection';
 
 beforeEach(() => {
   pgmDirector.stop();
@@ -81,4 +81,10 @@ test('a loading slot can be edited without sending an unavailable clip to output
   expect(get(selectedTimingSlot)).toBe('top-3');
   expect(get(pgmSource)).toBe('transition');
   expect(get(queuedPgmSource)).toBeNull();
+});
+
+test('timing rail sources remain selectable while their resident bank loads', () => {
+  expect(canSelectRackSource({ slot: 'top-3', hasVideo: true, timing: true, bypassed: false })).toBe(true);
+  expect(canSelectRackSource({ slot: 'top-3', hasVideo: true, timing: false, bypassed: true })).toBe(false);
+  expect(canSelectRackSource({ slot: 'top-3', hasVideo: false, timing: true, bypassed: false })).toBe(false);
 });

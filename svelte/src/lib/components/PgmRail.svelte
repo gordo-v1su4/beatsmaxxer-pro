@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { ModuleDefinition } from '$lib/modules/catalog';
-  import { selectRackSource } from '$lib/runtime/pgm/selection';
+  import { canSelectRackSource, selectRackSource } from '$lib/runtime/pgm/selection';
   import {
     pgmSource,
     queuedPgmSource,
@@ -46,7 +46,12 @@
   const handleSelect = selectRackSource;
   function available(id:string) {
     const slot=currentRackSlotForModule(id,$rackTop,$rackBottom);
-    return !!slot && !!$videoLayers[slot] && ($viewMode==='timing' ? $timingStatus[slot]?.state==='ready' : !$bypassed[id]);
+    return canSelectRackSource({
+      slot,
+      hasVideo: !!(slot && $videoLayers[slot]),
+      timing: $viewMode === 'timing',
+      bypassed: !!$bypassed[id],
+    });
   }
   function keySelect(e:KeyboardEvent) {
     if ($viewMode==='arrange') return;
