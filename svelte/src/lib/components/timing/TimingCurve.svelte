@@ -61,30 +61,39 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<svg bind:this={svg} viewBox={`0 0 ${W} 246`} preserveAspectRatio="none" role="group" aria-label="Editable speed ramp, numbered bars and beats" onpointerdown={(e)=>down(e)} onpointermove={move} onpointerup={finish} onpointercancel={finish} onlostpointercapture={finish}>
-  <rect width={W} height="246" fill="#090b0c" />
-  {#each ticks as beat}
-    {@const isBar=beat%4===0}{@const isBeat=beat%1===0}{@const isLabel=beat%2===0 || beat===ramp.cycleBeats}
-    <line x1={x(beat/ramp.cycleBeats)} x2={x(beat/ramp.cycleBeats)} y1="22" y2={bottom} stroke={isBar?'#293135':isBeat?'#303c40':'#202a2e'} stroke-width={isBar?1:.6}/>
-    {#if isBeat && isLabel}<text x={x(beat/ramp.cycleBeats)+(beat===ramp.cycleBeats?-4:4)} text-anchor={beat===ramp.cycleBeats?'end':'start'} y="14" fill={isBar?'#879594':'#4c5b5a'} font-size="9" font-family="monospace" textLength="22" lengthAdjust="spacingAndGlyphs">{Math.floor(beat/4)+1}.{beat%4+1}</text>{/if}
-  {/each}
-  {#each rateTicks as rate}
-    <line x1="0" x2={W} y1={y(rateToY(rate))} y2={y(rateToY(rate))} stroke={rate===1?'#526c65':rate%1===0?'#303c40':'#202a2e'} stroke-width=".6"/>
-    <text x="12" y={y(rateToY(rate))-3} fill="#49645f" font-size="8" font-family="monospace" textLength="30" lengthAdjust="spacingAndGlyphs">{rate.toFixed(2)}×</text>
-  {/each}
-  <path d={`${path} L${x(1)},${bottom} L${x(0)},${bottom}Z`} fill={ACCENTS.speedramp+'12'} pointer-events="none"/>
-  <path d={path} fill="none" stroke={ACCENTS.speedramp} stroke-width="1.5" pointer-events="none"/>
-  <line x1={x(phase)} x2={x(phase)} y1="22" y2={bottom} stroke="#b9eee0" stroke-width=".8" opacity=".65" pointer-events="none"/>
-  <ellipse cx={x(phase)} cy={y(rateToY(evaluateRamp(ramp,phase)))} rx="2.7" ry={ry(2.7)} fill="#c0f6e7" pointer-events="none"/>
-  {#each ramp.points as p (p.id)}
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <g role="button" tabindex="0" aria-label="Ramp anchor at beat {(p.x*ramp.cycleBeats+1).toFixed(2)}, {(0.25+p.y*3.75).toFixed(2)} times speed" onpointerdown={(e)=>{e.stopPropagation();down(e,p.id);}} ondblclick={(e)=>{e.stopPropagation();remove(p.id);}} onkeydown={(e)=>key(e,p.id)} onfocus={()=>selected=p.id}>
-      <ellipse cx={x(p.x)} cy={y(p.y)} rx="10" ry={ry(10)} fill="transparent"/>
-      <ellipse cx={x(p.x)} cy={y(p.y)} rx="2" ry={ry(2)} fill="#090b0c" stroke={selected===p.id?'#c2f4e7':ACCENTS.speedramp} stroke-width="1.35" pointer-events="none"/>
-    </g>
-  {/each}
-</svg>
+<div class="curve-canvas">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <svg bind:this={svg} viewBox={`0 0 ${W} 246`} preserveAspectRatio="none" role="group" aria-label="Editable speed ramp, numbered bars and beats" onpointerdown={(e)=>down(e)} onpointermove={move} onpointerup={finish} onpointercancel={finish} onlostpointercapture={finish}>
+    <rect width={W} height="246" fill="#090b0c" />
+    {#each ticks as beat}
+      {@const isBar=beat%4===0}{@const isBeat=beat%1===0}
+      <line x1={x(beat/ramp.cycleBeats)} x2={x(beat/ramp.cycleBeats)} y1="22" y2={bottom} stroke={isBar?'#293135':isBeat?'#303c40':'#202a2e'} stroke-width={isBar?1:.6}/>
+    {/each}
+    {#each rateTicks as rate}
+      <line x1="0" x2={W} y1={y(rateToY(rate))} y2={y(rateToY(rate))} stroke={rate===1?'#526c65':rate%1===0?'#303c40':'#202a2e'} stroke-width=".6"/>
+    {/each}
+    <path d={`${path} L${x(1)},${bottom} L${x(0)},${bottom}Z`} fill={ACCENTS.speedramp+'12'} pointer-events="none"/>
+    <path d={path} fill="none" stroke={ACCENTS.speedramp} stroke-width="1.5" pointer-events="none"/>
+    <line x1={x(phase)} x2={x(phase)} y1="22" y2={bottom} stroke="#b9eee0" stroke-width=".8" opacity=".65" pointer-events="none"/>
+    <ellipse cx={x(phase)} cy={y(rateToY(evaluateRamp(ramp,phase)))} rx="2.7" ry={ry(2.7)} fill="#c0f6e7" pointer-events="none"/>
+    {#each ramp.points as p (p.id)}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <g role="button" tabindex="0" aria-label="Ramp anchor at beat {(p.x*ramp.cycleBeats+1).toFixed(2)}, {(0.25+p.y*3.75).toFixed(2)} times speed" onpointerdown={(e)=>{e.stopPropagation();down(e,p.id);}} ondblclick={(e)=>{e.stopPropagation();remove(p.id);}} onkeydown={(e)=>key(e,p.id)} onfocus={()=>selected=p.id}>
+        <ellipse cx={x(p.x)} cy={y(p.y)} rx="10" ry={ry(10)} fill="transparent"/>
+        <ellipse cx={x(p.x)} cy={y(p.y)} rx="2" ry={ry(2)} fill="#090b0c" stroke={selected===p.id?'#c2f4e7':ACCENTS.speedramp} stroke-width="1.35" pointer-events="none"/>
+      </g>
+    {/each}
+  </svg>
+  <div class="curve-x-labels" aria-hidden="true">
+    {#each ticks as beat}
+      {@const isLabel=beat>0 && Math.abs(beat*2-Math.round(beat*2))<1e-6}
+      {#if isLabel}<span style={`left:${beat/ramp.cycleBeats*100}%;transform:translateX(${beat===ramp.cycleBeats?'-100%':'-50%'})`}>{beat.toFixed(beat%1===0?0:1)}</span>{/if}
+    {/each}
+  </div>
+  <div class="curve-y-labels" aria-hidden="true">
+    {#each rateTicks as rate}<span style={`top:${y(rateToY(rate))/246*100}%`}>{rate.toFixed(2)}×</span>{/each}
+  </div>
+</div>
 <div class="curve-tools">
   <span>{anchor?`${yToRate(anchor.y).toFixed(2)}× · BEAT ${(anchor.x*ramp.cycleBeats+1).toFixed(2)}`:'SELECT A DOT TO EDIT'} · DELETE / BACKSPACE</span>
   <button disabled={!canRemove} onclick={()=>{if(selected)remove(selected);}} title={canRemove?'Delete selected interior point':'Cycle endpoints cannot be deleted'}>DELETE POINT</button>
@@ -95,5 +104,5 @@
 <style>
   .curve-tools{height:26px;display:flex;align-items:center;gap:12px;padding:0 8px;color:#6a7a8a;font:7px var(--font-mono)}
   .curve-tools button{font:7px var(--font-ui);padding:2px 5px;color:#91a9a4;background:#151b1d;border:1px solid #293336;border-radius:2px;cursor:pointer}.curve-tools button:disabled{opacity:.4;cursor:default}
-  svg{display:block;width:100%;height:var(--timing-plot-height,200px);min-width:0;touch-action:none;cursor:crosshair}g{cursor:grab}g:focus{outline:none}g:focus ellipse:last-child{stroke:#e5fff7;stroke-width:2}.tension{display:flex;align-items:center;gap:12px;padding:4px 10px;color:#76b5aa;font:8px monospace}.tension input{width:160px;accent-color:#35e08a}
+  .curve-canvas{position:relative;min-width:0}.curve-canvas svg{display:block;width:100%;height:var(--timing-plot-height,200px);min-width:0;touch-action:none;cursor:crosshair}.curve-canvas span{position:absolute;pointer-events:none;white-space:nowrap;font:9px/1 var(--font-mono);color:#4c5b5a}.curve-x-labels{position:absolute;inset:0 0 auto 0;height:22px}.curve-x-labels span{top:2px}.curve-y-labels{position:absolute;inset:0 auto 0 0;width:42px}.curve-y-labels span{left:12px;transform:translateY(-50%);color:#49645f;font-size:8px}.curve-canvas g{cursor:grab}.curve-canvas g:focus{outline:none}.curve-canvas g:focus ellipse:last-child{stroke:#e5fff7;stroke-width:2}.tension{display:flex;align-items:center;gap:12px;padding:4px 10px;color:#76b5aa;font:8px monospace}.tension input{width:160px;accent-color:#35e08a}
 </style>
