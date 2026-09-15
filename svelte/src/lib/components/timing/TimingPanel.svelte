@@ -99,7 +99,6 @@
   .editor-controls{display:grid!important;grid-template-columns:176px minmax(0,1fr);align-items:start!important;height:44px;overflow-y:auto}
   .tabs{flex-shrink:0;white-space:nowrap}
   header>span{min-width:0}.live{width:152px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}.memory{width:94px;text-align:right;flex-shrink:0}
-  footer{flex-wrap:wrap}footer>span{min-width:160px}
 
   .shape-bank{display:flex;flex-wrap:nowrap;overflow-x:auto;height:48px;gap:3px;padding:5px 8px;background:#0e1012}.shape-bank button{width:64px;flex-shrink:0;padding:2px;color:#76958f}.shape-bank button:hover{color:var(--timing-accent);background:#1b2826}.shape-bank svg{display:block;width:100%;height:22px}.shape-bank span{font:6px var(--font-mono)}
   .capacity-notice{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px;color:#e49879;background:#281c16;border-bottom:1px solid #673c30;font:8px var(--font-mono)}

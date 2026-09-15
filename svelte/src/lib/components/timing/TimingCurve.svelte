@@ -95,5 +95,5 @@
 <style>
   .curve-tools{height:26px;display:flex;align-items:center;gap:12px;padding:0 8px;color:#6a7a8a;font:7px var(--font-mono)}
   .curve-tools button{font:7px var(--font-ui);padding:2px 5px;color:#91a9a4;background:#151b1d;border:1px solid #293336;border-radius:2px;cursor:pointer}.curve-tools button:disabled{opacity:.4;cursor:default}
-  svg{display:block;width:100%;height:var(--timing-plot-height,200px);min-width:0;touch-action:none;cursor:crosshair}g{cursor:grab}g:focus{outline:none}g:focus circle:last-child{stroke:#e5fff7;stroke-width:2}.tension{display:flex;align-items:center;gap:12px;padding:4px 10px;color:#76b5aa;font:8px monospace}.tension input{width:160px;accent-color:#35e08a}
+  svg{display:block;width:100%;height:var(--timing-plot-height,200px);min-width:0;touch-action:none;cursor:crosshair}g{cursor:grab}g:focus{outline:none}g:focus ellipse:last-child{stroke:#e5fff7;stroke-width:2}.tension{display:flex;align-items:center;gap:12px;padding:4px 10px;color:#76b5aa;font:8px monospace}.tension input{width:160px;accent-color:#35e08a}
 </style>
