@@ -644,9 +644,8 @@ input[type='range']::-moz-range-thumb {
 	min-height: 0;
 }
 .timing-workspace .timing-panel.is-collapsed { flex: 0 0 auto; }
-/* Keep the compact accepted-burst row attached to the footer. Any spare
-   height belongs above this bottom utility cluster, never beneath it. */
-.timing-workspace .timing-panel > .event-strip { margin-top: auto; }
+/* Keep the compact accepted-burst row directly after the editor surface. */
+.timing-workspace .timing-panel > .event-strip { margin-top: 0; }
 .timing-workspace .timing-panel > .timing-footer { margin-top: 0; }
 
 /* Timing cards use the same fixed 16:9 rack geometry as Perform. The shared
@@ -673,9 +672,9 @@ input[type='range']::-moz-range-thumb {
 	.timing-workspace .rack-slot { min-width: 0; }
 	/* The native desktop surface is fixed-height. Keep the viewed 16:9 media
 	   geometry intact and spend the saved vertical space in the editor plot. */
-	.timing-workspace { --timing-plot-height: 120px; }
+	.timing-workspace { --timing-plot-height: 200px; }
 	/* The accepted-burst timeline is optional detail. When it is expanded,
 	   reclaim its height from the plot so the footer remains in the window. */
-	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) { --timing-plot-height: 56px; }
+	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) { --timing-plot-height: 136px; }
 	.app-viewport { overflow-x: auto; overflow-y: hidden; }
 }
