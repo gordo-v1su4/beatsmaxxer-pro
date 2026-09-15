@@ -10,11 +10,12 @@
   const start=$derived(Math.floor(beat/16)*16);
   const visible=$derived(bursts.filter(b=>grid.sample(b.end).beatPosition>=start&&grid.sample(b.at).beatPosition<start+16));
   const x=(b:number)=>12+(b-start)/16*976;
+  let expanded=$state(false);
 </script>
 {#if $timingSettings.trigger.source!=='continuous'}
-<div class="event-strip" aria-label="Timing accepted triggers and playback gaps">
-  <div>SONG · BARS {Math.floor(start/4)+1}–{Math.floor(start/4)+4} · {(live?.state??'waiting').toUpperCase()}<span>ACCEPTED BURSTS · EMPTY SPACE = NORMAL PLAYBACK</span></div>
-  <svg viewBox="0 0 1000 64" role="img" aria-label="Four bars of accepted effect triggers, repeat boundaries and live song position">
+<div class:event-strip-collapsed={!expanded} class="event-strip" aria-label="Timing accepted triggers and playback gaps">
+  <button class="event-strip-toggle" aria-expanded={expanded} onclick={()=>expanded=!expanded}>SONG · BARS {Math.floor(start/4)+1}–{Math.floor(start/4)+4} · {(live?.state??'waiting').toUpperCase()}<span>{expanded?'▾':'▸'} ACCEPTED BURSTS · EMPTY SPACE = NORMAL PLAYBACK</span></button>
+  {#if expanded}<svg viewBox="0 0 1000 64" role="img" aria-label="Four bars of accepted effect triggers, repeat boundaries and live song position">
     <defs><clipPath id="timing-events-clip"><rect x="12" y="20" width="976" height="40"/></clipPath></defs>
     {#each Array.from({length:17},(_,i)=>start+i) as b}
       <line x1={x(b)} x2={x(b)} y1="20" y2="60" stroke={b%4===0?'#354149':'#1c2429'}/>
@@ -28,7 +29,7 @@
       {/each}
       <line data-trigger-playhead x1={x(beat)} x2={x(beat)} y1="18" y2="60" stroke="#c1d4d7" stroke-width="1.5"/>
     </g>
-  </svg>
+  </svg>{/if}
 </div>
 {/if}
-<style>.event-strip{padding:4px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip>div{display:flex;justify-content:space-between}span{color:#53616a}svg{display:block;width:100%;height:56px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>
+<style>.event-strip{padding:4px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip-toggle{display:flex;width:100%;justify-content:space-between;padding:0;border:0;background:transparent;color:inherit;font:inherit;letter-spacing:.02em;text-align:left;cursor:pointer}.event-strip-toggle span{color:#53616a}.event-strip-collapsed{height:0;padding:0;border-top:0;position:relative;z-index:2;overflow:visible}.event-strip-collapsed .event-strip-toggle{position:absolute;right:8px;bottom:0;width:auto;padding:0 2px;font-size:6px;line-height:1;color:#53616a}svg{display:block;width:100%;height:56px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>

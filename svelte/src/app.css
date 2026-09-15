@@ -635,6 +635,7 @@ input[type='range']::-moz-range-thumb {
 .timing-workspace .rack-row { min-height: 0 !important; }
 .timing-workspace .rack-slot { min-height: 0; }
 .timing-workspace .timing-card { flex: 1; min-width: 0; }
+.timing-workspace .timing-panel { margin-top: 0 !important; margin-bottom: -4px; }
 
 /* Timing cards use the same fixed 16:9 rack geometry as Perform. The shared
    editor below may scroll independently; it must not shrink the viewed clips. */
