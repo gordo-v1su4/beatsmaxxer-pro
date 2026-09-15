@@ -91,7 +91,10 @@
     {/each}
   </div>
   <div class="curve-y-labels" aria-hidden="true">
-    {#each rateTicks as rate}<span style={`top:${y(rateToY(rate))/246*100}%`}>{rate.toFixed(2)}×</span>{/each}
+    {#each rateTicks as rate}
+      {@const isLabel=Math.abs(rate*2-Math.round(rate*2))<1e-6}
+      {#if isLabel}<span style={`top:${y(rateToY(rate))/246*100}%`}>{rate.toFixed(rate%1===0?0:1)}×</span>{/if}
+    {/each}
   </div>
 </div>
 <div class="curve-tools">
