@@ -399,7 +399,7 @@
     <div class="topbar-actions">
     <div class="workspace-tabs" aria-label="Workspace">
       {#each ['perform','arrange','timing'] as mode}
-        <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} onclick={()=>{
+        <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={td.playing} title={td.playing ? 'Stop playback before changing workspace' : undefined} onclick={()=>{
           viewMode.set(mode as 'perform'|'arrange'|'timing');
           if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
         }}/>
