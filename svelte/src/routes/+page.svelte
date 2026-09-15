@@ -1,6 +1,7 @@
 <script lang="ts">
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
+  import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
   import { probeWebGpu } from '$lib/rendering/webgpu/capability';
@@ -352,6 +353,8 @@
           <RackSlot row="bottom" slotIndex={$rackBottom.length + offset} />
         {/each}
       </div>
+
+      {#if $viewMode==='perform'}<TimingFooter />{/if}
 
       {#if $viewMode==='timing'}<TimingPanel/>{/if}
     </div>

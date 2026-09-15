@@ -11,6 +11,7 @@
   import { undoTiming, redoTiming } from '$lib/stores/timing';
   import { TIMING_BUDGET_OPTIONS } from '$lib/stores/timing';
   import { timingEffectAccent } from './presentation';
+  import TimingFooter from './TimingFooter.svelte';
   const config=$derived($timingSettings.clips[$selectedTimingSlot]??defaultClipTiming($selectedTimingSlot));
   const live=$derived($timingLive[$selectedTimingSlot]);
   const status=$derived($timingStatus[$selectedTimingSlot]);
@@ -87,14 +88,7 @@
     {/if}
     </div>
     <TimingEventStrip/>
-    <footer>
-      <span>{status?.state==='ready'?`${status.frames} RESIDENT FRAMES · ${status.fps?.toFixed(1)} FPS SOURCE`:status?.state==='error'?status.message:$videoLayers[$selectedTimingSlot]?'PREPARING CLIP…':'LOAD CLIPS FROM THE TOP BAR OR CLIPS BROWSER'}</span>
-      {#if status?.state==='error'}<button onclick={()=>timingRuntime.retry($selectedTimingSlot)}>RETRY</button>{/if}
-      <label>OUTPUT <select aria-label="Timing output frame rate" value={$timingSettings.outputFps} onchange={(e)=>timingSettings.update(s=>({...s,outputFps:Number(e.currentTarget.value)}))}>{#each [24,30,60] as fps}<option value={fps}>{fps} FPS</option>{/each}</select></label>
-      <label title="Resizes frames once while preloading. Preserves all frames, including RIFE, but changes video output resolution.">PRELOAD <select aria-label="Timing preload resolution" value={$timingSettings.preloadHeight} onchange={e=>timingSettings.update(s=>({...s,preloadHeight:Number(e.currentTarget.value)}))}><option value="0">NATIVE</option><option value="720">720p</option><option value="540">540p</option><option value="360">360p</option></select></label>
-      <button title="540p frame bank, 8 GiB cap, 60 FPS output. Changes video resolution; keeps every source frame." onclick={()=>timingSettings.update(s=>({...s,preloadHeight:540,budgetGiB:8,outputFps:60}))}>LAPTOP · 540p</button>
-      <label>CAPACITY <select aria-label="Resident frame memory budget" title="Saved in this browser for this address. Each open tab owns a separate frame bank." value={$timingSettings.budgetGiB} onchange={(e)=>timingSettings.update(s=>({...s,budgetGiB:Number(e.currentTarget.value)}))}>{#each TIMING_BUDGET_OPTIONS as gb}<option value={gb}>{gb} GiB</option>{/each}</select></label>
-    </footer>
+    <TimingFooter />
   {/if}
 </section>
 
