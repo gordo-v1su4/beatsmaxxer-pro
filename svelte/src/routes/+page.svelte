@@ -353,6 +353,14 @@
         {/each}
       </div>
 
+      {#if $viewMode==='perform'}
+        <div class="perform-footer" aria-label="Perform workspace status">
+          <span>PERFORM</span>
+          <span>10 CLIP SLOTS · LIVE PREVIEWS</span>
+          <span>SELECT A SOURCE TO TAKE PROGRAM</span>
+        </div>
+      {/if}
+
       {#if $viewMode==='timing'}<TimingPanel/>{/if}
     </div>
 

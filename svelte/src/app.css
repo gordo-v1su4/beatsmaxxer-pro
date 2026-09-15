@@ -424,6 +424,22 @@ input[type='range']::-moz-range-thumb {
 	border-top: 1px solid #252729;
 	border-bottom: 1px solid #0d0e0f;
 }
+
+.perform-footer {
+	height: 34px;
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 18px;
+	padding: 0 10px;
+	border-top: 2px solid #0d0e0f;
+	background: linear-gradient(180deg, #131619, #0d0f11);
+	color: #53616b;
+	font: 7px var(--font-mono);
+	letter-spacing: .1em;
+}
+.perform-footer span:first-child { color: #4ade80; }
+.perform-footer span:last-child { margin-left: auto; }
 .module-live-header.is-on-air {
 	background: linear-gradient(180deg,color-mix(in srgb,var(--module-accent) 26%,#1e2124),color-mix(in srgb,var(--module-accent) 15%,#141618));
 	border-top-color: color-mix(in srgb,var(--module-accent) 50%,#252729);
