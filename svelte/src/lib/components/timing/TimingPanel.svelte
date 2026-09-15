@@ -35,7 +35,7 @@
 </script>
 
 <svelte:window onkeydown={shortcut}/>
-<section class="timing-panel" aria-label="Timing editor" style:--timing-accent={timingEffectAccent($timingEditorTab)}>
+<section class="timing-panel" class:is-collapsed={$timingEditorCollapsed} aria-label="Timing editor" style:--timing-accent={timingEffectAccent($timingEditorTab)}>
   <header>
     <button class="timing-collapse" onclick={()=>timingEditorCollapsed.update(v=>!v)} aria-expanded={!$timingEditorCollapsed} aria-label="Toggle timing editor">{$timingEditorCollapsed?'▸':'▾'} TIMING</button>
     <span class="scope">PER CLIP</span><span class="clip">S{number} · {$videoLayers[$selectedTimingSlot]?.name??'SELECT / LOAD A CLIP'}</span>

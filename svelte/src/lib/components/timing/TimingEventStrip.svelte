@@ -14,7 +14,10 @@
 </script>
 {#if $timingSettings.trigger.source!=='continuous'}
 <div class:event-strip-collapsed={!expanded} class="event-strip" aria-label="Timing accepted triggers and playback gaps">
-  <button class="event-strip-toggle" aria-expanded={expanded} onclick={()=>expanded=!expanded}>SONG · BARS {Math.floor(start/4)+1}–{Math.floor(start/4)+4} · {(live?.state??'waiting').toUpperCase()}<span>{expanded?'▾':'▸'} ACCEPTED BURSTS · EMPTY SPACE = NORMAL PLAYBACK</span></button>
+  <button class="event-strip-toggle" aria-expanded={expanded} aria-label={expanded?'Collapse accepted burst timeline':'Expand accepted burst timeline'} title={expanded?'Collapse accepted burst timeline':'Expand accepted burst timeline'} onclick={()=>expanded=!expanded}>
+    <span class="event-strip-title"><span class="event-strip-chevron" aria-hidden="true">{expanded?'⌄':'›'}</span> SONG · BARS {Math.floor(start/4)+1}–{Math.floor(start/4)+4} · {(live?.state??'waiting').toUpperCase()}</span>
+    <span class="event-strip-hint">ACCEPTED BURSTS · EMPTY SPACE = NORMAL PLAYBACK</span>
+  </button>
   {#if expanded}<svg viewBox="0 0 1000 64" role="img" aria-label="Four bars of accepted effect triggers, repeat boundaries and live song position">
     <defs><clipPath id="timing-events-clip"><rect x="12" y="20" width="976" height="40"/></clipPath></defs>
     {#each Array.from({length:17},(_,i)=>start+i) as b}
@@ -32,4 +35,4 @@
   </svg>{/if}
 </div>
 {/if}
-<style>.event-strip{padding:4px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip-toggle{display:flex;width:100%;justify-content:space-between;padding:0;border:0;background:transparent;color:inherit;font:inherit;letter-spacing:.02em;text-align:left;cursor:pointer}.event-strip-toggle span{color:#53616a}.event-strip-collapsed{height:0;padding:0;border-top:0;position:relative;z-index:2;overflow:visible}.event-strip-collapsed .event-strip-toggle{position:absolute;left:8px;right:8px;bottom:0;width:calc(100% - 16px);height:14px;padding:0 2px;border-top:1px solid #252a2e;background:#0c0e10;font-size:7px;line-height:14px;color:#768691}svg{display:block;width:100%;height:56px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>
+<style>.event-strip{padding:4px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip-toggle{display:flex;align-items:center;width:100%;min-height:20px;justify-content:space-between;gap:12px;padding:0 2px;border:0;background:transparent;color:inherit;font:inherit;letter-spacing:.02em;text-align:left;cursor:pointer}.event-strip-toggle:hover,.event-strip-toggle:focus-visible{color:#b9eee0}.event-strip-title,.event-strip-hint{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.event-strip-chevron{display:inline-block;width:12px;color:var(--timing-accent);font-size:12px;line-height:1;text-align:center}.event-strip-hint{color:#53616a;text-align:right}.event-strip-collapsed{height:22px;padding:0 8px;border-top:1px solid #252a2e;overflow:visible}.event-strip-collapsed .event-strip-toggle{height:21px}svg{display:block;width:100%;height:56px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>

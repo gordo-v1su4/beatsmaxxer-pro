@@ -635,7 +635,16 @@ input[type='range']::-moz-range-thumb {
 .timing-workspace .rack-row { min-height: 0 !important; }
 .timing-workspace .rack-slot { min-height: 0; }
 .timing-workspace .timing-card { flex: 1; min-width: 0; }
-.timing-workspace .timing-panel { margin-top: 0 !important; margin-bottom: -4px; }
+.timing-workspace .timing-panel {
+	margin-top: 0 !important;
+	margin-bottom: 0;
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	min-height: 0;
+}
+.timing-workspace .timing-panel.is-collapsed { flex: 0 0 auto; }
+.timing-workspace .timing-panel > .timing-footer { margin-top: auto; }
 
 /* Timing cards use the same fixed 16:9 rack geometry as Perform. The shared
    editor below may scroll independently; it must not shrink the viewed clips. */
@@ -643,6 +652,9 @@ input[type='range']::-moz-range-thumb {
 .app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
 .timing-workspace .rack-main { min-width: 0; }
 .timing-workspace {
+	/* The top bar is 49px (1px top border, 46px row, 2px bottom border).
+	   Keep the timing surface flush with the native desktop window bottom. */
+	min-height: max(calc(100dvh - 49px), 0px);
 	--timing-viewer-height: clamp(260px, 28vh, 460px);
 	--timing-plot-height: clamp(120px, 14vh, 200px);
 }
