@@ -440,6 +440,7 @@ input[type='range']::-moz-range-thumb {
 }
 .perform-footer span:first-child { color: #4ade80; }
 .perform-footer span:last-child { margin-left: auto; }
+.perform-timing-strip { flex-shrink: 0; }
 .module-live-header.is-on-air {
 	background: linear-gradient(180deg,color-mix(in srgb,var(--module-accent) 26%,#1e2124),color-mix(in srgb,var(--module-accent) 15%,#141618));
 	border-top-color: color-mix(in srgb,var(--module-accent) 50%,#252729);
