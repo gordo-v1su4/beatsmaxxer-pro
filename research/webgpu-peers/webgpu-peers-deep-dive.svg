@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" role="img" aria-labelledby="title desc">
+  <title id="title">WebGPU peer landscape  deep dive</title>
+  <desc id="desc">Positioning of Beatsmaxxer Pro and five cloned peer repos on axes from timeline editor to live VJ and from infrastructure samples to full products.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0d12"/>
+      <stop offset="100%" stop-color="#12161f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="720" fill="url(#bg)"/>
+
+  <text x="480" y="42" text-anchor="middle" fill="#f3f4f6" font-family="Segoe UI, system-ui, sans-serif" font-size="24" font-weight="700">
+    WebGPU peer landscape (cloned repos)
+  </text>
+  <text x="480" y="68" text-anchor="middle" fill="#9ca3af" font-family="Segoe UI, system-ui, sans-serif" font-size="14">
+    research/webgpu-peers  Sep 2026
+  </text>
+
+  <rect x="130" y="100" width="700" height="500" rx="12" fill="#151922" stroke="#2a3140"/>
+
+  <g stroke="#243041" stroke-width="1">
+    <line x1="480" y1="100" x2="480" y2="600"/>
+    <line x1="130" y1="350" x2="830" y2="350"/>
+    <line x1="305" y1="100" x2="305" y2="600" stroke-dasharray="4 6"/>
+    <line x1="655" y1="100" x2="655" y2="600" stroke-dasharray="4 6"/>
+    <line x1="130" y1="225" x2="830" y2="225" stroke-dasharray="4 6"/>
+    <line x1="130" y1="475" x2="830" y2="475" stroke-dasharray="4 6"/>
+  </g>
+
+  <text x="480" y="632" text-anchor="middle" fill="#d1d5db" font-family="Segoe UI, system-ui, sans-serif" font-size="15" font-weight="600">
+    Timeline / NLE    Live VJ / performance
+  </text>
+  <text x="52" y="355" text-anchor="middle" fill="#d1d5db" font-family="Segoe UI, system-ui, sans-serif" font-size="15" font-weight="600" transform="rotate(-90 52 355)">
+    Samples / infra    Full product
+  </text>
+
+  <!-- webgpu-samples: bottom-left infra -->
+  <g filter="url(#shadow)">
+    <circle cx="220" cy="520" r="9" fill="#94a3b8"/>
+    <rect x="150" y="536" width="140" height="48" rx="8" fill="#1f2937" stroke="#374151"/>
+    <text x="220" y="556" text-anchor="middle" fill="#f9fafb" font-size="13" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">webgpu-samples</text>
+    <text x="220" y="572" text-anchor="middle" fill="#9ca3af" font-size="10" font-family="Segoe UI, system-ui, sans-serif">Canonical API</text>
+  </g>
+
+  <!-- webgpu-video-rendering: mid-left demo -->
+  <g filter="url(#shadow)">
+    <circle cx="300" cy="430" r="9" fill="#818cf8"/>
+    <rect x="210" y="446" width="180" height="48" rx="8" fill="#1f2937" stroke="#374151"/>
+    <text x="300" y="466" text-anchor="middle" fill="#f9fafb" font-size="12" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">webgpu-video-rendering</text>
+    <text x="300" y="482" text-anchor="middle" fill="#9ca3af" font-size="10" font-family="Segoe UI, system-ui, sans-serif">WebCodecs lab</text>
+  </g>
+
+  <!-- FreeCut: left, mid-high product -->
+  <g filter="url(#shadow)">
+    <circle cx="240" cy="300" r="10" fill="#60a5fa"/>
+    <rect x="160" y="318" width="160" height="52" rx="8" fill="#1f2937" stroke="#374151"/>
+    <text x="240" y="340" text-anchor="middle" fill="#f9fafb" font-size="14" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">FreeCut</text>
+    <text x="240" y="358" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="Segoe UI, system-ui, sans-serif">Browser NLE + GPU FX</text>
+  </g>
+
+  <!-- Beatform: right, upper-mid -->
+  <g filter="url(#shadow)">
+    <circle cx="680" cy="220" r="10" fill="#fbbf24"/>
+    <rect x="600" y="238" width="160" height="52" rx="8" fill="#1f2937" stroke="#374151"/>
+    <text x="680" y="260" text-anchor="middle" fill="#f9fafb" font-size="14" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">Beatform</text>
+    <text x="680" y="278" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="Segoe UI, system-ui, sans-serif">Beat-sync visualizer</text>
+  </g>
+
+  <!-- Ghost Arcade: far right product -->
+  <g filter="url(#shadow)">
+    <circle cx="720" cy="340" r="10" fill="#fb923c"/>
+    <rect x="630" y="358" width="180" height="52" rx="8" fill="#1f2937" stroke="#374151"/>
+    <text x="720" y="380" text-anchor="middle" fill="#f9fafb" font-size="14" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">Ghost Arcade</text>
+    <text x="720" y="398" text-anchor="middle" fill="#9ca3af" font-size="11" font-family="Segoe UI, system-ui, sans-serif">Svelte 5 VJ + ISF</text>
+  </g>
+
+  <!-- Beatsmaxxer Pro -->
+  <g filter="url(#shadow)">
+    <circle cx="760" cy="480" r="12" fill="#34d399" stroke="#ecfdf5" stroke-width="2"/>
+    <rect x="640" y="498" width="240" height="72" rx="8" fill="#064e3b" stroke="#34d399"/>
+    <text x="760" y="522" text-anchor="middle" fill="#ecfdf5" font-size="15" font-weight="700" font-family="Segoe UI, system-ui, sans-serif">Beatsmaxxer Pro</text>
+    <text x="760" y="542" text-anchor="middle" fill="#a7f3d0" font-size="11" font-family="Segoe UI, system-ui, sans-serif">SvelteKit + 8-slot rack + PGM</text>
+    <text x="760" y="558" text-anchor="middle" fill="#6ee7b7" font-size="11" font-family="Segoe UI, system-ui, sans-serif">No public OSS peer for full combo</text>
+  </g>
+
+  <!-- steal arrows legend -->
+  <g transform="translate(130, 660)">
+    <circle cx="8" cy="-8" r="6" fill="#34d399"/>
+    <text x="22" y="-4" fill="#d1d5db" font-size="12" font-family="Segoe UI, system-ui, sans-serif">This project</text>
+    <circle cx="130" cy="-8" r="6" fill="#60a5fa"/>
+    <text x="144" y="-4" fill="#d1d5db" font-size="12" font-family="Segoe UI, system-ui, sans-serif">GPU compositor</text>
+    <circle cx="280" cy="-8" r="6" fill="#fb923c"/>
+    <text x="294" y="-4" fill="#d1d5db" font-size="12" font-family="Segoe UI, system-ui, sans-serif">Live VJ product</text>
+    <circle cx="430" cy="-8" r="6" fill="#94a3b8"/>
+    <text x="444" y="-4" fill="#d1d5db" font-size="12" font-family="Segoe UI, system-ui, sans-serif">Reference samples</text>
+  </g>
+</svg>
