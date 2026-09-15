@@ -1,7 +1,6 @@
 <script lang="ts">
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
-  import TimingEventStrip from '$lib/components/timing/TimingEventStrip.svelte';
   import { onMount, onDestroy } from 'svelte';
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
   import { probeWebGpu } from '$lib/rendering/webgpu/capability';
@@ -353,17 +352,6 @@
           <RackSlot row="bottom" slotIndex={$rackBottom.length + offset} />
         {/each}
       </div>
-
-      {#if $viewMode==='perform'}
-        <div class="perform-footer" aria-label="Perform workspace status">
-          <span>PERFORM</span>
-          <span>10 CLIP SLOTS · LIVE PREVIEWS</span>
-          <span>SELECT A SOURCE TO TAKE PROGRAM</span>
-        </div>
-        <div class="perform-timing-strip" style="--timing-accent:#4ade80">
-          <TimingEventStrip />
-        </div>
-      {/if}
 
       {#if $viewMode==='timing'}<TimingPanel/>{/if}
     </div>

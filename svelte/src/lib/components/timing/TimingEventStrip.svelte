@@ -31,4 +31,4 @@
   </svg>
 </div>
 {/if}
-<style>.event-strip{padding:6px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip>div{display:flex;justify-content:space-between}span{color:#53616a}svg{display:block;width:100%;height:80px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>
+<style>.event-strip{padding:4px 8px;background:#0c0e10;border-top:1px solid #252a2e;font:7px var(--font-mono);color:#768691}.event-strip>div{display:flex;justify-content:space-between}span{color:#53616a}svg{display:block;width:100%;height:56px}text{font:8px var(--font-mono);fill:#6a7a8a}</style>
