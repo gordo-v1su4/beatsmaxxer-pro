@@ -18,7 +18,7 @@
     <defs><clipPath id="timing-events-clip"><rect x="12" y="20" width="976" height="40"/></clipPath></defs>
     {#each Array.from({length:17},(_,i)=>start+i) as b}
       <line x1={x(b)} x2={x(b)} y1="20" y2="60" stroke={b%4===0?'#354149':'#1c2429'}/>
-      <text x={x(b)} y="12" text-anchor={b===start+16?'end':'start'}>{measureLabel(b)}</text>
+      {#if b%2===0 || b===start+16}<text x={x(b)} y="12" text-anchor={b===start+16?'end':'start'} textLength="22" lengthAdjust="spacingAndGlyphs">{measureLabel(b)}</text>{/if}
     {/each}
     <g clip-path="url(#timing-events-clip)">
       {#each visible as b}
