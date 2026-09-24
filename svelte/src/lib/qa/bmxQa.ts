@@ -769,17 +769,32 @@ export function installBmxQaHook() {
     async sampleRealAudioPlayback(durationMs = 3000) {
       audioEngine.setVolume(0.72);
       if (!audioEngine.getState().playing) await audioEngine.start();
+      await audioEngine.resumeAfterBackground();
       const before = audioEngine.getProofPlaybackDiagnostics();
+      const transportBefore =
+        audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
       let rmsPeak = before.rms;
       let amplitudePeak = before.amplitude;
       const deadline = performance.now() + durationMs;
       while (performance.now() < deadline) {
+        audioTimeline.publishFrame();
+        videoPool.tick(audioTimeline.getLastFrame() ?? true);
         await new Promise((resolve) => setTimeout(resolve, 100));
         const sample = audioEngine.getProofPlaybackDiagnostics();
         rmsPeak = Math.max(rmsPeak, sample.rms);
         amplitudePeak = Math.max(amplitudePeak, sample.amplitude);
       }
-      return { before, after: audioEngine.getProofPlaybackDiagnostics(), rmsPeak, amplitudePeak, observationDurationMs: durationMs };
+      const after = audioEngine.getProofPlaybackDiagnostics();
+      const transportAfter =
+        audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+      return {
+        before,
+        after,
+        rmsPeak,
+        amplitudePeak,
+        transportAdvanceSeconds: transportAfter - transportBefore,
+        observationDurationMs: durationMs
+      };
     },
     async resetVisualProofUiState() {
       moduleCollapsed.set({});

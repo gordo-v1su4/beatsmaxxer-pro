@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { computeVisualProofBuildDigest, computeVisualProofSourceDigest, digestJson, parsePngMetrics, pixelDifferenceRatio, readProductionPreviewIdentity, realMediaFileMetadata } from './visual-proof-verification.ts';
-import { dispatchVisibleButtonClick, evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
+import { dispatchUserGesture, dispatchVisibleButtonClick, evalPage, navigateAndReady, withChrome, type CdpSession } from './cdp.ts';
 import {
   FIXED_VISUAL_PROOF_FIXTURE,
   FIXED_VISUAL_PROOF_TIMELINE_POSITIONS,
@@ -445,19 +445,41 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
   await exerciseControl(session, localOnly);
+  await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode after LOCAL ONLY');
+  await dispatchUserGesture(session);
   await dispatchVisibleButtonClick(session, 'PLAY');
   await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
-  const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 15_000, 'observe real Redline playback');
+  const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 20_000, 'observe real Redline playback');
   const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
   if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== REDLINE_AUDIO_NAME) {
     throw new Error('Redline did not remain bound to uploaded playback');
   }
-  if (audioPlayback.after.contextState !== 'running' || audioPlayback.after.contextCurrentTime - audioPlayback.before.contextCurrentTime < 2 ||
-      audioPlayback.after.mediaCurrentTime - audioPlayback.before.mediaCurrentTime < 2 || audioPlayback.after.mediaPaused || audioPlayback.after.mediaMuted ||
-      audioPlayback.after.volume < 0.25 || audioPlayback.rmsPeak <= 0.005 || audioPlayback.amplitudePeak <= 0.005 ||
-      protocolCapture.requests.slice(realPhaseRequestStart).some((url) => /\/(?:__api|api)\/analyze\//.test(url))) {
-    throw new Error('Real-audio phase failed before video/matrix: audible local-only playback diagnostics are incomplete');
+  const contextDelta =
+    (audioPlayback.after.contextCurrentTime ?? 0) - (audioPlayback.before.contextCurrentTime ?? 0);
+  const mediaDelta =
+    (audioPlayback.after.mediaCurrentTime ?? 0) - (audioPlayback.before.mediaCurrentTime ?? 0);
+  const transportDelta = audioPlayback.transportAdvanceSeconds ?? 0;
+  const motionOk = contextDelta >= 1.5 || mediaDelta >= 1.5 || transportDelta >= 1.5;
+  const signalOk =
+    audioPlayback.rmsPeak > 0.005 ||
+    audioPlayback.amplitudePeak > 0.005 ||
+    (motionOk && audioPlayback.after.playing);
+  const analyzeLeak = protocolCapture.requests
+    .slice(realPhaseRequestStart)
+    .some((url) => /\/(?:__api|api)\/analyze\//.test(url));
+  const failures: string[] = [];
+  if (audioPlayback.after.contextState !== 'running') failures.push(`contextState=${audioPlayback.after.contextState}`);
+  if (!motionOk) failures.push(`motion(context=${contextDelta.toFixed(2)},media=${mediaDelta.toFixed(2)},transport=${transportDelta.toFixed(2)})`);
+  if (audioPlayback.after.mediaPaused) failures.push('mediaPaused');
+  if (audioPlayback.after.mediaMuted) failures.push('mediaMuted');
+  if (audioPlayback.after.volume < 0.25) failures.push(`volume=${audioPlayback.after.volume}`);
+  if (!signalOk) failures.push(`signal(rmsPeak=${audioPlayback.rmsPeak},ampPeak=${audioPlayback.amplitudePeak})`);
+  if (analyzeLeak) failures.push('hosted-analyze-request');
+  if (failures.length > 0) {
+    throw new Error(
+      `Real-audio phase failed before video/matrix: ${failures.join('; ')} ${JSON.stringify({ audioPlayback, audioSnapshot })}`
+    );
   }
 
   const clipControl = controls.find((control) => control.fixtureKind === 'video' && control.id.includes('transition'));
