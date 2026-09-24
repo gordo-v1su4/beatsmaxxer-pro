@@ -62,13 +62,24 @@ run_gate "verify:interaction" bun scripts/verify-interaction-runner.ts
 run_gate "verify:stutter" env STUTTER_MS="${STUTTER_MS:-8000}" bun scripts/verify-stutter-runner.ts
 run_gate "verify:audio" bun scripts/verify-audio-runner.ts
 run_gate "verify:beat" bun scripts/verify-beat-runner.ts
-run_gate "verify:visual-proof (required release gate)" bun scripts/verify-visual-proof-runner.ts
-run_gate "verify:eight-video-proof (required release gate)" bun scripts/verify-eight-video-proof-runner.ts
+if [[ "$HEADLESS" == "1" && "${REQUIRE_PHYSICAL_PROOF:-0}" != "1" ]]; then
+  echo ""
+  echo "▶ skipping verify:visual-proof + verify:eight-video-proof (HEADLESS=1)"
+  echo "  Run on a GPU desktop: bun run capture:visual-proof && bun run capture:eight-video-proof"
+  echo "  Or set REQUIRE_PHYSICAL_PROOF=1 to enforce artifacts in this run."
+else
+  run_gate "verify:visual-proof (required release gate)" bun scripts/verify-visual-proof-runner.ts
+  run_gate "verify:eight-video-proof (required release gate)" bun scripts/verify-eight-video-proof-runner.ts
+fi
 run_gate "verify:broken-fixtures (M0 negative gate)" bun scripts/verify-broken-fixtures-runner.ts
 
 echo ""
 echo "══════════════════════════════════════════"
-echo " ✓ All local and required current physical-browser proof gates passed"
+if [[ "$HEADLESS" == "1" && "${REQUIRE_PHYSICAL_PROOF:-0}" != "1" ]]; then
+  echo " ✓ Headless browser gates passed (physical visual proof skipped — run capture:* on GPU desktop)"
+else
+  echo " ✓ All local and required current physical-browser proof gates passed"
+fi
 echo " Artifacts: $ARTIFACT_DIR/"
 echo "══════════════════════════════════════════"
 echo ""
