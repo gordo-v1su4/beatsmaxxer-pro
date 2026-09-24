@@ -41,6 +41,26 @@ describe('evaluateSmokeGate', () => {
     expect(result).toEqual({ passed: true, blockers: [] });
   });
 
+  test('headless CDP accepts observed playback without WebGPU or hosted BPM', () => {
+    const result = evaluateSmokeGate({
+      snapshot: {
+        webgpu: false,
+        bpm: 128,
+        analysisStatus: 'fallback',
+        clipsLoaded: 10,
+        usingUploadedTrack: true,
+        trackName: 'redline/Redline (Remastered).wav',
+        modules: Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`top-${index}`, { hasReadyFrame: true }])),
+        render: {
+          pgm: { samplePath: 'external-texture', hasVideo: 1, source: 'blob:clip' }
+        }
+      },
+      videoDelta: 2.5,
+      headlessCdp: true
+    });
+    expect(result).toEqual({ passed: true, blockers: [] });
+  });
+
   test('fails closed on webgpu false, BPM mismatch, and test-card fallback', () => {
     const result = evaluateSmokeGate({
       snapshot: {

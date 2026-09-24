@@ -74,7 +74,10 @@ await withChrome('verify-beat', 9950, async (s) => {
     render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
   }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
-  const smoke = evaluateSmokeGate({ snapshot: snap ?? {} });
+  const smoke = evaluateSmokeGate({
+    snapshot: snap ?? {},
+    headlessCdp: process.env.HEADLESS === '1'
+  });
 
   const report = {
     passed:

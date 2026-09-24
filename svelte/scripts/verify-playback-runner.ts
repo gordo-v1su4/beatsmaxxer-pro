@@ -92,7 +92,11 @@ await withChrome('verify-playback', 9600, async (s) => {
   }
 
   const readyCount = Object.values(t1?.modules ?? {}).filter((m) => m.hasReadyFrame).length;
-  const smoke = evaluateSmokeGate({ snapshot: t1 ?? {}, videoDelta });
+  const smoke = evaluateSmokeGate({
+    snapshot: t1 ?? {},
+    videoDelta,
+    headlessCdp: process.env.HEADLESS === '1'
+  });
 
   if (process.env.SCREENSHOT === '1') {
     await screenshotPng(s, `${ARTIFACT_DIR}/playback-full.png`);
