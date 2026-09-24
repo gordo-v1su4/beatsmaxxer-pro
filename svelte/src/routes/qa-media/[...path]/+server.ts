@@ -1,9 +1,9 @@
 import type { RequestHandler } from './$types';
 import { open, readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { redlineTestMediaRoot } from '$lib/qa/testMediaRoot';
 
 const MEDIA_ROOT = path.resolve('tests', 'fixtures', 'media');
-const REDLINE_ROOT = path.resolve('..', 'test_media');
 
 interface QaMediaCandidate {
   root: string;
@@ -20,7 +20,7 @@ export function _resolveQaMediaRequestPath(requestPath: string): QaMediaCandidat
   if (!requestPath || requestPath.includes('\0')) return null;
   const portablePath = requestPath.replaceAll('\\', '/');
   const isRedline = portablePath.startsWith('redline/');
-  const root = isRedline ? REDLINE_ROOT : MEDIA_ROOT;
+  const root = isRedline ? redlineTestMediaRoot() : MEDIA_ROOT;
   const relativePath = isRedline ? portablePath.slice('redline/'.length) : portablePath;
   const filePath = path.resolve(root, relativePath);
   return isContained(root, filePath) ? { root, filePath } : null;

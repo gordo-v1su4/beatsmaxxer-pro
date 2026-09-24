@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { redlineTestMediaRoot } from '../src/lib/qa/testMediaRoot.ts';
 
 export interface RedlineQaManifest {
   bundle: string;
@@ -47,7 +48,7 @@ export async function validateRedlineManifest(
   assert(manifest.audios.includes(manifest.audio), 'primary audio must be present in audios');
   assert(manifest.midis.includes(manifest.midi), 'primary MIDI must be present in midis');
 
-  const sourceRoot = await realpath(path.resolve(repoRoot, manifest.sourceRoot));
+  const sourceRoot = await realpath(redlineTestMediaRoot(repoRoot));
   const inventory = [...manifest.clips, ...manifest.audios, ...manifest.stems, ...manifest.midis];
   for (const asset of inventory) {
     assert(asset.startsWith('redline/'), `asset is outside the redline virtual root: ${asset}`);
