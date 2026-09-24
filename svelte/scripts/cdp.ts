@@ -209,7 +209,9 @@ export function chromeLaunchArgs(
   debugPort: number,
   userDataDir: string,
   headed = process.env.HEADLESS !== '1',
-  allowAutoplayBypass = process.env.QA_AUTOPLAY_BYPASS === '1'
+  allowAutoplayBypass =
+    process.env.QA_AUTOPLAY_BYPASS === '1' ||
+    (!headed && process.env.QA_AUTOPLAY_BYPASS !== '0')
 ) {
   return [
     chrome,

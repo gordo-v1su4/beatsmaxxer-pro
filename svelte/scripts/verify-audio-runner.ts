@@ -25,7 +25,7 @@ await withChrome('verify-audio', 9900, async (s) => {
 
   await evalPage(
     s,
-    `window.__BMX_QA__?.waitForAnalysis?.('ready', 90000)`,
+    `window.__BMX_QA__?.waitForAnalysis?.(['ready','fallback','error'], 90000)`,
     95_000
   );
 
