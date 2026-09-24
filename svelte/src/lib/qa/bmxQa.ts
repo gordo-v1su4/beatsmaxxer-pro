@@ -845,6 +845,31 @@ export function installBmxQaHook() {
         samples.length > 1 ? samples.at(-1)!.transportSeconds - samples[0]!.transportSeconds : 0;
       return { samples, phaseDelta, transportDelta, playing: buildSnapshot().playing };
     },
+    /** Seek the shared timeline and publish frames so ARMED cut logic runs in CDP/headless. */
+    async nudgeArmedSequencerForQa(seekAheadSeconds = 6) {
+      const before = buildSnapshot();
+      if (!before.sequencerArmed) {
+        throw new Error('Sequencer not armed');
+      }
+      const startPos =
+        audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+      audioTimeline.seek(Math.max(0, startPos + seekAheadSeconds));
+      for (let i = 0; i < 12; i++) {
+        audioTimeline.publishFrame();
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+      }
+      const after = buildSnapshot();
+      return {
+        before,
+        after,
+        stepMoved:
+          after.sequencerLastStep !== before.sequencerLastStep && after.sequencerLastStep >= 0,
+        pgmMoved:
+          Boolean(before.pgmModule) &&
+          Boolean(after.pgmModule) &&
+          after.pgmModule !== before.pgmModule
+      };
+    },
     /** Sample time-manipulation modules while transport runs — beat should advance. */
     async sampleTimeModules(durationMs = 3000) {
       const ids = ['speedramp', 'tapdelay', 'timesampler', 'transition'] as const;

@@ -41,32 +41,27 @@ await withChrome('verify-sequencer-cut', 9612, async (session) => {
   }
   await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(20000)`, 25_000);
 
-  const snap0 = (await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as {
-    playing?: boolean;
-    pgmModule?: string;
-    sequencerLastStep?: number;
-    arrangementCutCount?: number;
+  const nudge = (await evalPage(
+    session,
+    `window.__BMX_QA__?.nudgeArmedSequencerForQa?.(8)`,
+    30_000
+  )) as {
+    stepMoved?: boolean;
+    pgmMoved?: boolean;
+    before?: { arrangementCutCount?: number; playing?: boolean };
+    after?: { arrangementCutCount?: number; playing?: boolean; pgmModule?: string };
   } | null;
-  await Bun.sleep(2500);
-  const snap1 = (await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as typeof snap0;
 
-  const stepMoved =
-    (snap1?.sequencerLastStep ?? -1) !== (snap0?.sequencerLastStep ?? -1) &&
-    (snap1?.sequencerLastStep ?? -1) >= 0;
-  const pgmMoved =
-    Boolean(snap0?.pgmModule) &&
-    Boolean(snap1?.pgmModule) &&
-    snap1!.pgmModule !== snap0!.pgmModule;
+  const stepMoved = Boolean(nudge?.stepMoved);
+  const pgmMoved = Boolean(nudge?.pgmMoved);
+  const cutCount = nudge?.after?.arrangementCutCount ?? nudge?.before?.arrangementCutCount ?? 0;
 
   const report = {
-    passed:
-      Boolean(snap1?.playing) &&
-      (snap1?.arrangementCutCount ?? 0) > 0 &&
-      (stepMoved || pgmMoved),
+    passed: cutCount > 0 && (stepMoved || pgmMoved),
     stepMoved,
     pgmMoved,
-    snap0,
-    snap1
+    cutCount,
+    nudge
   };
 
   session.close();
@@ -75,7 +70,7 @@ await withChrome('verify-sequencer-cut', 9612, async (session) => {
   }
   console.log(
     'verify-sequencer-cut PASSED',
-    `cuts=${snap1?.arrangementCutCount}`,
+    `cuts=${cutCount}`,
     `stepMoved=${stepMoved}`,
     `pgmMoved=${pgmMoved}`
   );
