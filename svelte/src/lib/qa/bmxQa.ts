@@ -18,9 +18,11 @@ import { getLatencySamples } from '$lib/qa/performance';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
+import { sequencerArmed } from '$lib/stores/sequencer';
 
 export interface BmxQaSnapshot {
   webgpu: boolean;
+  sequencerArmed: boolean;
   beatPhase: number;
   beat: number;
   bpm: number;
@@ -113,6 +115,7 @@ function buildSnapshot(): BmxQaSnapshot {
     playing: audio.playing,
     amplitude: audio.amplitude,
     pgmModule: get(pgmSource),
+    sequencerArmed: get(sequencerArmed),
     clipsLoaded: moduleIds.filter((id) => {
       const sourceId = currentRackSlotForModule(id);
       return sourceId ? videoPool.hasReadyFrame(sourceId) : false;

@@ -6,6 +6,22 @@ const CLIP_WAIT_MS = Number(process.env.CLIP_WAIT_MS ?? 45_000);
 await withChrome('verify-cloud-smoke', 9601, async (session) => {
   await navigateAndReady(session, QA_URL);
 
+  if (QA_URL.includes('qaSequencerArm=1')) {
+    await Bun.sleep(2500);
+    const armedSnap = (await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as {
+      sequencerArmed?: boolean;
+    } | null;
+    if (!armedSnap?.sequencerArmed) {
+      throw new Error('Cloud smoke: qaSequencerArm=1 did not ARM the sequencer');
+    }
+    console.log('cloud-smoke sequencer ARM OK');
+    if (process.env.QA_SMOKE_SEQUENCER_ONLY === '1') {
+      session.close();
+      console.log('verify-cloud-smoke PASSED (sequencer ARM only)');
+      return;
+    }
+  }
+
   const loaded = await evalPage(
     session,
     `window.__BMX_QA__?.waitForClips?.(8, ${CLIP_WAIT_MS})`,
