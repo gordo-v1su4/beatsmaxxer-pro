@@ -8,6 +8,8 @@ await withChrome('verify-audio', 9900, async (s) => {
   await navigateAndReady(s, QA_URL);
 
   await evalPage(s, `window.__BMX_QA__?.waitForClips?.(8, 45000)`, 55_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForSongReady?.(90000)`, 95_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForRhythmReady?.(90000)`, 95_000);
 
   await dispatchUserGesture(s);
   for (let attempt = 0; attempt < 3; attempt++) {
