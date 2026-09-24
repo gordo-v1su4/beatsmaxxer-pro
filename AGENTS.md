@@ -85,6 +85,7 @@ Separate from `main` — do **not** merge desktop into main until promoted.
 - Platform layer: `svelte/src/lib/platform/` + `VideoSourcePort`
 - UI matches verified `main` layout (no PresetBrowser middle column)
 - See [`desktop/README.md`](./desktop/README.md)
+- After web `test:local` passes: **`bun run smoke:desktop`** (full Tauri build on Windows; frontend-only check elsewhere).
 
 ## Agent skills
 
