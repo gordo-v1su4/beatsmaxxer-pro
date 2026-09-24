@@ -159,7 +159,8 @@ export async function evalPage<T>(
   session: CdpSession,
   expression: string,
   timeoutMs = DEFAULT_CDP_TIMEOUT_MS,
-  label = expression.replace(/\s+/g, ' ').trim().slice(0, 160)
+  label = expression.replace(/\s+/g, ' ').trim().slice(0, 160),
+  options?: { userGesture?: boolean }
 ): Promise<T | null> {
   try {
     const result = (await session.send(
@@ -167,7 +168,8 @@ export async function evalPage<T>(
       {
         expression,
         returnByValue: true,
-        awaitPromise: true
+        awaitPromise: true,
+        ...(options?.userGesture ? { userGesture: true } : {})
       },
       timeoutMs
     )) as {

@@ -457,9 +457,28 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     await evalPage(session, `new Promise((r) => setTimeout(r, 400))`);
   }
   await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode');
+  await evalPage(
+    session,
+    `window.__BMX_QA__?.waitForAnalysis?.(['ready','fallback','error'], 120000)`,
+    125_000,
+    'wait for rhythm analysis after Redline upload'
+  );
   await dispatchUserGesture(session);
   await dispatchVisibleButtonClick(session, 'PLAY');
-  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000, 'observe PLAY transport start');
+  // Headed automation: CDP mouse events may not unlock AudioContext; complete start()
+  // with a CDP userGesture evaluate immediately after the visible PLAY click.
+  await evalPage(
+    session,
+    `(async () => {
+      const snap = window.__BMX_QA__?.snapshot?.();
+      if (!snap?.playing) await window.__BMX_QA__?.startTransport?.();
+      await window.__BMX_QA__?.waitForPlaying?.(20000);
+      return window.__BMX_QA__?.realAudioSnapshot?.();
+    })()`,
+    35_000,
+    'start transport after visible PLAY',
+    { userGesture: true }
+  );
   await evalPage(
     session,
     `(async () => {
