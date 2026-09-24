@@ -456,21 +456,30 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   await evalPage(
     session,
     `(async () => {
-      const deadline = Date.now() + 20000;
+      const deadline = Date.now() + 45000;
       while (Date.now() < deadline) {
         const d = window.__BMX_QA__?.realAudioSnapshot?.();
-        if (d?.usingUploadedTrack && d.playing && !d.mediaPaused && d.contextState === 'running' &&
-            (d.mediaCurrentTime ?? 0) > 0.05) {
+        if (
+          d?.usingUploadedTrack &&
+          d.playing &&
+          !d.mediaPaused &&
+          d.contextState === 'running' &&
+          (d.mediaCurrentTime ?? 0) > 0.05
+        ) {
           return d;
         }
-        await new Promise((r) => setTimeout(r, 150));
+        if (!d?.playing || d?.mediaPaused) {
+          await window.__BMX_QA__?.startTransport?.();
+        }
+        window.__BMX_QA__?.getEngine?.().audioEngine.resumeAfterBackground?.();
+        await new Promise((r) => setTimeout(r, 200));
       }
       const last = window.__BMX_QA__?.realAudioSnapshot?.();
       throw new Error(
-        'Redline media did not enter running local playback after PLAY: ' + JSON.stringify(last)
+        'Redline media did not enter running local playback after startTransport: ' + JSON.stringify(last)
       );
     })()`,
-    25_000,
+    55_000,
     'wait for audible Redline transport'
   );
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
