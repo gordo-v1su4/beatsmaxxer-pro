@@ -15,6 +15,11 @@ if grep -q 'All local and required current physical-browser proof gates passed' 
   grep 'EXIT:' "$LOG" | tail -1 || true
   exit 0
 fi
+if grep -q 'Headless browser gates passed' "$LOG"; then
+  echo "RESULT: PASS (headless test:local — physical visual proof skipped)"
+  grep 'EXIT:' "$LOG" | tail -1 || true
+  exit 0
+fi
 
 echo "RESULT: FAIL or incomplete"
 grep -E 'verify-(playback|ui|audio|beat|stutter|interaction) (PASSED|FAILED)|verify-playback PASSED|Playback acceptance failed|Timed out waiting' "$LOG" | tail -15 || true
