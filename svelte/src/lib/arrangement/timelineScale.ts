@@ -21,6 +21,30 @@ export function beatGridSongOffset(beatGrid: readonly number[]): number {
   return beatGrid.length >= 2 ? beatGrid[0]! : 0;
 }
 
+/** Arrangement lane X axis: file time 0 is bar 1; lead-in before Essentia beat 0 maps here. */
+export function timelineDisplaySeconds(
+  wallSeconds: number,
+  beatGrid: readonly number[],
+): number {
+  return Math.max(0, wallSeconds - beatGridSongOffset(beatGrid));
+}
+
+export function wallSecondsFromTimelineDisplay(
+  displaySeconds: number,
+  beatGrid: readonly number[],
+): number {
+  return displaySeconds + beatGridSongOffset(beatGrid);
+}
+
+/** Beat index for cuts/sequencer — matches `secondsStep` / lane paint, not raw hosted grid index. */
+export function songBeatPosition(
+  wallSeconds: number,
+  beatGrid: readonly number[],
+  bpm: number,
+): number {
+  return secondsStep(wallSeconds, beatGrid, bpm) / 4;
+}
+
 /** Shift Essentia's beat grid so bar 1 beat 1 lands at file time 0. */
 export function anchorBeatGridToSongStart(beatGrid: readonly number[]): readonly number[] {
   if (beatGrid.length < 2) return beatGrid;
@@ -157,7 +181,7 @@ export function barNumberAtTime(
   beatGrid: readonly number[],
   bpm: number,
 ): number {
-  const beat = beatAt(seconds, beatGrid, bpm);
+  const beat = songBeatPosition(seconds, beatGrid, bpm);
   return Math.max(1, Math.floor(beat / 4) + 1);
 }
 
@@ -168,7 +192,7 @@ export function rulerBarMarks(
   bpm: number,
 ): RulerBarMark[] {
   const marks: RulerBarMark[] = [];
-  const lastBarIndex = Math.ceil(beatAt(timeline.durationSeconds, beatGrid, bpm) / 4) + 2;
+  const lastBarIndex = Math.ceil(songBeatPosition(timeline.durationSeconds, beatGrid, bpm) / 4) + 2;
   for (let bar = 1; bar <= lastBarIndex; bar += 4) {
     const timeSeconds = barStartSeconds(bar - 1, beatGrid, bpm);
     if (timeSeconds > timeline.durationSeconds + 0.01) break;
@@ -184,7 +208,7 @@ export function rulerBarTicks(
   bpm: number,
 ): number[] {
   const times: number[] = [];
-  const lastBarIndex = Math.ceil(beatAt(timeline.durationSeconds, beatGrid, bpm) / 4) + 2;
+  const lastBarIndex = Math.ceil(songBeatPosition(timeline.durationSeconds, beatGrid, bpm) / 4) + 2;
   for (let bar = 0; bar < lastBarIndex; bar += 1) {
     const timeSeconds = barStartSeconds(bar, beatGrid, bpm);
     if (timeSeconds > timeline.durationSeconds + 0.01) break;

@@ -1,9 +1,8 @@
 import { get } from 'svelte/store';
-import { secondsToCutStep } from '$lib/arrangement/timelineScale';
+import { cutsFromTriggerMarks, mergeCommittedCuts } from '$lib/arrangement/triggerCommit';
 import {
   arrangementTriggers,
   cuts,
-  toggleCut,
   type ArrangementTrigger,
 } from '$lib/stores/arrangement';
 
@@ -37,22 +36,11 @@ export function commitTriggerMarksToCuts(
     markIds === 'all' ? [...marks] : marks.filter((mark) => markIds.includes(mark.id));
   if (selected.length === 0) return { committed: 0, skipped: 0 };
 
-  selected.sort((a, b) => a.seconds - b.seconds);
-  let committed = 0;
-  let skipped = 0;
-  for (const mark of selected) {
-    if (totalSteps <= 0) {
-      skipped += 1;
-      continue;
-    }
-    const step = secondsToCutStep(mark.seconds, beatGrid, bpm, totalSteps);
-    const existing = get(cuts).find((cut) => cut.step === step);
-    if (existing?.slotIndex === mark.slotIndex) {
-      skipped += 1;
-      continue;
-    }
-    toggleCut(step, mark.slotIndex);
-    committed += 1;
-  }
-  return { committed, skipped };
+  if (totalSteps <= 0) return { committed: 0, skipped: selected.length };
+  const committedCuts = cutsFromTriggerMarks(selected, beatGrid, bpm, totalSteps);
+  cuts.set(mergeCommittedCuts(get(cuts), committedCuts));
+  return {
+    committed: committedCuts.length,
+    skipped: Math.max(0, selected.length - committedCuts.length),
+  };
 }

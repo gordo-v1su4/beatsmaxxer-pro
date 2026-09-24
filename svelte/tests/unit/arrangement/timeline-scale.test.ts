@@ -5,6 +5,8 @@ import {
   barNumberAtTime,
   barStartSeconds,
   beatGridSongOffset,
+  songBeatPosition,
+  timelineDisplaySeconds,
   frameViewportFromSeconds,
   fullTimelineViewport,
   isFullViewport,
@@ -105,6 +107,8 @@ describe('arrangement timeline scale', () => {
     expect(beatGridSongOffset(grid)).toBeCloseTo(1, 8);
     expect(anchorBeatGridToSongStart(grid)[0]).toBeCloseTo(0, 8);
     expect(stepSeconds(0, grid, 120)).toBeCloseTo(0, 8);
+    expect(timelineDisplaySeconds(1, grid)).toBeCloseTo(0, 8);
+    expect(songBeatPosition(1, grid, 120)).toBeCloseTo(0, 8);
   });
 
   test('pans the viewport to follow the playhead', () => {

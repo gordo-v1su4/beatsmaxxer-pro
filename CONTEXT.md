@@ -18,8 +18,13 @@ Browser-native **audio-reactive video FX rack** with a beat-quantized **PGM** (p
 | **MobileShell** | Phone UI (`svelte/src/lib/mobile/`) — one stage canvas, not the full rack |
 | **AppLoop** | Single rAF driver for `WebGpuEngine` + transport |
 | **Essentia** | Offline rhythm analysis (hosted API); Web Audio is live fallback |
+| **Arrangement** | Song-length structure: sections (bars, module banks, 16-step patterns) unrolled to sixteenth-note **cuts** on the timeline |
+| **Sequencer (armed)** | While transport plays with ARMED on, beat-quantized PGM cuts driven by the arrangement **cut** list (not manual PGM alone) |
+| **Cut** | One sixteenth-note step in the song mapped to a rack **slot index** (0–9), resolved to whichever module occupies that slot when the cut fires |
+| **Trigger mark** | A wall-clock record of an effect **trigger** fire on a slot during REC; distinct from a quantized **cut** until explicitly converted or edited onto the grid |
+| **Loop region** | A wall-clock span (`startSeconds`–`endSeconds`) for isolated rehearsal; transport seeks back to the start when playback passes the end |
 
-Avoid: calling the rack "channels" interchangeably with "modules" without saying which owns the video.
+Avoid: calling the rack "channels" interchangeably with "modules" without saying which owns the video. Avoid **sequencer** for the 16-step groove grid alone — say **pattern** (within a section) or **cut list** (whole song).
 
 ## Three platforms
 
