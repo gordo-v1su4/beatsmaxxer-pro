@@ -1,4 +1,4 @@
-import { type CdpSession, evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import { evalPage, navigateAndReady, withChrome } from './cdp.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const CLIP_WAIT_MS = Number(process.env.CLIP_WAIT_MS ?? 45_000);
@@ -17,7 +17,7 @@ await withChrome('verify-cloud-smoke', 9601, async (session) => {
     console.log('cloud-smoke sequencer ARM OK');
     if (process.env.QA_SMOKE_SEQUENCER_ONLY === '1') {
       session.close();
-      console.log('verify-cloud-smoke PASSED (sequencer ARM only)');
+      console.log('verify-cloud-smoke PASSED (sequencer ARM autoload)');
       return;
     }
   }

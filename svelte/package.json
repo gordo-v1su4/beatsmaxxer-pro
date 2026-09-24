@@ -29,6 +29,7 @@
 		"verify:browser": "bash scripts/verify-ui.sh && bash scripts/verify-playback.sh && bash scripts/verify-interaction.sh && bash scripts/verify-stutter.sh && bash scripts/verify-audio.sh && bash scripts/verify-beat.sh && bash scripts/verify-visual-proof.sh && bash scripts/verify-eight-video-proof.sh && bash scripts/verify-broken-fixtures.sh",
 		"verify:cloud-smoke": "bash scripts/verify-cloud-smoke.sh",
 		"verify:ci-sequencer-arm": "bash scripts/ci-sequencer-arm-smoke.sh",
+		"verify:sequencer-cut": "bun scripts/verify-sequencer-cut-runner.ts",
 		"test:local": "bash scripts/verify-local.sh",
 		"verify:all": "bash scripts/verify-local.sh",
 		"demo": "bun scripts/open-qa-demo.ts",

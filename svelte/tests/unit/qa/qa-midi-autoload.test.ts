@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { get } from 'svelte/store';
+import { cutAtStep, cuts } from '$lib/stores/arrangement';
 import {
   shouldAutoloadQaArrangerMidi,
   shouldAutoloadQaMidi,
@@ -38,6 +39,12 @@ describe('QA sequencer ARM autoload', () => {
 
   test('opts in with qaSequencerArm=1', () => {
     expect(shouldAutoloadQaSequencerArm('?qa=1&qaSequencerArm=1')).toBe(true);
+  });
+
+  test('ships unrolled demo cuts for ARMED playback QA', () => {
+    const list = get(cuts);
+    expect(list.length).toBeGreaterThan(0);
+    expect(cutAtStep(list, list[0]!.step)).toBe(list[0]!.slotIndex);
   });
 });
 
