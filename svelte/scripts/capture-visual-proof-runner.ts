@@ -444,7 +444,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const cancel = consentControls.find((control) => control.label.toUpperCase() === 'CANCEL');
   if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
-  await exerciseControl(session, localOnly);
+  await dispatchVisibleButtonClick(session, 'LOCAL ONLY');
+  await evalPage(session, `new Promise((r) => setTimeout(r, 400))`);
   await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode after LOCAL ONLY');
   await dispatchUserGesture(session);
   await evalPage(
