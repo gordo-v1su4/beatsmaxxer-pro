@@ -22,10 +22,10 @@ await withChrome('verify-ui', 9500, async (s) => {
     `(() => {
       const labels = ["BEATSMAXXER PRO", "PGM SOURCE", "TRANSITION"];
       const text = document.body.innerText;
-      const pgm = document.querySelector("[data-bmx-pgm-rail]");
-      const rack = document.querySelector(".bottom-rack-row");
-      const pgmBottom = pgm?.getBoundingClientRect().bottom ?? Number.NaN;
-      const rackBottom = rack?.getBoundingClientRect().bottom ?? Number.NaN;
+      const sidePanels = document.querySelector(".side-panels");
+      const rackMain = document.querySelector(".rack-main");
+      const pgmBottom = sidePanels?.getBoundingClientRect().bottom ?? Number.NaN;
+      const rackBottom = rackMain?.getBoundingClientRect().bottom ?? Number.NaN;
       const baselineDelta = Math.abs(pgmBottom - rackBottom);
       const ok = labels.every((t) => text.includes(t)) && baselineDelta < 0.01;
       return {
