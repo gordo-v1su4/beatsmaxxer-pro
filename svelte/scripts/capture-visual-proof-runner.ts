@@ -458,12 +458,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   }
   await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode');
   await dispatchUserGesture(session);
-  await evalPage(
-    session,
-    `window.__BMX_QA__?.startTransport?.()`,
-    25_000,
-    'start Redline transport (same path as verify-sequencer-cut)'
-  );
+  await dispatchVisibleButtonClick(session, 'PLAY');
+  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000, 'observe PLAY transport start');
   await evalPage(
     session,
     `(async () => {
@@ -479,15 +475,14 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         ) {
           return d;
         }
-        if (!d?.playing || d?.mediaPaused) {
-          await window.__BMX_QA__?.startTransport?.();
+        if (!d?.playing || d?.mediaPaused || d?.contextState !== 'running') {
+          await window.__BMX_QA__?.getEngine?.().audioEngine.resumeAfterBackground?.();
         }
-        window.__BMX_QA__?.getEngine?.().audioEngine.resumeAfterBackground?.();
         await new Promise((r) => setTimeout(r, 200));
       }
       const last = window.__BMX_QA__?.realAudioSnapshot?.();
       throw new Error(
-        'Redline media did not enter running local playback after startTransport: ' + JSON.stringify(last)
+        'Redline media did not enter running local playback after PLAY: ' + JSON.stringify(last)
       );
     })()`,
     55_000,
