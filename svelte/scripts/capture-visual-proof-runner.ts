@@ -449,6 +449,23 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   await dispatchUserGesture(session);
   await dispatchVisibleButtonClick(session, 'PLAY');
   await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
+  await evalPage(
+    session,
+    `(async () => {
+      const deadline = Date.now() + 20000;
+      while (Date.now() < deadline) {
+        const d = window.__BMX_QA__?.realAudioSnapshot?.();
+        if (d?.usingUploadedTrack && d.playing && !d.mediaPaused && d.contextState === 'running' &&
+            (d.mediaCurrentTime ?? 0) > 0.05) {
+          return d;
+        }
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      throw new Error('Redline media did not enter running local playback after PLAY');
+    })()`,
+    25_000,
+    'wait for audible Redline transport'
+  );
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
   const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 20_000, 'observe real Redline playback');
   const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
