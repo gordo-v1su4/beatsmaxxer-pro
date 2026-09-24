@@ -507,6 +507,21 @@ export function installBmxQaHook() {
       }
       throw new Error(`Timed out waiting for ${count} ready clips`);
     },
+    /** Redline (or other upload) decoded — required before transport can play for real. */
+    async waitForSongReady(timeoutMs = 90_000) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const snap = buildSnapshot();
+        if (snap.usingUploadedTrack) return snap;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error('Timed out waiting for uploaded song');
+    },
+    /** Hosted/fallback rhythm finished — matches `?qaAutoplay=1` boot before `start()`. */
+    async waitForRhythmReady(timeoutMs = 90_000) {
+      await audioEngine.waitForRhythmReady(timeoutMs);
+      return buildSnapshot();
+    },
     async waitForAnalysis(expected: string | string[] = 'ready', timeoutMs = 90_000) {
       const targets = Array.isArray(expected) ? expected : [expected];
       const deadline = Date.now() + timeoutMs;
@@ -540,8 +555,13 @@ export function installBmxQaHook() {
     },
     async startTransport() {
       document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      if (!audioEngine.getState().playing) {
-        await audioEngine.start();
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        if (!audioEngine.getState().playing) {
+          await audioEngine.start();
+        }
+        if (audioEngine.getState().playing) return buildSnapshot();
+        await new Promise((r) => setTimeout(r, 250));
       }
       return buildSnapshot();
     },

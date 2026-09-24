@@ -15,6 +15,8 @@ interface Window {
   __BMX_QA__?: {
     snapshot: () => import('$lib/qa/bmxQa').BmxQaSnapshot;
     waitForClips: (count?: number, timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
+    waitForSongReady: (timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
+    waitForRhythmReady: (timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
     waitForPlaying: (timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
     waitForUploadedTrackLoad: (afterGeneration: number, timeoutMs?: number) => Promise<import('$lib/qa/bmxQa').BmxQaSnapshot>;
     sampleCanvasPixel: (canvasId: string) => { r: number; g: number; b: number; w: number; h: number } | { method: 'webgpu-only' } | null;

@@ -39,6 +39,9 @@ await withChrome('verify-playback', 9600, async (s) => {
   await navigateAndReady(s, QA_URL);
   console.log('[verify-playback] waiting for 8 decoded clips');
   await waitForClips(s);
+  console.log('[verify-playback] waiting for uploaded song + rhythm (qa boot parity)');
+  await evalPage(s, `window.__BMX_QA__?.waitForSongReady?.(90000)`, 95_000);
+  await evalPage(s, `window.__BMX_QA__?.waitForRhythmReady?.(90000)`, 95_000);
   console.log('[verify-playback] starting transport');
   await ensureTransportPlaying(s);
   console.log('[verify-playback] waiting for Redline rhythm analysis');
