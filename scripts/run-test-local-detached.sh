@@ -30,7 +30,7 @@ if "${TMUX[@]}" has-session -t "=${SESSION_NAME}" 2>/dev/null; then
 fi
 
 export HEADLESS="${HEADLESS:-1}"
-CMD="cd ${REPO_ROOT} && unset TEST_MEDIA_ROOT BMX_TEST_MEDIA_ROOT && set -o pipefail && HEADLESS=${HEADLESS} bun run test:local 2>&1 | tee ${LOG_PATH}; echo EXIT:\\${PIPESTATUS[0]} | tee -a ${LOG_PATH}"
+CMD="cd ${REPO_ROOT} && unset TEST_MEDIA_ROOT BMX_TEST_MEDIA_ROOT && HEADLESS=${HEADLESS} && { HEADLESS=\${HEADLESS} bun run test:local; echo EXIT:\$?; } 2>&1 | tee ${LOG_PATH}"
 
 "${TMUX[@]}" new-session -d -s "${SESSION_NAME}" -c "${REPO_ROOT}" -- "${SHELL:-bash}" -lc "${CMD}"
 
