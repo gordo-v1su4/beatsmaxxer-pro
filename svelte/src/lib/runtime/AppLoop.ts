@@ -1,4 +1,5 @@
 import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
+import { cutStepAllowedInLoop } from '$lib/arrangement/sequencerLoopGate';
 import { arrangementStepToSeconds } from '$lib/arrangement/timelineScale';
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
@@ -378,16 +379,8 @@ function runSequencer(frame: TimelineFrame) {
     // Cuts are placed against the song, so the lookup wraps on the arrangement's
     // length rather than on the bar — bar 34 is its own step, not a repeat of 2.
     const songStep = totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step;
-    if (loop && loop.endSeconds > loop.startSeconds) {
-      const at = arrangementStepToSeconds(
-        songStep,
-        sections,
-        starts,
-        beatGrid,
-        frame.bpm,
-      );
-      if (at < loop.startSeconds || at >= loop.endSeconds) continue;
-    }
+    const at = arrangementStepToSeconds(songStep, sections, starts, beatGrid, frame.bpm);
+    if (!cutStepAllowedInLoop(at, loop)) continue;
     const slotIndex = cutAtStep(cutList, songStep);
     if (slotIndex == null) continue;
     const target = moduleForSlotIndex(top, bottom, slotIndex);
