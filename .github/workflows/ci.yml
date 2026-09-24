@@ -24,3 +24,14 @@ jobs:
 
       - name: Production build
         run: bun run build
+
+      - name: Install Chromium (CDP smoke)
+        run: |
+          cd svelte
+          bunx playwright install chromium
+          bunx playwright install-deps chromium
+          CHROME="$(find "$HOME/.cache/ms-playwright" -name chrome -type f | head -1)"
+          echo "CHROME_PATH=$CHROME" >> "$GITHUB_ENV"
+
+      - name: Sequencer ARM QA autoload smoke (#25)
+        run: cd svelte && bash scripts/ci-sequencer-arm-smoke.sh
