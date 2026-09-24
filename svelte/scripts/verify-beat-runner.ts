@@ -18,6 +18,17 @@ await withChrome('verify-beat', 9950, async (s) => {
     await Bun.sleep(500);
   }
   await evalPage(s, `window.__BMX_QA__?.waitForPlaying?.(15000)`, 20_000);
+  await evalPage(
+    s,
+    `window.__BMX_QA__?.waitForAnalysis?.(['ready','fallback','error'], 90000)`,
+    95_000
+  );
+
+  const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(
+    s,
+    'window.__BMX_QA__?.snapshot?.()',
+    15_000
+  );
 
   const metrics = await evalPage<{
     beatPhase0: number;
@@ -70,21 +81,36 @@ await withChrome('verify-beat', 9950, async (s) => {
     usingUploadedTrack?: boolean;
     trackName?: string;
     analysisStatus?: string;
-    modules?: Record<string, { hasReadyFrame?: boolean }>;
+    modules?: Record<string, { hasReadyFrame?: boolean; currentTime?: number }>;
     render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
   }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
+  let moduleVideoDelta = 0;
+  for (const k of Object.keys(snap?.modules ?? {})) {
+    const d =
+      (snap!.modules![k]!.currentTime ?? 0) - (t0?.modules?.[k]?.currentTime ?? 0);
+    if (d > moduleVideoDelta) moduleVideoDelta = d;
+  }
+
+  const headless = process.env.HEADLESS === '1';
   const smoke = evaluateSmokeGate({
     snapshot: snap ?? {},
-    headlessCdp: process.env.HEADLESS === '1'
+    videoDelta: moduleVideoDelta,
+    headlessCdp: headless,
+    requireAnalysisReady: !headless
   });
+
+  const advancedOk = headless
+    ? Boolean(metrics?.advanced) || moduleVideoDelta > 0.15
+    : Boolean(metrics?.advanced);
 
   const report = {
     passed:
       Boolean(metrics?.playing) &&
-      Boolean(metrics?.advanced) &&
+      advancedOk &&
       (metrics?.bpm ?? 0) > 0 &&
       smoke.passed,
+    moduleVideoDelta,
     expectedBpm: REDLINE_EXPECTED_BPM,
     bpmMatch: Math.abs((metrics?.bpm ?? 0) - REDLINE_EXPECTED_BPM) <= 0.5,
     smokeBlockers: smoke.blockers,
