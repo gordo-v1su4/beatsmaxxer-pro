@@ -29,6 +29,12 @@ await withChrome('verify-audio', 9900, async (s) => {
     95_000
   );
 
+  const t0 = await evalPage<{ modules?: Record<string, { currentTime?: number }> }>(
+    s,
+    'window.__BMX_QA__?.snapshot?.()',
+    15_000
+  );
+
   const motion = await evalPage<{
     phaseDelta?: number;
     transportDelta?: number;
@@ -47,7 +53,7 @@ await withChrome('verify-audio', 9900, async (s) => {
     clipsLoaded?: number;
     amplitude?: number;
     webgpu?: boolean;
-    modules?: Record<string, { hasReadyFrame?: boolean }>;
+    modules?: Record<string, { hasReadyFrame?: boolean; currentTime?: number }>;
     render?: Record<string, { samplePath?: string; hasVideo?: number; source?: string | null }>;
   }>(s, 'window.__BMX_QA__?.snapshot?.()', 15_000);
 
@@ -59,8 +65,16 @@ await withChrome('verify-audio', 9900, async (s) => {
 
   await evalPage(s, `window.__BMX_QA__?.stopTransport?.()`, 10_000);
 
+  let moduleVideoDelta = 0;
+  for (const k of Object.keys(snap?.modules ?? {})) {
+    const d =
+      (snap!.modules![k]!.currentTime ?? 0) - (t0?.modules?.[k]?.currentTime ?? 0);
+    if (d > moduleVideoDelta) moduleVideoDelta = d;
+  }
+
   const headless = process.env.HEADLESS === '1';
-  const observedMotion = Math.max(motion?.transportDelta ?? 0, motion?.phaseDelta ?? 0);
+  const beatMotion = Math.max(motion?.transportDelta ?? 0, motion?.phaseDelta ?? 0);
+  const observedMotion = Math.max(beatMotion, moduleVideoDelta);
   const smoke = evaluateSmokeGate({
     snapshot: snap ?? {},
     videoDelta: observedMotion,
@@ -76,7 +90,7 @@ await withChrome('verify-audio', 9900, async (s) => {
 
   const motionOk = headless
     ? observedMotion > 0.05 ||
-      (motion?.transportDelta ?? 0) > 0.05 ||
+      moduleVideoDelta > 0.15 ||
       (Boolean(snap?.soundTouchActive) &&
         Boolean(controls?.controlsApplied) &&
         Boolean(snap?.usingUploadedTrack))
@@ -104,6 +118,7 @@ await withChrome('verify-audio', 9900, async (s) => {
     bpmLocked: snap?.bpmLocked,
     clipsLoaded: snap?.clipsLoaded,
     motion,
+    moduleVideoDelta,
     controls,
     smokeBlockers: smoke.blockers,
     note: 'Headless gate — confirm audibly in IDE browser before marking README manual items'
