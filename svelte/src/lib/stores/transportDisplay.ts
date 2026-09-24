@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
+import { loopSeekTargetSeconds } from '$lib/arrangement/loopTransport';
 import { arrangementLoopRegion } from '$lib/stores/arrangement';
 import type { AnalysisStatus } from '$lib/engine/contracts';
 import { transportBpm, transportBpmLocked, transportPlaying } from '$lib/stores/capabilities';
@@ -116,13 +117,9 @@ export function startTransportPoll() {
     syncAnalysisTriggers(s.analysisOnsetGeneration);
 
     const loop = get(arrangementLoopRegion);
-    if (
-      loop &&
-      frame.playing &&
-      loop.endSeconds > loop.startSeconds &&
-      frame.positionSeconds >= loop.endSeconds - 0.02
-    ) {
-      audioEngine.seek(loop.startSeconds);
+    const loopSeek = loopSeekTargetSeconds(loop, frame.playing, frame.positionSeconds);
+    if (loopSeek != null) {
+      audioEngine.seek(loopSeek);
     }
   }, 100);
 }
