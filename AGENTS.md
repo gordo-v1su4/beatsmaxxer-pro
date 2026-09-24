@@ -38,7 +38,7 @@ Cloud VMs have **no WebGPU** (`navigator.gpu` is null). Shader output only appea
 
 Cloud agents can still run **`bun run test`** (vitest, no GPU) and edit code. Browser acceptance gates (`bun run test:local`) require Chrome + WebGPU on the machine running the tests.
 
-On a **self-hosted worker**, long `test:local` runs can outlive a Cursor connection: use **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), then `tail -f` or reattach to the tmux session.
+On a **self-hosted worker**, long `test:local` runs can outlive a Cursor connection: use **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), then `tail -f` or reattach to the tmux session. Summarize outcomes with **`bun run test:local:log`**.
 
 ### Tailscale (optional)
 
