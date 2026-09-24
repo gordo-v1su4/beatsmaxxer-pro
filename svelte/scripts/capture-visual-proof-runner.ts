@@ -470,13 +470,14 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   await evalPage(
     session,
     `(async () => {
-      const snap = window.__BMX_QA__?.snapshot?.();
-      if (!snap?.playing) await window.__BMX_QA__?.startTransport?.();
-      await window.__BMX_QA__?.waitForPlaying?.(20000);
+      const engine = window.__BMX_QA__?.getEngine?.()?.audioEngine;
+      if (!engine) throw new Error('audio engine unavailable for proof playback');
+      if (!engine.getState().playing) await engine.start();
+      await window.__BMX_QA__?.waitForPlaying?.(25000);
       return window.__BMX_QA__?.realAudioSnapshot?.();
     })()`,
-    35_000,
-    'start transport after visible PLAY',
+    40_000,
+    'start uploaded playback after visible PLAY',
     { userGesture: true }
   );
   await evalPage(
