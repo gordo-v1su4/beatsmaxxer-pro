@@ -10,6 +10,9 @@ Browser-native **audio-reactive video FX rack** with a broadcast-style program m
 
 ## Quick start
 
+For the interactive architecture presentation, see the
+[portfolio case study](docs/portfolio-case-study/README.md).
+
 ```bash
 bun install          # installs svelte/ deps via postinstall hook — or: cd svelte && bun install
 bun run dev          # http://localhost:5174
