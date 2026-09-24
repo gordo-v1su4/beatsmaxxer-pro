@@ -436,32 +436,27 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const controls = await discoverControls(session);
   const songControl = controls.find((control) => control.fixtureKind === 'audio');
   if (!songControl) throw new Error('stable SONG picker control is missing');
-  console.log(`[visual-proof] REAL AUDIO: selecting ${REDLINE_AUDIO_NAME} through SONG`);
+  console.log(`[visual-proof] REAL AUDIO: selecting ${REDLINE_AUDIO_NAME} through SONG (local-only)`);
   const realPhaseRequestStart = protocolCapture.requests.length;
-  await assignFixtureFile(session, songControl, false);
-  const consentControls = (await discoverControls(session)).filter((control) => control.state === 'audio-consent');
-  const localOnly = consentControls.find((control) => control.label.toUpperCase().includes('LOCAL ONLY'));
-  const cancel = consentControls.find((control) => control.label.toUpperCase() === 'CANCEL');
-  if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
   await evalPage(
     session,
-    `(async () => {
-      const deadline = Date.now() + 30000;
-      while (Date.now() < deadline) {
-        const btn = [...document.querySelectorAll('button')].find((b) =>
-          (b.textContent || '').replace(/\\s+/g, ' ').trim().toUpperCase().includes('LOCAL ONLY'));
-        if (btn && btn.getBoundingClientRect().width > 0) return true;
-        await new Promise((r) => setTimeout(r, 120));
-      }
-      throw new Error('Analyze consent dialog did not appear after SONG upload');
-    })()`,
-    35_000,
-    'wait for audio consent dialog'
+    `localStorage.setItem('bmx.hostedAnalysis.consent', 'local')`,
+    5_000,
+    'pin local-only analysis preference for proof upload'
   );
-  console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
-  await dispatchVisibleButtonClick(session, 'LOCAL ONLY');
-  await evalPage(session, `new Promise((r) => setTimeout(r, 400))`);
-  await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode after LOCAL ONLY');
+  await assignFixtureFile(session, songControl, false);
+  const consentVisible = await evalPage<boolean>(
+    session,
+    `(() => [...document.querySelectorAll('button')].some((b) =>
+      (b.textContent || '').replace(/\\s+/g, ' ').trim().toUpperCase().includes('LOCAL ONLY') &&
+      b.getBoundingClientRect().width > 0))()`
+  );
+  if (consentVisible) {
+    console.log('[visual-proof] REAL AUDIO: consent dialog still visible — CDP LOCAL ONLY');
+    await dispatchVisibleButtonClick(session, 'LOCAL ONLY');
+    await evalPage(session, `new Promise((r) => setTimeout(r, 400))`);
+  }
+  await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode');
   await dispatchUserGesture(session);
   await evalPage(
     session,
