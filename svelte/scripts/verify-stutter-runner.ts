@@ -1,4 +1,11 @@
-import { dispatchUserGesture, type CdpSession, evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import {
+  dispatchUserGesture,
+  type CdpSession,
+  evalPage,
+  navigateAndReady,
+  waitForQaSongAndRhythm,
+  withChrome
+} from './cdp.ts';
 
 const MS = Number(process.env.STUTTER_MS ?? 8000);
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
@@ -20,6 +27,7 @@ await withChrome('verify-stutter', 9800, async (s) => {
   console.log('[verify-stutter] loading QA page');
   await navigateAndReady(s, QA_URL);
   await evalPage(s, `window.__BMX_QA__?.waitForClips?.(8, 45000)`, 55_000);
+  await waitForQaSongAndRhythm(s);
   console.log('[verify-stutter] starting transport');
   await ensureTransportPlaying(s);
   console.log(`[verify-stutter] sampling ${MS}ms of free-run playback`);

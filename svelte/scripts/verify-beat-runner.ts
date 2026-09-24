@@ -1,4 +1,4 @@
-import { dispatchUserGesture, evalPage, navigateAndReady, withChrome } from './cdp.ts';
+import { dispatchUserGesture, evalPage, navigateAndReady, waitForQaSongAndRhythm, withChrome } from './cdp.ts';
 import { REDLINE_EXPECTED_BPM } from '../src/lib/qa/artifactProvenance.ts';
 import { evaluateSmokeGate } from '../src/lib/qa/smokeGate.ts';
 
@@ -8,6 +8,7 @@ const ARTIFACT_DIR = process.env.ARTIFACT_DIR ?? `${import.meta.dir}/../.artifac
 await withChrome('verify-beat', 9950, async (s) => {
   await navigateAndReady(s, QA_URL);
   await evalPage(s, `window.__BMX_QA__?.waitForClips?.(8, 45000)`, 55_000);
+  await waitForQaSongAndRhythm(s);
   await dispatchUserGesture(s);
   for (let attempt = 0; attempt < 3; attempt++) {
     await evalPage(s, `window.__BMX_QA__?.startTransport?.()`, 25_000);

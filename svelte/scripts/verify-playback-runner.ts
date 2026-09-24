@@ -1,4 +1,12 @@
-import { dispatchUserGesture, type CdpSession, evalPage, navigateAndReady, screenshotPng, withChrome } from './cdp.ts';
+import {
+  dispatchUserGesture,
+  type CdpSession,
+  evalPage,
+  navigateAndReady,
+  screenshotPng,
+  waitForQaSongAndRhythm,
+  withChrome
+} from './cdp.ts';
 import { evaluateSmokeGate } from '../src/lib/qa/smokeGate.ts';
 
 const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
@@ -40,8 +48,7 @@ await withChrome('verify-playback', 9600, async (s) => {
   console.log('[verify-playback] waiting for 8 decoded clips');
   await waitForClips(s);
   console.log('[verify-playback] waiting for uploaded song + rhythm (qa boot parity)');
-  await evalPage(s, `window.__BMX_QA__?.waitForSongReady?.(90000)`, 95_000);
-  await evalPage(s, `window.__BMX_QA__?.waitForRhythmReady?.(90000)`, 95_000);
+  await waitForQaSongAndRhythm(s);
   console.log('[verify-playback] starting transport');
   await ensureTransportPlaying(s);
   console.log('[verify-playback] waiting for Redline rhythm analysis');

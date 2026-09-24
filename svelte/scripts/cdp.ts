@@ -288,6 +288,13 @@ export async function dispatchUserGesture(session: CdpSession) {
   });
 }
 
+/** Match `+page.svelte` ?qaAutoplay boot before CDP starts transport. */
+export async function waitForQaSongAndRhythm(session: CdpSession, timeoutMs = 90_000) {
+  const budget = timeoutMs + 5_000;
+  await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(${timeoutMs})`, budget);
+  await evalPage(session, `window.__BMX_QA__?.waitForRhythmReady?.(${timeoutMs})`, budget);
+}
+
 export async function navigateAndReady(
   session: CdpSession,
   url: string,
