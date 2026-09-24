@@ -554,6 +554,43 @@ export function installBmxQaHook() {
       }
       throw new Error('Timed out waiting for playback');
     },
+    /** Headed proof: uploaded track may show playing while element time stalls until frames publish. */
+    async waitForUploadPlaybackMotion(timeoutMs = 45_000) {
+      const deadline = Date.now() + timeoutMs;
+      const initialTransport =
+        audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+      const initialMedia = audioEngine.getProofPlaybackDiagnostics().mediaCurrentTime;
+      while (Date.now() < deadline) {
+        audioTimeline.publishFrame();
+        videoPool.tick(audioTimeline.getLastFrame() ?? true);
+        const d = audioEngine.getProofPlaybackDiagnostics();
+        const transport =
+          audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+        const mediaMoved = d.mediaCurrentTime - initialMedia > 0.04;
+        const transportMoved = transport - initialTransport > 0.04;
+        if (
+          d.usingUploadedTrack &&
+          audioEngine.getState().playing &&
+          !d.mediaPaused &&
+          d.contextState === 'running' &&
+          (mediaMoved || transportMoved || d.mediaCurrentTime > 0.05)
+        ) {
+          return { ...d, transportSeconds: transport };
+        }
+        if (!audioEngine.getState().playing || d.mediaPaused || d.contextState !== 'running') {
+          await audioEngine.resumeAfterBackground();
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error(
+        'Upload playback motion timeout: ' +
+          JSON.stringify({
+            ...audioEngine.getProofPlaybackDiagnostics(),
+            transportSeconds:
+              audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds()
+          })
+      );
+    },
     async waitForUploadedTrackLoad(afterGeneration: number, timeoutMs = 10_000) {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
