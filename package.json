@@ -12,6 +12,7 @@
     "check": "cd svelte && bun run check",
     "test": "cd svelte && bun run test",
     "test:local": "cd svelte && bun run test:local",
+    "test:local:detached": "bash scripts/run-test-local-detached.sh",
     "benchmark:prepare": "bun run svelte/scripts/prepare-playback-benchmark.ts",
     "benchmark:run": "bun run svelte/scripts/run-playback-benchmark.ts",
     "benchmark:report": "bun run scripts/summarize-playback-benchmark.ts",
