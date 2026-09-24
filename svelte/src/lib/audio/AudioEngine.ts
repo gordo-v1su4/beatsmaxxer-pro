@@ -825,6 +825,8 @@ export class AudioEngine implements IAudioEngine {
       contextState: this.ctx?.state ?? 'uninitialized',
       contextCurrentTime: audioTimeline.getLastFrame()?.contextTimeSeconds ?? 0,
       mediaCurrentTime: this.mediaElement?.currentTime ?? 0,
+      mediaDurationSeconds: this.mediaElement?.duration ?? 0,
+      mediaReadyState: this.mediaElement?.readyState ?? 0,
       currentSrc: this.mediaElement?.currentSrc ?? '',
       mediaPaused: this.mediaElement?.paused ?? true,
       mediaMuted: this.mediaElement?.muted ?? false,

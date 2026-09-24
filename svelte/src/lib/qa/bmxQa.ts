@@ -518,10 +518,18 @@ export function installBmxQaHook() {
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
         const snap = buildSnapshot();
-        if (snap.usingUploadedTrack) return snap;
+        const media = audioEngine.getProofPlaybackDiagnostics();
+        if (
+          snap.usingUploadedTrack &&
+          media.mediaReadyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          Number.isFinite(media.mediaDurationSeconds) &&
+          media.mediaDurationSeconds > 0
+        ) {
+          return snap;
+        }
         await new Promise((r) => setTimeout(r, 100));
       }
-      throw new Error('Timed out waiting for uploaded song');
+      throw new Error('Timed out waiting for uploaded song decode');
     },
     /** Hosted/fallback rhythm finished — matches `?qaAutoplay=1` boot before `start()`. */
     async waitForRhythmReady(timeoutMs = 90_000) {
