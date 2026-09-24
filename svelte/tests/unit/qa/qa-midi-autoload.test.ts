@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { get } from 'svelte/store';
-import { shouldAutoloadQaArrangerMidi, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
+import {
+  shouldAutoloadQaArrangerMidi,
+  shouldAutoloadQaMidi,
+  shouldAutoloadQaSequencerArm,
+} from '$lib/qa/loadQaMedia';
 import { midiUiOpen, setMidiUiOpen } from '$lib/stores/rackUi';
 import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
 
@@ -24,6 +28,16 @@ describe('QA arranger MIDI autoload', () => {
 
   test('opts in only with qaArrangerMidi=1', () => {
     expect(shouldAutoloadQaArrangerMidi('?qa=1&qaArrangerMidi=1')).toBe(true);
+  });
+});
+
+describe('QA sequencer ARM autoload', () => {
+  test('does not ARM unless qaSequencerArm=1', () => {
+    expect(shouldAutoloadQaSequencerArm('?qa=1&qaAutoplay=1')).toBe(false);
+  });
+
+  test('opts in with qaSequencerArm=1', () => {
+    expect(shouldAutoloadQaSequencerArm('?qa=1&qaSequencerArm=1')).toBe(true);
   });
 });
 

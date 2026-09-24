@@ -45,7 +45,13 @@
   import { supportsModuleMidi } from '$lib/modules/midiContracts';
   import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import { fetchAndLoadQaMedia, shouldAutoloadQaArrangerMidi, shouldAutoloadQaMidi } from '$lib/qa/loadQaMedia';
+  import {
+    fetchAndLoadQaMedia,
+    shouldAutoloadQaArrangerMidi,
+    shouldAutoloadQaMidi,
+    shouldAutoloadQaSequencerArm,
+  } from '$lib/qa/loadQaMedia';
+  import { sequencerArmed } from '$lib/stores/sequencer';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { initVideoSourcePort } from '$lib/platform/videoSource';
@@ -189,6 +195,9 @@
       await audioEngine.waitForRhythmReady();
       await audioEngine.start();
       stepPlay.done();
+    }
+    if (shouldAutoloadQaSequencerArm(window.location.search)) {
+      sequencerArmed.set(true);
     }
     bootLogSettle();
   });

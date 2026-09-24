@@ -188,6 +188,11 @@ export function shouldAutoloadQaArrangerMidi(search: string): boolean {
   return new URLSearchParams(search).get('qaArrangerMidi') === '1';
 }
 
+/** ARM the arrangement sequencer after QA media loads (`?qaSequencerArm=1`). */
+export function shouldAutoloadQaSequencerArm(search: string): boolean {
+  return new URLSearchParams(search).get('qaSequencerArm') === '1';
+}
+
 export async function fetchAndLoadQaMedia(options?: { midi?: boolean; arrangerMidi?: boolean }) {
   const res = await fetch('/qa-media/manifest.json');
   if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
