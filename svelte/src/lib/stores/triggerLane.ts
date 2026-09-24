@@ -1,5 +1,9 @@
 import { derived, get, writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
+import {
+  anchorBeatGridToSongStart,
+  beatGridSongOffset,
+} from '$lib/arrangement/timelineScale';
 import { midiLayers } from '$lib/stores/rack';
 import { ARRANGEMENT_STEPS } from '$lib/stores/arrangement';
 
@@ -33,8 +37,13 @@ let lastOnsetGeneration = -1;
 export function syncAnalysisTriggers(onsetGeneration: number) {
   if (onsetGeneration === lastOnsetGeneration) return;
   lastOnsetGeneration = onsetGeneration;
-  analysisOnsets.set([...audioEngine.getAnalysisOnsets()]);
-  analysisBeatGrid.set([...audioEngine.getBeatGrid()]);
+  const rawGrid = audioEngine.getBeatGrid();
+  const anchored = anchorBeatGridToSongStart(rawGrid);
+  const offset = beatGridSongOffset(rawGrid);
+  analysisBeatGrid.set(anchored);
+  analysisOnsets.set(
+    audioEngine.getAnalysisOnsets().map((t) => Math.max(0, t - offset)),
+  );
 }
 
 /**

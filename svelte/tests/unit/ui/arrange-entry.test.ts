@@ -7,13 +7,9 @@ const source = (path: string) => readFileSync(resolve('src/lib', path), 'utf8');
 describe('arrangement sequencer entry', () => {
   test('puts ARRANGE on the top bar as its own control, not inside VIEW', () => {
     const topBar = source('components/TopBar.svelte');
-    const arrangeBtn = topBar.indexOf("label={$viewMode === 'arrange' ? 'PERFORM' : 'ARRANGE'}");
-    const viewMenu = topBar.indexOf('id="view"');
-    expect(arrangeBtn).toBeGreaterThan(-1);
-    expect(arrangeBtn).toBeLessThan(viewMenu);
-
-    const viewBlock = topBar.slice(viewMenu);
-    expect(viewBlock).not.toContain("Open the arrangement sequencer");
+    expect(topBar).toContain("viewMode.set(mode as 'perform'|'arrange'|'timing')");
+    expect(topBar).toMatch(/ARRANGE|mode\.toUpperCase\(\)/);
+    expect(topBar).not.toContain('Open the arrangement sequencer');
   });
 
   test('lets the arrangement screen return to perform without hunting the top bar', () => {

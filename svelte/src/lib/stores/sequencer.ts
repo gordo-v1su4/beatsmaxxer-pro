@@ -1,8 +1,5 @@
 import { writable } from 'svelte/store';
 
-/** 16 sixteenth-note steps per bar — module id to cut to, or null = hold. */
-export const sequencerSteps = writable<(string | null)[]>(Array.from({ length: 16 }, () => null));
-
 /** Off by default: an idle sequencer that still animates its playhead reads as
  * activity the user did not ask for. Arming it starts both the cuts and the
  * running highlight. */
@@ -65,14 +62,3 @@ export function crossedSequencerSteps(
   };
 }
 
-export function toggleSequencerStep(index: number, moduleId: string | null) {
-  sequencerSteps.update((steps) => {
-    const next = [...steps];
-    next[index] = next[index] === moduleId ? null : moduleId;
-    return next;
-  });
-}
-
-export function clearSequencer() {
-  sequencerSteps.set(Array.from({ length: 16 }, () => null));
-}

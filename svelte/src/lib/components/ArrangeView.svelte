@@ -8,6 +8,11 @@
     beginArrangementRecording,
     endArrangementRecording,
   } from '$lib/arrangement/recorder';
+  import {
+    commitTriggerMarksToCuts,
+    deleteTriggerMark,
+    moveTriggerMark,
+  } from '$lib/arrangement/triggerMarks';
   import { viewMode, playbackWorkspace } from '$lib/stores/rackUi';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
@@ -426,6 +431,43 @@
     else beginArrangementRecording(playheadSeconds);
   }
 
+  let draggingTriggerId: string | null = $state(null);
+  let draggingTrack: HTMLElement | null = $state(null);
+
+  function secondsFromTrack(clientX: number, track: HTMLElement) {
+    const rect = track.getBoundingClientRect();
+    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    return viewSecondsFromFraction(fraction, viewport);
+  }
+
+  function startTriggerDrag(event: PointerEvent, markId: string) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.preventDefault();
+    draggingTriggerId = markId;
+    draggingTrack = (event.currentTarget as HTMLElement).closest('.arr-track') as HTMLElement;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+
+  function moveTriggerDrag(event: PointerEvent) {
+    if (!draggingTriggerId || !draggingTrack) return;
+    moveTriggerMark(draggingTriggerId, secondsFromTrack(event.clientX, draggingTrack));
+  }
+
+  function endTriggerDrag() {
+    draggingTriggerId = null;
+    draggingTrack = null;
+  }
+
+  function commitRecordedTriggers() {
+    commitTriggerMarksToCuts(
+      'all',
+      totalSteps,
+      $analysisBeatGrid,
+      $transportDisplay.bpm || 120,
+    );
+  }
+
   /** Section spans on the full song timeline — wall-clock seconds from file start. */
   const sectionBands = $derived(
     sectionBounds.map((band) => ({
@@ -484,6 +526,12 @@
     {/if}
   {/each}
 {/snippet}
+
+<svelte:window
+  onpointermove={moveTriggerDrag}
+  onpointerup={endTriggerDrag}
+  onpointercancel={endTriggerDrag}
+/>
 
 <section class="arrange">
   <header class="arr-head">
@@ -545,6 +593,13 @@
       onclick={() => sequencerArmed.update((v) => !v)}
       title="Let the arrangement drive PGM cuts"
     >{$sequencerArmed ? 'ARMED' : 'OFF'}</button>
+    <button
+      type="button"
+      class="arr-btn"
+      disabled={$arrangementTriggers.length === 0}
+      onclick={commitRecordedTriggers}
+      title="Quantize recorded trigger marks onto the cut grid"
+    >COMMIT TRIGGERS</button>
     <button
       type="button"
       class="arr-btn"
@@ -732,7 +787,15 @@
             {#each triggersBySlot[slotIndex] ?? [] as mark (mark.id)}
               <span
                 class="arr-trigger"
+                role="button"
+                tabindex="0"
                 style="left:{timePct(mark.seconds)}%;--trigger-color:{info?.color ?? '#5f7378'}"
+                title="Drag to move; double-click to delete"
+                onpointerdown={(event) => startTriggerDrag(event, mark.id)}
+                ondblclick={(event) => {
+                  event.stopPropagation();
+                  deleteTriggerMark(mark.id);
+                }}
               ></span>
             {/each}
           {/if}
@@ -1417,10 +1480,11 @@
     position: absolute;
     top: 1px;
     bottom: 1px;
-    width: 1px;
-    margin-left: -0.5px;
+    width: 8px;
+    margin-left: -4px;
     z-index: 3;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: grab;
     background: var(--trigger-color);
     opacity: 0.92;
     box-shadow: 0 0 4px color-mix(in srgb, var(--trigger-color) 70%, transparent);
