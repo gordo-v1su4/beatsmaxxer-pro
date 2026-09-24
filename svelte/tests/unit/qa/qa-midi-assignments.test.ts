@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -16,6 +17,7 @@ import { get } from 'svelte/store';
 
 const manifest = manifestJson as QaManifest;
 const sourceRoot = path.resolve('..', 'test_media');
+const redlineBundleAvailable = existsSync(sourceRoot);
 
 describe('desktop QA MIDI assignments', () => {
   beforeEach(() => {
@@ -40,7 +42,7 @@ describe('desktop QA MIDI assignments', () => {
     expect(() => validateQaMidiAssignments(inactive)).toThrow('inactive rack module');
   });
 
-  test('loads seven real parts into module layers without enabling triggers', async () => {
+  test.skipIf(!redlineBundleAvailable)('loads seven real parts into module layers without enabling triggers', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input.toString();
@@ -77,7 +79,7 @@ describe('desktop QA MIDI assignments', () => {
     expect(get(midiChannels)).toEqual([]);
   });
 
-  test('loads every inventoried stem into arranger trigger lanes', async () => {
+  test.skipIf(!redlineBundleAvailable)('loads every inventoried stem into arranger trigger lanes', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input.toString();

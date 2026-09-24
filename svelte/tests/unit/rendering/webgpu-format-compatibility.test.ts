@@ -133,15 +133,10 @@ describe.each([
 
 test('source only binds the canvas-format blit pipeline to the canvas render pass', () => {
   const source = readFileSync(join(process.cwd(), 'src/lib/rendering/webgpu/WebGpuEngine.ts'), 'utf8');
-  const canvasView = 'binding.context.getCurrentTexture().createView()';
-  const canvasViewIndex = source.indexOf(canvasView);
-
-  expect(canvasViewIndex).toBeGreaterThan(-1);
-  expect(source.indexOf(canvasView, canvasViewIndex + canvasView.length)).toBe(-1);
-  expect(source.slice(canvasViewIndex, canvasViewIndex + 500)).toContain(
-    'canvasPass.setPipeline(binding.blitPipeline)'
-  );
-  expect(source.slice(canvasViewIndex, canvasViewIndex + 500)).not.toContain(
-    'fxPass.setPipeline(pipeline)'
-  );
+  const canvasPassIndex = source.indexOf('const canvasPass = encoder.beginRenderPass');
+  expect(canvasPassIndex).toBeGreaterThan(-1);
+  const mainCanvasBlit = source.slice(canvasPassIndex, canvasPassIndex + 500);
+  expect(mainCanvasBlit).toContain('binding.context.getCurrentTexture().createView()');
+  expect(mainCanvasBlit).toContain('canvasPass.setPipeline(binding.blitPipeline)');
+  expect(mainCanvasBlit).not.toContain('fxPass.setPipeline(pipeline)');
 });

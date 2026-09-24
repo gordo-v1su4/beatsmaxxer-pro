@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,9 +10,10 @@ import { supportsModuleMidi } from '../../../src/lib/modules/midiContracts';
 import { DEFAULT_RACK_BOTTOM, DEFAULT_RACK_TOP } from '../../../src/lib/modules/catalog';
 
 const MANIFEST_PATH = path.resolve('tests', 'fixtures', 'media', 'manifest.json');
+const REDLINE_BUNDLE_AVAILABLE = existsSync(path.resolve('..', 'test_media'));
 
 describe('authoritative Redline QA media', () => {
-  test('inventories and validates the complete read-only bundle', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('inventories and validates the complete read-only bundle', async () => {
     const { manifest, assetCount } = await validateRedlineManifest();
     expect(manifest.clips).toHaveLength(13);
     expect(manifest.audios).toHaveLength(2);
@@ -36,7 +38,7 @@ describe('authoritative Redline QA media', () => {
     expect(assignments.some(({ moduleId }) => moduleId === 'speedramp' || moduleId === 'prism')).toBe(false);
   });
 
-  test('parses all seven real assigned MIDI stems with truthful note data', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('parses all seven real assigned MIDI stems with truthful note data', async () => {
     const { manifest, sourceRoot } = await validateRedlineManifest();
     const assignments = (manifest as typeof manifest & {
       midiAssignments: Array<{ moduleId: string; file: string }>;
@@ -59,7 +61,7 @@ describe('authoritative Redline QA media', () => {
     expect(assets.every((asset) => _resolveQaMediaRequestPath(asset) !== null)).toBe(true);
   });
 
-  test('serves a contained MIDI fixture with the correct content type', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('serves a contained MIDI fixture with the correct content type', async () => {
     const response = await GET({
       params: {
         path: 'redline/Redline (Remastered) Stems/Redline (Remastered) (Drums).mid'
@@ -71,7 +73,7 @@ describe('authoritative Redline QA media', () => {
     expect((await response.arrayBuffer()).byteLength).toBeGreaterThan(0);
   });
 
-  test('serves single byte ranges with truthful media headers', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('serves single byte ranges with truthful media headers', async () => {
     const pathName = 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
     const response = await GET({
       params: { path: pathName },
@@ -84,7 +86,7 @@ describe('authoritative Redline QA media', () => {
     expect((await response.arrayBuffer()).byteLength).toBe(1);
   });
 
-  test('HEAD exposes metadata without a response body', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('HEAD exposes metadata without a response body', async () => {
     const response = await HEAD({
       params: { path: 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4' }
     } as never);
@@ -95,7 +97,7 @@ describe('authoritative Redline QA media', () => {
     expect((await response.arrayBuffer()).byteLength).toBe(0);
   });
 
-  test('rejects malformed, multi, and unsatisfiable ranges with 416', async () => {
+  test.skipIf(!REDLINE_BUNDLE_AVAILABLE)('rejects malformed, multi, and unsatisfiable ranges with 416', async () => {
     const pathName = 'redline/redline-media/cleaned/hf_20260715_062639_f4cb0e8d-234d-48d3-9c3f-365cb650156a.mp4';
     for (const range of ['bytes=999999999999-', 'bytes=0-1,4-5', 'items=0-1']) {
       const response = await GET({
