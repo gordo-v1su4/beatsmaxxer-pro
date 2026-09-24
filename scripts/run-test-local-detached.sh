@@ -11,11 +11,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESSION_NAME="${BMX_TEST_LOCAL_SESSION:-bmx-test-local}"
 LOG_PATH="${BMX_TEST_LOCAL_LOG:-/tmp/bmx-test-local-latest.log}"
-TMUX=(tmux -f /exec-daemon/tmux.portal.conf)
 
 if ! command -v tmux >/dev/null 2>&1; then
   echo "tmux is required for detached test:local" >&2
   exit 1
+fi
+
+TMUX=(tmux)
+if [[ -f /exec-daemon/tmux.portal.conf ]]; then
+  TMUX=(tmux -f /exec-daemon/tmux.portal.conf)
 fi
 
 if "${TMUX[@]}" has-session -t "=${SESSION_NAME}" 2>/dev/null; then
