@@ -417,7 +417,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   console.log('[visual-proof] installing protocol error capture');
   const protocolCapture = await installErrorCapture(session);
   try {
-    await navigateAndReady(session, QA_URL);
+    await navigateAndReady(
+      session,
+      QA_URL,
+      'document.documentElement?.dataset?.bmxQa === "1"',
+      120_000
+    );
   } catch (error) {
     console.error(JSON.stringify({
       stage: 'page readiness marker',
