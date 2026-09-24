@@ -12,6 +12,7 @@ Use **`bun`** for all installs, dev, test, and build commands.
 | Dev server | `bun run dev` → `http://localhost:5174` |
 | Unit tests | `bun run test` |
 | Full local suite | `bun run test:local` (needs Chrome + WebGPU) |
+| Sequencer ARM cut CDP | `cd svelte && bun run verify:sequencer-cut` (self-hosted; Redline QA media) |
 | Production build | `bun run build` → `svelte/build/` |
 
 QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`).
