@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# CI-safe #25 QA autoload: ARM sequencer via URL (no Redline test_media bundle).
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+# shellcheck source=scripts/lib/common.sh
+source "$ROOT/scripts/lib/common.sh"
+
+trap cleanup_dev_server EXIT
+
+ensure_artifacts_dir
+cleanup_stale_test_chrome
+ensure_dev_server
+
+export HEADLESS=1
+# common.sh sets QA_URL without qaSequencerArm — override for this gate.
+export QA_URL="http://127.0.0.1:5174/?qa=1&qaAutoplay=1&qaSequencerArm=1"
+export QA_SMOKE_SEQUENCER_ONLY=1
+
+echo "▶ sequencer ARM CDP smoke"
+bun run scripts/verify-cloud-smoke-runner.ts
+echo "ci-sequencer-arm-smoke PASSED"
