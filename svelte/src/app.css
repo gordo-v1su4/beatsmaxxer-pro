@@ -128,7 +128,7 @@
 	--pgm-rail-collapsed: 22px;
 	--side-rail-width: 8px;
 	--app-min-width: calc(
-		var(--rack-module-width) * 5 + var(--fx-lib-width) + var(--pgm-rail-width) +
+		var(--rack-module-width) * 5 + 4px + var(--fx-lib-width) + var(--pgm-rail-width) +
 			var(--side-rail-width) * 2 + 3px
 	);
 	--app-min-height: 720px;
@@ -317,7 +317,9 @@ input[type='range']::-moz-range-thumb {
 	   to the sides, but cap growth so the 16:9 previews cannot push the
 	   controls off the bottom. Leftover space above the cap is split evenly. */
 	grid-template-columns: repeat(5, minmax(var(--rack-module-width), var(--rack-module-max)));
-	justify-content: center;
+	/* Center spare width. If the row cannot fit, align to the start so the
+	   overflow runs past the right edge instead of sliding under the left rail. */
+	justify-content: safe center;
 	align-items: stretch;
 	gap: 1px;
 	width: 100%;
@@ -648,8 +650,9 @@ input[type='range']::-moz-range-thumb {
 .timing-workspace .timing-panel > .event-strip { margin-top: 0; }
 .timing-workspace .timing-panel > .timing-footer { margin-top: 0; }
 
-/* Timing cards use the same fixed 16:9 rack geometry as Perform. The shared
-   editor below may scroll independently; it must not shrink the viewed clips. */
+/* Timing cards keep Perform's 16:9 frame, but the five tracks share whatever
+   width is left beside the rails. A fixed 272px floor overflowed under the
+   open PGM rail and left the right edge pinned to the window. */
 .app-viewport:has(.timing-workspace) { scrollbar-gutter: stable; }
 .app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
 .timing-workspace .rack-main { min-width: 0; }
@@ -668,7 +671,10 @@ input[type='range']::-moz-range-thumb {
 	.timing-workspace { --timing-viewer-height: clamp(210px, 24vh, 260px); }
 }
 @media (min-width: 961px) {
-	.timing-workspace .rack-row { grid-template-columns: repeat(5, minmax(var(--rack-module-width), var(--rack-module-max))); }
+	.timing-workspace .rack-row {
+		grid-template-columns: repeat(5, minmax(0, var(--rack-module-max)));
+		justify-content: safe center;
+	}
 	.timing-workspace .rack-slot { min-width: 0; }
 	/* The native desktop surface is fixed-height. Keep the viewed 16:9 media
 	   geometry intact and spend the saved vertical space in the editor plot. */

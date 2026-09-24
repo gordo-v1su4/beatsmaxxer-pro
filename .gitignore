@@ -78,3 +78,6 @@ research/webgpu-peers/repos/
 research/webgpu-peers/githits-sweep-log.txt
 research/webgpu-peers/githits-sweep-repos.txt
 research/webgpu-peers/githits-svelte-sweep.txt
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
