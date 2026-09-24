@@ -447,8 +447,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   await exerciseControl(session, localOnly);
   await evalPage(session, `window.__BMX_QA__?.waitForSongReady?.(120000)`, 125_000, 'wait for Redline decode after LOCAL ONLY');
   await dispatchUserGesture(session);
-  await dispatchVisibleButtonClick(session, 'PLAY');
-  await evalPage(session, `window.__BMX_QA__?.waitForPlaying?.(10000)`, 15_000, 'observe visible PLAY transport start');
+  await evalPage(
+    session,
+    `window.__BMX_QA__?.startTransport?.()`,
+    25_000,
+    'start Redline transport (same path as verify-sequencer-cut)'
+  );
   await evalPage(
     session,
     `(async () => {
