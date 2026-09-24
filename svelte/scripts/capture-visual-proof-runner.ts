@@ -443,6 +443,21 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
   const localOnly = consentControls.find((control) => control.label.toUpperCase().includes('LOCAL ONLY'));
   const cancel = consentControls.find((control) => control.label.toUpperCase() === 'CANCEL');
   if (!cancel || !localOnly) throw new Error('conditional audio privacy controls are missing');
+  await evalPage(
+    session,
+    `(async () => {
+      const deadline = Date.now() + 30000;
+      while (Date.now() < deadline) {
+        const btn = [...document.querySelectorAll('button')].find((b) =>
+          (b.textContent || '').replace(/\\s+/g, ' ').trim().toUpperCase().includes('LOCAL ONLY'));
+        if (btn && btn.getBoundingClientRect().width > 0) return true;
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      throw new Error('Analyze consent dialog did not appear after SONG upload');
+    })()`,
+    35_000,
+    'wait for audio consent dialog'
+  );
   console.log('[visual-proof] REAL AUDIO: choosing LOCAL ONLY; no upload/network is permitted');
   await dispatchVisibleButtonClick(session, 'LOCAL ONLY');
   await evalPage(session, `new Promise((r) => setTimeout(r, 400))`);
