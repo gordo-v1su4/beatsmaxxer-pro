@@ -147,6 +147,7 @@ function buildSnapshot(): BmxQaSnapshot {
 
 export function installBmxQaHook() {
   if (typeof window === 'undefined') return;
+  document.documentElement.dataset.bmxQa = '1';
 
   const eightVideoElementIds = new WeakMap<HTMLVideoElement, string>();
   let nextEightVideoElementId = 0;
@@ -1195,5 +1196,4 @@ export function installBmxQaHook() {
   };
 
   (window as Window & { __BMX_QA__?: typeof api }).__BMX_QA__ = api;
-  document.documentElement.dataset.bmxQa = '1';
 }
