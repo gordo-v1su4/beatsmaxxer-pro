@@ -461,7 +461,10 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         }
         await new Promise((r) => setTimeout(r, 150));
       }
-      throw new Error('Redline media did not enter running local playback after PLAY');
+      const last = window.__BMX_QA__?.realAudioSnapshot?.();
+      throw new Error(
+        'Redline media did not enter running local playback after PLAY: ' + JSON.stringify(last)
+      );
     })()`,
     25_000,
     'wait for audible Redline transport'
