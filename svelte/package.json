@@ -11,6 +11,7 @@
 		"prepare": "svelte-kit sync || echo '' && cp node_modules/@soundtouchjs/audio-worklet/.dist/soundtouch-processor.js static/soundtouch-processor.js 2>/dev/null || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"test": "vitest run",
+		"test:update-broken-fixtures": "UPDATE_BROKEN_FIXTURES=1 vitest run tests/unit/qa/broken-fixture-gates.test.ts",
 		"test:watch": "vitest",
 		"link-qa": "bash scripts/setup-qa-media.sh",
 		"verify:fx": "bun scripts/fxlab/verify-fx.ts",

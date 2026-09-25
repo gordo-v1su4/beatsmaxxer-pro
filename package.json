@@ -11,6 +11,7 @@
     "preview": "cd svelte && bun run preview",
     "check": "cd svelte && bun run check",
     "test": "cd svelte && bun run test",
+    "test:update-broken-fixtures": "cd svelte && bun run test:update-broken-fixtures",
     "test:local": "cd svelte && bun run test:local",
     "test:local:detached": "bash scripts/run-test-local-detached.sh",
     "test:local:log": "bash scripts/parse-test-local-log.sh",
