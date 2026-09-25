@@ -18,8 +18,19 @@ import { getLatencySamples } from '$lib/qa/performance';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
-import { arrangementLoopRegion, cuts } from '$lib/stores/arrangement';
+import {
+  arrangementLoopRegion,
+  arrangementTotalSteps,
+  arrangementTriggers,
+  cuts,
+} from '$lib/stores/arrangement';
+import {
+  commitTriggerMarksToCuts,
+  deleteTriggerMark,
+  moveTriggerMark,
+} from '$lib/arrangement/triggerMarks';
 import { loopSeekTargetSeconds } from '$lib/arrangement/loopTransport';
+import { analysisBeatGrid } from '$lib/stores/triggerLane';
 import { sequencerArmed, sequencerLastStep } from '$lib/stores/sequencer';
 
 export interface BmxQaSnapshot {
@@ -66,6 +77,7 @@ export interface BmxQaSnapshot {
   params: Record<string, Record<string, number>>;
   loopStartSeconds: number | null;
   loopEndSeconds: number | null;
+  triggerMarkCount: number;
 }
 
 export function visualProofExpectedMediaTime(
@@ -146,7 +158,8 @@ function buildSnapshot(): BmxQaSnapshot {
     uploadedTrackLoadGeneration: audioEngine.getUploadedTrackLoadGeneration(),
     params: get(moduleParams),
     loopStartSeconds: get(arrangementLoopRegion)?.startSeconds ?? null,
-    loopEndSeconds: get(arrangementLoopRegion)?.endSeconds ?? null
+    loopEndSeconds: get(arrangementLoopRegion)?.endSeconds ?? null,
+    triggerMarkCount: get(arrangementTriggers).length
   };
 }
 
@@ -941,6 +954,35 @@ export function installBmxQaHook() {
       const transportDelta =
         samples.length > 1 ? samples.at(-1)!.transportSeconds - samples[0]!.transportSeconds : 0;
       return { samples, phaseDelta, transportDelta, playing: buildSnapshot().playing };
+    },
+    seedQaTriggerMarksForCommit() {
+      arrangementTriggers.set([
+        { id: 'qa-trigger-a', slotIndex: 1, seconds: 1 },
+        { id: 'qa-trigger-b', slotIndex: 4, seconds: 2.05 },
+      ]);
+      return { triggerMarkCount: get(arrangementTriggers).length };
+    },
+    moveQaTriggerMark(id: string, seconds: number) {
+      moveTriggerMark(id, seconds);
+      return get(arrangementTriggers).find((mark) => mark.id === id) ?? null;
+    },
+    deleteQaTriggerMark(id: string) {
+      deleteTriggerMark(id);
+      return { triggerMarkCount: get(arrangementTriggers).length };
+    },
+    commitQaTriggerMarksForQa() {
+      const cutCountBefore = get(cuts).length;
+      const grid = get(analysisBeatGrid);
+      const bpm = buildSnapshot().bpm || 120;
+      const totalSteps = get(arrangementTotalSteps);
+      const result = commitTriggerMarksToCuts('all', totalSteps, grid, bpm);
+      return {
+        ...result,
+        cutCountBefore,
+        cutCountAfter: get(cuts).length,
+        beatGridLength: grid.length,
+        totalSteps,
+      };
     },
     /** Mirror transport poll loop wrap (ARRANGE/PERFORM + ARMED). */
     applyLoopTransportPoll() {
