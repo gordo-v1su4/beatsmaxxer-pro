@@ -29,4 +29,6 @@ bun run scripts/verify-sequencer-loop-runner.ts
 echo "▶ trigger mark commit CDP gate"
 export QA_URL="http://127.0.0.1:5174/?qa=1&qaAutoplay=1"
 bun run scripts/verify-trigger-commit-runner.ts
+echo "▶ arrangement REC clip/trigger CDP gate"
+bun run scripts/verify-arrangement-rec-runner.ts
 echo "ci-sequencer-arm-smoke PASSED"

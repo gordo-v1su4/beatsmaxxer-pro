@@ -19,7 +19,14 @@ import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import {
+  beginArrangementRecording,
+  endArrangementRecording,
+  tickArrangementRecorder,
+} from '$lib/arrangement/recorder';
+import {
+  arrangementClips,
   arrangementLoopRegion,
+  arrangementRecording,
   arrangementTotalSteps,
   arrangementTriggers,
   cuts,
@@ -982,6 +989,39 @@ export function installBmxQaHook() {
         cutCountAfter: get(cuts).length,
         beatGridLength: grid.length,
         totalSteps,
+      };
+    },
+    /** Simulate REC ticks — PGM clip span + one trigger mark (issue #25 REC gate). */
+    exerciseQaArrangementRec() {
+      const modules = [...get(rackTop), ...get(rackBottom)];
+      const liveModule = get(pgmSource);
+      const frameAt = (positionSeconds: number, playing = true) => {
+        const bpm = buildSnapshot().bpm || 120;
+        return {
+          positionSeconds,
+          playing,
+          beatPosition: positionSeconds * (bpm / 60),
+          generation: 1,
+          bpm,
+          frameId: Math.floor(positionSeconds * 60),
+          contextTimeSeconds: positionSeconds,
+          transportSeconds: positionSeconds,
+          reason: 'qa-rec' as const,
+        };
+      };
+      beginArrangementRecording(1, true);
+      tickArrangementRecorder(frameAt(1.25), modules, {});
+      tickArrangementRecorder(frameAt(1.75), modules, { [liveModule]: 0.05 });
+      tickArrangementRecorder(frameAt(2), modules, { [liveModule]: 0.2 });
+      endArrangementRecording(2.5);
+      const clips = get(arrangementClips);
+      const triggers = get(arrangementTriggers);
+      return {
+        recording: get(arrangementRecording),
+        clipCount: clips.length,
+        triggerCount: triggers.length,
+        clip: clips[0] ?? null,
+        trigger: triggers[0] ?? null,
       };
     },
     /** Mirror transport poll loop wrap (ARRANGE/PERFORM + ARMED). */
