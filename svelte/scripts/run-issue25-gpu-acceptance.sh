@@ -16,6 +16,12 @@ if [[ "${SKIP_VISUAL_PROOF:-0}" != "1" ]]; then
     echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
     exit 1
   fi
+  if [[ ! -d "$ROOT/../test_media" ]]; then
+    echo "Redline ../test_media is required for issue #25 GPU acceptance." >&2
+    echo "Place test_media next to the repo, then: bash svelte/scripts/setup-qa-media.sh" >&2
+    echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
+    exit 1
+  fi
 fi
 
 echo "▶ issue #25 — unit tests"
@@ -40,12 +46,8 @@ if [[ "${SKIP_VISUAL_PROOF:-0}" == "1" ]]; then
   exit 0
 fi
 
-if [[ -d "$ROOT/../test_media" ]]; then
-  echo "▶ validating Redline test_media bundle"
-  bash "$ROOT/scripts/setup-qa-media.sh"
-else
-  echo "WARN: ../test_media missing — visual proof may fail without Redline assets." >&2
-fi
+echo "▶ validating Redline test_media bundle"
+bash "$ROOT/scripts/setup-qa-media.sh"
 
 export PHYSICAL_BROWSER_LAG_OBSERVED="${PHYSICAL_BROWSER_LAG_OBSERVED:-0}"
 cleanup_dev_server
