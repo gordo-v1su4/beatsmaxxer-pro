@@ -70,6 +70,17 @@ cd svelte && bun run test          # unit tests, no GPU
 cd svelte && bun run test:local    # full suite + browser gates (needs Chrome + WebGPU)
 ```
 
+**Issue #25 sprint close** (Redline `test_media` + headed Chrome on the GPU machine):
+
+```bash
+git pull origin main
+bash svelte/scripts/setup-qa-media.sh
+PHYSICAL_BROWSER_OBSERVED=1 PHYSICAL_BROWSER_OPERATOR=<you> PHYSICAL_BROWSER_LAG_OBSERVED=0 \
+  bun run verify:issue25-gpu
+```
+
+Cloud agents run the same CDP gates without Redline or WebGPU via `bun run verify:issue25-cloud`.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -79,6 +90,7 @@ cd svelte && bun run test:local    # full suite + browser gates (needs Chrome + 
 | Essentia proxy 503 | Missing env or bad URL | Set all three `ESSENTIA_*` vars; use `100.x` HTTP or HTTPS |
 | Port 5174 in use after restart | Stale Vite process | Restart agent; startup script kills process group on exit |
 | Black previews on desktop | User gesture needed | Click PLAY or use `?qaAutoplay=1` |
+| `verify:issue25-gpu` skips visual proof | Ran in cloud VM or missing env | Run on GPU desktop with `test_media`; set `PHYSICAL_BROWSER_*` |
 
 ## Differences from `project-stack-structure`
 
