@@ -11,6 +11,8 @@ import { defaultClipTiming } from './envelope';
 import { ResidentFrameBank, ResidentMemoryBudget, ResidentCapacityError } from './ResidentFrameBank';
 import { advanceClipTiming, timingOutputFrame } from './clock';
 import { identifyInterpolation } from './interpolation';
+import { allowTimingClip, RIFE_RAMP_ONLY } from '$lib/stores/timing';
+import { normalizeTimingRamp } from './rampPresets';
 import type { SpeedRampSourceState } from '$lib/runtime/speedramp';
 import type { TimelineFrame } from '$lib/transport';
 import type { TimingTexture } from './contracts';
@@ -18,7 +20,8 @@ import type { VideoLayer } from '$lib/engine/contracts';
 
 /** Owns resident banks; AppLoop owns time and WebGpuEngine owns presentation. */
 export class TimingRuntime {
-  private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank; clock: SpeedRampSourceState | null }>();
+  private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank; clock: SpeedRampSourceState | null; factor: number | null }>();
+  private normalized = new WeakMap<ClipTiming, ClipTiming>();
   private selected = new Map<string, TimingTexture>();
   private budget = new ResidentMemoryBudget(DEFAULT_TIMING_BUDGET_GIB * 2 ** 30);
   private device: GPUDevice | null = null;
@@ -75,7 +78,7 @@ export class TimingRuntime {
     if (!this.active) return;
     for (const [slot, source] of Object.entries(sources)) {
       if (!source || this.banks.has(slot)) continue;
-      const entry = { source, bank: new ResidentFrameBank(this.device,this.budget), clock: null };
+      const entry = { source, bank: new ResidentFrameBank(this.device,this.budget), clock: null, factor: null as number | null };
       this.banks.set(slot,entry);
       const generation = this.generation;
       const preloadHeight=this.preloadHeight;
@@ -92,6 +95,7 @@ export class TimingRuntime {
           const stats = entry.bank.stats;
           const interpolationFactor = await identifyInterpolation(source.file ?? source.url, stats.fps);
           if (generation !== this.generation || this.banks.get(slot) !== entry) { entry.bank.dispose(); return; }
+          entry.factor = interpolationFactor;
           timingStatus.update(s => ({...s,[slot]:{state:'ready',frames:stats.frames,total:stats.frames,bytes:stats.bytes,fps:stats.fps,interpolationFactor}}));
           this.lastOutput = -1;
         } catch (error) {
@@ -122,9 +126,31 @@ export class TimingRuntime {
     }
     const live: Record<string,TimingLive> = {};
     for (const [slot, entry] of this.banks) {
-      if (!entry.bank.stats.ready) continue;
+      if (!entry.bank.stats.ready || entry.factor === null) continue;
       if(!this.defaults.has(slot))this.defaults.set(slot,defaultClipTiming(slot));
-      const config = settings.clips[slot] ?? this.defaults.get(slot)!;
+      const stored = settings.clips[slot] ?? this.defaults.get(slot)!;
+      let config = this.normalized.get(stored);
+      if (!config) {
+        config = { ...stored, ramp: normalizeTimingRamp(stored.ramp) };
+        this.normalized.set(stored, config);
+      }
+      // Settings can be restored or changed while the workspace is inactive or
+      // verification is pending. Recheck at the playback boundary as well.
+      if (entry.factor > 1 && config.effect === 'stutter') {
+        allowTimingClip(slot, entry.factor, config);
+        if (get(timingStatus)[slot]?.state !== 'error') {
+          timingStatus.update(s => ({...s,[slot]:{...s[slot],state:'error',message:RIFE_RAMP_ONLY}}));
+        }
+        this.selected.delete(slot);
+        entry.clock = null;
+        continue;
+      }
+      allowTimingClip(slot, entry.factor, config);
+      if (get(timingStatus)[slot]?.state === 'error') {
+        const stats = entry.bank.stats;
+        timingStatus.update(s => ({...s,[slot]:{state:'ready',frames:stats.frames,total:stats.frames,bytes:stats.bytes,fps:stats.fps,interpolationFactor:entry.factor!}}));
+        updateOutput = true;
+      }
       const seed = [...slot].reduce((n,c)=>n+c.charCodeAt(0),0);
       const slotIndex=Number(slot.split('-')[1])+(slot.startsWith('bottom')?5:0);
       let plan=this.plans.get(slot);

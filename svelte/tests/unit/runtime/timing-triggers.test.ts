@@ -67,7 +67,7 @@ describe('finite musical Timing effects',()=>{
 });
 describe('ramp shapes and laptop frames',()=>{
   it('matches the benchmark smash timing and min/max changes actually scale the curve',()=>{
-    const smash=rampPreset('SMASH');expect(evaluateRamp(smash,0)).toBe(.25);expect(evaluateRamp(smash,12/16)).toBe(4);expect(evaluateRamp(smash,13/16)).toBe(1);
+    const smash=rampPreset('SMASH');expect(evaluateRamp(smash,0)).toBe(.25);expect(evaluateRamp(smash,12/16)).toBe(2);expect(evaluateRamp(smash,13/16)).toBe(1);
     const adjusted=scaleRampRange(rampPreset('COSINE'),.25,3);
     expect(rampRange(adjusted)).toEqual({min:.25,max:3});expect(evaluateRamp(adjusted,.5)).toBe(3);
     for(const name of ['UP','DOWN','DIP','S','SLAM'])expect(rampPreset(name).points.length).toBeGreaterThan(2);

@@ -14,9 +14,9 @@
       {
         "title": "Beatsmaxxer Pro",
         "width": 1440,
-        "height": 1300,
+        "height": 810,
         "minWidth": 960,
-        "minHeight": 1300,
+        "minHeight": 600,
         "center": true,
         "theme": "Dark",
         "maximized": false,

@@ -37,6 +37,8 @@ fn fit_window_to_display(window: &WebviewWindow) {
     };
     let scale = monitor.scale_factor();
     let screen = monitor.size().to_logical::<f64>(scale);
+    let minimum = LogicalSize::new(MIN_WINDOW_WIDTH.min((screen.width - 32.0).max(1.0)), 1300.0_f64.min((screen.height - 72.0).max(1.0)));
+    let _ = window.set_min_size(Some(minimum));
     let _ = window.set_size(preferred_window_size(screen));
     let _ = window.center();
 }

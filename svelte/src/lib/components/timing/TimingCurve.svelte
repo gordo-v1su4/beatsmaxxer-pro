@@ -10,7 +10,7 @@
   // Keep ruler text and handles legible as the available editor width changes.
   let W=$state(1000);
   let H=$state(246);
-  const top=28, bottom=246;
+  const top=$derived(Math.min(120, 32*246/H)), bottom=246;
   onMount(()=>{const resize=new ResizeObserver(([entry])=>{W=Math.max(200,entry.contentRect.width);H=Math.max(1,entry.contentRect.height);});resize.observe(svg);return ()=>resize.disconnect();});
   const x = (v:number) => 8+v*(W-16);
   const ry = (r:number) => r*246/H;

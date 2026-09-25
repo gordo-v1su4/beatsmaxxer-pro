@@ -14,7 +14,7 @@ export function rampPreset(name:string,cycleBeats=2):RampConfig {
     {id:'start',x:0,y:rateToY(.5),tension:0},{id:'peak',x:.5,y:rateToY(2),tension:0},
     {id:'end',x:1,y:rateToY(.5),tension:0}]};
   if(name==='SMASH')return {cycleBeats:16,shape:'hold',points:[
-    {id:'start',x:0,y:rateToY(.25),tension:0},{id:'hit',x:12/16,y:rateToY(4),tension:0},
+    {id:'start',x:0,y:rateToY(.25),tension:0},{id:'hit',x:12/16,y:rateToY(2),tension:0},
     {id:'release',x:13/16,y:rateToY(1),tension:0},{id:'end',x:1,y:rateToY(1),tension:0}]};
   const values=curves[name]??curves.UP;
   const legacy=Object.fromEntries(['bzY0','bzX1','bzY1','bzX2','bzY2','bzY3'].map((k,i)=>[k,values[i]]));
@@ -42,3 +42,9 @@ export const RAMP_PREVIEW_PATHS=Object.fromEntries(RAMP_PRESET_NAMES.map(name=>{
   const range=rampRange(ramp),span=Math.max(.001,range.max-range.min);
   return [name,Array.from({length:129},(_,i)=>`${i?'L':'M'}${2+i/128*60},${range.max===range.min?12:22-(evaluateRamp(ramp,i/128)-range.min)/span*20}`).join(' ')];
 }));
+
+/** Migrate out-of-range ramps once at every settings ingress, including undo. */
+export function normalizeTimingRamp(ramp:RampConfig):RampConfig {
+  const range=rampRange(ramp);
+  return range.max>2 ? scaleRampRange(ramp,Math.min(2,range.min),2) : ramp;
+}

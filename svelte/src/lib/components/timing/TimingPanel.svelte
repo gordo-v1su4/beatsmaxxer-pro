@@ -93,7 +93,7 @@
       {/if}
       </div>
       {#if $timingEditorTab==='ramp'}
-      <div class="shape-bank" aria-label="Ramp shape presets">{#each RAMP_PRESET_NAMES as name (name)}<button title={name==='COSINE'?'ZigSwap cosine · 0.5× → 2× → 0.5×':name==='SMASH'?'ZigSwap smash · 12 beats at ¼×, 1 at 4×, 3 at 1×':`Perform ${name} curve`} aria-label={`Ramp shape ${name}`} onclick={()=>update({ramp:rampPreset(name,config.ramp.cycleBeats)})}><svg viewBox="0 0 64 24" aria-hidden="true"><path d={RAMP_PREVIEW_PATHS[name]} fill="none" stroke="currentColor" stroke-width="1"/></svg><span>{name}</span></button>{/each}</div>
+      <div class="shape-bank" aria-label="Ramp shape presets">{#each RAMP_PRESET_NAMES as name (name)}<button title={name==='COSINE'?'ZigSwap cosine · 0.5× → 2× → 0.5×':name==='SMASH'?'ZigSwap smash · 12 beats at ¼×, 1 at 2×, 3 at 1×':`Perform ${name} curve`} aria-label={`Ramp shape ${name}`} onclick={()=>update({ramp:rampPreset(name,config.ramp.cycleBeats)})}><svg viewBox="0 0 64 24" aria-hidden="true"><path d={RAMP_PREVIEW_PATHS[name]} fill="none" stroke="currentColor" stroke-width="1"/></svg><span>{name}</span></button>{/each}</div>
       {/if}
     </div>
     <div class="effect-stage" title="Click to add a point; Alt for free movement; double-click to delete">
