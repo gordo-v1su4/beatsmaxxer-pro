@@ -30,7 +30,7 @@ if grep -q 'SKIP_VISUAL_PROOF=1' "$LOG"; then
 fi
 
 echo "RESULT: FAIL or incomplete"
-grep -E 'ci-sequencer-arm-smoke PASSED|capture:visual-proof|verify-visual-proof|Headed visual proof|Redline ../test_media|Physical-browser visual proof' "$LOG" | tail -12 || true
+grep -E 'ci-sequencer-arm-smoke PASSED|capture:visual-proof|verify-visual-proof|Headed visual proof|Redline test_media|Redline ../test_media|Physical-browser visual proof' "$LOG" | tail -12 || true
 grep -E '^error:|^▶ issue #25' "$LOG" | tail -10 || true
 grep 'EXIT:' "$LOG" | tail -1 || echo "EXIT: (not recorded yet — run may still be in progress)"
 exit 1

@@ -25,6 +25,7 @@
     "verify:issue25-gpu": "cd svelte && bun run verify:issue25-gpu",
     "verify:issue25-gpu:detached": "bash scripts/run-issue25-gpu-detached.sh",
     "verify:issue25-gpu:log": "bash scripts/parse-issue25-gpu-log.sh",
+    "verify:issue25-gpu:report": "bash scripts/verify-issue25-gpu-report.sh",
     "capture:visual-proof": "cd svelte && bun run capture:visual-proof",
     "verify:visual-proof": "cd svelte && bun run verify:visual-proof",
     "link-qa": "cd svelte && bash scripts/link-qa-media.sh",
