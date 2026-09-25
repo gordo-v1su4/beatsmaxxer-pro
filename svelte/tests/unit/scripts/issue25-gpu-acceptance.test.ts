@@ -24,6 +24,14 @@ describe('run-issue25-gpu-acceptance.sh', () => {
     expect(unitIdx).toBeGreaterThan(proofIdx);
   });
 
+  test('fails fast before unit tests when Redline test_media is missing', () => {
+    expect(script).toContain('Redline ../test_media is required for issue #25 GPU acceptance.');
+    const mediaIdx = script.indexOf('Redline ../test_media is required for issue #25 GPU acceptance.');
+    const unitIdx = script.indexOf('▶ issue #25 — unit tests');
+    expect(mediaIdx).toBeGreaterThan(-1);
+    expect(unitIdx).toBeGreaterThan(mediaIdx);
+  });
+
   test('clears HEADLESS and dev server before headed capture:visual-proof', () => {
     const captureIdx = script.indexOf('bun run capture:visual-proof');
     const headlessIdx = script.lastIndexOf('export HEADLESS=0', captureIdx);
