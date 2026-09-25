@@ -93,14 +93,17 @@ describe('M0 broken-fixture matrix', () => {
     expect(blockers).toContain('WebGPU is false or unavailable in captured provenance');
   });
 
-  test('writes checked-in broken provenance fixtures for verify runner', async () => {
-    await mkdir(FIXTURE_DIR, { recursive: true });
-    for (const fixtureCase of M0_BROKEN_FIXTURE_MATRIX.filter((entry) => entry.kind === 'provenance-only')) {
-      const provenance = buildBrokenProvenance(fixtureCase.id);
-      await writeFile(
-        join(FIXTURE_DIR, `broken-${fixtureCase.id}.json`),
-        `${JSON.stringify({ id: fixtureCase.id, expectedBlocker: fixtureCase.expectedBlocker, provenance }, null, 2)}\n`
-      );
-    }
-  });
+  test.skipIf(process.env.UPDATE_BROKEN_FIXTURES !== '1')(
+    'writes checked-in broken provenance fixtures for verify runner',
+    async () => {
+      await mkdir(FIXTURE_DIR, { recursive: true });
+      for (const fixtureCase of M0_BROKEN_FIXTURE_MATRIX.filter((entry) => entry.kind === 'provenance-only')) {
+        const provenance = buildBrokenProvenance(fixtureCase.id);
+        await writeFile(
+          join(FIXTURE_DIR, `broken-${fixtureCase.id}.json`),
+          `${JSON.stringify({ id: fixtureCase.id, expectedBlocker: fixtureCase.expectedBlocker, provenance }, null, 2)}\n`,
+        );
+      }
+    },
+  );
 });
