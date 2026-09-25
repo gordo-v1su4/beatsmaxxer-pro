@@ -794,7 +794,19 @@ export function installBmxQaHook() {
         videoSize: render?.videoSize ?? null
       };
     },
-    async warmVisualProofRealClip(_moduleId: string, durationMs = 900) {
+    async warmVisualProofRealClip(moduleId: string, durationMs = 900) {
+      const { sourceId } = this.focusVisualProofModule(moduleId);
+      if (!audioEngine.getState().playing) {
+        await this.startTransport();
+      }
+      const video = videoPool.get(sourceId);
+      if (video?.paused) {
+        try {
+          await video.play();
+        } catch {
+          /* headed proof may reject until gesture; transport tick still advances decode */
+        }
+      }
       const deadline = performance.now() + durationMs;
       while (performance.now() < deadline) {
         audioTimeline.publishFrame();

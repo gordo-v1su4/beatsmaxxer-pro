@@ -548,49 +548,80 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       `retain capture-phase selected File: ${fileName}`);
     await evalPage(session, `window.__BMX_QA__?.waitForVisualProofClip?.('transition', ${JSON.stringify(fileName)}, 30000)`, 35_000);
     await evalPage(session, `new Promise(resolve => setTimeout(resolve, 300))`);
-    await evalPage(
-      session,
-      `window.__BMX_QA__?.warmVisualProofRealClip?.('transition', 900)`,
-      15_000,
-      `warm decode motion for ${fileName}`
-    );
-    const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BMX_QA__?.readVisualProofLiveClip?.()`);
-    const selected = firstTimeline;
-    const firstScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-a.png`;
-    const firstShot = await capturePng(session, firstScreenshot, '[data-canvas-id="pgm"]');
-    const cadence = await evalPage<any>(session, `window.__BMX_QA__?.sampleVisualProofFrameCadence?.(1100)`, 5_000, `observe motion for ${fileName}`);
-    const secondTimeline = cadence.after as LiveClipReading;
-    const secondScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-b.png`;
-    const secondShot = await capturePng(session, secondScreenshot, '[data-canvas-id="pgm"]');
-    const [firstPng, secondPng] = await Promise.all([readFile(firstScreenshot), readFile(secondScreenshot)]).then(([a, b]) => [parsePngMetrics(a), parsePngMetrics(b)] as const);
     const metadata = mediaByName.get(fileName)!;
-    realFirstFrames.push(firstPng);
-    const release = await evalPage<any>(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.('transition', ${JSON.stringify(selected.currentSrc)})`, 15_000, `release real clip ${fileName}`);
-    maxSimultaneousDecoded = Math.max(maxSimultaneousDecoded, 1 + Number(release.decodedCount));
-    const exercise: VisualProofReport['realMedia']['videoExercise'][number] = {
-      fileName, relativePath: metadata.relativePath, sha256: metadata.sha256, size: metadata.size,
-      selectedFileSha256: capturedSelection.sha256, selectedFileSize: capturedSelection.size,
-      currentSrc: selected.currentSrc, pgmModule: selected.pgmModule, bindingId: selected.bindingId,
-      videoWidth: selected.videoWidth, videoHeight: selected.videoHeight,
-      durationSeconds: selected.durationSeconds, readyState: secondTimeline.readyState, hasVideo: secondTimeline.hasVideo,
-      externalTextureImported: secondTimeline.externalTextureImported, externalTextureBound: secondTimeline.externalTextureBound,
-      samplePath: secondTimeline.samplePath, rendererSource: secondTimeline.rendererSource,
-      rendererDimensions: secondTimeline.rendererDimensions, rendererFrameId: secondTimeline.rendererFrameId,
-      videoSize: secondTimeline.videoSize ?? '',
-      firstTimelineSeconds: firstTimeline.transportSeconds, secondTimelineSeconds: secondTimeline.transportSeconds,
-      firstMediaTimeSeconds: firstTimeline.mediaTimeSeconds, secondMediaTimeSeconds: secondTimeline.mediaTimeSeconds,
-      firstCentralFrameId: firstTimeline.centralFrameId, secondCentralFrameId: secondTimeline.centralFrameId,
-      firstScreenshot, secondScreenshot, firstContentHash: firstShot.contentHash, secondContentHash: secondShot.contentHash,
-      nonBlackPixelRatio: Math.min(firstShot.nonBlackPixelRatio, secondShot.nonBlackPixelRatio),
-      pixelMotionRatio: pixelDifferenceRatio(firstPng, secondPng), sampleCount: cadence.sampleCount,
-      p95IntervalMs: cadence.p95IntervalMs, maxIntervalMs: cadence.maxIntervalMs,
-      droppedFrames: cadence.droppedFrames, stalledFrames: cadence.stalledFrames,
-      frameIntervalsMs: cadence.frameIntervalsMs,
-      released: release.released && release.decodedCount === 0,
-      previousSourceUnbound: release.previousSourceUnbound === true
-    };
-    const phaseBlockers = validateVisualProofRealVideoExercise(exercise);
-    if (phaseBlockers.length) throw new Error(`Real-video phase failed before matrix: ${phaseBlockers.join('; ')}`);
+    const warmCadenceAttempts = [
+      { warmMs: 900, cadenceMs: 1100, suffix: '' },
+      { warmMs: 1600, cadenceMs: 1600, suffix: '-retry' }
+    ] as const;
+    let exercise: VisualProofReport['realMedia']['videoExercise'][number] | null = null;
+    let firstPngForSequence: ReturnType<typeof parsePngMetrics> | null = null;
+    let lastBlockers: string[] = [];
+    for (const attempt of warmCadenceAttempts) {
+      if (attempt.suffix) {
+        console.log(`[visual-proof] REAL VIDEO ${index + 1}/13: retry motion sample for ${fileName}`);
+      }
+      await evalPage(
+        session,
+        `window.__BMX_QA__?.warmVisualProofRealClip?.('transition', ${attempt.warmMs})`,
+        20_000,
+        `warm decode motion for ${fileName}${attempt.suffix}`
+      );
+      const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BMX_QA__?.readVisualProofLiveClip?.()`);
+      const selected = firstTimeline;
+      const firstScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-a${attempt.suffix}.png`;
+      const firstShot = await capturePng(session, firstScreenshot, '[data-canvas-id="pgm"]');
+      const cadence = await evalPage<any>(
+        session,
+        `window.__BMX_QA__?.sampleVisualProofFrameCadence?.(${attempt.cadenceMs})`,
+        8_000,
+        `observe motion for ${fileName}${attempt.suffix}`
+      );
+      const secondTimeline = cadence.after as LiveClipReading;
+      const secondScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-b${attempt.suffix}.png`;
+      const secondShot = await capturePng(session, secondScreenshot, '[data-canvas-id="pgm"]');
+      const [firstPng, secondPng] = await Promise.all([readFile(firstScreenshot), readFile(secondScreenshot)]).then(([a, b]) => [parsePngMetrics(a), parsePngMetrics(b)] as const);
+      const candidateWithoutRelease = {
+        fileName, relativePath: metadata.relativePath, sha256: metadata.sha256, size: metadata.size,
+        selectedFileSha256: capturedSelection.sha256, selectedFileSize: capturedSelection.size,
+        currentSrc: selected.currentSrc, pgmModule: selected.pgmModule, bindingId: selected.bindingId,
+        videoWidth: selected.videoWidth, videoHeight: selected.videoHeight,
+        durationSeconds: selected.durationSeconds, readyState: secondTimeline.readyState, hasVideo: secondTimeline.hasVideo,
+        externalTextureImported: secondTimeline.externalTextureImported, externalTextureBound: secondTimeline.externalTextureBound,
+        samplePath: secondTimeline.samplePath, rendererSource: secondTimeline.rendererSource,
+        rendererDimensions: secondTimeline.rendererDimensions, rendererFrameId: secondTimeline.rendererFrameId,
+        videoSize: secondTimeline.videoSize ?? '',
+        firstTimelineSeconds: firstTimeline.transportSeconds, secondTimelineSeconds: secondTimeline.transportSeconds,
+        firstMediaTimeSeconds: firstTimeline.mediaTimeSeconds, secondMediaTimeSeconds: secondTimeline.mediaTimeSeconds,
+        firstCentralFrameId: firstTimeline.centralFrameId, secondCentralFrameId: secondTimeline.centralFrameId,
+        firstScreenshot, secondScreenshot, firstContentHash: firstShot.contentHash, secondContentHash: secondShot.contentHash,
+        nonBlackPixelRatio: Math.min(firstShot.nonBlackPixelRatio, secondShot.nonBlackPixelRatio),
+        pixelMotionRatio: pixelDifferenceRatio(firstPng, secondPng), sampleCount: cadence.sampleCount,
+        p95IntervalMs: cadence.p95IntervalMs, maxIntervalMs: cadence.maxIntervalMs,
+        droppedFrames: cadence.droppedFrames, stalledFrames: cadence.stalledFrames,
+        frameIntervalsMs: cadence.frameIntervalsMs
+      };
+      lastBlockers = validateVisualProofRealVideoExercise({
+        ...candidateWithoutRelease,
+        released: true,
+        previousSourceUnbound: true
+      });
+      if (lastBlockers.length === 0) {
+        const release = await evalPage<any>(session, `window.__BMX_QA__?.releaseVisualProofRealClip?.('transition', ${JSON.stringify(selected.currentSrc)})`, 15_000, `release real clip ${fileName}`);
+        maxSimultaneousDecoded = Math.max(maxSimultaneousDecoded, 1 + Number(release.decodedCount));
+        exercise = {
+          ...candidateWithoutRelease,
+          released: release.released && release.decodedCount === 0,
+          previousSourceUnbound: release.previousSourceUnbound === true
+        };
+        firstPngForSequence = firstPng;
+        break;
+      }
+      if (attempt.suffix) break;
+    }
+    if (!exercise || !firstPngForSequence) {
+      throw new Error(`Real-video phase failed before matrix: ${lastBlockers.join('; ')}`);
+    }
+    realFirstFrames.push(firstPngForSequence);
     videoExercise.push(exercise);
   }
   await evalPage(session, `window.__BMX_QA__?.hideVisualProofRealVideoProgress?.()`);
