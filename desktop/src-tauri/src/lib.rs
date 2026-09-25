@@ -31,13 +31,20 @@ fn preferred_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
     LogicalSize::new(width, height)
 }
 
+fn minimum_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
+    LogicalSize::new(
+        MIN_WINDOW_WIDTH.min((screen.width - 32.0).max(1.0)),
+        1300.0_f64.min((screen.height - 72.0).max(1.0)),
+    )
+}
+
 fn fit_window_to_display(window: &WebviewWindow) {
     let Ok(Some(monitor)) = window.current_monitor() else {
         return;
     };
     let scale = monitor.scale_factor();
     let screen = monitor.size().to_logical::<f64>(scale);
-    let minimum = LogicalSize::new(MIN_WINDOW_WIDTH.min((screen.width - 32.0).max(1.0)), 1300.0_f64.min((screen.height - 72.0).max(1.0)));
+    let minimum = minimum_window_size(screen);
     let _ = window.set_min_size(Some(minimum));
     let _ = window.set_size(preferred_window_size(screen));
     let _ = window.center();
@@ -89,6 +96,13 @@ mod tests {
 
     #[test]
     fn preferred_startup_size_is_relative_to_the_active_monitor() {
+        for screen in [LogicalSize::new(1920.0,1080.0), LogicalSize::new(1280.0,720.0), LogicalSize::new(2560.0,1440.0)] {
+            let minimum = minimum_window_size(screen);
+            let startup = preferred_window_size(screen);
+            assert!(minimum.height <= startup.height);
+            assert!(minimum.width <= startup.width);
+            assert!(minimum.height < screen.height);
+        }
         assert_eq!(
             preferred_window_size(LogicalSize::new(1920.0, 1080.0)),
             LogicalSize::new(1440.0, 1008.0)
