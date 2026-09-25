@@ -12,10 +12,12 @@ Use **`bun`** for all installs, dev, test, and build commands.
 | Dev server | `bun run dev` → `http://localhost:5174` |
 | Unit tests | `bun run test` |
 | Full local suite | `bun run test:local` (needs Chrome + WebGPU) |
+| Issue #25 cloud acceptance | `bun run verify:issue25-cloud` (unit + CDP gates; skips headed visual proof) |
+| Issue #25 GPU acceptance | `bun run verify:issue25-gpu` after `bash svelte/scripts/setup-qa-media.sh` (5090 + Redline `test_media`; set `PHYSICAL_BROWSER_OBSERVED=1` and `PHYSICAL_BROWSER_OPERATOR`) |
 | Sequencer ARM cut CDP | `cd svelte && bun run verify:sequencer-cut` (self-hosted; Redline QA media) |
 | Production build | `bun run build` → `svelte/build/` |
 
-QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`).
+QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`). Issue #25 CDP gates add `qaSequencerArm=1`, `qaLoopRegion=1` as needed (see `svelte/scripts/ci-sequencer-arm-smoke.sh`).
 
 ## Cursor Cloud
 
