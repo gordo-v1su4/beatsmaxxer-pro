@@ -942,7 +942,6 @@ export function installBmxQaHook() {
         samples.length > 1 ? samples.at(-1)!.transportSeconds - samples[0]!.transportSeconds : 0;
       return { samples, phaseDelta, transportDelta, playing: buildSnapshot().playing };
     },
-    /** Seek the shared timeline and publish frames so ARMED cut logic runs in CDP/headless. */
     /** Mirror transport poll loop wrap (ARRANGE/PERFORM + ARMED). */
     applyLoopTransportPoll() {
       const loop = get(arrangementLoopRegion);
@@ -969,14 +968,22 @@ export function installBmxQaHook() {
       const loop = get(arrangementLoopRegion);
       if (!loop) throw new Error('Loop region is not set');
       if (!get(sequencerArmed)) throw new Error('Sequencer not armed');
-      const nearEnd = Math.max(loop.startSeconds + 0.5, loop.endSeconds - 0.02);
-      audioEngine.stop('qa');
-      audioEngine.seek(nearEnd);
-      audioTimeline.seek(nearEnd);
-      audioTimeline.publishFrame();
-      await this.startTransport();
+      if (!audioEngine.getState().playing) {
+        await this.startTransport();
+      }
+      const atLoopEnd = Math.max(loop.startSeconds + 0.5, loop.endSeconds - 0.015);
+      audioEngine.seek(atLoopEnd);
+      audioTimeline.seek(atLoopEnd);
+      const settleDeadline = performance.now() + 2_500;
+      while (performance.now() < settleDeadline) {
+        audioTimeline.publishFrame();
+        const pos =
+          audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+        if (pos >= atLoopEnd - 0.04) break;
+        await new Promise((r) => setTimeout(r, 40));
+      }
       let wrapped = this.applyLoopTransportPoll();
-      for (let i = 0; i < 12 && wrapped.applied !== true; i++) {
+      for (let i = 0; i < 24 && wrapped.applied !== true; i++) {
         await new Promise((r) => requestAnimationFrame(() => r(undefined)));
         audioTimeline.publishFrame();
         wrapped = this.applyLoopTransportPoll();
