@@ -503,6 +503,15 @@ describe('visual proof release gate', () => {
     expect(phase.indexOf('sampleRealAudio(3000')).toBeLessThan(phase.indexOf('sampleRealAudio(4500'));
   });
 
+  test('real-video capture uses four escalating warm/cadence attempts per clip', async () => {
+    const source = await readFile('scripts/capture-visual-proof-runner.ts', 'utf8');
+    const loop = source.slice(source.indexOf('warmCadenceAttempts'), source.indexOf('for (const attempt of warmCadenceAttempts)'));
+    expect(loop).toContain("suffix: '-retry3'");
+    expect(loop).toContain('warmMs: 3200');
+    expect(loop.indexOf("suffix: ''")).toBeLessThan(loop.indexOf("suffix: '-retry'"));
+    expect(loop.indexOf("suffix: '-retry2'")).toBeLessThan(loop.indexOf("suffix: '-retry3'"));
+  });
+
   test('PLAY proof awaits actual playback before sampling and restores paused transport after evidence', async () => {
     const source = await readFile('scripts/capture-visual-proof-runner.ts', 'utf8');
     const controlProof = source.slice(source.indexOf('const isPlayControl'), source.indexOf("if (control.fixtureKind === 'video' || control.fixtureKind === 'clips') {", source.indexOf('evidence.push({')));

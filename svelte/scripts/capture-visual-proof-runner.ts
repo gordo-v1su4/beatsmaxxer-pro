@@ -566,7 +566,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     const warmCadenceAttempts = [
       { warmMs: 900, cadenceMs: 1100, suffix: '' },
       { warmMs: 1600, cadenceMs: 1600, suffix: '-retry' },
-      { warmMs: 2400, cadenceMs: 2000, suffix: '-retry2' }
+      { warmMs: 2400, cadenceMs: 2000, suffix: '-retry2' },
+      { warmMs: 3200, cadenceMs: 2600, suffix: '-retry3' }
     ] as const;
     let exercise: VisualProofReport['realMedia']['videoExercise'][number] | null = null;
     let firstPngForSequence: ReturnType<typeof parsePngMetrics> | null = null;
@@ -578,7 +579,7 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       await evalPage(
         session,
         `window.__BMX_QA__?.warmVisualProofRealClip?.('transition', ${attempt.warmMs})`,
-        20_000,
+        Math.max(20_000, attempt.warmMs + 12_000),
         `warm decode motion for ${fileName}${attempt.suffix}`
       );
       const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BMX_QA__?.readVisualProofLiveClip?.()`);
