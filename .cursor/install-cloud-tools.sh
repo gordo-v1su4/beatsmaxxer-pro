@@ -62,6 +62,7 @@ if ! command -v tailscale >/dev/null 2>&1 || [[ "$(tailscale version | sed -n '1
 fi
 
 bun install --frozen-lockfile
+bash svelte/scripts/ensure-cloud-qa-media.sh
 
 bun --version
 tailscale version | sed -n '1p'
