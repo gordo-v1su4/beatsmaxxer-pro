@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   amplitudePeakFromByteTimeDomain,
+  rmsFromByteTimeDomain,
   rmsFromFloatTimeDomain
 } from '$lib/audio/proofPlaybackMetrics';
 
@@ -19,6 +20,12 @@ describe('proofPlaybackMetrics', () => {
     const td = new Uint8Array(256);
     td.fill(200);
     expect(amplitudePeakFromByteTimeDomain(td)).toBeGreaterThan(0.4);
+  });
+
+  test('rmsFromByteTimeDomain matches float RMS for flat normalized samples', () => {
+    const td = new Uint8Array(128);
+    td.fill(200);
+    expect(rmsFromByteTimeDomain(td)).toBeGreaterThan(0.2);
   });
 
   test('proof diagnostics path uses fresh analyser peak when tick has not run', () => {

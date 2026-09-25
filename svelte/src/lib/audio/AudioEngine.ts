@@ -37,6 +37,7 @@ import {
 } from "$lib/audio/soundtouch";
 import {
   amplitudePeakFromByteTimeDomain,
+  rmsFromByteTimeDomain,
   rmsFromFloatTimeDomain,
 } from "$lib/audio/proofPlaybackMetrics";
 
@@ -822,9 +823,9 @@ export class AudioEngine implements IAudioEngine {
     if (this.analyserFull) {
       const samples = new Float32Array(this.analyserFull.fftSize);
       this.analyserFull.getFloatTimeDomainData(samples);
-      rms = rmsFromFloatTimeDomain(samples);
       const td = this.scratch(this.analyserFull.fftSize);
       this.analyserFull.getByteTimeDomainData(td);
+      rms = Math.max(rmsFromFloatTimeDomain(samples), rmsFromByteTimeDomain(td));
       amplitude = Math.max(amplitude, amplitudePeakFromByteTimeDomain(td));
     }
     return {
