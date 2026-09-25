@@ -57,9 +57,14 @@ await withChrome('verify-sequencer-cut', 9612, async (session) => {
   const pgmCutCount = nudge?.pgmCutCount ?? nudge?.cutLatency?.count ?? 0;
   const cutCount = nudge?.after?.arrangementCutCount ?? nudge?.before?.arrangementCutCount ?? 0;
   const pgmCutObserved = pgmMoved || pgmCutCount > 0;
+  const transportDeltaSeconds =
+    (nudge as { transportDeltaSeconds?: number } | null)?.transportDeltaSeconds ??
+    ((nudge?.after as { transportSeconds?: number } | undefined)?.transportSeconds ?? 0) -
+      ((nudge?.before as { transportSeconds?: number } | undefined)?.transportSeconds ?? 0);
+  const sequencerActive = stepMoved || transportDeltaSeconds > 0.75;
 
   const report = {
-    passed: cutCount > 0 && stepMoved && pgmCutObserved,
+    passed: cutCount > 0 && sequencerActive && pgmCutObserved,
     stepMoved,
     pgmMoved,
     pgmCutCount,

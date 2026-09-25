@@ -1114,12 +1114,20 @@ export function installBmxQaHook() {
 
       const after = buildSnapshot();
       const pgmCutCount = getLatencySamples().filter((s) => s.label === 'pgm-cut').length;
+      if (after.sequencerLastStep !== before.sequencerLastStep && after.sequencerLastStep >= 0) {
+        stepMoved = true;
+      }
+      if (after.pgmModule && before.pgmModule && after.pgmModule !== before.pgmModule) {
+        pgmMoved = true;
+      }
+      const transportDeltaSeconds = (after.transportSeconds ?? 0) - (before.transportSeconds ?? 0);
       return {
         before,
         after,
         stepMoved,
         pgmMoved,
         pgmCutCount,
+        transportDeltaSeconds,
         cutLatency: this.cutLatency()
       };
     },
