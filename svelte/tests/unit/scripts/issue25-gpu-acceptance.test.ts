@@ -56,6 +56,12 @@ describe('verify-issue25-gpu-report.sh', () => {
     expect(reportScript).toContain('bun run verify:visual-proof');
     expect(reportScript).toContain('issue #25 GPU report validation PASSED');
   });
+
+  test('allows an external report path via BMX_VISUAL_PROOF_REPORT or VISUAL_PROOF_REPORT', () => {
+    expect(reportScript).toContain('BMX_VISUAL_PROOF_REPORT');
+    expect(reportScript).toContain('VISUAL_PROOF_REPORT');
+    expect(reportScript).toContain('export VISUAL_PROOF_REPORT');
+  });
 });
 
 const rootPackage = readFileSync(
