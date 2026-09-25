@@ -32,9 +32,10 @@ if [[ "${SKIP_VISUAL_PROOF:-0}" == "1" ]]; then
 fi
 
 if [[ "${PHYSICAL_BROWSER_OBSERVED:-0}" != "1" || -z "${PHYSICAL_BROWSER_OPERATOR:-}" ]]; then
-  echo "Headed visual proof skipped: set PHYSICAL_BROWSER_OBSERVED=1 and PHYSICAL_BROWSER_OPERATOR=<name>." >&2
-  echo "Re-run with those env vars on a GPU desktop (5090/M3) after bash scripts/setup-qa-media.sh." >&2
-  exit 0
+  echo "Headed visual proof is required for issue #25 GPU acceptance." >&2
+  echo "Set PHYSICAL_BROWSER_OBSERVED=1 and PHYSICAL_BROWSER_OPERATOR=<name> on a GPU desktop after bash scripts/setup-qa-media.sh." >&2
+  echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
+  exit 1
 fi
 
 if [[ -d "$ROOT/../test_media" ]]; then
