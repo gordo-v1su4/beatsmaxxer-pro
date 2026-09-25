@@ -494,6 +494,15 @@ describe('visual proof release gate', () => {
     expect(source.indexOf('await rm(OUTPUT_DIR')).toBeLessThan(source.indexOf('await withChrome'));
   });
 
+  test('real-audio capture validates phase and retries low analyser peak once', async () => {
+    const source = await readFile('scripts/capture-visual-proof-runner.ts', 'utf8');
+    const phase = source.slice(source.indexOf('REAL AUDIO: audible volume'), source.indexOf('REAL VIDEO: selecting staged MP4s'));
+    expect(phase).toContain('validateVisualProofRealAudioPhase');
+    expect(phase).toContain('low analyser peak');
+    expect(phase).toContain('sampleRealAudio(4500');
+    expect(phase.indexOf('sampleRealAudio(3000')).toBeLessThan(phase.indexOf('sampleRealAudio(4500'));
+  });
+
   test('PLAY proof awaits actual playback before sampling and restores paused transport after evidence', async () => {
     const source = await readFile('scripts/capture-visual-proof-runner.ts', 'utf8');
     const controlProof = source.slice(source.indexOf('const isPlayControl'), source.indexOf("if (control.fixtureKind === 'video' || control.fixtureKind === 'clips') {", source.indexOf('evidence.push({')));
