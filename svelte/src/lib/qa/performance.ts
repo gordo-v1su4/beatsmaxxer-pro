@@ -25,6 +25,11 @@ export function getLatencySamples() {
   return [...samples];
 }
 
+/** QA-only: isolate PGM cut latency within one CDP exercise. */
+export function clearLatencySamples() {
+  samples.length = 0;
+}
+
 export function meanCutLatency() {
   const cuts = samples.filter((s) => s.label === 'pgm-cut');
   if (!cuts.length) return 0;

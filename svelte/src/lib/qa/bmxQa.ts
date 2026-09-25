@@ -14,7 +14,7 @@ import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import { audioTimeline } from '$lib/transport';
 import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
-import { getLatencySamples } from '$lib/qa/performance';
+import { clearLatencySamples, getLatencySamples } from '$lib/qa/performance';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
@@ -1079,6 +1079,50 @@ export function installBmxQaHook() {
         detail: wrapped
       };
     },
+    async exerciseQaArmedSequencerCut(options?: { durationMs?: number; pollMs?: number }) {
+      const before = buildSnapshot();
+      if (!before.sequencerArmed) {
+        throw new Error('Sequencer not armed');
+      }
+      if (!before.playing) {
+        await audioEngine.start();
+      }
+      const durationMs = options?.durationMs ?? 18_000;
+      const pollMs = options?.pollMs ?? 250;
+      clearLatencySamples();
+      let stepMoved = false;
+      let pgmMoved = false;
+      let lastStep = before.sequencerLastStep;
+      let lastPgm = before.pgmModule;
+      const deadline = performance.now() + durationMs;
+
+      while (performance.now() < deadline) {
+        await new Promise((r) => setTimeout(r, pollMs));
+        const snap = buildSnapshot();
+        if (snap.sequencerLastStep !== lastStep && snap.sequencerLastStep >= 0) {
+          stepMoved = true;
+        }
+        if (lastPgm && snap.pgmModule && snap.pgmModule !== lastPgm) {
+          pgmMoved = true;
+          break;
+        }
+        lastStep = snap.sequencerLastStep;
+        lastPgm = snap.pgmModule;
+        const pgmCutCount = getLatencySamples().filter((s) => s.label === 'pgm-cut').length;
+        if (pgmCutCount > 0) break;
+      }
+
+      const after = buildSnapshot();
+      const pgmCutCount = getLatencySamples().filter((s) => s.label === 'pgm-cut').length;
+      return {
+        before,
+        after,
+        stepMoved,
+        pgmMoved,
+        pgmCutCount,
+        cutLatency: this.cutLatency()
+      };
+    },
     async nudgeArmedSequencerForQa(seekAheadSeconds = 24) {
       const before = buildSnapshot();
       if (!before.sequencerArmed) {
@@ -1103,7 +1147,8 @@ export function installBmxQaHook() {
         pgmMoved:
           Boolean(before.pgmModule) &&
           Boolean(after.pgmModule) &&
-          after.pgmModule !== before.pgmModule
+          after.pgmModule !== before.pgmModule,
+        pgmCutCount: getLatencySamples().filter((s) => s.label === 'pgm-cut').length
       };
     },
     /** Sample time-manipulation modules while transport runs — beat should advance. */
