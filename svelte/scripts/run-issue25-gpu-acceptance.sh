@@ -23,6 +23,9 @@ export HEADLESS=1
 echo "▶ issue #25 — sequencer ARM / cut / loop CDP gates"
 bash "$ROOT/scripts/ci-sequencer-arm-smoke.sh"
 
+echo "▶ issue #25 — desktop bundle smoke (frontend build; Windows shell on 5090)"
+(cd "$ROOT/.." && bun run smoke:desktop)
+
 if [[ "${SKIP_VISUAL_PROOF:-0}" == "1" ]]; then
   echo "SKIP_VISUAL_PROOF=1 — skipping headed capture:visual-proof"
   exit 0
