@@ -27,7 +27,7 @@
   $effect(()=>{
     if(followOnAir){
       const slot=currentRackSlotForModule($pgmSource);
-      if(slot)selectedTimingSlot.set(slot);
+      if(slot && $selectedTimingSlot !== slot)selectedTimingSlot.set(slot);
     }
   });
   let snap=$state<Snap>('32nd');

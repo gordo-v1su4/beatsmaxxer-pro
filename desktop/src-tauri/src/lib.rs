@@ -70,6 +70,23 @@ pub fn run() {
                 .set_title(&title)
                 .map_err(|error| error.to_string())?;
             fit_window_to_display(&window);
+            let observed_window = window.clone();
+            let last_minimum = std::sync::Mutex::new(None);
+            window.on_window_event(move |event| {
+                if !matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::ScaleFactorChanged { .. }) {
+                    return;
+                }
+                let Ok(Some(monitor)) = observed_window.current_monitor() else { return; };
+                let minimum = minimum_window_size(monitor.size().to_logical::<f64>(monitor.scale_factor()));
+                let key = (minimum.width, minimum.height);
+                let changed = {
+                    let mut previous = last_minimum.lock().unwrap();
+                    let changed = *previous != Some(key);
+                    *previous = Some(key);
+                    changed
+                };
+                if changed { let _ = observed_window.set_min_size(Some(minimum)); }
+            });
             // A launched desktop editor must become a real, visible window
             // immediately. An unfocused webview can be background-throttled
             // before media surfaces register.

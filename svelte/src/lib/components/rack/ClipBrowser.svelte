@@ -39,7 +39,7 @@
       void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
         .then((factor) => {
           if (factor === 4) verifiedRates[clip.id] = 96;
-        });
+        }).catch(() => { checkedClips.delete(clip.id); });
     }
   });
 

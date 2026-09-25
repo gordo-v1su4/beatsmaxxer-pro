@@ -10,14 +10,12 @@ export const verifiedInterpolationFactor = (sha256: string) => rife4Hashes.has(s
 
 async function verifySource(source: Blob | string): Promise<number> {
 
-  try {
     const blob = typeof source === 'string' ? await fetch(source).then(r => {
       if (!r.ok) throw new Error('Media unavailable');
       return r.blob();
     }) : source;
     const hash = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
     return verifiedInterpolationFactor(Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2,'0')).join(''));
-  } catch { return 1; } // Unknown provenance never earns the RIFE badge.
 }
 
 const blobChecks = new WeakMap<Blob, Promise<number>>();
@@ -27,12 +25,18 @@ export function identifyInterpolation(source: Blob | string, fps: number): Promi
   if (fps < 90) return Promise.resolve(1);
   if (typeof source !== 'string') {
     let check = blobChecks.get(source);
-    if (!check) { check = verifySource(source); blobChecks.set(source, check); }
+    if (!check) {
+      check = verifySource(source).catch(error => { blobChecks.delete(source); throw error; });
+      blobChecks.set(source, check);
+    }
     return check;
   }
   let check = urlChecks.get(source);
   if (!check) {
-    check = verifySource(source);
+    check = verifySource(source).catch(error => {
+      if (urlChecks.get(source) === check) urlChecks.delete(source);
+      throw error;
+    });
     urlChecks.set(source, check);
     // Bound URL retention; Blob entries disappear with their source objects.
     if (urlChecks.size > 64) urlChecks.delete(urlChecks.keys().next().value!);
