@@ -38,3 +38,14 @@ describe('Timing editing history and identity', () => {
     setClipTiming('top-0',{...defaultClipTiming(),effect:'off'});expect(get(canRedoTiming)).toBe(false);
   });
 });
+
+it('normalizes restored ramps and undo history to the supported range', () => {
+  const high = defaultClipTiming();
+  high.ramp.points[1].y = 1;
+  const restored = parseTimingSettings(JSON.stringify({version:1,clips:{'top-0':high}}));
+  expect(restored.clips['top-0'].ramp.points[1].y).toBeCloseTo((2-.25)/3.75);
+  timingSettings.update(s=>({...s,clips:{'top-0':high}}));
+  setClipTiming('top-0',defaultClipTiming());
+  undoTiming();
+  expect(clipTiming('top-0').ramp.points[1].y).toBeCloseTo((2-.25)/3.75);
+});

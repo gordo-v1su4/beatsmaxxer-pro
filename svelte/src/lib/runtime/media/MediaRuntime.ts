@@ -14,6 +14,9 @@ import {
   videoLayers
 } from '$lib/stores/rack';
 import type { DeckFrameHandleRef } from '$lib/engine/contracts';
+import { get } from 'svelte/store';
+import { timingActive, allowTimingClip, RIFE_RAMP_ONLY } from '$lib/stores/timing';
+import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 
 interface MediaPoolPort {
   prepare(moduleId: string, url: string): Promise<VideoCandidate>;
@@ -146,7 +149,8 @@ export class MediaRuntime {
     moduleId: string,
     generation: number,
     clip: RegisteredClip,
-    previous: RegisteredClip | null
+    previous: RegisteredClip | null,
+    interpolationFactor = 1
   ): Promise<ClipRegistrationResult> {
     let candidate: VideoCandidate | null = null;
     try {
@@ -159,6 +163,8 @@ export class MediaRuntime {
         this.clipRegistry.rollback(clip);
         return { status: 'superseded', previous };
       }
+
+      if(get(timingActive) && !allowTimingClip(moduleId,interpolationFactor))throw new Error(RIFE_RAMP_ONLY);
 
       this.pool.markFreeRun(moduleId);
       const poolCommit = this.pool.commitCandidate(candidate);
@@ -193,7 +199,15 @@ export class MediaRuntime {
 
     this.clipRegistry.retain(clip);
     try {
-      return await this.attachViaHtmlVideo(moduleId, generation, clip, previous);
+      const interpolationFactor=get(timingActive)
+        ? await identifyInterpolation(clip.file??clip.url,96) : 1;
+      if(!this.isFresh(moduleId,generation)){
+        this.clipRegistry.releaseReference(clip);
+        this.clipRegistry.rollback(clip);
+        return {status:'superseded',previous};
+      }
+      if(get(timingActive) && !allowTimingClip(moduleId,interpolationFactor))throw new Error(RIFE_RAMP_ONLY);
+      return await this.attachViaHtmlVideo(moduleId, generation, clip, previous, interpolationFactor);
     } catch (error) {
       this.clipRegistry.releaseReference(clip);
       this.clipRegistry.rollback(clip);

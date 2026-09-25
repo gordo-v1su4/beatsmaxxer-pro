@@ -1,3 +1,4 @@
+import { normalizeTimingRamp } from '$lib/runtime/timing/rampPresets';
 import { derived, get, writable } from 'svelte/store';
 import { defaultClipTiming, normalizePoints, type ClipTiming, type CurveShape } from '$lib/runtime/timing/envelope';
 import { defaultTimingTrigger, TRIGGER_SOURCES, type TimingTriggerConfig } from '$lib/runtime/timing/triggers';
@@ -55,7 +56,7 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
       next.stutter.slices = Math.round(finite(c.stutter?.slices,8,1,64));
       next.stutter.mode = ['repeat','hold','jump'].includes(c.stutter?.mode) ? c.stutter.mode : 'repeat';
       next.stutter.groove = ['straight','swing','dotted'].includes(c.stutter?.groove??'') ? c.stutter.groove : 'straight';
-      result.clips[slot] = next;
+      result.clips[slot] = { ...next, ramp: normalizeTimingRamp(next.ramp) };
     }
   } catch { /* Old or malformed storage never prevents opening the workspace. */ }
   return result;
@@ -74,6 +75,14 @@ export const timingEditorTab = derived([timingSettings, selectedTimingSlot], ([s
   return config.effect === 'off' ? config.lastEffect ?? 'ramp' : config.effect;
 });
 export const timingActive = writable(false);
+export const timingClipRestrictions = writable<Record<string,string>>({});
+export const RIFE_RAMP_ONLY = 'This RIFE clip needs a Speedramp slot. Choose Speedramp or load an original clip for Stutter.';
+export function allowTimingClip(slot:string, factor:number, config=clipTiming(slot)) {
+  const effect=config.effect;
+  const allowed=factor<=1 || effect!=='stutter';
+  timingClipRestrictions.update(s=>s[slot]===(allowed?'':RIFE_RAMP_ONLY)?s:({...s,[slot]:allowed?'':RIFE_RAMP_ONLY}));
+  return allowed;
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 timingSettings.subscribe(value => {
@@ -85,6 +94,7 @@ timingSettings.subscribe(value => {
 export function clipTiming(slot: string) { return get(timingSettings).clips[slot] ?? defaultClipTiming(slot); }
 export function setClipTiming(slot: string, config: ClipTiming) {
   if (!slotPattern.test(slot)) return;
+  if(!allowTimingClip(slot,get(timingStatus)[slot]?.interpolationFactor??1,config))return;
   const previous = clipTiming(slot);
   const next = { ...config, lastEffect: config.effect === 'off' ? previous.lastEffect ?? (previous.effect === 'stutter' ? 'stutter' : 'ramp') : config.effect };
   if (JSON.stringify(previous) === JSON.stringify(next)) return;
@@ -101,7 +111,7 @@ let gesture: ClipEdit | null = null;
 export const canUndoTiming = writable(false), canRedoTiming = writable(false);
 const notifyHistory = () => { canUndoTiming.set(undo.length > 0); canRedoTiming.set(redo.length > 0); };
 function applyClip(slot: string, config: ClipTiming) {
-  timingSettings.update(s => ({ ...s, clips: { ...s.clips, [slot]: config } }));
+  timingSettings.update(s => ({ ...s, clips: { ...s.clips, [slot]: { ...config, ramp: normalizeTimingRamp(config.ramp) } } }));
 }
 function remember(edit: ClipEdit) {
   undo.push(edit); if (undo.length > 60) undo.shift(); redo.length = 0; notifyHistory();
@@ -136,6 +146,6 @@ export interface TimingSlotStatus {
   requiredBytes?: number;
 }
 export const timingStatus = writable<Record<string, TimingSlotStatus>>({});
-export interface TimingLive { phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
+export interface TimingLive { sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
 export const timingLive = writable<Record<string, TimingLive>>({});
 export const timingSchedules = writable<Record<string, import('$lib/runtime/timing/triggers').TimingBurst[]>>({});

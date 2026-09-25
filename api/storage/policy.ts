@@ -25,6 +25,7 @@ export interface StorageUploadRequest {
   host?: string;
   forwardedProto?: string;
   fetchSite?: string;
+  referer?: string;
   cookieHeader?: string;
   uploadId?: string;
   chunkIndex?: string;

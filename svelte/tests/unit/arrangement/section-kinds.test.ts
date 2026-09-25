@@ -8,7 +8,6 @@ import type { ArrangementSection } from '$lib/stores/arrangement';
 
 function stubSection(partial: Partial<ArrangementSection> & Pick<ArrangementSection, 'id'>): ArrangementSection {
   return {
-    id: partial.id,
     name: partial.name ?? 'SECTION 1',
     kind: partial.kind,
     bars: partial.bars ?? 8,

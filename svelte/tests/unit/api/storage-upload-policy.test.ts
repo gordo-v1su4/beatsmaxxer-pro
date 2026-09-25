@@ -42,7 +42,7 @@ function stream(body: Uint8Array): AsyncIterable<Uint8Array> {
 describe("storage upload policy", () => {
   it("stages chunk uploads through the media gateway", async () => {
     const chunk = new Uint8Array([9, 8, 7]);
-    const fetch = vi.fn(async () => new Response(JSON.stringify({
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify({
       bucket: gateway.bucket,
       objectKey: studioChunkObjectKey(gateway.uploadPrefix, uploadId, 0),
       publicUrl: "https://s3.invalid/beatsmaxxer-pro/chunk",

@@ -22,6 +22,15 @@ describe('production Timing source mapping',()=>{
     const initial=advanceClipTiming(null,frame(0),config,20);
     for(let n=1;n<=24;n++)expect(advanceClipTiming(initial.state,frame(n/24),config,20).sourceSeconds).toBeCloseTo(n/96,9);
   });
+  it('keeps offset continuous across clip wraps and resets it when seeking',()=>{
+    const config=defaultClipTiming();config.ramp.points=config.ramp.points.map(p=>({...p,y:rateToY(.25)}));
+    const initial=advanceClipTiming(null,frame(0),config,2);
+    const later=advanceClipTiming(initial.state,frame(12),config,2);
+    expect(later.sourceSeconds).toBeCloseTo(1);
+    expect(later.sourceTimelineSeconds).toBeCloseTo(3);
+    expect(later.sourceTimelineSeconds-12).toBeCloseTo(-9);
+    expect(advanceClipTiming(later.state,frame(7,2),config,2).sourceTimelineSeconds).toBeCloseTo(7);
+  });
   it('keeps quarter-speed output on consecutive source frames despite callback jitter',()=>{
     const config=defaultClipTiming();config.ramp.points=config.ramp.points.map(p=>({...p,y:0}));
     let previous=advanceClipTiming(null,timingOutputFrame(frame(.006),24),config,20).state;

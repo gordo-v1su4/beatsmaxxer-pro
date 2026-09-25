@@ -90,5 +90,5 @@ export function sampleTimingSchedule(schedule: TimingSchedule, time: number) {
       }
     }else if(time<burst.blockedUntil)state='gap';
   }
-  return {sourceSeconds:duration>0?wrap(target,duration):0,rate,phase,state,triggerTime:burst?.at??null,burstEnd:burst?.end??null};
+  return {sourceTimelineSeconds:target,sourceSeconds:duration>0?wrap(target,duration):0,rate,phase,state,triggerTime:burst?.at??null,burstEnd:burst?.end??null};
 }

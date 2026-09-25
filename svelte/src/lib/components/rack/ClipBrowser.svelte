@@ -17,6 +17,7 @@
   import { videoLayers } from '$lib/stores/rack';
   import { formatClipDuration } from '$lib/media/clipThumbnail';
   import type { RackRow } from '$lib/stores/drag';
+  import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 
   interface Props {
     /** Assign a library clip to one rack slot. */
@@ -28,6 +29,34 @@
   let query = $state('');
   let importing = $state(false);
   let fileInput = $state<HTMLInputElement>();
+  let verifiedRates = $state<Record<string, number>>({});
+  const checkedClips = new Set<string>();
+  let failedChecks = $state<string[]>([]);
+  const failedClips = $derived($clipLibrary.filter(clip => failedChecks.includes(clip.id)));
+  function checkMetadata(clip: LibraryClip) {
+    checkedClips.add(clip.id);
+    void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
+      .then((factor) => {
+        if (factor === 4) verifiedRates[clip.id] = 96;
+        failedChecks = failedChecks.filter(id => id !== clip.id);
+      })
+      .catch(() => {
+        checkedClips.delete(clip.id);
+        if (!failedChecks.includes(clip.id)) failedChecks = [...failedChecks, clip.id];
+      });
+  }
+  function retryMetadata() {
+    const pending = failedClips;
+    failedChecks = [];
+    for (const clip of pending) checkMetadata(clip);
+  }
+  $effect(() => {
+    for (const clip of $clipLibrary) {
+      if (checkedClips.has(clip.id)) continue;
+      // Only the known, hash-verified 96 FPS sources earn this label.
+      checkMetadata(clip);
+    }
+  });
 
   const clips = $derived(
     $clipLibrary.filter((clip) => clip.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -125,6 +154,9 @@
   />
 </div>
 
+{#if failedClips.length}
+  <button class="cb-import" onclick={retryMetadata} title="Retry frame-rate verification for clips whose metadata could not be read">RETRY METADATA</button>
+{/if}
 <div class="cb-grid">
   {#if $clipLibrary.length === 0}
     <p class="cb-empty">
@@ -167,6 +199,7 @@
           </button>
         </div>
         <span class="cb-name">{clip.name}</span>
+        {#if verifiedRates[clip.id]}<span class="cb-fps">{verifiedRates[clip.id]} FPS</span>{/if}
       </div>
     {/each}
   {/if}
@@ -182,6 +215,7 @@
 {/if}
 
 <style>
+  .cb-fps { display:block; padding:0 4px 3px; color:#8ba39e; font:500 7px var(--font-ui); line-height:1.2; pointer-events:none; }
   .cb-tools {
     display: flex;
     align-items: center;

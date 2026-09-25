@@ -31,12 +31,21 @@ fn preferred_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
     LogicalSize::new(width, height)
 }
 
+fn minimum_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
+    LogicalSize::new(
+        MIN_WINDOW_WIDTH.min((screen.width - 32.0).max(1.0)),
+        1300.0_f64.min((screen.height - 72.0).max(1.0)),
+    )
+}
+
 fn fit_window_to_display(window: &WebviewWindow) {
     let Ok(Some(monitor)) = window.current_monitor() else {
         return;
     };
     let scale = monitor.scale_factor();
     let screen = monitor.size().to_logical::<f64>(scale);
+    let minimum = minimum_window_size(screen);
+    let _ = window.set_min_size(Some(minimum));
     let _ = window.set_size(preferred_window_size(screen));
     let _ = window.center();
 }
@@ -61,6 +70,23 @@ pub fn run() {
                 .set_title(&title)
                 .map_err(|error| error.to_string())?;
             fit_window_to_display(&window);
+            let observed_window = window.clone();
+            let last_minimum = std::sync::Mutex::new(None);
+            window.on_window_event(move |event| {
+                if !matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::ScaleFactorChanged { .. }) {
+                    return;
+                }
+                let Ok(Some(monitor)) = observed_window.current_monitor() else { return; };
+                let minimum = minimum_window_size(monitor.size().to_logical::<f64>(monitor.scale_factor()));
+                let key = (minimum.width, minimum.height);
+                let changed = {
+                    let mut previous = last_minimum.lock().unwrap();
+                    let changed = *previous != Some(key);
+                    *previous = Some(key);
+                    changed
+                };
+                if changed { let _ = observed_window.set_min_size(Some(minimum)); }
+            });
             // A launched desktop editor must become a real, visible window
             // immediately. An unfocused webview can be background-throttled
             // before media surfaces register.
@@ -87,6 +113,13 @@ mod tests {
 
     #[test]
     fn preferred_startup_size_is_relative_to_the_active_monitor() {
+        for screen in [LogicalSize::new(1920.0,1080.0), LogicalSize::new(1280.0,720.0), LogicalSize::new(2560.0,1440.0)] {
+            let minimum = minimum_window_size(screen);
+            let startup = preferred_window_size(screen);
+            assert!(minimum.height <= startup.height);
+            assert!(minimum.width <= startup.width);
+            assert!(minimum.height < screen.height);
+        }
         assert_eq!(
             preferred_window_size(LogicalSize::new(1920.0, 1080.0)),
             LogicalSize::new(1440.0, 1008.0)

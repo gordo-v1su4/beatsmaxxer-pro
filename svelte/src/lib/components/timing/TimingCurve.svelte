@@ -10,14 +10,16 @@
   // Keep ruler text and handles legible as the available editor width changes.
   let W=$state(1000);
   let H=$state(246);
-  const top=28, bottom=234;
+  const top=$derived(Math.min(120, 32*246/H)), bottom=246;
   onMount(()=>{const resize=new ResizeObserver(([entry])=>{W=Math.max(200,entry.contentRect.width);H=Math.max(1,entry.contentRect.height);});resize.observe(svg);return ()=>resize.disconnect();});
   const x = (v:number) => 8+v*(W-16);
   const ry = (r:number) => r*246/H;
-  const minRate=$derived(Math.min(.5,...ramp.points.map(p=>Math.floor(yToRate(p.y)*4)/4)));
-  const maxRate=$derived(Math.max(3,...ramp.points.map(p=>Math.ceil(yToRate(p.y)*4)/4)));
+  const minRate=.25;
+  const maxRate=$derived(Math.max(2,...ramp.points.map(p=>Math.ceil(yToRate(p.y)*4)/4)));
+  // One unlabelled quarter-speed row keeps the minimum anchor clear of the edge.
+  const plotMinRate=$derived(minRate-.25);
   const rateTicks=$derived(Array.from({length:Math.round((maxRate-minRate)*4)+1},(_,i)=>minRate+i/4));
-  const y = (v:number) => bottom-(yToRate(v)-minRate)/(maxRate-minRate)*(bottom-top);
+  const y = (v:number) => bottom-(yToRate(v)-plotMinRate)/(maxRate-plotMinRate)*(bottom-top);
   const path = $derived(Array.from({length:2001},(_,i) => `${i?'L':'M'}${x(i/2000).toFixed(2)},${y(rateToY(evaluateRamp(ramp,i/2000))).toFixed(2)}`).join(' '));
   const gridStep=$derived(snap==='64th'?.0625:.125);
   const ticks = $derived(Array.from({length:Math.round(ramp.cycleBeats/gridStep)+1},(_,i)=>i*gridStep));
@@ -25,7 +27,8 @@
   const canRemove=$derived(!!anchor && anchor.id!==ramp.points[0]?.id && anchor.id!==ramp.points.at(-1)?.id);
   function position(e:PointerEvent) {
     const p = new DOMPoint(e.clientX,e.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
-    return { x:snapPosition((p.x-8)/(W-16),e.altKey?'off':snap,ramp.cycleBeats),y:rateToY(e.altKey?minRate+clamp01((bottom-p.y)/(bottom-top))*(maxRate-minRate):snapRate(minRate+clamp01((bottom-p.y)/(bottom-top))*(maxRate-minRate))) };
+    const rate=Math.max(minRate,plotMinRate+clamp01((bottom-p.y)/(bottom-top))*(maxRate-plotMinRate));
+    return { x:snapPosition((p.x-8)/(W-16),e.altKey?'off':snap,ramp.cycleBeats),y:rateToY(e.altKey?rate:snapRate(rate)) };
   }
   function edit(points:CurvePoint[]) { onchange({...ramp, shape:ramp.legacy?'smooth':ramp.shape,legacy:undefined,points:normalizePoints(points)}); }
   function down(e:PointerEvent,id?:string) {
@@ -65,11 +68,11 @@
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <svg bind:this={svg} viewBox={`0 0 ${W} 246`} preserveAspectRatio="none" role="group" aria-label="Editable speed ramp, numbered bars and beats" onpointerdown={(e)=>down(e)} onpointermove={move} onpointerup={finish} onpointercancel={finish} onlostpointercapture={finish}>
     <rect width={W} height="246" fill="#090b0c" />
-    {#each ticks as beat}
+    {#each ticks as beat (beat)}
       {@const isBar=beat%4===0}{@const isBeat=beat%1===0}
       <line x1={x(beat/ramp.cycleBeats)} x2={x(beat/ramp.cycleBeats)} y1="22" y2={bottom} stroke={isBar?'#293135':isBeat?'#303c40':'#202a2e'} stroke-width={isBar?1:.6}/>
     {/each}
-    {#each rateTicks as rate}
+    {#each rateTicks as rate (rate)}
       <line x1="0" x2={W} y1={y(rateToY(rate))} y2={y(rateToY(rate))} stroke={rate===1?'#526c65':rate%1===0?'#303c40':'#202a2e'} stroke-width=".6"/>
     {/each}
     <path d={`${path} L${x(1)},${bottom} L${x(0)},${bottom}Z`} fill={ACCENTS.speedramp+'12'} pointer-events="none"/>
@@ -80,20 +83,20 @@
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <g role="button" tabindex="0" aria-label="Ramp anchor at beat {(p.x*ramp.cycleBeats+1).toFixed(2)}, {(0.25+p.y*3.75).toFixed(2)} times speed" onpointerdown={(e)=>{e.stopPropagation();down(e,p.id);}} ondblclick={(e)=>{e.stopPropagation();remove(p.id);}} onkeydown={(e)=>key(e,p.id)} onfocus={()=>selected=p.id}>
         <ellipse cx={x(p.x)} cy={y(p.y)} rx="10" ry={ry(10)} fill="transparent"/>
-        <ellipse cx={x(p.x)} cy={y(p.y)} rx="2" ry={ry(2)} fill="#090b0c" stroke={selected===p.id?'#c2f4e7':ACCENTS.speedramp} stroke-width="1.35" pointer-events="none"/>
+        <ellipse cx={x(p.x)} cy={y(p.y)} rx="2.7" ry={ry(2.7)} fill="#090b0c" stroke={selected===p.id?'#c2f4e7':ACCENTS.speedramp} stroke-width="1.35" pointer-events="none"/>
       </g>
     {/each}
   </svg>
   <div class="curve-x-labels" aria-hidden="true">
-    {#each ticks as beat}
+    {#each ticks as beat (beat)}
       {@const isLabel=beat>0 && Math.abs(beat*2-Math.round(beat*2))<1e-6}
       {#if isLabel}<span style={`left:${beat/ramp.cycleBeats*100}%;transform:translateX(${beat===ramp.cycleBeats?'-100%':'-50%'})`}>{beat.toFixed(beat%1===0?0:1)}</span>{/if}
     {/each}
   </div>
   <div class="curve-y-labels" aria-hidden="true">
-    {#each rateTicks as rate}
-      {@const isLabel=Math.abs(rate*2-Math.round(rate*2))<1e-6}
-      {#if isLabel}<span style={`top:${y(rateToY(rate))/246*100}%`}>{rate.toFixed(rate%1===0?0:1)}×</span>{/if}
+    {#each rateTicks as rate (rate)}
+      {@const isLabel=rate===minRate || Math.abs(rate*2-Math.round(rate*2))<1e-6}
+      {#if isLabel}<span style={`top:${y(rateToY(rate))/246*100}%`}>{rate===.25?'0.25':rate.toFixed(rate%1===0?0:1)}×</span>{/if}
     {/each}
   </div>
 </div>
@@ -105,6 +108,7 @@
 {/if}
 </div>
 <style>
+  .curve-x-labels,.curve-y-labels{pointer-events:none}
   .curve-tools{height:26px;display:flex;align-items:center;gap:12px;padding:0 8px;color:#6a7a8a;font:7px var(--font-mono)}
   .curve-tools button{font:7px var(--font-ui);padding:2px 5px;color:#91a9a4;background:#151b1d;border:1px solid #293336;border-radius:2px;cursor:pointer}.curve-tools button:disabled{opacity:.4;cursor:default}
   .curve-canvas{position:relative;min-width:0}.curve-canvas svg{display:block;width:100%;height:var(--timing-plot-height,200px);min-width:0;touch-action:none;cursor:crosshair}.curve-canvas span{position:absolute;pointer-events:none;white-space:nowrap;font:9px/1 var(--font-mono);color:#4c5b5a}.curve-x-labels{position:absolute;inset:0 0 auto 0;height:22px}.curve-x-labels span{top:2px}.curve-y-labels{position:absolute;inset:0 auto 0 0;width:42px}.curve-y-labels span{left:12px;transform:translateY(-50%);color:#49645f;font-size:8px}.curve-canvas g{cursor:grab}.curve-canvas g:focus{outline:none}.curve-canvas g:focus ellipse:last-child{stroke:#e5fff7;stroke-width:2}.tension{display:flex;align-items:center;gap:12px;padding:4px 10px;color:#76b5aa;font:8px monospace}.tension input{width:160px;accent-color:#35e08a}

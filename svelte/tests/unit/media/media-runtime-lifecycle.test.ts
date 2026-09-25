@@ -1,6 +1,9 @@
 import { afterAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ClipRegistry } from '$lib/media/ClipRegistry';
 import { MediaRuntime } from '$lib/runtime/media/MediaRuntime';
+import { get } from 'svelte/store';
+import { timingActive, timingSettings, parseTimingSettings, timingClipRestrictions } from '$lib/stores/timing';
+import * as interpolation from '$lib/runtime/timing/interpolation';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -52,6 +55,8 @@ describe('MediaRuntime clip transactions', () => {
   const revoke = vi.spyOn(URL, 'revokeObjectURL');
 
   beforeEach(() => {
+    timingActive.set(false);
+    timingSettings.set(parseTimingSettings(null));
     create.mockReset();
     revoke.mockReset();
     let id = 0;
@@ -61,6 +66,32 @@ describe('MediaRuntime clip transactions', () => {
   afterAll(() => {
     create.mockRestore();
     revoke.mockRestore();
+  });
+
+  test('rejects a verified RIFE replacement in Stutter without decoding or replacing the original', async () => {
+    const {runtime,pool,published}=createHarness(async()=>({} as HTMLVideoElement));
+    await runtime.registerModuleFileClip('top-1',new File(['original'],'original.mp4'));
+    const previous=runtime.clipRegistry.get('top-1');
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(4);
+    try {
+      const result=await runtime.registerModuleFileClip('top-1',new File(['rife'],'renamed.mp4'));
+      expect(result).toMatchObject({status:'failed',error:expect.stringContaining('Speedramp slot')});
+      expect(runtime.clipRegistry.get('top-1')).toBe(previous);
+      expect(pool.prepare).toHaveBeenCalledTimes(1);
+      expect(published).toHaveLength(1);
+      expect(get(timingClipRestrictions)['top-1']).toContain('Speedramp slot');
+    } finally { identify.mockRestore(); timingActive.set(false); }
+  });
+
+  test('allows verified RIFE in Speedramp and original clips in Stutter', async () => {
+    const {runtime}=createHarness(async()=>({} as HTMLVideoElement));
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+    try {
+      await expect(runtime.registerModuleFileClip('top-0',new File(['rife'],'rife.mp4'))).resolves.toMatchObject({status:'success'});
+      await expect(runtime.registerModuleFileClip('top-1',new File(['original'],'original.mp4'))).resolves.toMatchObject({status:'success'});
+    } finally { identify.mockRestore(); timingActive.set(false); }
   });
 
   test('publishes only the committed registry URL and preserves it when replacement fails', async () => {

@@ -814,6 +814,7 @@ export class WebGpuEngine {
     sourceId: string
   ) {
     if (!this.device || !this.sampler) return;
+    const sampler = this.sampler;
     if (this.timingTextures) {
       this.encodeTimingBinding(encoder, binding, sourceId);
       return;
@@ -1055,7 +1056,7 @@ export class WebGpuEngine {
         layout: binding.blitBindGroupLayout,
         entries: [
           { binding: 0, resource: blitSource },
-          { binding: 1, resource: this.sampler }
+          { binding: 1, resource: sampler }
         ]
       })
     );

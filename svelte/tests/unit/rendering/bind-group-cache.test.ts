@@ -11,7 +11,7 @@ describe('IdleBindGroupCache', () => {
     const create = vi.fn(
       (() => {
         let count = 0;
-        return () => ({ id: `idle-${++count}` }) as GPUBindGroup;
+        return () => ({ label: `idle-${++count}` }) as GPUBindGroup;
       })(),
     );
 
@@ -28,7 +28,7 @@ describe('TextureViewBindGroupCache', () => {
     const cache = new TextureViewBindGroupCache();
     const videoView = {} as GPUTextureView;
     const feedbackView = {} as GPUTextureView;
-    const create = vi.fn(() => ({ id: 'idle' }) as GPUBindGroup);
+    const create = vi.fn(() => ({ label: 'idle' }) as GPUBindGroup);
 
     const first = cache.get(videoView, feedbackView, create);
     const second = cache.get(videoView, feedbackView, create);
@@ -45,7 +45,7 @@ describe('TextureViewBindGroupCache', () => {
     const create = vi.fn(
       (() => {
         let count = 0;
-        return () => ({ id: `idle-${++count}` }) as GPUBindGroup;
+        return () => ({ label: `idle-${++count}` }) as GPUBindGroup;
       })()
     );
 
@@ -60,7 +60,7 @@ describe('TextureViewBindGroupCache', () => {
     const cache = new TextureViewBindGroupCache();
     const videoView = {} as GPUTextureView;
     const feedbackView = {} as GPUTextureView;
-    const create = vi.fn(() => ({ id: 'idle' }) as GPUBindGroup);
+    const create = vi.fn(() => ({ label: 'idle' }) as GPUBindGroup);
 
     cache.get(videoView, feedbackView, create);
     cache.clear();
@@ -74,7 +74,7 @@ describe('BlitBindGroupCache', () => {
   test('reuses bind groups for the same source view', () => {
     const cache = new BlitBindGroupCache();
     const sourceView = {} as GPUTextureView;
-    const create = vi.fn(() => ({ id: 'blit' }) as GPUBindGroup);
+    const create = vi.fn(() => ({ label: 'blit' }) as GPUBindGroup);
 
     const first = cache.get(sourceView, create);
     const second = cache.get(sourceView, create);

@@ -398,7 +398,7 @@
 
     <div class="topbar-actions">
     <div class="workspace-tabs" aria-label="Workspace">
-      {#each ['perform','arrange','timing'] as mode}
+      {#each ['perform','arrange','timing'] as mode (mode)}
         <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={td.playing} title={td.playing ? 'Stop playback before changing workspace' : undefined} onclick={()=>{
           viewMode.set(mode as 'perform'|'arrange'|'timing');
           if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
@@ -1301,57 +1301,6 @@
     gap: 4px;
   }
 
-  .menu-wide {
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-  }
-
-  .crt-group {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-  }
-
-  .crt-label {
-    font-family: var(--font-ui);
-    font-size: 7px;
-    font-weight: 500;
-    letter-spacing: 0.14em;
-    color: #33383f;
-    padding-right: 1px;
-  }
-
-  .crt-btn {
-    height: 26px;
-    padding: 0 5px;
-    flex-shrink: 0;
-    background: linear-gradient(180deg, #191b1d, #131517);
-    border: 1px solid #222428;
-    border-radius: 3px;
-    cursor: pointer;
-    color: #3a4050;
-    font-family: var(--font-ui);
-    font-size: 7px;
-    font-weight: 500;
-    letter-spacing: 0.12em;
-    box-shadow: var(--control-shadow);
-    transition:
-      background var(--dur-control) var(--ease-out),
-      border-color var(--dur-control) var(--ease-out),
-      color var(--dur-control) var(--ease-out),
-      box-shadow var(--dur-control) var(--ease-out),
-      transform var(--dur-press) var(--ease-out);
-  }
-
-  .crt-btn[data-active='true'] {
-    background: linear-gradient(180deg, #16221c, #101a15);
-    border-color: #35e08a55;
-    color: #35e08a;
-    box-shadow: 0 0 8px rgba(53, 224, 138, 0.18);
-  }
-
   @media (prefers-reduced-motion: reduce) {
     .transport-btn,
     .tap-btn,
@@ -1360,6 +1309,9 @@
     }
   }
 
-.workspace-tabs{display:flex;gap:2px}.clip-order{display:flex;align-items:center;gap:4px;color:#586a71;font:7px var(--font-ui)}.clip-order select{background:#13191a;border:1px solid #283234;color:#78b9ae;font:8px var(--font-ui);padding:5px 4px;border-radius:2px}
+.workspace-tabs{display:flex;gap:2px}
+.workspace-tabs :global(.top-btn){border-color:#1e2226!important;border-radius:2px!important;box-shadow:none!important}
+.workspace-tabs :global(.top-btn[aria-pressed="true"]){background:linear-gradient(180deg,color-mix(in srgb,#22c55e 16%,#1e2124),color-mix(in srgb,#22c55e 8%,#141618))!important}
+.clip-order{display:flex;align-items:center;gap:4px;color:#586a71;font:7px var(--font-ui)}.clip-order select{background:#13191a;border:1px solid #283234;color:#78b9ae;font:8px var(--font-ui);padding:5px 4px;border-radius:2px}
 
 </style>
