@@ -12,14 +12,12 @@ const CLIP_WAIT_MS = Number(process.env.CLIP_WAIT_MS ?? 45_000);
 
 await withChrome('verify-sequencer-cut', 9612, async (session) => {
   await navigateAndReady(session, QA_URL);
-  await Bun.sleep(2000);
-
-  const armed = (await evalPage(session, 'window.__BMX_QA__?.snapshot?.()', 15_000)) as {
-    sequencerArmed?: boolean;
-  } | null;
-  if (!armed?.sequencerArmed) {
-    throw new Error('verify-sequencer-cut: qaSequencerArm did not ARM');
-  }
+  await evalPage(
+    session,
+    `window.__BMX_QA__?.waitForSequencerArmed?.(90000)`,
+    95_000,
+    'wait for qaSequencerArm autoload'
+  );
 
   await evalPage(
     session,

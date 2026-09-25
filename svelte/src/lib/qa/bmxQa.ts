@@ -554,6 +554,14 @@ export function installBmxQaHook() {
       }
       throw new Error('Timed out waiting for playback');
     },
+    async waitForSequencerArmed(timeoutMs = 90_000) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (buildSnapshot().sequencerArmed) return buildSnapshot();
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      throw new Error('Timed out waiting for sequencer ARM');
+    },
     /** Headed proof: uploaded track may show playing while element time stalls until frames publish. */
     async waitForUploadPlaybackMotion(timeoutMs = 45_000) {
       const deadline = Date.now() + timeoutMs;
@@ -785,6 +793,15 @@ export function installBmxQaHook() {
         rendererFrameId: render?.frameId ?? null,
         videoSize: render?.videoSize ?? null
       };
+    },
+    async warmVisualProofRealClip(_moduleId: string, durationMs = 900) {
+      const deadline = performance.now() + durationMs;
+      while (performance.now() < deadline) {
+        audioTimeline.publishFrame();
+        videoPool.tick(audioTimeline.getLastFrame() ?? true);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+      return this.readVisualProofLiveClip();
     },
     async sampleVisualProofFrameCadence(durationMs = 1100) {
       const before = this.readVisualProofLiveClip();

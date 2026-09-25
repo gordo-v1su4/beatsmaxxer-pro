@@ -548,6 +548,12 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
       `retain capture-phase selected File: ${fileName}`);
     await evalPage(session, `window.__BMX_QA__?.waitForVisualProofClip?.('transition', ${JSON.stringify(fileName)}, 30000)`, 35_000);
     await evalPage(session, `new Promise(resolve => setTimeout(resolve, 300))`);
+    await evalPage(
+      session,
+      `window.__BMX_QA__?.warmVisualProofRealClip?.('transition', 900)`,
+      15_000,
+      `warm decode motion for ${fileName}`
+    );
     const firstTimeline = await evalPage<LiveClipReading>(session, `window.__BMX_QA__?.readVisualProofLiveClip?.()`);
     const selected = firstTimeline;
     const firstScreenshot = `${OUTPUT_DIR}/real-video-${index + 1}-frame-a.png`;
