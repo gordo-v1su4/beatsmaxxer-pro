@@ -35,6 +35,10 @@ import {
   createSoundTouchNode,
   type SoundTouchHandle,
 } from "$lib/audio/soundtouch";
+import {
+  amplitudePeakFromByteTimeDomain,
+  rmsFromFloatTimeDomain,
+} from "$lib/audio/proofPlaybackMetrics";
 
 const DEFAULT_BPM = 128;
 
@@ -814,12 +818,14 @@ export class AudioEngine implements IAudioEngine {
   /** Read-only diagnostics used by the physical, human-observed media proof. */
   getProofPlaybackDiagnostics() {
     let rms = 0;
+    let amplitude = this._amplitude;
     if (this.analyserFull) {
       const samples = new Float32Array(this.analyserFull.fftSize);
       this.analyserFull.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const sample of samples) sum += sample * sample;
-      rms = Math.sqrt(sum / samples.length);
+      rms = rmsFromFloatTimeDomain(samples);
+      const td = this.scratch(this.analyserFull.fftSize);
+      this.analyserFull.getByteTimeDomainData(td);
+      amplitude = Math.max(amplitude, amplitudePeakFromByteTimeDomain(td));
     }
     return {
       contextState: this.ctx?.state ?? 'uninitialized',
@@ -831,7 +837,7 @@ export class AudioEngine implements IAudioEngine {
       mediaPaused: this.mediaElement?.paused ?? true,
       mediaMuted: this.mediaElement?.muted ?? false,
       rms,
-      amplitude: this._amplitude,
+      amplitude,
       volume: this._volume,
       playing: this._playing,
       usingUploadedTrack: this._usingUploadedTrack,
@@ -1034,12 +1040,7 @@ export class AudioEngine implements IAudioEngine {
     if (this.analyserFull) {
       const td = this.scratch(this.analyserFull.fftSize);
       this.analyserFull.getByteTimeDomainData(td);
-      let sum = 0;
-      for (let i = 0; i < td.length; i++) {
-        const s = (td[i] - 128) / 128;
-        sum += s * s;
-      }
-      this._amplitude = Math.min(1, Math.sqrt(sum / td.length) * 1.8);
+      this._amplitude = amplitudePeakFromByteTimeDomain(td);
 
       const fd = this.scratchFreq(this.analyserFull.frequencyBinCount);
       this.analyserFull.getByteFrequencyData(fd);
