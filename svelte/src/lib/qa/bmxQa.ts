@@ -1079,16 +1079,19 @@ export function installBmxQaHook() {
         detail: wrapped
       };
     },
-    async nudgeArmedSequencerForQa(seekAheadSeconds = 6) {
+    async nudgeArmedSequencerForQa(seekAheadSeconds = 24) {
       const before = buildSnapshot();
       if (!before.sequencerArmed) {
         throw new Error('Sequencer not armed');
       }
       const startPos =
         audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
-      audioTimeline.seek(Math.max(0, startPos + seekAheadSeconds));
-      for (let i = 0; i < 12; i++) {
+      const target = Math.max(0, startPos + seekAheadSeconds);
+      audioEngine.seek(target);
+      audioTimeline.seek(target);
+      for (let i = 0; i < 32; i++) {
         audioTimeline.publishFrame();
+        videoPool.tick(audioTimeline.getLastFrame() ?? true);
         await new Promise((r) => requestAnimationFrame(() => r(undefined)));
       }
       const after = buildSnapshot();

@@ -41,7 +41,7 @@ await withChrome('verify-sequencer-cut', 9612, async (session) => {
 
   const nudge = (await evalPage(
     session,
-    `window.__BMX_QA__?.nudgeArmedSequencerForQa?.(8)`,
+    `window.__BMX_QA__?.nudgeArmedSequencerForQa?.(32)`,
     30_000
   )) as {
     stepMoved?: boolean;
@@ -55,7 +55,9 @@ await withChrome('verify-sequencer-cut', 9612, async (session) => {
   const cutCount = nudge?.after?.arrangementCutCount ?? nudge?.before?.arrangementCutCount ?? 0;
 
   const report = {
-    passed: cutCount > 0 && (stepMoved || pgmMoved),
+    // Crossed arrangement steps while ARMED; PGM only switches when cuts at those steps
+    // target a different module than the current PGM (same-module cuts are valid).
+    passed: cutCount > 0 && stepMoved,
     stepMoved,
     pgmMoved,
     cutCount,
