@@ -23,4 +23,15 @@ describe('run-issue25-gpu-acceptance.sh', () => {
     expect(proofIdx).toBeGreaterThan(-1);
     expect(unitIdx).toBeGreaterThan(proofIdx);
   });
+
+  test('clears HEADLESS and dev server before headed capture:visual-proof', () => {
+    const captureIdx = script.indexOf('bun run capture:visual-proof');
+    const headlessIdx = script.lastIndexOf('export HEADLESS=0', captureIdx);
+    const cleanupIdx = script.lastIndexOf('cleanup_dev_server', captureIdx);
+    expect(captureIdx).toBeGreaterThan(-1);
+    expect(headlessIdx).toBeGreaterThan(-1);
+    expect(cleanupIdx).toBeGreaterThan(-1);
+    expect(headlessIdx).toBeLessThan(captureIdx);
+    expect(cleanupIdx).toBeLessThan(captureIdx);
+  });
 });

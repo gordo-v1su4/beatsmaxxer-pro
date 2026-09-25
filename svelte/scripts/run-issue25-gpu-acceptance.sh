@@ -48,6 +48,8 @@ else
 fi
 
 export PHYSICAL_BROWSER_LAG_OBSERVED="${PHYSICAL_BROWSER_LAG_OBSERVED:-0}"
+cleanup_dev_server
+export HEADLESS=0
 echo "▶ issue #25 — capture:visual-proof + verify:visual-proof"
 bun run capture:visual-proof
 
