@@ -9,6 +9,15 @@ source "$ROOT/scripts/lib/common.sh"
 
 trap cleanup_dev_server EXIT
 
+if [[ "${SKIP_VISUAL_PROOF:-0}" != "1" ]]; then
+  if [[ "${PHYSICAL_BROWSER_OBSERVED:-0}" != "1" || -z "${PHYSICAL_BROWSER_OPERATOR:-}" ]]; then
+    echo "Headed visual proof is required for issue #25 GPU acceptance." >&2
+    echo "Set PHYSICAL_BROWSER_OBSERVED=1 and PHYSICAL_BROWSER_OPERATOR=<name> on a GPU desktop after bash scripts/setup-qa-media.sh." >&2
+    echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
+    exit 1
+  fi
+fi
+
 echo "▶ issue #25 — unit tests"
 cd "$ROOT/.."
 bun run test
@@ -29,13 +38,6 @@ echo "▶ issue #25 — desktop bundle smoke (frontend build; Windows shell on 5
 if [[ "${SKIP_VISUAL_PROOF:-0}" == "1" ]]; then
   echo "SKIP_VISUAL_PROOF=1 — skipping headed capture:visual-proof"
   exit 0
-fi
-
-if [[ "${PHYSICAL_BROWSER_OBSERVED:-0}" != "1" || -z "${PHYSICAL_BROWSER_OPERATOR:-}" ]]; then
-  echo "Headed visual proof is required for issue #25 GPU acceptance." >&2
-  echo "Set PHYSICAL_BROWSER_OBSERVED=1 and PHYSICAL_BROWSER_OPERATOR=<name> on a GPU desktop after bash scripts/setup-qa-media.sh." >&2
-  echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
-  exit 1
 fi
 
 if [[ -d "$ROOT/../test_media" ]]; then
