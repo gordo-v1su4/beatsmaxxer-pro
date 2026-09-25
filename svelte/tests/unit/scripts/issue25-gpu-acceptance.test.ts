@@ -44,3 +44,29 @@ describe('run-issue25-gpu-acceptance.sh', () => {
     expect(cleanupIdx).toBeLessThan(captureIdx);
   });
 });
+
+const reportScript = readFileSync(
+  new URL('../../../../scripts/verify-issue25-gpu-report.sh', import.meta.url),
+  'utf8',
+);
+
+describe('verify-issue25-gpu-report.sh', () => {
+  test('requires report.json before verify:visual-proof', () => {
+    expect(reportScript).toContain('svelte/.artifacts/visual-proof/report.json');
+    expect(reportScript).toContain('bun run verify:visual-proof');
+    expect(reportScript).toContain('issue #25 GPU report validation PASSED');
+  });
+});
+
+const rootPackage = readFileSync(
+  new URL('../../../../package.json', import.meta.url),
+  'utf8',
+);
+
+describe('issue #25 GPU npm scripts', () => {
+  test('exposes report and log helpers', () => {
+    expect(rootPackage).toContain('verify:issue25-gpu:report');
+    expect(rootPackage).toContain('verify:issue25-gpu:log');
+    expect(rootPackage).toContain('verify:issue25-gpu:detached');
+  });
+});
