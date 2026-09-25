@@ -32,6 +32,7 @@
   let verifiedRates = $state<Record<string, number>>({});
   const checkedClips = new Set<string>();
   let failedChecks = $state<string[]>([]);
+  const failedClips = $derived($clipLibrary.filter(clip => failedChecks.includes(clip.id)));
   function checkMetadata(clip: LibraryClip) {
     checkedClips.add(clip.id);
     void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
@@ -45,9 +46,9 @@
       });
   }
   function retryMetadata() {
-    const failed = new Set(failedChecks);
+    const pending = failedClips;
     failedChecks = [];
-    for (const clip of $clipLibrary) if (failed.has(clip.id)) checkMetadata(clip);
+    for (const clip of pending) checkMetadata(clip);
   }
   $effect(() => {
     for (const clip of $clipLibrary) {
@@ -153,7 +154,7 @@
   />
 </div>
 
-{#if failedChecks.length}
+{#if failedClips.length}
   <button class="cb-import" onclick={retryMetadata} title="Retry frame-rate verification for clips whose metadata could not be read">RETRY METADATA</button>
 {/if}
 <div class="cb-grid">
