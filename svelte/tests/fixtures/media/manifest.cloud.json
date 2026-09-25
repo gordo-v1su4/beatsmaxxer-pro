@@ -1,0 +1,15 @@
+{
+  "bundle": "cloud-fixtures",
+  "clips": [
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm",
+    "qa-clip.webm"
+  ],
+  "audio": "qa-audio.wav",
+  "audios": ["qa-audio.wav"]
+}

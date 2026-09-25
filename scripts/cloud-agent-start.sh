@@ -77,6 +77,7 @@ start_app() {
   local status=0
   cd "$REPO_ROOT"
   bun install --frozen-lockfile
+  bash "$REPO_ROOT/svelte/scripts/ensure-cloud-qa-media.sh"
   echo "[cloud-agent] Starting Beatsmaxxer Pro dev server on 0.0.0.0:5174."
   echo "[cloud-agent] WebGPU renders in the browser on your GPU desktop — open this port from Chrome on a Tailnet machine with a GPU." >&2
   setsid env DEV_HOST=0.0.0.0 bun run dev -- --host 0.0.0.0 &

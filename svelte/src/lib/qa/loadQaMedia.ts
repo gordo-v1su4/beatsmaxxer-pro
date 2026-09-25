@@ -26,6 +26,33 @@ export interface QaManifest {
   midiAssignments?: QaMidiAssignment[];
 }
 
+export const CLOUD_QA_MANIFEST_FILE = 'manifest.cloud.json';
+export const REDLINE_QA_MANIFEST_FILE = 'manifest.json';
+
+/** Pick Redline bundle vs committed cloud fixtures (`?qaManifest=cloud|redline|auto`). */
+export async function resolveQaManifestFile(
+  search: string,
+  probe: (url: string, init?: RequestInit) => Promise<Response> = fetch
+): Promise<string> {
+  const params = new URLSearchParams(search);
+  const forced = params.get('qaManifest');
+  if (forced === 'cloud') return CLOUD_QA_MANIFEST_FILE;
+  if (forced === 'redline') return REDLINE_QA_MANIFEST_FILE;
+  if (forced && forced !== 'auto') return `manifest.${forced}.json`;
+
+  try {
+    const res = await probe('/qa-media/manifest.json');
+    if (!res.ok) return CLOUD_QA_MANIFEST_FILE;
+    const manifest = (await res.json()) as QaManifest;
+    const firstClip = manifest.clips?.[0];
+    if (!firstClip?.startsWith('redline/')) return REDLINE_QA_MANIFEST_FILE;
+    const head = await probe(`/qa-media/${firstClip}`, { method: 'HEAD' });
+    return head.ok ? REDLINE_QA_MANIFEST_FILE : CLOUD_QA_MANIFEST_FILE;
+  } catch {
+    return CLOUD_QA_MANIFEST_FILE;
+  }
+}
+
 export function validateQaMidiAssignments(
   manifest: QaManifest,
   activeModuleIds = [...get(rackTop), ...get(rackBottom)]
@@ -194,8 +221,10 @@ export function shouldAutoloadQaSequencerArm(search: string): boolean {
 }
 
 export async function fetchAndLoadQaMedia(options?: { midi?: boolean; arrangerMidi?: boolean }) {
-  const res = await fetch('/qa-media/manifest.json');
-  if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const manifestFile = await resolveQaManifestFile(search);
+  const res = await fetch(`/qa-media/${manifestFile}`);
+  if (!res.ok) throw new Error(`manifest fetch failed (${manifestFile}): ${res.status}`);
   const manifest = (await res.json()) as QaManifest;
   await loadQaMediaFromManifest(manifest, options);
   return manifest;

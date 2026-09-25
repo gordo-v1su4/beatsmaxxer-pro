@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, test } from 'vitest';
 import { get } from 'svelte/store';
 import { cutAtStep, cuts } from '$lib/stores/arrangement';
 import {
+  CLOUD_QA_MANIFEST_FILE,
+  REDLINE_QA_MANIFEST_FILE,
+  resolveQaManifestFile,
   shouldAutoloadQaArrangerMidi,
   shouldAutoloadQaMidi,
   shouldAutoloadQaSequencerArm,
@@ -29,6 +32,29 @@ describe('QA arranger MIDI autoload', () => {
 
   test('opts in only with qaArrangerMidi=1', () => {
     expect(shouldAutoloadQaArrangerMidi('?qa=1&qaArrangerMidi=1')).toBe(true);
+  });
+});
+
+describe('QA manifest resolution', () => {
+  test('forces cloud or redline manifests from query params', async () => {
+    await expect(resolveQaManifestFile('?qa=1&qaManifest=cloud')).resolves.toBe(CLOUD_QA_MANIFEST_FILE);
+    await expect(resolveQaManifestFile('?qa=1&qaManifest=redline')).resolves.toBe(REDLINE_QA_MANIFEST_FILE);
+  });
+
+  test('falls back to cloud fixtures when Redline assets are missing', async () => {
+    const probe = async (url: string, init?: RequestInit) => {
+      if (url === '/qa-media/manifest.json') {
+        return new Response(
+          JSON.stringify({ clips: ['redline/missing/clip.mp4'] }),
+          { status: 200 }
+        );
+      }
+      if (url === '/qa-media/redline/missing/clip.mp4' && init?.method === 'HEAD') {
+        return new Response(null, { status: 404 });
+      }
+      throw new Error(`unexpected probe ${url}`);
+    };
+    await expect(resolveQaManifestFile('?qa=1', probe)).resolves.toBe(CLOUD_QA_MANIFEST_FILE);
   });
 });
 

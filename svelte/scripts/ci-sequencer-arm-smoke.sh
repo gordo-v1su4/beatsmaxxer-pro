@@ -11,6 +11,7 @@ trap cleanup_dev_server EXIT
 
 ensure_artifacts_dir
 cleanup_stale_test_chrome
+bash "$ROOT/scripts/ensure-cloud-qa-media.sh"
 ensure_dev_server
 
 export HEADLESS=1
@@ -20,4 +21,6 @@ export QA_SMOKE_SEQUENCER_ONLY=1
 
 echo "▶ sequencer ARM CDP smoke"
 bun run scripts/verify-cloud-smoke-runner.ts
+echo "▶ sequencer ARMED cut CDP gate"
+bun run scripts/verify-sequencer-cut-runner.ts
 echo "ci-sequencer-arm-smoke PASSED"
