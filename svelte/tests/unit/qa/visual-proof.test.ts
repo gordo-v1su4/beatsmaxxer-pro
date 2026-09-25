@@ -399,6 +399,14 @@ describe('visual proof release gate', () => {
     expect(validateVisualProofRealVideoExercise(clip)).toEqual([]);
   });
 
+  test('reports granular blockers for a stalled real clip', () => {
+    const clip = completeReport().realMedia.videoExercise[0]!;
+    clip.pixelMotionRatio = 0;
+    const blockers = validateVisualProofRealVideoExercise(clip);
+    expect(blockers.some((b) => b.includes('pixelMotionRatio'))).toBe(true);
+    expect(blockers).toContain(`real MP4 was not visibly decoded and moving: ${clip.fileName}`);
+  });
+
   test('a failed real clip prevents the matrix branch from starting', () => {
     const clips = completeReport().realMedia.videoExercise;
     clips[5]!.pixelMotionRatio = 0;

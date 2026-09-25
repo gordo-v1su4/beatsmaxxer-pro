@@ -250,20 +250,51 @@ export function validateVisualProofRealVideoExercise(clip: RealVideoExercise): s
   const recomputedMax = intervals.length ? Math.max(...intervals) : Infinity;
   const recomputedDropped = intervals.filter((value) => value > 34).length;
   const recomputedStalled = intervals.filter((value) => value > 100).length;
-  const invalid = !clip.currentSrc.startsWith('blob:') || clip.videoWidth < 1 || clip.videoHeight < 1 || clip.durationSeconds <= 0 ||
-    clip.selectedFileSha256 !== clip.sha256 || clip.selectedFileSize !== clip.size ||
-    clip.secondTimelineSeconds <= clip.firstTimelineSeconds || clip.secondCentralFrameId <= clip.firstCentralFrameId ||
-    clip.secondTimelineSeconds - clip.firstTimelineSeconds < 0.75 || realVideoMediaAdvanceSeconds(clip) < 0.5 ||
-    clip.readyState < 2 || !clip.hasVideo || !clip.externalTextureImported || !clip.externalTextureBound ||
-    clip.pgmModule !== 'transition' || clip.bindingId !== 'pgm' || clip.samplePath !== 'external-texture' || clip.rendererSource !== clip.currentSrc || clip.rendererFrameId === null ||
-    clip.rendererDimensions !== `${clip.videoWidth}x${clip.videoHeight}` || clip.videoSize !== `${clip.videoWidth}x${clip.videoHeight}` ||
-    clip.nonBlackPixelRatio <= 0.01 || clip.pixelMotionRatio <= 0.01 ||
-    clip.sampleCount < 45 || clip.p95IntervalMs > 34 || clip.maxIntervalMs > 150 ||
-    clip.stalledFrames > 0 || clip.droppedFrames / clip.sampleCount > 0.15 || !clip.released || !clip.previousSourceUnbound ||
-    clip.sampleCount !== intervals.length || Math.abs(clip.p95IntervalMs - recomputedP95) > 1e-6 ||
-    Math.abs(clip.maxIntervalMs - recomputedMax) > 1e-6 || clip.droppedFrames !== recomputedDropped || clip.stalledFrames !== recomputedStalled ||
-    clip.firstContentHash === clip.secondContentHash;
-  return invalid ? [`real MP4 was not visibly decoded and moving: ${clip.fileName}`] : [];
+  const blockers: string[] = [];
+  if (!clip.currentSrc.startsWith('blob:')) blockers.push('currentSrc is not a blob URL');
+  if (clip.videoWidth < 1 || clip.videoHeight < 1) blockers.push('video dimensions are zero');
+  if (clip.durationSeconds <= 0) blockers.push('durationSeconds is not positive');
+  if (clip.selectedFileSha256 !== clip.sha256) blockers.push('selected file sha256 mismatch');
+  if (clip.selectedFileSize !== clip.size) blockers.push('selected file size mismatch');
+  if (clip.secondTimelineSeconds <= clip.firstTimelineSeconds) blockers.push('transport timeline did not advance');
+  if (clip.secondCentralFrameId <= clip.firstCentralFrameId) blockers.push('central frame id did not advance');
+  if (clip.secondTimelineSeconds - clip.firstTimelineSeconds < 0.75) {
+    blockers.push('transport advance below 0.75s');
+  }
+  if (realVideoMediaAdvanceSeconds(clip) < 0.5) blockers.push('media time advance below 0.5s');
+  if (clip.readyState < 2) blockers.push(`readyState=${clip.readyState}`);
+  if (!clip.hasVideo) blockers.push('renderer hasVideo=0');
+  if (!clip.externalTextureImported) blockers.push('external texture not imported');
+  if (!clip.externalTextureBound) blockers.push('external texture not bound');
+  if (clip.pgmModule !== 'transition') blockers.push(`pgmModule=${clip.pgmModule}`);
+  if (clip.bindingId !== 'pgm') blockers.push(`bindingId=${clip.bindingId}`);
+  if (clip.samplePath !== 'external-texture') blockers.push(`samplePath=${clip.samplePath}`);
+  if (clip.rendererSource !== clip.currentSrc) blockers.push('renderer source mismatch');
+  if (clip.rendererFrameId === null) blockers.push('renderer frame id missing');
+  const dims = `${clip.videoWidth}x${clip.videoHeight}`;
+  if (clip.rendererDimensions !== dims) blockers.push(`rendererDimensions=${clip.rendererDimensions}`);
+  if (clip.videoSize !== dims) blockers.push(`videoSize=${clip.videoSize}`);
+  if (clip.nonBlackPixelRatio <= 0.01) blockers.push(`nonBlackPixelRatio=${clip.nonBlackPixelRatio}`);
+  if (clip.pixelMotionRatio <= 0.01) blockers.push(`pixelMotionRatio=${clip.pixelMotionRatio}`);
+  if (clip.sampleCount < 45) blockers.push(`sampleCount=${clip.sampleCount}`);
+  if (clip.p95IntervalMs > 34) blockers.push(`p95IntervalMs=${clip.p95IntervalMs}`);
+  if (clip.maxIntervalMs > 150) blockers.push(`maxIntervalMs=${clip.maxIntervalMs}`);
+  if (clip.stalledFrames > 0) blockers.push(`stalledFrames=${clip.stalledFrames}`);
+  if (clip.sampleCount > 0 && clip.droppedFrames / clip.sampleCount > 0.15) {
+    blockers.push(`droppedFrames=${clip.droppedFrames}/${clip.sampleCount}`);
+  }
+  if (!clip.released) blockers.push('clip not released');
+  if (!clip.previousSourceUnbound) blockers.push('previous source still bound');
+  if (clip.sampleCount !== intervals.length) blockers.push('frame interval count mismatch');
+  if (Math.abs(clip.p95IntervalMs - recomputedP95) > 1e-6) blockers.push('p95 interval recomputation mismatch');
+  if (Math.abs(clip.maxIntervalMs - recomputedMax) > 1e-6) blockers.push('max interval recomputation mismatch');
+  if (clip.droppedFrames !== recomputedDropped) blockers.push('dropped frame recomputation mismatch');
+  if (clip.stalledFrames !== recomputedStalled) blockers.push('stalled frame recomputation mismatch');
+  if (clip.firstContentHash === clip.secondContentHash) blockers.push('screenshots identical');
+  if (blockers.length > 0) {
+    blockers.push(`real MP4 was not visibly decoded and moving: ${clip.fileName}`);
+  }
+  return blockers;
 }
 
 export function buildVisualProofManifest(controls: AdvertisedControl[]): VisualProofManifest {
