@@ -793,6 +793,8 @@ export function installBmxQaHook() {
       const deadline = previous + durationMs;
       while (performance.now() < deadline) {
         await new Promise<void>((resolve) => requestAnimationFrame((now) => {
+          audioTimeline.publishFrame();
+          videoPool.tick(audioTimeline.getLastFrame() ?? true);
           intervals.push(now - previous);
           previous = now;
           resolve();

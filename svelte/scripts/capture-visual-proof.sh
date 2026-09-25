@@ -30,5 +30,6 @@ cleanup_stale_test_chrome
 ensure_production_preview
 export QA_URL PROOF_SERVER_ORIGIN ARTIFACT_DIR
 
+set -o pipefail
 bun scripts/capture-visual-proof-runner.ts
 bun scripts/verify-visual-proof-runner.ts
