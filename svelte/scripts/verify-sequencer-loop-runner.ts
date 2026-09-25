@@ -60,10 +60,39 @@ await withChrome('verify-sequencer-loop', 9613, async (session) => {
     30_000
   )) as { wrapped?: boolean; positionSeconds?: number; loop?: { startSeconds: number } } | null;
 
-  session.close();
-
   if (!result?.wrapped || (result.positionSeconds ?? 99) > (result.loop?.startSeconds ?? 0) + 0.75) {
     throw new Error(`Sequencer loop gate failed: ${JSON.stringify(result)}`);
   }
+
+  const rec = (await evalPage(
+    session,
+    `window.__BMX_QA__?.exerciseQaArrangementRec?.()`,
+    15_000
+  )) as {
+    recording?: boolean;
+    clipCount?: number;
+    triggerCount?: number;
+    clip?: { endSeconds?: number | null };
+  } | null;
+  const stillArmed = await evalPage<boolean>(
+    session,
+    'window.__BMX_QA__?.snapshot?.()?.sequencerArmed',
+    10_000
+  );
+  if (
+    !rec ||
+    rec.recording !== false ||
+    (rec.clipCount ?? 0) < 1 ||
+    (rec.triggerCount ?? 0) < 1 ||
+    rec.clip?.endSeconds == null ||
+    !stillArmed
+  ) {
+    throw new Error(
+      `Loop + ARMED + REC gate failed: rec=${JSON.stringify(rec)} armed=${String(stillArmed)}`
+    );
+  }
+
+  session.close();
   console.log('verify-sequencer-loop PASSED', JSON.stringify(result));
+  console.log('verify-sequencer-loop REC-with-loop OK', JSON.stringify(rec));
 });
