@@ -551,7 +551,8 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     const metadata = mediaByName.get(fileName)!;
     const warmCadenceAttempts = [
       { warmMs: 900, cadenceMs: 1100, suffix: '' },
-      { warmMs: 1600, cadenceMs: 1600, suffix: '-retry' }
+      { warmMs: 1600, cadenceMs: 1600, suffix: '-retry' },
+      { warmMs: 2400, cadenceMs: 2000, suffix: '-retry2' }
     ] as const;
     let exercise: VisualProofReport['realMedia']['videoExercise'][number] | null = null;
     let firstPngForSequence: ReturnType<typeof parsePngMetrics> | null = null;
@@ -616,7 +617,6 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
         firstPngForSequence = firstPng;
         break;
       }
-      if (attempt.suffix) break;
     }
     if (!exercise || !firstPngForSequence) {
       throw new Error(`Real-video phase failed before matrix: ${lastBlockers.join('; ')}`);

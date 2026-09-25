@@ -832,6 +832,25 @@ export function installBmxQaHook() {
           /* headed proof may reject until gesture; transport tick still advances decode */
         }
       }
+      const decodeDeadline = performance.now() + Math.min(6_000, durationMs + 2_000);
+      while (performance.now() < decodeDeadline) {
+        audioTimeline.publishFrame();
+        videoPool.tick(audioTimeline.getLastFrame() ?? true);
+        const clip = videoPool.get(sourceId);
+        if (
+          clip &&
+          clip.videoWidth > 0 &&
+          clip.videoHeight > 0 &&
+          clip.readyState >= 2 &&
+          videoPool.hasReadyFrame(sourceId)
+        ) {
+          break;
+        }
+        if (clip && clip.duration > 0.1 && clip.currentTime < 0.02) {
+          clip.currentTime = 0.05;
+        }
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
       const deadline = performance.now() + durationMs;
       while (performance.now() < deadline) {
         audioTimeline.publishFrame();

@@ -25,8 +25,9 @@ describe('run-issue25-gpu-acceptance.sh', () => {
   });
 
   test('fails fast before unit tests when Redline test_media is missing', () => {
-    expect(script).toContain('Redline ../test_media is required for issue #25 GPU acceptance.');
-    const mediaIdx = script.indexOf('Redline ../test_media is required for issue #25 GPU acceptance.');
+    expect(script).toContain('Redline test_media is required for issue #25 GPU acceptance.');
+    expect(script).toContain('TEST_MEDIA_ROOT');
+    const mediaIdx = script.indexOf('Redline test_media is required for issue #25 GPU acceptance.');
     const unitIdx = script.indexOf('▶ issue #25 — unit tests');
     expect(mediaIdx).toBeGreaterThan(-1);
     expect(unitIdx).toBeGreaterThan(mediaIdx);

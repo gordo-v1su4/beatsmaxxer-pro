@@ -9,6 +9,22 @@ source "$ROOT/scripts/lib/common.sh"
 
 trap cleanup_dev_server EXIT
 
+issue25_redline_media_dir() {
+  local repo_root="${ROOT}/.."
+  if [[ -n "${TEST_MEDIA_ROOT:-${BMX_TEST_MEDIA_ROOT:-}}" ]]; then
+    if [[ -d "${TEST_MEDIA_ROOT:-$BMX_TEST_MEDIA_ROOT}" ]]; then
+      echo "$(cd "${TEST_MEDIA_ROOT:-$BMX_TEST_MEDIA_ROOT}" && pwd)"
+      return 0
+    fi
+    return 1
+  fi
+  if [[ -d "${repo_root}/test_media" ]]; then
+    echo "$(cd "${repo_root}/test_media" && pwd)"
+    return 0
+  fi
+  return 1
+}
+
 if [[ "${SKIP_VISUAL_PROOF:-0}" != "1" ]]; then
   if [[ "${PHYSICAL_BROWSER_OBSERVED:-0}" != "1" || -z "${PHYSICAL_BROWSER_OPERATOR:-}" ]]; then
     echo "Headed visual proof is required for issue #25 GPU acceptance." >&2
@@ -16,9 +32,9 @@ if [[ "${SKIP_VISUAL_PROOF:-0}" != "1" ]]; then
     echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
     exit 1
   fi
-  if [[ ! -d "$ROOT/../test_media" ]]; then
-    echo "Redline ../test_media is required for issue #25 GPU acceptance." >&2
-    echo "Place test_media next to the repo, then: bash svelte/scripts/setup-qa-media.sh" >&2
+  if ! issue25_redline_media_dir >/dev/null; then
+    echo "Redline test_media is required for issue #25 GPU acceptance." >&2
+    echo "Place test_media at repo root (test_media/) or set TEST_MEDIA_ROOT / BMX_TEST_MEDIA_ROOT, then: bash svelte/scripts/setup-qa-media.sh" >&2
     echo "Cloud/CDP-only gates: bun run verify:issue25-cloud (SKIP_VISUAL_PROOF=1)." >&2
     exit 1
   fi
