@@ -50,7 +50,10 @@
     shouldAutoloadQaArrangerMidi,
     shouldAutoloadQaMidi,
     shouldAutoloadQaSequencerArm,
+    shouldAutoloadQaLoopRegion,
+    qaLoopRegionForDuration,
   } from '$lib/qa/loadQaMedia';
+  import { arrangementLoopRegion } from '$lib/stores/arrangement';
   import { sequencerArmed } from '$lib/stores/sequencer';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
@@ -198,6 +201,9 @@
     }
     if (shouldAutoloadQaSequencerArm(window.location.search)) {
       sequencerArmed.set(true);
+    }
+    if (shouldAutoloadQaLoopRegion(window.location.search)) {
+      arrangementLoopRegion.set(qaLoopRegionForDuration(audioEngine.getState().duration));
     }
     bootLogSettle();
   });

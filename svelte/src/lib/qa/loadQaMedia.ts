@@ -220,6 +220,30 @@ export function shouldAutoloadQaSequencerArm(search: string): boolean {
   return new URLSearchParams(search).get('qaSequencerArm') === '1';
 }
 
+/** Default loop span for long Redline QA — matches `loopTransport` unit tests. */
+export const QA_DEFAULT_LOOP_REGION = { startSeconds: 10, endSeconds: 20 } as const;
+
+/** Fit a rehearsal loop inside the loaded song (cloud fixtures are ~8s). */
+export function qaLoopRegionForDuration(durationSeconds: number): {
+  startSeconds: number;
+  endSeconds: number;
+} {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 1) {
+    return { ...QA_DEFAULT_LOOP_REGION };
+  }
+  const startSeconds = Math.max(0, durationSeconds * 0.15);
+  const endSeconds = Math.min(durationSeconds - 0.05, startSeconds + Math.min(6, durationSeconds * 0.75));
+  if (endSeconds <= startSeconds + 0.5) {
+    return { startSeconds: 0, endSeconds: Math.max(0.75, durationSeconds - 0.05) };
+  }
+  return { startSeconds, endSeconds };
+}
+
+/** Enable arrangement loop rehearsal (`?qaLoopRegion=1`). */
+export function shouldAutoloadQaLoopRegion(search: string): boolean {
+  return new URLSearchParams(search).get('qaLoopRegion') === '1';
+}
+
 export async function fetchAndLoadQaMedia(options?: { midi?: boolean; arrangerMidi?: boolean }) {
   const search = typeof window !== 'undefined' ? window.location.search : '';
   const manifestFile = await resolveQaManifestFile(search);

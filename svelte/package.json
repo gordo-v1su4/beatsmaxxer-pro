@@ -30,6 +30,7 @@
 		"verify:cloud-smoke": "bash scripts/verify-cloud-smoke.sh",
 		"verify:ci-sequencer-arm": "bash scripts/ci-sequencer-arm-smoke.sh",
 		"verify:sequencer-cut": "bun scripts/verify-sequencer-cut-runner.ts",
+		"verify:sequencer-loop": "bun scripts/verify-sequencer-loop-runner.ts",
 		"test:local": "bash scripts/verify-local.sh",
 		"verify:all": "bash scripts/verify-local.sh",
 		"demo": "bun scripts/open-qa-demo.ts",

@@ -18,7 +18,8 @@ import { getLatencySamples } from '$lib/qa/performance';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
-import { cuts } from '$lib/stores/arrangement';
+import { arrangementLoopRegion, cuts } from '$lib/stores/arrangement';
+import { loopSeekTargetSeconds } from '$lib/arrangement/loopTransport';
 import { sequencerArmed, sequencerLastStep } from '$lib/stores/sequencer';
 
 export interface BmxQaSnapshot {
@@ -63,6 +64,8 @@ export interface BmxQaSnapshot {
   trackName: string;
   uploadedTrackLoadGeneration: number;
   params: Record<string, Record<string, number>>;
+  loopStartSeconds: number | null;
+  loopEndSeconds: number | null;
 }
 
 export function visualProofExpectedMediaTime(
@@ -141,7 +144,9 @@ function buildSnapshot(): BmxQaSnapshot {
     usingUploadedTrack: audio.usingUploadedTrack,
     trackName: audio.trackName,
     uploadedTrackLoadGeneration: audioEngine.getUploadedTrackLoadGeneration(),
-    params: get(moduleParams)
+    params: get(moduleParams),
+    loopStartSeconds: get(arrangementLoopRegion)?.startSeconds ?? null,
+    loopEndSeconds: get(arrangementLoopRegion)?.endSeconds ?? null
   };
 }
 
@@ -938,6 +943,53 @@ export function installBmxQaHook() {
       return { samples, phaseDelta, transportDelta, playing: buildSnapshot().playing };
     },
     /** Seek the shared timeline and publish frames so ARMED cut logic runs in CDP/headless. */
+    /** Mirror transport poll loop wrap (ARRANGE/PERFORM + ARMED). */
+    applyLoopTransportPoll() {
+      const loop = get(arrangementLoopRegion);
+      const frame = audioTimeline.getLastFrame();
+      if (!loop || !frame) {
+        return { applied: false as const, reason: 'no-loop-or-frame' };
+      }
+      const target = loopSeekTargetSeconds(loop, frame.playing, frame.positionSeconds);
+      if (target == null) {
+        return {
+          applied: false as const,
+          loop,
+          positionSeconds: frame.positionSeconds,
+          playing: frame.playing
+        };
+      }
+      audioEngine.seek(target);
+      audioTimeline.seek(target, 'loop-wrap');
+      audioTimeline.publishFrame();
+      const after = audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+      return { applied: true as const, loop, target, positionAfter: after };
+    },
+    async exerciseQaLoopWrapWithArmed() {
+      const loop = get(arrangementLoopRegion);
+      if (!loop) throw new Error('Loop region is not set');
+      if (!get(sequencerArmed)) throw new Error('Sequencer not armed');
+      const nearEnd = Math.max(loop.startSeconds + 0.5, loop.endSeconds - 0.02);
+      audioEngine.stop('qa');
+      audioEngine.seek(nearEnd);
+      audioTimeline.seek(nearEnd);
+      audioTimeline.publishFrame();
+      await this.startTransport();
+      let wrapped = this.applyLoopTransportPoll();
+      for (let i = 0; i < 12 && wrapped.applied !== true; i++) {
+        await new Promise((r) => requestAnimationFrame(() => r(undefined)));
+        audioTimeline.publishFrame();
+        wrapped = this.applyLoopTransportPoll();
+      }
+      const positionSeconds =
+        audioTimeline.getLastFrame()?.transportSeconds ?? audioTimeline.getPositionSeconds();
+      return {
+        loop,
+        wrapped: wrapped.applied === true,
+        positionSeconds,
+        detail: wrapped
+      };
+    },
     async nudgeArmedSequencerForQa(seekAheadSeconds = 6) {
       const before = buildSnapshot();
       if (!before.sequencerArmed) {

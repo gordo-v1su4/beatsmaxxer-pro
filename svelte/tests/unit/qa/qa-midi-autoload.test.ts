@@ -8,6 +8,9 @@ import {
   shouldAutoloadQaArrangerMidi,
   shouldAutoloadQaMidi,
   shouldAutoloadQaSequencerArm,
+  shouldAutoloadQaLoopRegion,
+  QA_DEFAULT_LOOP_REGION,
+  qaLoopRegionForDuration,
 } from '$lib/qa/loadQaMedia';
 import { midiUiOpen, setMidiUiOpen } from '$lib/stores/rackUi';
 import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
@@ -55,6 +58,25 @@ describe('QA manifest resolution', () => {
       throw new Error(`unexpected probe ${url}`);
     };
     await expect(resolveQaManifestFile('?qa=1', probe)).resolves.toBe(CLOUD_QA_MANIFEST_FILE);
+  });
+});
+
+describe('QA loop region autoload', () => {
+  test('does not enable loop unless qaLoopRegion=1', () => {
+    expect(shouldAutoloadQaLoopRegion('?qa=1&qaAutoplay=1')).toBe(false);
+  });
+
+  test('opts in with qaLoopRegion=1 and ships default span', () => {
+    expect(shouldAutoloadQaLoopRegion('?qa=1&qaLoopRegion=1')).toBe(true);
+    expect(QA_DEFAULT_LOOP_REGION.startSeconds).toBe(10);
+    expect(QA_DEFAULT_LOOP_REGION.endSeconds).toBe(20);
+  });
+
+  test('fits loop inside short cloud QA audio', () => {
+    const loop = qaLoopRegionForDuration(8);
+    expect(loop.startSeconds).toBeGreaterThanOrEqual(0);
+    expect(loop.endSeconds).toBeLessThanOrEqual(7.95);
+    expect(loop.endSeconds).toBeGreaterThan(loop.startSeconds + 0.5);
   });
 });
 
