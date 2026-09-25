@@ -31,6 +31,7 @@
 		"verify:ci-sequencer-arm": "bash scripts/ci-sequencer-arm-smoke.sh",
 		"verify:sequencer-cut": "bun scripts/verify-sequencer-cut-runner.ts",
 		"verify:sequencer-loop": "bun scripts/verify-sequencer-loop-runner.ts",
+		"verify:issue25-gpu": "bash scripts/run-issue25-gpu-acceptance.sh",
 		"test:local": "bash scripts/verify-local.sh",
 		"verify:all": "bash scripts/verify-local.sh",
 		"demo": "bun scripts/open-qa-demo.ts",

@@ -120,6 +120,7 @@ export function startTransportPoll() {
     const loopSeek = loopSeekTargetSeconds(loop, frame.playing, frame.positionSeconds);
     if (loopSeek != null) {
       audioEngine.seek(loopSeek);
+      audioTimeline.seek(loopSeek, 'loop-wrap');
     }
   }, 100);
 }
