@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { selectedArrangementSections } from '$lib/stores/arrangement';
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
@@ -172,6 +173,10 @@
     const rect = anchor.getBoundingClientRect();
     kindMenuRect = { top: rect.bottom + 3, left: rect.left, width: Math.max(rect.width, 72) };
     openSectionKindIndex = index;
+    void tick().then(() => {
+      if (openSectionKindIndex !== index) return;
+      document.querySelector<HTMLButtonElement>('.arr-kind-option[aria-selected="true"]')?.focus();
+    });
   }
 
   function toggleSectionKindMenu(index: number, anchor: HTMLElement, event?: Event) {
@@ -290,6 +295,7 @@
   }
 
   function seekAtKeyboard(event: KeyboardEvent) {
+    if (event.target !== event.currentTarget) return;
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     const step = Math.min(totalSteps, Math.max(0, playStep));
@@ -677,22 +683,26 @@
           {@const section = $arrangement[i]}
           {@const on = i === $activeSectionIndex}
           {@const picked = $selectedArrangementSections.has(i)}
-          <button
-            type="button"
+          <div
             class="arr-section arr-section-abs"
             data-active={on}
             data-selected={picked}
             style="left:{band.leftPct}%;width:{band.widthPct}%;--sec-hue:{section.hue};{on
               ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
               : ''}"
-            onclick={(event) => handleSectionClick(i, event, band)}
             title="{section.name} — {section.bars} bars, from bar {band.startBar}. Shift+click to multi-select."
           >
+            <button
+              type="button"
+              class="arr-section-select"
+              aria-label="Select {section.name} section"
+              aria-pressed={picked}
+              onclick={(event) => handleSectionClick(i, event, band)}
+            ></button>
             <label
               class="arr-section-edit arr-section-color-wrap"
               style="--sec-hue:{section.hue}"
               title="Section color"
-              onclick={(event) => event.stopPropagation()}
             >
               <span class="arr-section-tick" style="background:{section.hue}"></span>
               <input
@@ -700,6 +710,7 @@
                 class="arr-section-color"
                 value={section.hue}
                 aria-label="{section.name} color"
+                onclick={(event) => event.stopPropagation()}
                 oninput={(event) => {
                   event.stopPropagation();
                   updateSectionHue(i, event.currentTarget.value);
@@ -708,11 +719,9 @@
             </label>
             <span
               class="arr-section-edit arr-section-kind"
-              onclick={(event) => event.stopPropagation()}
             >
-              <span
-                role="button"
-                tabindex="0"
+              <button
+                type="button"
                 class="arr-kind-trigger"
                 style="--sec-hue:{section.hue}"
                 aria-haspopup="listbox"
@@ -729,10 +738,10 @@
               >
                 <span class="arr-kind-label">{sectionKindLabel(section)}</span>
                 <span class="arr-kind-chevron" aria-hidden="true">▾</span>
-              </span>
+              </button>
             </span>
             <span class="arr-section-bars">{section.bars}b</span>
-          </button>
+          </div>
         {/each}
       </div>
     </div>
@@ -917,9 +926,25 @@
     <div
       class="arr-kind-menu-portal"
       role="listbox"
+      tabindex="-1"
       aria-label="{menuSection?.name ?? 'Section'} part type"
       style="top:{kindMenuRect.top}px;left:{kindMenuRect.left}px;min-width:{kindMenuRect.width}px;--sec-hue:{menuSection?.hue ?? '#7d9196'}"
       onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        event.stopPropagation();
+        const options = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+        const current = options.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          options[(current + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length]?.focus();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          const index = openSectionKindIndex;
+          openSectionKindIndex = null;
+          kindMenuRect = null;
+          if (index !== null) document.querySelectorAll<HTMLButtonElement>('.arr-kind-trigger')[index]?.focus();
+        }
+      }}
     >
       {#each SECTION_KIND_OPTIONS as option (option.value)}
         <button
@@ -945,11 +970,6 @@
     color: #52606d;
   }
 
-  .arr-tick-active {
-    width: 2px !important;
-    box-shadow: 0 0 7px currentColor;
-    opacity: 1 !important;
-  }
   .arrange {
     --arr-gutter-w: 74px;
     flex: 1;
@@ -1213,6 +1233,16 @@
   .arr-section[data-active='true'] {
     border-color: color-mix(in srgb, var(--sec-hue, #14b8a6) 45%, #1a1c1e);
   }
+  .arr-section-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+  }
+  .arr-section-bars { pointer-events: none; }
   .arr-section[data-selected='true'] {
     box-shadow: inset 0 0 0 1px rgba(184, 212, 220, 0.55);
   }
@@ -1520,7 +1550,6 @@
   }
   .arr-row-module-midi[data-active='false'] { opacity: 0.48; }
   .arr-gutter-module-midi { color: #809298; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .arr-tick-module.is-hit { width: 3px; opacity: 1; box-shadow: 0 0 7px currentColor; }
   .arr-midi-count {
     position: sticky;
     left: calc(var(--arr-gutter-w) + 10px);

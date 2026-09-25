@@ -74,6 +74,14 @@ export const timingEditorTab = derived([timingSettings, selectedTimingSlot], ([s
   return config.effect === 'off' ? config.lastEffect ?? 'ramp' : config.effect;
 });
 export const timingActive = writable(false);
+export const timingClipRestrictions = writable<Record<string,string>>({});
+export const RIFE_RAMP_ONLY = 'This RIFE clip needs a Speedramp slot. Choose Speedramp or load an original clip for Stutter.';
+export function allowTimingClip(slot:string, factor:number, config=clipTiming(slot)) {
+  const effect=config.effect==='off'?config.lastEffect:config.effect;
+  const allowed=factor<=1 || effect!=='stutter';
+  timingClipRestrictions.update(s=>({...s,[slot]:allowed?'':RIFE_RAMP_ONLY}));
+  return allowed;
+}
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 timingSettings.subscribe(value => {
@@ -85,6 +93,7 @@ timingSettings.subscribe(value => {
 export function clipTiming(slot: string) { return get(timingSettings).clips[slot] ?? defaultClipTiming(slot); }
 export function setClipTiming(slot: string, config: ClipTiming) {
   if (!slotPattern.test(slot)) return;
+  if(!allowTimingClip(slot,get(timingStatus)[slot]?.interpolationFactor??1,config))return;
   const previous = clipTiming(slot);
   const next = { ...config, lastEffect: config.effect === 'off' ? previous.lastEffect ?? (previous.effect === 'stutter' ? 'stutter' : 'ramp') : config.effect };
   if (JSON.stringify(previous) === JSON.stringify(next)) return;
@@ -136,6 +145,6 @@ export interface TimingSlotStatus {
   requiredBytes?: number;
 }
 export const timingStatus = writable<Record<string, TimingSlotStatus>>({});
-export interface TimingLive { phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
+export interface TimingLive { sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
 export const timingLive = writable<Record<string, TimingLive>>({});
 export const timingSchedules = writable<Record<string, import('$lib/runtime/timing/triggers').TimingBurst[]>>({});

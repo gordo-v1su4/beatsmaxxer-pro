@@ -16,7 +16,17 @@ The original Cursor copy remains in place.
 
 ## Viewing and editing
 
-The interactive presentation uses Cursor's `cursor/canvas` runtime. Open the
+The browser version is available at **`/case-study/`** within the Svelte app
+(locally, `http://localhost:5174/case-study/`). It is a direct-link-only page:
+the instrument has no navigation link to it. The page renders without audio
+or WebGPU access and includes selectable diagrams, expanded stage explanations,
+and an ownership table that is open by default.
+
+Edit the browser presentation in
+[`svelte/src/routes/case-study/+page.svelte`](../../svelte/src/routes/case-study/+page.svelte).
+It is a separate adaptation, not an automatically synchronized canvas export.
+
+The original interactive presentation uses Cursor's `cursor/canvas` runtime. Open the
 existing **Portfolio Case Study** canvas in Cursor to view it interactively.
 The TSX source can be read in any editor; it is not a standalone browser page
 or part of the Svelte app build.

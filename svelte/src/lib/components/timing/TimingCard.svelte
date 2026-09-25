@@ -9,7 +9,7 @@
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import RampReadiness from './RampReadiness.svelte';
   import { videoLayers } from '$lib/stores/rack';
-  import { selectedTimingSlot, timingSettings, timingStatus } from '$lib/stores/timing';
+  import { selectedTimingSlot, timingSettings, timingStatus, timingClipRestrictions } from '$lib/stores/timing';
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { timingEffectAccent } from './presentation';
   import { parseAccentColor } from '$lib/modules/registry';
@@ -23,8 +23,8 @@
   function select() { selectRackSource(moduleId); }
 </script>
 
-<div class="timing-card" style:--timing-accent={color} data-timing-slot={slot}>
-  <div class="timing-card-header module-live-header" data-on-air={onAir} class:is-selected={selected} style:--module-accent={color}>
+<div class="timing-card" class:is-on-air={onAir} style:--timing-accent={color} data-timing-slot={slot}>
+  <div class="timing-card-header module-live-header" data-on-air={onAir} class:is-selected={onAir} style:--module-accent={color}>
     <ModuleGrip onHeaderPointerDown={select} title="Open timing controls"/>
     <button class="module-title" onclick={select} aria-label="Edit timing for source {number}" aria-pressed={$selectedTimingSlot===slot}><small>S{number}</small> {config.effect==='ramp'?'SPEEDRAMP':config.effect==='stutter'?'STUTTER':'TIMING OFF'}</button>
     <RampReadiness {status}/>
@@ -35,6 +35,7 @@
   </div>
   <MediaPatchBay {color} moduleId={slot} videoLayer={$videoLayers[slot]??null} clipStatus={status?.state==='ready'?'ready':status?.state==='error'?'error':$videoLayers[slot]?'loading':'idle'} clipError={status?.message} onSetVideo={(file)=>{if(file)onVideoUpload?.(file);else onClearVideo?.();}} onSetVideos={onVideosUpload}/>
   <div class="timing-preview">
+    {#if $timingClipRestrictions[slot]}<div class="clip-restriction" role="alert">{$timingClipRestrictions[slot]}</div>{/if}
     <WebGpuCanvas id={slot} {moduleId} color={parseAccentColor(color)} class="absolute inset-0 w-full h-full" />
     <button class="preview-select" onclick={select} aria-label="Select source {number} preview" aria-pressed={selected}></button>
     <div class="preview-badge">
@@ -44,6 +45,8 @@
 </div>
 
 <style>
+  .timing-card.is-on-air{box-shadow:inset 0 0 0 1px var(--timing-accent)}
+  .clip-restriction{position:absolute;inset:0;z-index:2;display:grid;place-content:center;padding:10px;background:#101214e8;color:#e4bca3;font:10px/1.5 var(--font-ui);pointer-events:none}
   .timing-card-header.is-selected{background:linear-gradient(180deg,color-mix(in srgb,var(--timing-accent) 16%,#1e2124),color-mix(in srgb,var(--timing-accent) 8%,#141618))}
   .timing-card{background:#131416;border-right:1px solid #0d0e0f;position:relative;min-width:0}
   .module-title{font-family:var(--font-ui);font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--timing-accent);flex:1;min-width:0;margin-left:3px;background:none;border:0;text-align:left;padding:0;cursor:pointer}.module-title small{font:7px monospace;color:#4a5260}.caret{width:14px;height:14px;border:1px solid #1e2226;border-radius:2px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:linear-gradient(180deg,#1c1e22,#141618);padding:0}.timing-card-header{display:flex;align-items:center;gap:3px;height:26px;width:100%;padding:0 5px;color:var(--timing-accent);font-family:var(--font-ui);font-size:9px;letter-spacing:.1em;text-align:left;cursor:pointer}

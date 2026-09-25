@@ -347,7 +347,4 @@
     line-height: 1;
   }
 
-  .hidden {
-    display: none;
-  }
 </style>

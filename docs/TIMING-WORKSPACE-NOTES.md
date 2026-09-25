@@ -1,5 +1,13 @@
 # Timing workspace notes
 
+## Deferred responsive-layout follow-up — September 24, 2026
+
+- Perform crops its module grid and controls when the browser is narrowed. Observed during live resizing; defer the fix at the user's request.
+- Make the Perform controls and preview grid adapt together while keeping controls readable and reachable. Do not solve this by shrinking all buttons indiscriminately.
+- Preserve the main program viewer's height rules. Reclaim unused preview-card space without stretching or cropping video.
+- Recheck both workspaces at narrow and short desktop sizes, including expanded Timing controls. The user's current Timing resize looked good, but an earlier automated size sweep showed possible preview/card overflow at shorter heights; reproduce with stable viewport measurements before declaring all responsive sizes verified.
+- This note records outstanding work, not completed acceptance. Long capacity/performance checks remain deferred under the no-benchmark/no-soak constraint.
+
 Detailed handoff: [Timing workspace plan](./TIMING-WORKSPACE-PLAN.md). This supersedes earlier exploratory mockup details.
 
 ## Next UI refresh

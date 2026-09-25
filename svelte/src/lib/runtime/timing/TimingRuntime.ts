@@ -143,7 +143,7 @@ export class TimingRuntime {
         if (resident) this.selected.set(slot,{view:resident.view,pts:resident.pts,requestedSeconds:clock.sourceSeconds,width:entry.bank.width,height:entry.bank.height,effect:config.effect});
       }
       const musical=continuous?{state:'continuous' as const}:sampleTimingSchedule(plan.schedule,frame.positionSeconds);
-      live[slot] = { phase:clock.phase,rate:clock.rate,sourceSeconds:clock.sourceSeconds,pts:this.selected.get(slot)?.pts??0,
+      live[slot] = { sourceTimelineSeconds:clock.sourceTimelineSeconds, phase:clock.phase,rate:clock.rate,sourceSeconds:clock.sourceSeconds,pts:this.selected.get(slot)?.pts??0,
         state:musical.state,triggerTime:'triggerTime' in musical?musical.triggerTime:null,burstEnd:'burstEnd' in musical?musical.burstEnd:null,time:frame.positionSeconds,beat:frame.beatPosition };
     }
     if (updateOutput) timingLive.set(live);

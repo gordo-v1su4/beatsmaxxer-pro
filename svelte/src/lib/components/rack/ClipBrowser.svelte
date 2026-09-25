@@ -17,6 +17,7 @@
   import { videoLayers } from '$lib/stores/rack';
   import { formatClipDuration } from '$lib/media/clipThumbnail';
   import type { RackRow } from '$lib/stores/drag';
+  import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 
   interface Props {
     /** Assign a library clip to one rack slot. */
@@ -28,6 +29,19 @@
   let query = $state('');
   let importing = $state(false);
   let fileInput = $state<HTMLInputElement>();
+  let verifiedRates = $state<Record<string, number>>({});
+  const checkedClips = new Set<string>();
+  $effect(() => {
+    for (const clip of $clipLibrary) {
+      if (checkedClips.has(clip.id)) continue;
+      checkedClips.add(clip.id);
+      // Only the known, hash-verified 96 FPS sources earn this label.
+      void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
+        .then((factor) => {
+          if (factor === 4) verifiedRates[clip.id] = 96;
+        });
+    }
+  });
 
   const clips = $derived(
     $clipLibrary.filter((clip) => clip.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -167,6 +181,7 @@
           </button>
         </div>
         <span class="cb-name">{clip.name}</span>
+        {#if verifiedRates[clip.id]}<span class="cb-fps">{verifiedRates[clip.id]} FPS</span>{/if}
       </div>
     {/each}
   {/if}
@@ -182,6 +197,7 @@
 {/if}
 
 <style>
+  .cb-fps { display:block; padding:0 4px 3px; color:#8ba39e; font:500 7px var(--font-ui); line-height:1.2; pointer-events:none; }
   .cb-tools {
     display: flex;
     align-items: center;

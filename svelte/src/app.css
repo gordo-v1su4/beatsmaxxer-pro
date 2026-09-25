@@ -672,7 +672,7 @@ input[type='range']::-moz-range-thumb {
 }
 @media (min-width: 961px) {
 	.timing-workspace .rack-row {
-		grid-template-columns: repeat(5, minmax(0, var(--rack-module-max)));
+		grid-template-columns: repeat(5, minmax(0, 1fr));
 		justify-content: safe center;
 	}
 	.timing-workspace .rack-slot { min-width: 0; }
@@ -683,4 +683,44 @@ input[type='range']::-moz-range-thumb {
 	   reclaim its height from the plot so the footer remains in the window. */
 	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) { --timing-plot-height: 136px; }
 	.app-viewport { overflow-x: auto; overflow-y: hidden; }
+}
+
+/* Timing spends the remaining window height on two proportional preview rows.
+   Fixed-width 16:9 cards otherwise push the curve and footer below the window. */
+@media (min-width: 961px) {
+	.app-viewport:has(.timing-workspace) { overflow-y: auto; }
+	.app-shell:has(.timing-workspace) { height: max(100dvh, 1300px); min-height: 1300px; }
+	.rack-workspace.timing-workspace { flex: 1 1 0%; min-height: 0; }
+	.timing-workspace { --timing-plot-height: clamp(100px, calc(100dvh - 760px), 200px); }
+	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) {
+		--timing-plot-height: clamp(80px, calc(100dvh - 824px), 136px);
+	}
+	.timing-workspace .rack-main {
+		display: grid;
+		grid-template-rows: auto auto auto auto minmax(0, 1fr);
+		container-type: inline-size;
+		min-height: 0;
+		overflow-y: auto;
+	}
+	.timing-workspace .rack-row {
+    min-height: 0;
+    height: calc(100cqw / 5 * 9 / 16 + 49px) !important;
+  }
+	.timing-workspace .rack-slot { container-type: size; justify-content: center; }
+	.timing-workspace .timing-card {
+		flex: none;
+		width: 100%;
+		height: 100%;
+		background: #090b0c;
+	}
+	.timing-workspace .timing-preview {
+		width: min(100%, max(0px, calc((100cqh - 49px) * 16 / 9)));
+		margin-inline: auto;
+	}
+}
+
+@media (min-width: 961px) {
+  .timing-workspace .effect-stage { flex: 1 1 auto; min-height: var(--timing-plot-height); grid-template-rows: minmax(0, 1fr) !important; }
+  .timing-workspace .curve-canvas { min-height: 0; height: 100%; }
+  .timing-workspace .curve-canvas svg { height: 100% !important; }
 }

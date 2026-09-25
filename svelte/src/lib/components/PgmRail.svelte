@@ -13,7 +13,7 @@
   } from '$lib/stores/pgm';
   import { pgmRailOpen, viewMode } from '$lib/stores/rackUi';
   import { currentRackSlotForModule, rackBottom, rackTop, videoLayers, bypassed } from '$lib/stores/rack';
-  import { timingStatus, timingSettings, selectedTimingSlot } from '$lib/stores/timing';
+  import { timingStatus, timingSettings } from '$lib/stores/timing';
   import { timingEffectAccent } from './timing/presentation';
   import RampReadiness from './timing/RampReadiness.svelte';
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
@@ -171,7 +171,7 @@
       <div class="mt-0.5 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {#each modules as mod, i (mod.id)}
           {@const slot = currentRackSlotForModule(mod.id,$rackTop,$rackBottom) ?? 'top-0'}
-          {@const isActive = $viewMode === 'timing' ? $selectedTimingSlot === slot : $pgmSource === mod.id}
+          {@const isActive = $pgmSource === mod.id}
           {@const isQueued = $queuedPgmSource === mod.id}
           <button
             type="button"

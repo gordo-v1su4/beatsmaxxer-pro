@@ -55,5 +55,5 @@ export function advanceClipTiming(previous: SpeedRampSourceState | null, frame: 
       target = Math.floor(random/4294967296*slices)*duration/slices+repeated;
     } else target = anchor+repeated;
   }
-  return { state, sourceSeconds: duration > 0 ? wrap(target,duration) : 0, phase: effectPhase, rate };
+  return { state, sourceTimelineSeconds: target, sourceSeconds: duration > 0 ? wrap(target,duration) : 0, phase: effectPhase, rate };
 }

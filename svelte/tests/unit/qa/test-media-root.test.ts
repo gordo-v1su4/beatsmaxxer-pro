@@ -15,11 +15,13 @@ describe('redlineTestMediaRoot', () => {
   });
 
   test('honors TEST_MEDIA_ROOT override', () => {
-    process.env.TEST_MEDIA_ROOT = '/Volumes/RedlineBundle';
-    expect(redlineTestMediaRoot(repoRoot)).toBe('/Volumes/RedlineBundle');
+    const mediaRoot = path.resolve('/Volumes/RedlineBundle');
+    process.env.TEST_MEDIA_ROOT = mediaRoot;
+    expect(redlineTestMediaRoot(repoRoot)).toBe(mediaRoot);
   });
 
   test('defaultRepoRoot resolves parent of svelte cwd', () => {
-    expect(defaultRepoRoot('/Users/me/beatsmaxxer-pro/svelte')).toBe('/Users/me/beatsmaxxer-pro');
+    const projectRoot = path.resolve('/Users/me/beatsmaxxer-pro');
+    expect(defaultRepoRoot(path.join(projectRoot, 'svelte'))).toBe(projectRoot);
   });
 });
