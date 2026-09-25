@@ -31,15 +31,29 @@
   let fileInput = $state<HTMLInputElement>();
   let verifiedRates = $state<Record<string, number>>({});
   const checkedClips = new Set<string>();
+  let failedChecks = $state<string[]>([]);
+  function checkMetadata(clip: LibraryClip) {
+    checkedClips.add(clip.id);
+    void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
+      .then((factor) => {
+        if (factor === 4) verifiedRates[clip.id] = 96;
+        failedChecks = failedChecks.filter(id => id !== clip.id);
+      })
+      .catch(() => {
+        checkedClips.delete(clip.id);
+        if (!failedChecks.includes(clip.id)) failedChecks = [...failedChecks, clip.id];
+      });
+  }
+  function retryMetadata() {
+    const failed = new Set(failedChecks);
+    failedChecks = [];
+    for (const clip of $clipLibrary) if (failed.has(clip.id)) checkMetadata(clip);
+  }
   $effect(() => {
     for (const clip of $clipLibrary) {
       if (checkedClips.has(clip.id)) continue;
-      checkedClips.add(clip.id);
       // Only the known, hash-verified 96 FPS sources earn this label.
-      void identifyInterpolation(clip.source.kind === 'file' ? clip.source.file : clip.source.url, 96)
-        .then((factor) => {
-          if (factor === 4) verifiedRates[clip.id] = 96;
-        }).catch(() => { checkedClips.delete(clip.id); });
+      checkMetadata(clip);
     }
   });
 
@@ -139,6 +153,9 @@
   />
 </div>
 
+{#if failedChecks.length}
+  <button class="cb-import" onclick={retryMetadata} title="Retry frame-rate verification for clips whose metadata could not be read">RETRY METADATA</button>
+{/if}
 <div class="cb-grid">
   {#if $clipLibrary.length === 0}
     <p class="cb-empty">

@@ -10,6 +10,20 @@ import type { TimelineFrame } from '$lib/transport';
 const runtime = new TimingRuntime();
 afterEach(() => { runtime.dispose(); videoLayers.set({}); vi.restoreAllMocks(); });
 
+it('recovers a failed verification through the explicit clip retry action', async () => {
+  timingSettings.set(parseTimingSettings(null));
+  vi.spyOn(ResidentFrameBank.prototype,'load').mockResolvedValue();
+  vi.spyOn(ResidentFrameBank.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:96,duration:10,decoderDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
+  const verify = vi.spyOn(interpolation,'identifyInterpolation').mockRejectedValueOnce(new Error('offline')).mockResolvedValue(4);
+  videoLayers.set({'top-0':{url:'blob:retry-rife',name:'clip'} as never});
+  runtime.setActive(true,{} as GPUDevice);
+  await vi.waitFor(()=>expect(get(timingStatus)['top-0']?.state).toBe('error'));
+  runtime.retry('top-0');
+  await vi.waitFor(()=>expect(get(timingStatus)['top-0']?.state).toBe('ready'));
+  expect(get(timingStatus)['top-0'].interpolationFactor).toBe(4);
+  expect(verify).toHaveBeenCalledTimes(2);
+});
+
 it('blocks a clip whose RIFE identity arrives after loading, and recovers on OFF', async () => {
   timingSettings.set(parseTimingSettings(null));
   vi.spyOn(ResidentFrameBank.prototype,'load').mockResolvedValue();

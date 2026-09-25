@@ -57,6 +57,12 @@
     <span class="live">{live?.rate.toFixed(2)??'1.00'}× · SRC {live?.sourceSeconds.toFixed(2)??'0.00'}s</span>
     <span class="memory">{used.toFixed(2)} / {$timingSettings.budgetGiB} GiB</span>
   </header>
+  {#if status?.state==='error' && !status.requiredBytes && !$timingClipRestrictions[$selectedTimingSlot]}
+    <div class="capacity-notice" role="alert">
+      <span>{status.message ?? 'Clip could not be loaded'}</span>
+      <button onclick={()=>timingRuntime.retry($selectedTimingSlot)}>RETRY CLIP</button>
+    </div>
+  {/if}
   {#if capacityErrors.length}
     <div class="capacity-notice" role="status">
       <span>{capacityErrors.length} {capacityErrors.length===1?'CLIP':'CLIPS'} BLOCKED BY {$timingSettings.budgetGiB} GiB CAPACITY · {capacityPending?'CHECKING REMAINING CLIPS…':`${requiredGiB.toFixed(2)} GiB NEEDED FOR THIS BANK`}</span>
