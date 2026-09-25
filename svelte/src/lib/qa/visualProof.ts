@@ -297,6 +297,77 @@ export function validateVisualProofRealVideoExercise(clip: RealVideoExercise): s
   return blockers;
 }
 
+export interface RealAudioProofDiagnostics {
+  contextCurrentTime?: number;
+  mediaCurrentTime?: number;
+  contextState?: string;
+  playing?: boolean;
+  volume?: number;
+  mediaPaused?: boolean;
+  mediaMuted?: boolean;
+  usingUploadedTrack?: boolean;
+  trackName?: string;
+}
+
+export interface RealAudioProofPlayback {
+  before: RealAudioProofDiagnostics;
+  after: RealAudioProofDiagnostics;
+  rmsPeak: number;
+  amplitudePeak: number;
+  transportAdvanceSeconds?: number;
+}
+
+export function realAudioProofMotionOk(playback: RealAudioProofPlayback): boolean {
+  const contextDelta =
+    (playback.after.contextCurrentTime ?? 0) - (playback.before.contextCurrentTime ?? 0);
+  const mediaDelta =
+    (playback.after.mediaCurrentTime ?? 0) - (playback.before.mediaCurrentTime ?? 0);
+  const transportDelta = playback.transportAdvanceSeconds ?? 0;
+  return contextDelta >= 1.5 || mediaDelta >= 1.5 || transportDelta >= 1.5;
+}
+
+export function realAudioProofSignalOk(playback: RealAudioProofPlayback, motionOk: boolean): boolean {
+  return (
+    playback.rmsPeak > 0.005 ||
+    playback.amplitudePeak > 0.005 ||
+    (motionOk && playback.after.playing === true)
+  );
+}
+
+/** Headed capture: Redline upload bound, transport moving, analyser signal or motion fallback. */
+export function validateVisualProofRealAudioPhase(
+  playback: RealAudioProofPlayback,
+  expectedTrackName: string = REDLINE_AUDIO_NAME
+): string[] {
+  const failures: string[] = [];
+  if (!playback.after.usingUploadedTrack || playback.after.trackName !== expectedTrackName) {
+    failures.push('uploaded-track-binding');
+    return failures;
+  }
+  const motionOk = realAudioProofMotionOk(playback);
+  const signalOk = realAudioProofSignalOk(playback, motionOk);
+  const contextDelta =
+    (playback.after.contextCurrentTime ?? 0) - (playback.before.contextCurrentTime ?? 0);
+  const mediaDelta =
+    (playback.after.mediaCurrentTime ?? 0) - (playback.before.mediaCurrentTime ?? 0);
+  const transportDelta = playback.transportAdvanceSeconds ?? 0;
+  if (playback.after.contextState !== 'running') {
+    failures.push(`contextState=${playback.after.contextState}`);
+  }
+  if (!motionOk) {
+    failures.push(
+      `motion(context=${contextDelta.toFixed(2)},media=${mediaDelta.toFixed(2)},transport=${transportDelta.toFixed(2)})`
+    );
+  }
+  if (playback.after.mediaPaused) failures.push('mediaPaused');
+  if (playback.after.mediaMuted) failures.push('mediaMuted');
+  if ((playback.after.volume ?? 0) < 0.25) failures.push(`volume=${playback.after.volume}`);
+  if (!signalOk) {
+    failures.push(`signal(rmsPeak=${playback.rmsPeak},ampPeak=${playback.amplitudePeak})`);
+  }
+  return failures;
+}
+
 export function buildVisualProofManifest(controls: AdvertisedControl[]): VisualProofManifest {
   const items: VisualProofManifestItem[] = [];
 

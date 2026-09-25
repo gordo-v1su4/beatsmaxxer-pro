@@ -899,10 +899,13 @@ export function installBmxQaHook() {
       while (performance.now() < deadline) {
         audioTimeline.publishFrame();
         videoPool.tick(audioTimeline.getLastFrame() ?? true);
-        await new Promise((resolve) => setTimeout(resolve, 100));
         const sample = audioEngine.getProofPlaybackDiagnostics();
+        if (sample.contextState !== 'running') {
+          await audioEngine.resumeAfterBackground();
+        }
         rmsPeak = Math.max(rmsPeak, sample.rms);
         amplitudePeak = Math.max(amplitudePeak, sample.amplitude);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       }
       const after = audioEngine.getProofPlaybackDiagnostics();
       const transportAfter =

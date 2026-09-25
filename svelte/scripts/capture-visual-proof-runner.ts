@@ -9,6 +9,7 @@ import {
   FIXED_VISUAL_PROOF_VIEWPORT,
   buildVisualProofManifest,
   evaluateVisualProofReport,
+  validateVisualProofRealAudioPhase,
   validateVisualProofRealVideoExercise,
   type AdvertisedControl,
   type VisualProofEvidence,
@@ -486,32 +487,45 @@ await withChrome('capture-visual-proof', 9970, async (session) => {
     55_000,
     'wait for upload playback motion after PLAY'
   );
+  const sampleRealAudio = async (durationMs: number, label: string) =>
+    evalPage<any>(
+      session,
+      `window.__BMX_QA__?.sampleRealAudioPlayback?.(${durationMs})`,
+      20_000 + durationMs,
+      label
+    );
+
   console.log('[visual-proof] REAL AUDIO: audible volume 72%; observing playback and analyser for 3 seconds');
-  const audioPlayback = await evalPage<any>(session, `window.__BMX_QA__?.sampleRealAudioPlayback?.(3000)`, 20_000, 'observe real Redline playback');
-  const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
-  if (!audioPlayback?.after?.usingUploadedTrack || audioPlayback.after.trackName !== REDLINE_AUDIO_NAME) {
+  let audioPlayback = await sampleRealAudio(3000, 'observe real Redline playback');
+  let audioFailures = validateVisualProofRealAudioPhase(audioPlayback, REDLINE_AUDIO_NAME);
+  if (audioFailures.includes('uploaded-track-binding')) {
     throw new Error('Redline did not remain bound to uploaded playback');
   }
-  const contextDelta =
-    (audioPlayback.after.contextCurrentTime ?? 0) - (audioPlayback.before.contextCurrentTime ?? 0);
-  const mediaDelta =
-    (audioPlayback.after.mediaCurrentTime ?? 0) - (audioPlayback.before.mediaCurrentTime ?? 0);
-  const transportDelta = audioPlayback.transportAdvanceSeconds ?? 0;
-  const motionOk = contextDelta >= 1.5 || mediaDelta >= 1.5 || transportDelta >= 1.5;
-  const signalOk =
-    audioPlayback.rmsPeak > 0.005 ||
-    audioPlayback.amplitudePeak > 0.005 ||
-    (motionOk && audioPlayback.after.playing);
+  if (audioFailures.some((f) => f.startsWith('signal('))) {
+    console.log('[visual-proof] REAL AUDIO: low analyser peak — retry with user gesture and 4.5s sample');
+    await dispatchUserGesture(session);
+    await evalPage(
+      session,
+      `(async () => {
+        const engine = window.__BMX_QA__?.getEngine?.()?.audioEngine;
+        if (engine) await engine.resumeAfterBackground();
+        return window.__BMX_QA__?.realAudioSnapshot?.();
+      })()`,
+      10_000,
+      'resume audio context before real-audio retry',
+      { userGesture: true }
+    );
+    audioPlayback = await sampleRealAudio(4500, 'retry real Redline playback sample');
+    audioFailures = validateVisualProofRealAudioPhase(audioPlayback, REDLINE_AUDIO_NAME);
+    if (audioFailures.includes('uploaded-track-binding')) {
+      throw new Error('Redline did not remain bound to uploaded playback after retry');
+    }
+  }
+  const audioSnapshot = await evalPage<any>(session, 'window.__BMX_QA__?.realAudioSnapshot?.()');
   const analyzeLeak = protocolCapture.requests
     .slice(realPhaseRequestStart)
     .some((url) => /\/(?:__api|api)\/analyze\//.test(url));
-  const failures: string[] = [];
-  if (audioPlayback.after.contextState !== 'running') failures.push(`contextState=${audioPlayback.after.contextState}`);
-  if (!motionOk) failures.push(`motion(context=${contextDelta.toFixed(2)},media=${mediaDelta.toFixed(2)},transport=${transportDelta.toFixed(2)})`);
-  if (audioPlayback.after.mediaPaused) failures.push('mediaPaused');
-  if (audioPlayback.after.mediaMuted) failures.push('mediaMuted');
-  if (audioPlayback.after.volume < 0.25) failures.push(`volume=${audioPlayback.after.volume}`);
-  if (!signalOk) failures.push(`signal(rmsPeak=${audioPlayback.rmsPeak},ampPeak=${audioPlayback.amplitudePeak})`);
+  const failures = [...audioFailures];
   if (analyzeLeak) failures.push('hosted-analyze-request');
   if (failures.length > 0) {
     throw new Error(

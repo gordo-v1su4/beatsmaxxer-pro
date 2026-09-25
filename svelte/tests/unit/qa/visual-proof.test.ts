@@ -9,7 +9,10 @@ import {
   retainSerialVisualProofSelection,
   reduceSerialVisualProofSelection,
   realVideoMediaAdvanceSeconds,
+  validateVisualProofRealAudioPhase,
   validateVisualProofRealVideoExercise,
+  realAudioProofMotionOk,
+  realAudioProofSignalOk,
   type VisualProofReport
 } from '$lib/qa/visualProof';
 import {
@@ -388,6 +391,52 @@ describe('visual proof release gate', () => {
     expect(evaluateVisualProofReport(report).blockers).toContain(
       'real-video sequence reused the same PGM source or screenshot content'
     );
+  });
+
+  test('real-audio phase accepts motion fallback when analyser peak is low', () => {
+    const playback = {
+      before: { contextCurrentTime: 1, mediaCurrentTime: 0, contextState: 'running', playing: true, volume: 0.72 },
+      after: {
+        contextCurrentTime: 3,
+        mediaCurrentTime: 2,
+        contextState: 'running',
+        playing: true,
+        volume: 0.72,
+        usingUploadedTrack: true,
+        trackName: REDLINE_AUDIO_NAME,
+        mediaPaused: false,
+        mediaMuted: false
+      },
+      rmsPeak: 0,
+      amplitudePeak: 0,
+      transportAdvanceSeconds: 2
+    };
+    expect(realAudioProofMotionOk(playback)).toBe(true);
+    expect(realAudioProofSignalOk(playback, true)).toBe(true);
+    expect(validateVisualProofRealAudioPhase(playback)).toEqual([]);
+  });
+
+  test('real-audio phase reports signal failure when motion and analyser are flat', () => {
+    const playback = {
+      before: { contextCurrentTime: 1, mediaCurrentTime: 0, contextState: 'running', playing: true, volume: 0.72 },
+      after: {
+        contextCurrentTime: 1.1,
+        mediaCurrentTime: 0.05,
+        contextState: 'running',
+        playing: true,
+        volume: 0.72,
+        usingUploadedTrack: true,
+        trackName: REDLINE_AUDIO_NAME,
+        mediaPaused: false,
+        mediaMuted: false
+      },
+      rmsPeak: 0,
+      amplitudePeak: 0,
+      transportAdvanceSeconds: 0.05
+    };
+    const failures = validateVisualProofRealAudioPhase(playback);
+    expect(failures.some((f) => f.startsWith('motion('))).toBe(true);
+    expect(failures.some((f) => f.startsWith('signal('))).toBe(true);
   });
 
   test('accepts live media advancement across a valid looping boundary', () => {
