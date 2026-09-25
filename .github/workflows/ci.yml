@@ -35,3 +35,6 @@ jobs:
 
       - name: Sequencer ARM QA autoload smoke (#25)
         run: cd svelte && bash scripts/ci-sequencer-arm-smoke.sh
+
+      - name: Desktop frontend smoke (#25)
+        run: bun run smoke:desktop
