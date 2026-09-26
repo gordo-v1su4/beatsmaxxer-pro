@@ -633,7 +633,18 @@ input[type='range']::-moz-range-thumb {
 
 /* Fit the performance rack to the viewport while keeping preview proportions. */
 @media (min-width: 961px) {
-	.app-shell { height: 100dvh; min-height: 0; }
+	.app-shell,
+	.app-shell:has(.arrange-workspace),
+	.app-shell:has(.timing-workspace) {
+		/* Keep a usable control budget when browser chrome, display scaling or
+		   MIDI lanes leave too little room. Scale the entire desktop surface
+		   proportionally, then give its layout the corresponding virtual area. */
+		--desktop-fit: min(1, calc(100vw / var(--app-min-width)), calc(100dvh / 960px));
+		zoom: var(--desktop-fit);
+		width: 100%;
+		height: calc(100dvh / var(--desktop-fit));
+		min-height: 0;
+	}
 	.rack-workspace:not(.timing-workspace) .rack-main {
 		display: grid;
 		grid-template-rows: auto minmax(0, 1.1fr) minmax(0, 1fr) auto;
@@ -660,12 +671,6 @@ input[type='range']::-moz-range-thumb {
 	.rack-module.is-collapsed .module-preview { width: min(100%, calc(100cqh * 16 / 9)); }
 }
 
-/* Short browser windows still need space for both rows and expanded Timing
-   controls. Keep the program monitor identical in both workspaces. */
-@media (min-width: 961px) and (max-height: 800px) {
-	.main-viewer { height: clamp(120px, calc(100dvh - 600px), 210px) !important; }
-}
-
 /* Timing has preview-only rows at every desktop height. */
 .timing-workspace .rack-row { min-height: 0 !important; }
 .timing-workspace .rack-slot { min-height: 0; }
@@ -686,7 +691,7 @@ input[type='range']::-moz-range-thumb {
 /* Timing cards keep Perform's 16:9 frame, but the five tracks share whatever
    width is left beside the rails. A fixed 272px floor overflowed under the
    open PGM rail and left the right edge pinned to the window. */
-.app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
+.app-shell:has(.timing-workspace) { min-width: 0; }
 .timing-workspace .rack-main { min-width: 0; }
 .timing-workspace {
 	/* The top bar is 49px (1px top border, 46px row, 2px bottom border).
@@ -721,7 +726,6 @@ input[type='range']::-moz-range-thumb {
    Fixed-width 16:9 cards otherwise push the curve and footer below the window. */
 @media (min-width: 961px) {
 	.app-viewport:has(.timing-workspace) { overflow: hidden; }
-	.app-shell:has(.timing-workspace) { height: 100dvh; min-height: 0; }
 	.rack-workspace.timing-workspace { flex: 1 1 0%; min-height: 0; }
 	.timing-workspace { --timing-plot-height: clamp(100px, calc(100dvh - 760px), 200px); }
 	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) {
@@ -742,13 +746,15 @@ input[type='range']::-moz-range-thumb {
   }
 	.timing-workspace .rack-slot { container-type: size; justify-content: center; }
 	.timing-workspace .timing-card {
+		--timing-card-chrome: 49px;
 		flex: none;
 		width: 100%;
 		height: 100%;
 		background: #090b0c;
 	}
+	.timing-workspace .timing-card:has(.has-trigger-row) { --timing-card-chrome: 71px; }
 	.timing-workspace .timing-card .timing-preview {
-		width: min(100%, max(0px, calc((100cqh - 49px) * 16 / 9)));
+		width: min(100%, max(0px, calc((100cqh - var(--timing-card-chrome)) * 16 / 9)));
 		margin-inline: auto;
 	}
 }
