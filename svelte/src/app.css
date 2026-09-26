@@ -279,12 +279,10 @@ input[type='range']::-moz-range-thumb {
 	overflow: hidden;
 }
 
-/* On the desktop rack, the module rows define the performance surface's
-   bottom edge. Do not stretch the workspace to fill a taller viewport: that
-   makes the side rails continue below the last module row. */
+/* The desktop rack shares the available viewport below the top bar. */
 @media (min-width: 961px) {
 	.rack-workspace {
-		flex: 0 0 auto;
+		flex: 1 1 0%;
 	}
 
 	.side-panels {
@@ -634,6 +632,34 @@ input[type='range']::-moz-range-thumb {
 }
 
 /* Timing has preview-only rows at every desktop height. */
+@media (min-width: 961px) {
+	.app-shell { height: 100dvh; min-height: 0; }
+	.rack-workspace:not(.timing-workspace) .rack-main {
+		display: grid;
+		grid-template-rows: auto minmax(0, 1.1fr) minmax(0, 1fr) auto;
+	}
+	.rack-workspace:not(.timing-workspace) .rack-row {
+		grid-template-columns: repeat(5, minmax(var(--rack-module-width), 1fr));
+		height: 100% !important;
+		min-height: 0 !important;
+	}
+	.rack-module { min-height: 0; height: 100%; }
+	.module-media-stack {
+		flex: 1 1 0;
+		min-height: 0;
+		container-type: size;
+	}
+	.module-media-stack > :not(.module-preview) { flex-shrink: 0; }
+	.module-preview {
+		min-height: 0;
+		width: min(100%, max(0px, calc((100cqh - var(--module-patch-row-height) - 2px) * 16 / 9)));
+	}
+	.module-media-stack.midi-ui-open .module-preview {
+		width: min(100%, max(0px, calc((100cqh - var(--module-patch-midi-chrome) - var(--module-midi-lane-height) - 2px) * 16 / 9)));
+	}
+	.rack-module.is-collapsed .module-preview { width: min(100%, calc(100cqh * 16 / 9)); }
+}
+
 .timing-workspace .rack-row { min-height: 0 !important; }
 .timing-workspace .rack-slot { min-height: 0; }
 .timing-workspace .timing-card { flex: 1; min-width: 0; }
@@ -653,7 +679,6 @@ input[type='range']::-moz-range-thumb {
 /* Timing cards keep Perform's 16:9 frame, but the five tracks share whatever
    width is left beside the rails. A fixed 272px floor overflowed under the
    open PGM rail and left the right edge pinned to the window. */
-.app-viewport:has(.timing-workspace) { scrollbar-gutter: stable; }
 .app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
 .timing-workspace .rack-main { min-width: 0; }
 .timing-workspace {
@@ -688,8 +713,8 @@ input[type='range']::-moz-range-thumb {
 /* Timing spends the remaining window height on two proportional preview rows.
    Fixed-width 16:9 cards otherwise push the curve and footer below the window. */
 @media (min-width: 961px) {
-	.app-viewport:has(.timing-workspace) { overflow-y: auto; }
-	.app-shell:has(.timing-workspace) { height: max(100dvh, 1300px); min-height: 1300px; }
+	.app-viewport:has(.timing-workspace) { overflow: hidden; }
+	.app-shell:has(.timing-workspace) { height: 100dvh; min-height: 0; }
 	.rack-workspace.timing-workspace { flex: 1 1 0%; min-height: 0; }
 	.timing-workspace { --timing-plot-height: clamp(100px, calc(100dvh - 760px), 200px); }
 	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) {
@@ -697,14 +722,16 @@ input[type='range']::-moz-range-thumb {
 	}
 	.timing-workspace .rack-main {
 		display: grid;
-		grid-template-rows: auto auto auto auto minmax(0, 1fr);
-		container-type: inline-size;
+		/* Reserve the monitor and editor first. Preview rows share what remains,
+		   so a wide window cannot push the curve or output controls off screen. */
+		grid-template-rows: auto auto minmax(49px, 1fr) minmax(49px, 1fr) auto;
 		min-height: 0;
-		overflow-y: auto;
 	}
+	.timing-workspace .timing-panel { flex: none; }
+	.timing-workspace .timing-panel > * { flex-shrink: 0; }
 	.timing-workspace .rack-row {
     min-height: 0;
-    height: calc(100cqw / 5 * 9 / 16 + 49px) !important;
+    height: 100% !important;
   }
 	.timing-workspace .rack-slot { container-type: size; justify-content: center; }
 	.timing-workspace .timing-card {
@@ -713,14 +740,14 @@ input[type='range']::-moz-range-thumb {
 		height: 100%;
 		background: #090b0c;
 	}
-	.timing-workspace .timing-preview {
+	.timing-workspace .timing-card .timing-preview {
 		width: min(100%, max(0px, calc((100cqh - 49px) * 16 / 9)));
 		margin-inline: auto;
 	}
 }
 
 @media (min-width: 961px) {
-  .timing-workspace .effect-stage { flex: 1 1 auto; min-height: var(--timing-plot-height); grid-template-rows: minmax(0, 1fr) !important; }
+  .timing-workspace .effect-stage { flex: 0 0 var(--timing-plot-height); height: var(--timing-plot-height); min-height: 0; grid-template-rows: minmax(0, 1fr) !important; }
   .timing-workspace .curve-canvas { min-height: 0; height: 100%; }
   .timing-workspace .curve-canvas svg { height: 100% !important; }
 }
