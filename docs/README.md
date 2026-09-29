@@ -7,7 +7,6 @@
 | [`research/`](./research/) | Research that still informs the build (see below) |
 | [`agents/`](./agents/) | Agent continuity, issue tracker, triage labels, Linear |
 | [`portfolio-case-study/`](./portfolio-case-study/) | Portfolio case study page |
-| [`cursor-cloud-setup.md`](./cursor-cloud-setup.md) | Pointer to the cloud-agent runbook |
 
 Runtime architecture, testing and ship status live next to the app in
 [`svelte/docs/`](../svelte/docs/).

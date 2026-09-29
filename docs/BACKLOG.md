@@ -253,13 +253,11 @@ New surface:
   ~10k lines of tuned DSP that only runs on desktop, re-forking web and
   desktop right after that fork was deliberately removed. AudioWorklets
   cannot `fetch()`; the `.wasm` must arrive via `processorOptions`.
-- **Cloud-agent / Docker (#7) — decision, not action.** Gordo no longer uses
-  cloud agents here. Files existing only for that: `Dockerfile`,
-  `docker-compose.yml`, `.cursor/environment.json`,
-  `.cursor/install-cloud-tools.sh`, `scripts/cloud-agent-start.sh`,
-  `docs/cursor-cloud-setup.md`, `verify:cloud-smoke`. **Do not delete without
-  confirming** — the GPU sandbox is the only way to run WebGPU browser gates
-  on the 4090, useful independently of cloud agents.
+- **Cloud-agent / Docker (#7) — done 2026-09-29.** Cursor Cloud setup removed
+  (runbook, `.cursor/environment.json`, install/start scripts). Kept the
+  app-vm GPU sandbox (`Dockerfile`, `docker-compose.yml`) — the only way to run
+  WebGPU browser gates on the 4090 — and `verify:cloud-smoke`, which the
+  Issue #25 CI smoke runs.
 
 ---
 

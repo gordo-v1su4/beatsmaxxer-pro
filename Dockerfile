@@ -1,8 +1,7 @@
 # Beatsmaxxer Pro — GPU sandbox image for the app-vm deployment.
 #
-# Mirrors the Cursor Cloud environment (`.cursor/environment.json`) as a
-# permanent Docker sandbox on the Tailnet GPU VM:
-#   - Bun pinned to the same version as `.cursor/install-cloud-tools.sh`
+# A permanent Docker sandbox on the Tailnet GPU VM:
+#   - Bun pinned (see FROM)
 #   - Google Chrome + Xvfb so the browser gates (`bun run test:local`,
 #     `bun run verify:browser`) render WebGPU on the host NVIDIA GPU
 #     (headed-under-Xvfb path; the HEADLESS=1 path forces SwiftShader)

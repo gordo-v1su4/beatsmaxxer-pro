@@ -1,4 +1,4 @@
-# Beatsmaxxer Pro — app-vm GPU sandbox (Cursor Cloud-style container).
+# Beatsmaxxer Pro — app-vm GPU sandbox.
 #
 # Deploy layout on app-vm (matches the /opt/<service> convention):
 #   /opt/beatsmaxxer-pro/          this repo checkout

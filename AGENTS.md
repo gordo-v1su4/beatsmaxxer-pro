@@ -19,59 +19,25 @@ Use **`bun`** for all installs, dev, test, and build commands.
 
 QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`). Issue #25 CDP gates add `qaSequencerArm=1`, `qaLoopRegion=1` as needed (see `svelte/scripts/ci-sequencer-arm-smoke.sh`).
 
-## Cursor Cloud
+## Browser gates and GPU
 
-- Cursor loads repository-root [`.cursor/environment.json`](./.cursor/environment.json) automatically.
-- Install: [`.cursor/install-cloud-tools.sh`](./.cursor/install-cloud-tools.sh) pins **Bun 1.3.10** and **Tailscale 1.98.10**.
-- Startup: [`scripts/cloud-agent-start.sh`](./scripts/cloud-agent-start.sh) — optional Tailscale userspace networking, then Vite on **`0.0.0.0:5174`**.
-- Setup runbook: [`cursor-cloud-setup/README.md`](./cursor-cloud-setup/README.md).
-- Do **not** create `.env` files in the cloud VM; use Cursor environment-scoped Runtime Secrets.
+WebGPU output needs Chrome or Edge on a machine with a GPU (the 5090 desktop or the app-vm 4090 sandbox in `docker-compose.yml`). `bun run test` (vitest) runs anywhere; `bun run test:local` needs Chrome + WebGPU on the machine running it.
 
-### WebGPU runs on your GPU desktop, not in the cloud VM
+Long runs on a self-hosted worker: **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), summarize with **`bun run test:local:log`**. Headless runs **skip** `verify:visual-proof` and `verify:eight-video-proof` unless `REQUIRE_PHYSICAL_PROOF=1`; capture those on the GPU desktop with `bun run capture:visual-proof` and `bun run capture:eight-video-proof`.
 
-Cloud VMs have **no WebGPU** (`navigator.gpu` is null). Shader output only appears when you open the dev server in **Chrome or Edge on a machine with a GPU** — typically your Tailnet desktop (`desktop-q20uuvd` or similar).
+### Essentia env (optional, dev only)
 
-**Workflow:**
+| Variable | Notes |
+|----------|-------|
+| `ESSENTIA_ANALYSIS_ENABLED` | `true` to enable the dev proxy |
+| `ESSENTIA_API_BASE_URL` | e.g. `https://essentia.v1su4.dev` |
+| `ESSENTIA_API_KEY` | Server-side only; injected by the dev proxy |
 
-1. Launch a cloud agent (or run `bash scripts/cloud-agent-start.sh` locally).
-2. On your **GPU machine**, open Chrome and visit either:
-   - the Cursor forwarded port URL for `:5174`, or
-   - `http://<cloud-vm-tailscale-ip>:5174/?qa=1&qaAutoplay=1` if the VM joined your tailnet.
-3. WebGPU initializes in that desktop browser; previews and PGM render with your local GPU.
-
-Cloud agents can still run **`bun run test`** (vitest, no GPU) and edit code. Browser acceptance gates (`bun run test:local`) require Chrome + WebGPU on the machine running the tests.
-
-On a **self-hosted worker**, long `test:local` runs can outlive a Cursor connection: use **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), then `tail -f` or reattach to the tmux session. Summarize outcomes with **`bun run test:local:log`**. Headless runs **skip** `verify:visual-proof` and `verify:eight-video-proof` unless `REQUIRE_PHYSICAL_PROOF=1`; capture those on a **GPU desktop** (5090 / Tailnet) with `bun run capture:visual-proof` and `bun run capture:eight-video-proof`.
-
-### Tailscale (optional)
-
-Set **`TS_AUTHKEY`** in Cursor Runtime Secrets so the cloud VM joins your tailnet. This enables:
-
-- Your GPU desktop to reach the dev server via Tailscale IP.
-- The Vite Essentia dev proxy to reach a rhythm-analysis service on your desktop (e.g. `ESSENTIA_API_BASE_URL=http://100.73.126.36:<port>`).
-
-Tailscale uses Cursor-required **userspace networking** (`--tun=userspace-networking`). Restrict ACL access per [`cursor-cloud-setup/docs/tailscale-acl.example.json`](./cursor-cloud-setup/docs/tailscale-acl.example.json).
-
-### Secrets
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `TS_AUTHKEY` | For Tailnet | Cursor Runtime Secret only; never commit |
-| `ESSENTIA_ANALYSIS_ENABLED` | Optional | `true` to enable dev proxy |
-| `ESSENTIA_API_BASE_URL` | Optional | HTTPS or `http://100.x.x.x` (Tailscale CGNAT) |
-| `ESSENTIA_API_KEY` | Optional | Server-side only; injected by dev proxy |
-
-Hosted analysis is **development-only**; production relay is blocked. Without Essentia, local Web Audio rhythm analysis is the fallback.
+Production relay is blocked. Without Essentia, local Web Audio rhythm analysis is the fallback.
 
 ### QA media
 
 Committed VP9/WebM fixtures (`svelte/tests/fixtures/media-src/qa-clip.webm`) work on any machine. Run `cd svelte && bash scripts/setup-qa-media.sh` before browser gates.
-
-### Known cloud limitations
-
-- No live WebGPU shader output inside the cloud VM browser.
-- Physical visual proof (`capture:visual-proof`) requires a native GPU — run on your desktop, not the cloud VM.
-- Chrome is required for `verify:browser` / `test:local`.
 
 ## Desktop (Tauri, on `main`)
 

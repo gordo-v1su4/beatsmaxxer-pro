@@ -144,5 +144,3 @@ Windows on a GitHub runner when a `v*` tag is pushed.
 macOS is not a current target. An earlier VideoToolbox/Metal native compositor
 was removed in favour of shipping the web path everywhere; if a Mac build is
 ever wanted, it should reuse this same webview path rather than reviving that.
-
-Cloud agents run the **web** app only — see [`docs/cursor-cloud-setup.md`](../docs/cursor-cloud-setup.md).
