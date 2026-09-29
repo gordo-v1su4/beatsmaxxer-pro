@@ -85,6 +85,40 @@ docs/                       Backlog, research, timing-workspace notes
 - [`desktop/README.md`](desktop/README.md) — desktop build and releases
 - [Portfolio case study](docs/portfolio-case-study/README.md) — interactive architecture walkthrough
 
+## Roadmap
+
+### Shipped
+
+- [x] WebGPU-only render engine — WGSL shaders, no WebGL fallback
+- [x] Eight-slot clip rack with live previews and a program (PGM) monitor
+- [x] Beat-quantized PGM cuts with no flash frame (arm-at-trim + `requestVideoFrameCallback`)
+- [x] 19 effect modules — drag from the palette, hot-swap without a reload
+- [x] Hosted Essentia rhythm and structure analysis, with a Web Audio fallback
+- [x] KEY / PITCH / TEMPO on the music track (SoundTouchJS)
+- [x] MIDI files drive trigger modules note by note
+- [x] Arrange view seeded with the song's detected sections
+- [x] Timing workspace — speed ramps, stutters and jump cuts on the beat grid
+- [x] Phone performance shell — one clip, swipeable module cards
+- [x] Windows desktop app with auto-updates ([v0.2.7](https://github.com/gordo-v1su4/beatsmaxxer-pro/releases/latest))
+- [x] PIN access gate and hosted deploy at [beatsmaxxing.com](https://beatsmaxxing.com)
+- [x] Browser acceptance gates and physical visual-proof capture
+
+### In progress — sequencer and arrangement ([#25](https://github.com/gordo-v1su4/beatsmaxxer-pro/issues/25))
+
+- [x] Arm the sequencer to cut PGM from a 16-step pattern
+- [ ] Timeline lines up exactly with the song after analysis
+- [ ] Edit sections, banks and cut patterns in Arrange
+- [ ] REC PGM clips and effect trigger marks, then commit them to cuts
+- [ ] Loop a section to rehearse it in Perform and Arrange
+- [ ] Section clip buckets — Intro, Verse, Chorus draw from their own clips ([#26](https://github.com/gordo-v1su4/beatsmaxxer-pro/issues/26))
+
+### Next
+
+- [ ] Preset clips — ready-made clip packs that load into the rack in one click
+- [ ] Automated time remapping — ramps and stutters that follow the song's sections on their own
+- [ ] macOS desktop app — same web path as the Windows build
+- [ ] iPhone app — native shell around the phone performance view
+
 ## Requirements
 
 - **Chrome / Edge 113+** or **Safari 18+** with WebGPU enabled
