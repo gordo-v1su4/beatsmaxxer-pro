@@ -118,6 +118,12 @@ docs/                       Backlog, research, timing-workspace notes
 - [ ] Automated time remapping — ramps and stutters that follow the song's sections on their own
 - [ ] macOS desktop app — same web path as the Windows build
 - [ ] iPhone app — native shell around the phone performance view
+- [ ] New splash animation
+
+### Later
+
+- [ ] Game mode — compete to cut and hit effects on the beat, with scoring
+- [ ] Spec trailer — fold Beatsmaxxer into the world of a web series about future DJs, with a *Total Recall* feel
 
 ## Requirements
 
