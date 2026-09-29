@@ -22,7 +22,7 @@ bun run build        # single-file → svelte/build/
 ```
 
 Playback comparisons from the zig-swap experiment: `bun run benchmark:prepare`,
-then open `/benchmark` on the dev server. See [benchmark commands and scoring](docs/PLAYBACK-BENCHMARK.md).
+then open `/benchmark` on the dev server. See [benchmark commands and scoring](docs/research/playback-benchmark.md).
 
 ### QA mode (auto-load 8 clips + song)
 
@@ -66,7 +66,6 @@ docs/                       Architecture notes, hero screenshot
 - [`svelte/docs/SHIP_PLAN.md`](svelte/docs/SHIP_PLAN.md) — implemented work versus required release evidence
 - [`svelte/docs/LOCAL_TESTING.md`](svelte/docs/LOCAL_TESTING.md) — browser acceptance gates
 - [`svelte/docs/MODULES.md`](svelte/docs/MODULES.md) — register new effects
-- [`CLAUDE.md`](CLAUDE.md) — module param reference
 
 ## Requirements
 

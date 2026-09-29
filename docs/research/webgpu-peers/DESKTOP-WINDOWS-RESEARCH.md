@@ -102,7 +102,7 @@ Same clones as [`README.md`](./README.md). Order if **desktop Windows is the pro
 ## Suggested desktop research sprint
 
 1. **Re-run visual proof inside Tauri** (`bun run build && bun run dev:desktop`) — baseline @ 60fps previews + copy path  
-2. **Profile bind group rebuild** on 11 canvases — implement Tier 1.2 from [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md)  
+2. **Profile bind group rebuild** on 11 canvases — `BindGroupCache` shipped; measure it inside WebView2  
 3. **Measure persistent texture copy** vs external path — quantify WebView2 tax; document in this file  
 4. **WebView2 device loss** — minimize window, sleep, restore; compare to Chrome tab  
 5. **Essentia** — only if ANALYZE latency matters; Rust path is already optimal for CORS
@@ -138,7 +138,7 @@ Expect **WebGPU/TS hits**, not Rust render engines — that matches our architec
 | Doc | Purpose |
 |-----|---------|
 | [`PLATFORMS.md`](./PLATFORMS.md) | Three-surface map |
-| [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md) | Tier 1–3 tasks |
+| [`STACK-SCORECARD.md`](./STACK-SCORECARD.md) | Web vs native verdict |
 | [`desktop/README.md`](../../../desktop/README.md) | Build, Essentia, updater |
 | `svelte/src/lib/platform/desktopPerformance.ts` | 60fps + audio policy |
 | `svelte/src/lib/rendering/webgpu/WebGpuEngine.ts` | Tauri texture copy |

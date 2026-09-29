@@ -10,7 +10,7 @@ Beatsmaxxer Pro ships **one Svelte app** with **three runtime surfaces**. WebGPU
 
 **Not three codebases:** `detectRuntime()` → `'web' | 'tauri'` and `isMobileShell` pick shell + policy. Mobile is **not** a native app; it is web + `MobileShell` when viewport matches phone bounds (`mobileEnv.ts`).
 
-Desktop branch note: `cursor/desktop-tauri-*` is separate from `main`; do not merge until promoted (`AGENTS.md`).
+Desktop ships from `main` (push a `v*` tag for Windows installers) and runs the same web path in WebView2.
 
 ---
 
@@ -50,7 +50,7 @@ Same files, same behavior:
 
 | Question type | Read first |
 |---------------|------------|
-| FreeCut, shader registry, 8-slot import | [`githits-sweep-findings.md`](./githits-sweep-findings.md) · [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md) |
+| FreeCut, shader registry, 8-slot import | [`analyses/freecut.md`](./analyses/freecut.md) · [`STACK-SCORECARD.md`](./STACK-SCORECARD.md) |
 | Svelte + WebGPU lifecycle | [`analyses/svelte-peers.md`](./analyses/svelte-peers.md) |
 | Phone Chrome, background, HTTPS, thermal | [`MOBILE-BROWSER-RESEARCH.md`](./MOBILE-BROWSER-RESEARCH.md) |
 | Cloned repos | [`README.md`](./README.md) · `repos/` |
@@ -63,20 +63,15 @@ Same files, same behavior:
 
 | Task | Tier | Files |
 |------|------|-------|
-| `wgslLib.ts` + golden tests | 1 | `shaders/` |
 | `FixedFeedbackClock` | 2 | `feedback.ts` |
 | Timestamp QA profiling | 2 | `WebGpuEngine.ts` |
-| `rVFC` on video (where not audio-locked) | 1 | `VideoPool` / `AppLoop` |
 
 ### Desktop Windows + Web app (full rack)
 
 | Task | Tier | Notes |
 |------|------|-------|
-| Bind group frequency split | 1 | 8 preview canvases — both Tauri @ 60fps and web @ 30fps |
 | FreeCut `destRect` slot aspect-fit | 3 | Mixed aspect 8-slot rack |
 | ExternalCopyPipeline multi-pass | 3 | Shared engine |
-
-Tauri **additionally** benefits from 60fps preview cap already; bind-group win reduces CPU on Windows WebView2.
 
 ### Web app only
 
@@ -126,7 +121,7 @@ Same Tauri build on a narrow window does **not** switch to MobileShell — viewp
 [`MOBILE-BROWSER-RESEARCH.md`](./MOBILE-BROWSER-RESEARCH.md) → internal PGM scale → field tests on HTTPS
 
 **Ship desktop rack smoother (web + Windows app):**  
-Bind groups → wgslLib → FreeCut patterns from [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md)
+Bind groups, `wgslLib` and rVFC are shipped; next is FreeCut `destRect` aspect-fit and XinChao-Cut seek settlement ([`STACK-SCORECARD.md`](./STACK-SCORECARD.md))
 
 **Ship Windows app parity with web:**  
 Shared engine tasks only; Rust/updater separate from WebGPU peer work

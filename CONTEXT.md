@@ -61,12 +61,11 @@ Full detail: [`svelte/docs/ARCHITECTURE.md`](svelte/docs/ARCHITECTURE.md).
 
 Work lives under [`docs/research/webgpu-peers/`](docs/research/webgpu-peers/):
 
-- **Committed:** `analyses/`, `IMPLEMENTATION-BACKLOG.md`, `PLATFORMS.md`, `RESEARCH-STATUS.md`
+- **Committed:** `README.md` (index + verdict), `STACK-SCORECARD.md`, `PLATFORMS.md`, desktop/mobile lanes, `analyses/`
 - **Local only:** `repos/` (gitignored clones) — run `clone-peers.ps1` locally
 
 **Continue here:** [`docs/agents/continuity.md`](docs/agents/continuity.md).
 
 ## Branches
 
-- **`main`** — web + shared engine; desktop shell on separate branch until promoted
-- **`cursor/desktop-tauri-*`** — do not merge into `main` until promoted (`AGENTS.md`)
+- **`main`** — web app, shared engine and the Tauri desktop shell; desktop releases are cut from `main` by pushing a `v*` tag

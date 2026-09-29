@@ -4,7 +4,7 @@
 
 **Not:** Desktop Windows Tauri app (platform 1 — full rack, see [`PLATFORMS.md`](./PLATFORMS.md)).
 
-**Companion:** [`PLATFORMS.md`](./PLATFORMS.md) · [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md)
+**Companion:** [`PLATFORMS.md`](./PLATFORMS.md)
 
 ---
 
@@ -152,7 +152,7 @@ Platform 1 and **2** (desktop browser web app) share rack UI; differ on preview 
 3. **Read MasterSelects** pitfall docs in clone or via GitHits — Safari iOS checklist.
 4. **Prototype internal PGM scale** (C1) — biggest perf win for mobile browser without new peers.
 
-Capture results in a new section at the bottom of this file or in `IMPLEMENTATION-BACKLOG.md` open questions.
+Capture results in a new section at the bottom of this file.
 
 ---
 

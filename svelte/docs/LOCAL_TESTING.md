@@ -112,4 +112,4 @@ Automated gates do **not** replace:
 - 60s knob/drag/swap session without freeze
 - Screen recording for the PR
 
-See the ship gate checklist in [`README.md`](README.md).
+See the ship gate checklist in [`SHIP_PLAN.md`](SHIP_PLAN.md).

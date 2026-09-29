@@ -3,7 +3,7 @@
 **Pass date:** 2026-09-11  
 **Filter:** stutter / speed remap of **video playback position** on a **locked grid**. Not UI, not NLE chrome, not color FX, not VJ launchers.
 
-**Method:** Read existing notes first (`analyses/`, `RESEARCH-STATUS.md`, `desktop-native/SUMMARY.md`, experimental tables). Then visit listed peers one at a time via GitHub + GitHits source (no local GPU boot — dual spikes already crashed the machine). Demos noted, not launched.
+**Method:** Read existing notes first (`analyses/`, the earlier status and sweep notes, `desktop-native/SUMMARY.md` in webgpu-research, experimental tables). Then visit listed peers one at a time via GitHub + GitHits source (no local GPU boot — dual spikes already crashed the machine). Demos noted, not launched.
 
 **Sibling reference (not a peer):** `../video-timeshaper/` is the Time Shaper *behavior* spec. It does not answer “which GPU path.”
 

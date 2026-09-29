@@ -139,7 +139,7 @@ private waitForDecodedFrame(video: HTMLVideoElement, signal?: AbortSignal): Prom
 }
 ```
 
-**Backlog item:** Tier 1.3 in [`IMPLEMENTATION-BACKLOG.md`](../IMPLEMENTATION-BACKLOG.md) — consider `armAtTrimStart(slotId)` before PGM cut for zero-latency channel switches.
+**Shipped:** arm-at-trim + rVFC landed in `VideoPool` (V1S-59).
 
 ### 2. VideoFrame bridge vs direct HTMLVideo import
 

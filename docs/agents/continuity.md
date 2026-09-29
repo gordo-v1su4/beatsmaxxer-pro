@@ -46,7 +46,7 @@ Read Ghost Arcade for ideas; implement clean-room — no pasted or close-paraphr
 ## Research scope (7 clones)
 
 ```powershell
-.\research\webgpu-peers\clone-peers.ps1
+.\docs\research\webgpu-peers\clone-peers.ps1
 ```
 
 | # | Clone dir | Repo | Research focus |
@@ -67,12 +67,11 @@ Read Ghost Arcade for ideas; implement clean-room — no pasted or close-paraphr
 
 ## Done (do not redo)
 
-- [x] GitHits 24-query sweep — `githits-sweep-findings.md`
+- [x] GitHits 24-query sweep + broad video sweep (distilled into `STACK-SCORECARD.md`)
 - [x] `docs/research/webgpu-peers/` layout, clone scripts, analysis template
 - [x] `PLATFORMS.md`, `DESKTOP-WINDOWS-RESEARCH.md`
 - [x] Ghost Arcade dissection — `analyses/ghost-arcade.md`
 - [x] Matt Pocock skills setup — `docs/agents/*`, `AGENTS.md`
-- [x] Landscape charts — `docs/research/webgpu-peers/webgpu-av-landscape.html`, `webgpu-peers-deep-dive.html`
 - [x] `/grill-me` — sprint order, WebGPU-only policy, 7-clone research scope
 - [x] Research day (V1S-55–58) — `analyses/freecut.md`, `beatform.md`, `spektral.md`, `webgpu-video-shaders.md` (file:line citations + Beatsmaxxer mapping)
 - [x] Ghost Arcade dissection (V1S-62, pre-sprint) — `analyses/ghost-arcade.md` (arm-at-trim, rVFC; feeds V1S-59)
@@ -150,6 +149,6 @@ Deploy runbook: `essentia-endpoint/docs/DOCKHAND.md`. Queue/GPU details: `essent
 bun run dev              # web rack — :5174 (validation target)
 bun run test             # vitest
 
-.\research\webgpu-peers\clone-peers.ps1
+.\docs\research\webgpu-peers\clone-peers.ps1
 .\scripts\githits.ps1 example "..." -l typescript
 ```

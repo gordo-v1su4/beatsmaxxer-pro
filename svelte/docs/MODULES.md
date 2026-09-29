@@ -2,7 +2,7 @@
 
 ## Adding a new effect
 
-1. Register in [`src/lib/modules/catalog.ts`](src/lib/modules/catalog.ts):
+1. Register in [`src/lib/modules/catalog.ts`](../src/lib/modules/catalog.ts):
 
 ```ts
 MODULE_CATALOG.set('myfx', {
@@ -18,7 +18,7 @@ MODULE_CATALOG.set('myfx', {
 });
 ```
 
-2. Add WGSL in [`src/lib/rendering/webgpu/shaders/registry.ts`](src/lib/rendering/webgpu/shaders/registry.ts).
+2. Add WGSL in [`src/lib/rendering/webgpu/shaders/registry.ts`](../src/lib/rendering/webgpu/shaders/registry.ts).
 
 3. The module appears in the **FX LIB** palette automatically. Drag it onto any rack slot to assign.
 

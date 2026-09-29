@@ -165,7 +165,7 @@ async function main() {
         'Tier 1.2 — split volatile vs static bind groups (Toji / FreeCut pattern).',
         '',
         'Files: `svelte/src/lib/rendering/webgpu/WebGpuEngine.ts`',
-        'Backlog: `docs/research/webgpu-peers/IMPLEMENTATION-BACKLOG.md` §1.2',
+        'Backlog: bind group frequency split (shipped as BindGroupCache)',
         '',
         'Acceptance: same pixels; fewer bind group rebuilds on 8-preview frames.',
       ].join('\n'),

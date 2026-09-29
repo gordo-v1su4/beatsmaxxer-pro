@@ -73,9 +73,9 @@ Committed VP9/WebM fixtures (`svelte/tests/fixtures/media-src/qa-clip.webm`) wor
 - Physical visual proof (`capture:visual-proof`) requires a native GPU — run on your desktop, not the cloud VM.
 - Chrome is required for `verify:browser` / `test:local`.
 
-## Desktop branch (`cursor/desktop-tauri-e0e8`)
+## Desktop (Tauri, on `main`)
 
-Separate from `main` — do **not** merge desktop into main until promoted.
+The Windows desktop shell lives on `main`. Push a `v*` tag to build the installers into a draft GitHub release.
 
 | Target | Command | Port |
 |--------|---------|------|
