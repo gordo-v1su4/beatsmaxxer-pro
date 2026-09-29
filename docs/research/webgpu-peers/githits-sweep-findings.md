@@ -1,6 +1,6 @@
 # GitHits deep sweep — findings (2026-09-06)
 
-Auth: BWS `GITHITS_API_TOKEN` via `research/webgpu-peers/githits.ps1`  
+Auth: BWS `GITHITS_API_TOKEN` via `scripts/githits.ps1` or `webgpu-peers/githits.ps1`  
 Raw logs (regeneratable): `githits-sweep-log.txt`, `githits-sweep-repos.txt`
 
 ## Sweep coverage
@@ -33,7 +33,7 @@ Raw logs (regeneratable): `githits-sweep-log.txt`, `githits-sweep-repos.txt`
 | 14 | [vijaypemmaraju/rondocode](https://github.com/vijaypemmaraju/rondocode) | MIT | shaderviz renderer | Spectrum/waveform GPU textures → uniforms |
 | 15 | [jpaquim/svelte-webgpu](https://github.com/jpaquim/svelte-webgpu) | — | Svelte canvas lifecycle | Raw WebGPU + Svelte (stale but small) |
 
-**No GitHits example hit:** “VJ clip launcher beat quantized crossfader WebGPU” — confirms **Ghost Arcade** is the closest public product peer; Beatsmaxxer’s 8-slot + PGM combo remains unique.
+**Superseded (2026-09-11):** The narrow query *“VJ clip launcher beat quantized crossfader WebGPU”* is a **bad search** — it returns nothing because the query is too specific, not because OSS is empty. Use broad per-topic queries in [`broad-video-sweep-2026.md`](./broad-video-sweep-2026.md) instead. Ghost Arcade remains a strong VJ peer from targeted repo search, not from that query.
 
 ---
 

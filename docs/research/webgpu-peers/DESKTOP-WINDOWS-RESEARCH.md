@@ -139,6 +139,6 @@ Expect **WebGPU/TS hits**, not Rust render engines — that matches our architec
 |-----|---------|
 | [`PLATFORMS.md`](./PLATFORMS.md) | Three-surface map |
 | [`IMPLEMENTATION-BACKLOG.md`](./IMPLEMENTATION-BACKLOG.md) | Tier 1–3 tasks |
-| [`desktop/README.md`](../../desktop/README.md) | Build, Essentia, updater |
+| [`desktop/README.md`](../../../desktop/README.md) | Build, Essentia, updater |
 | `svelte/src/lib/platform/desktopPerformance.ts` | 60fps + audio policy |
 | `svelte/src/lib/rendering/webgpu/WebGpuEngine.ts` | Tauri texture copy |

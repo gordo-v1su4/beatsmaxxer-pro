@@ -68,11 +68,11 @@ Read Ghost Arcade for ideas; implement clean-room — no pasted or close-paraphr
 ## Done (do not redo)
 
 - [x] GitHits 24-query sweep — `githits-sweep-findings.md`
-- [x] `research/webgpu-peers/` layout, clone scripts, analysis template
+- [x] `docs/research/webgpu-peers/` layout, clone scripts, analysis template
 - [x] `PLATFORMS.md`, `DESKTOP-WINDOWS-RESEARCH.md`
 - [x] Ghost Arcade dissection — `analyses/ghost-arcade.md`
 - [x] Matt Pocock skills setup — `docs/agents/*`, `AGENTS.md`
-- [x] Landscape charts — `docs/webgpu-av-landscape.html`, `webgpu-peers-deep-dive.html`
+- [x] Landscape charts — `docs/research/webgpu-peers/webgpu-av-landscape.html`, `webgpu-peers-deep-dive.html`
 - [x] `/grill-me` — sprint order, WebGPU-only policy, 7-clone research scope
 - [x] Research day (V1S-55–58) — `analyses/freecut.md`, `beatform.md`, `spektral.md`, `webgpu-video-shaders.md` (file:line citations + Beatsmaxxer mapping)
 - [x] Ghost Arcade dissection (V1S-62, pre-sprint) — `analyses/ghost-arcade.md` (arm-at-trim, rVFC; feeds V1S-59)
@@ -102,7 +102,7 @@ Read Ghost Arcade for ideas; implement clean-room — no pasted or close-paraphr
 ```text
 svelte/          ← app (engine + rack + MobileShell)
 desktop/         ← Tauri shell only — not this sprint
-research/webgpu-peers/
+docs/research/webgpu-peers/
   analyses/      ← committed write-ups
   repos/         ← gitignored — clone-peers.ps1
 ```

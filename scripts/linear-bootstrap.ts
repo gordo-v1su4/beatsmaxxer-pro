@@ -62,7 +62,7 @@ async function main() {
     'North star: Cable Guy–style plugins for video — zero-flash PGM cuts first.',
     '',
     'Repo handoff: docs/agents/continuity.md',
-    'Research: research/webgpu-peers/',
+    'Research: docs/research/webgpu-peers/',
     'Validate on: bun run dev (web rack, platform 2)',
   ].join('\n');
 
@@ -102,10 +102,10 @@ async function main() {
     {
       title: 'Research: deepen FreeCut analysis',
       description: [
-        'Deepen `research/webgpu-peers/analyses/freecut.md` from local clone.',
+        'Deepen `docs/research/webgpu-peers/analyses/freecut.md` from local clone.',
         '',
         'Focus: dual texture path, effect registry, destRect blit, Mediabunny.',
-        'Clone: `research/webgpu-peers/repos/freecut/`',
+        'Clone: `docs/research/webgpu-peers/repos/freecut/`',
         '',
         'Acceptance: file:line citations for patterns relevant to WebGpuEngine.',
       ].join('\n'),
@@ -114,31 +114,31 @@ async function main() {
     {
       title: 'Research: deepen Beatform analysis',
       description: [
-        'Deepen `research/webgpu-peers/analyses/beatform.md` from local clone.',
+        'Deepen `docs/research/webgpu-peers/analyses/beatform.md` from local clone.',
         '',
         'Focus: wgslLib, FixedFeedbackClock, pipeline cache, deterministic export.',
-        'Clone: `research/webgpu-peers/repos/beatform/`',
+        'Clone: `docs/research/webgpu-peers/repos/beatform/`',
       ].join('\n'),
       priority: 2,
     },
     {
       title: 'Research: spektral pipeline cache + dynamic WGSL',
       description: [
-        'New analysis: `research/webgpu-peers/analyses/spektral.md`.',
+        'New analysis: `docs/research/webgpu-peers/analyses/spektral.md`.',
         '',
         'Focus: pipeline cache, dynamic WGSL (future user-shader lane).',
-        'Clone: `research/webgpu-peers/repos/spektral/`',
-        'Template: `research/webgpu-peers/template/ANALYSIS.md`',
+        'Clone: `docs/research/webgpu-peers/repos/spektral/`',
+        'Template: `docs/research/webgpu-peers/template/ANALYSIS.md`',
       ].join('\n'),
       priority: 3,
     },
     {
       title: 'Research: webgpu-video-shaders WGSL donors',
       description: [
-        'New analysis: `research/webgpu-peers/analyses/webgpu-video-shaders.md`.',
+        'New analysis: `docs/research/webgpu-peers/analyses/webgpu-video-shaders.md`.',
         '',
         'Focus: deband/color WGSL for future catalog modules.',
-        'Clone: `research/webgpu-peers/repos/webgpu-video-shaders/`',
+        'Clone: `docs/research/webgpu-peers/repos/webgpu-video-shaders/`',
       ].join('\n'),
       priority: 3,
     },
@@ -148,7 +148,7 @@ async function main() {
         'Beat-quantized PGM cuts without seek flash. AGPL clean-room from Ghost Arcade pattern.',
         '',
         'Files: `svelte/src/lib/media/VideoPool.ts`, possibly `PgmDirector.ts`',
-        'Reference: `research/webgpu-peers/analyses/ghost-arcade.md`',
+        'Reference: `docs/research/webgpu-peers/analyses/ghost-arcade.md`',
         '',
         'Acceptance:',
         '- Unit test on VideoPool arm/await contract (no GPU in CI)',
@@ -165,7 +165,7 @@ async function main() {
         'Tier 1.2 — split volatile vs static bind groups (Toji / FreeCut pattern).',
         '',
         'Files: `svelte/src/lib/rendering/webgpu/WebGpuEngine.ts`',
-        'Backlog: `research/webgpu-peers/IMPLEMENTATION-BACKLOG.md` §1.2',
+        'Backlog: `docs/research/webgpu-peers/IMPLEMENTATION-BACKLOG.md` §1.2',
         '',
         'Acceptance: same pixels; fewer bind group rebuilds on 8-preview frames.',
       ].join('\n'),

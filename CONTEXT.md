@@ -41,7 +41,7 @@ One bundle; two switches:
 
 **Not three codebases.** Rust in `desktop/` is shell only (window, `.env`, Essentia HTTP, updater) — not a native GPU compositor.
 
-Canonical map: [`research/webgpu-peers/PLATFORMS.md`](research/webgpu-peers/PLATFORMS.md).
+Canonical map: [`docs/research/webgpu-peers/PLATFORMS.md`](docs/research/webgpu-peers/PLATFORMS.md).
 
 ## Runtime ownership
 
@@ -59,7 +59,7 @@ Full detail: [`svelte/docs/ARCHITECTURE.md`](svelte/docs/ARCHITECTURE.md).
 
 ## Active research (WebGPU peers)
 
-Work lives under [`research/webgpu-peers/`](research/webgpu-peers/):
+Work lives under [`docs/research/webgpu-peers/`](docs/research/webgpu-peers/):
 
 - **Committed:** `analyses/`, `IMPLEMENTATION-BACKLOG.md`, `PLATFORMS.md`, `RESEARCH-STATUS.md`
 - **Local only:** `repos/` (gitignored clones) — run `clone-peers.ps1` locally

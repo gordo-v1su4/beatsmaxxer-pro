@@ -107,7 +107,7 @@ Not applicable. Frame clock is `SpektralFrame { time, delta, resolution }` injec
 - README: fullscreen WGSL library, Svelte/React/Vue, feedback + compute
 - Docs: https://spektral.madebyhex.com/docs
 - Playground: https://spektral.madebyhex.com/playground
-- Verified against clone at `research/webgpu-peers/repos/spektral/` (2026-09-07)
+- Verified against clone at `docs/research/webgpu-peers/repos/spektral/` (2026-09-07)
 
 ---
 
@@ -119,7 +119,7 @@ Local clone: `repos/spektral/` (gitignored). Line refs from shallow clone at `bc
 
 Spektral separates **pipeline compilation** from **per-frame work** with an explicit signature:
 
-```102:121:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/recompile-policy.ts
+```102:121:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/recompile-policy.ts
  * Rebuild triggers:
  * - material signature changes (shader/layout related)
  * - color pipeline, output encoding, or HDR presentation options change
@@ -145,7 +145,7 @@ export function buildRendererPipelineSignature(input: RendererPipelineSignatureI
 
 ### 2. Material signature + resolved-material cache
 
-```770:780:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/material.ts
+```770:780:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/material.ts
 	const signature = JSON.stringify({
 		fragmentWgsl,
 		uniforms: uniformLayout.entries.map((entry) => `${entry.name}:${entry.type}`),
@@ -162,7 +162,7 @@ export function buildRendererPipelineSignature(input: RendererPipelineSignatureI
 
 User contract:
 
-```54:56:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/material.ts
+```54:56:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/material.ts
 	 * User WGSL source containing `frag(uv: vec2f) -> vec4f`.
 ```
 
@@ -170,7 +170,7 @@ User contract:
 
 Hot reload path:
 
-```93:100:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/passes/ShaderPass.ts
+```93:100:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/passes/ShaderPass.ts
 	setFragment(fragment: string): void {
 		const nextProgram = buildShaderPassProgram(fragment);
 		this.fragment = fragment;
@@ -198,7 +198,7 @@ Hot reload path:
 
 Compute cache key example:
 
-```1154:1155:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer.ts
+```1154:1155:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer.ts
 			const cacheKey = `compute:${computeUniformTopologyKey}:${buildOptions.resources.topologyKey}:${computeDeviceCapabilityKey}:${buildOptions.workgroupSize.join(',')}:${buildOptions.computeSource}`;
 			const cached = computePipelineCache.get(cacheKey);
 ```
@@ -209,7 +209,7 @@ Ping-pong shader cache includes full fragment source in the key (`renderer.ts:12
 
 Spektral's `createComputeBindGroupCache` only recreates when resource **identity** changes:
 
-```62:72:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/compute-bindgroup-cache.ts
+```62:72:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/compute-bindgroup-cache.ts
 			if (
 				cachedBindGroup &&
 				equalResourceRefs(cachedResourceRefs, cachedResourceRefCount, request.resourceRefs)
@@ -231,13 +231,13 @@ Fullscreen passes cache bind groups per `GPUTextureView` (`passes-fullscreen-cac
 
 Spektral does **not** use `importExternalTexture` for material textures. Video defaults to per-frame copy:
 
-```373:377:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/textures.ts
+```373:377:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/textures.ts
 	if (isVideoTextureSource(input.source)) {
 		return 'perFrame';
 	}
 ```
 
-```1625:1638:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer.ts
+```1625:1638:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer.ts
 				const shouldUpload =
 					sourceChanged ||
 					update === 'perFrame' ||
@@ -249,7 +249,7 @@ Spektral does **not** use `importExternalTexture` for material textures. Video d
 
 Upload implementation:
 
-```157:169:research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer/resource-synchronization.ts
+```157:169:docs/research/webgpu-peers/repos/spektral/packages/spektral/src/lib/core/renderer/resource-synchronization.ts
 export function uploadTextureBaseLevel(...) {
 	device.queue.copyExternalImageToTexture(
 		createExternalCopySource(source, uploadOptions),

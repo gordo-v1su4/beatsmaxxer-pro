@@ -18,7 +18,7 @@
     WebGPU peer landscape (cloned repos)
   </text>
   <text x="480" y="68" text-anchor="middle" fill="#9ca3af" font-family="Segoe UI, system-ui, sans-serif" font-size="14">
-    research/webgpu-peers  Sep 2026
+    docs/research/webgpu-peers  Sep 2026
   </text>
 
   <rect x="130" y="100" width="700" height="500" rx="12" fill="#151922" stroke="#2a3140"/>

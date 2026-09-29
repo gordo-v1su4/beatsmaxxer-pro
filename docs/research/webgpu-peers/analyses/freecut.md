@@ -167,4 +167,4 @@ Dual texture path is explicit in `effects-pipeline.ts`:
 
 - README: professional browser NLE, WebGPU effects, Mediabunny
 - Same Mediabunny dependency family as potential Beatsmaxxer WebCodecs expansion
-- Verified against clone at `research/webgpu-peers/repos/freecut/` (2026-09-07, `rg` line checks)
+- Verified against clone at `docs/research/webgpu-peers/repos/freecut/` (2026-09-07, `rg` line checks)

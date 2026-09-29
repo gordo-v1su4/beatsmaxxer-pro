@@ -97,7 +97,7 @@ Presets opt into feedback by calling `feedbackSample(uv)` in WGSL. Renderer dete
 
 ## File:line citations
 
-Verified against clone at `research/webgpu-peers/repos/beatform/` (2026-09-06 shallow).
+Verified against clone at `docs/research/webgpu-peers/repos/beatform/` (2026-09-06 shallow).
 
 ### `wgslLib.ts` — shared WGSL snippets
 

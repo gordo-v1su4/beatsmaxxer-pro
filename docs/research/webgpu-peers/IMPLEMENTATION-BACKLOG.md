@@ -245,7 +245,7 @@ Tauri (1) gains extra from **1.2** at 60fps previews; web (2) at 30fps.
 | [githits-sweep-findings.md](./githits-sweep-findings.md) | Full GitHits sweep |
 | [webgpu-peers-deep-dive.html](./webgpu-peers-deep-dive.html) | Phone-friendly overview |
 | [analyses/svelte-peers.md](./analyses/svelte-peers.md) | Svelte 5 lifecycle vs our split |
-| [svelte/docs/ARCHITECTURE.md](../../svelte/docs/ARCHITECTURE.md) | Runtime ownership |
+| [svelte/docs/ARCHITECTURE.md](../../../svelte/docs/ARCHITECTURE.md) | Runtime ownership |
 | `svelte/src/lib/mobile/mobileEnv.ts` | Mobile vs desktop shell decision |
 | `svelte/src/lib/runtime/renderBudget.ts` | Mobile PGM governor (opt-in) |
 

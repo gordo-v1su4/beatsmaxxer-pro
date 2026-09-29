@@ -1,4 +1,4 @@
-# Shallow-clone WebGPU peer repos into research/webgpu-peers/repos/
+# Shallow-clone WebGPU peer repos into docs/research/webgpu-peers/repos/
 param(
     [switch]$Refresh
 )

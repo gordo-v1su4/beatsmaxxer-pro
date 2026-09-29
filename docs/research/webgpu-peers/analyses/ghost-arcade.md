@@ -113,7 +113,7 @@ Local clone: `repos/ghost-arcade/` (gitignored). Line refs from shallow clone at
 
 Ghost Arcade **pre-decodes and parks** the first visible frame while a clip is inactive, so trigger latency is `play + reveal` — no seek on the cut frame.
 
-```739:818:research/webgpu-peers/repos/ghost-arcade/src/lib/stores/vjClipLauncher.ts
+```739:818:docs/research/webgpu-peers/repos/ghost-arcade/src/lib/stores/vjClipLauncher.ts
 function waitForPresentedVideoFrame(videoEl: HTMLVideoElement, timeoutMs = 500): Promise<void> {
   // ...
   if (typeof videoEl.requestVideoFrameCallback === 'function') {
@@ -145,7 +145,7 @@ private waitForDecodedFrame(video: HTMLVideoElement, signal?: AbortSignal): Prom
 
 Ghost Arcade wraps **canvas/video → VideoFrame → importExternalTexture** with mandatory `.close()` and dev leak counter:
 
-```151:185:research/webgpu-peers/repos/ghost-arcade/src/lib/utils/videoFrameBridge.ts
+```151:185:docs/research/webgpu-peers/repos/ghost-arcade/src/lib/utils/videoFrameBridge.ts
 export function withExternalTexture<T = void>(device, source, fn, options?) {
   videoFrame = new VideoFrame(source, { timestamp: ..., alpha: ... });
   const externalTexture = device.importExternalTexture({ source: videoFrame });

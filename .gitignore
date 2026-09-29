@@ -72,12 +72,12 @@ docs/preview.png
 *.msi
 *-setup.exe
 
-# Local WebGPU peer research clones (analyses in research/webgpu-peers/analyses/ are committed)
-research/webgpu-peers/repos/
+# Local WebGPU peer research clones (analyses in docs/research/webgpu-peers/analyses/ are committed)
+docs/research/webgpu-peers/repos/
 # Regeneratable GitHits sweep raw logs
-research/webgpu-peers/githits-sweep-log.txt
-research/webgpu-peers/githits-sweep-repos.txt
-research/webgpu-peers/githits-svelte-sweep.txt
+docs/research/webgpu-peers/githits-sweep-log.txt
+docs/research/webgpu-peers/githits-sweep-repos.txt
+docs/research/webgpu-peers/githits-svelte-sweep.txt
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/

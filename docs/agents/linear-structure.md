@@ -45,7 +45,7 @@ Or: **Issues** → filter **Project = Beatsmaxxer Pro** (what you have now — 7
 
 | Prefix in title | Meaning |
 |-----------------|--------|
-| `Research:` | Read clones, write `research/webgpu-peers/analyses/*.md` |
+| `Research:` | Read clones, write `docs/research/webgpu-peers/analyses/*.md` |
 | `Implement:` | Code + tests in `svelte/` |
 
 ## Priority order (current sprint)

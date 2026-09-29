@@ -1,6 +1,6 @@
 # WebGPU peer research — Beatsmaxxer Pro
 
-**Agents:** Start from [`docs/agents/continuity.md`](../../docs/agents/continuity.md) (done / not-done / skill routing) and [`CONTEXT.md`](../../CONTEXT.md) (glossary).
+**Agents:** Start from [`../README.md`](https://github.com/gordo-v1su4/webgpu-research#readme) (research hub). Product context: [`../beatsmaxxer-pro/docs/agents/continuity.md`](../../../docs/agents/continuity.md), [`../beatsmaxxer-pro/CONTEXT.md`](../../../CONTEXT.md).
 
 Local clones and analysis for **three platforms** sharing one WebGPU engine:
 
@@ -26,7 +26,9 @@ Stack: **SvelteKit 5 + WebGPU-only**, eight-slot rack (desktop), beat-quantized 
 | [`MOBILE-BROWSER-RESEARCH.md`](./MOBILE-BROWSER-RESEARCH.md) | **Separate lane: phone via Chrome/mobile web (not native app)** |
 | **`IMPLEMENTATION-BACKLOG.md`** | **Tiered tasks to implement — mobile vs desktop split** |
 | `githits-sweep-findings.md` | Full GitHits sweep summary |
-| `webgpu-peers-deep-dive.svg` | Static landscape chart |
+| `applied-patterns.md` | GitHits pattern library (VJ FX, beat sync, node UI) |
+| `webgpu-av-landscape.html` / `.svg` | High-level OSS landscape chart |
+| `webgpu-peers-deep-dive.svg` | Static peer chart |
 | `clone-peers.ps1` / `clone-peers.sh` | Clone or refresh all peer repos |
 
 ## Clone policy
@@ -37,11 +39,11 @@ Stack: **SvelteKit 5 + WebGPU-only**, eight-slot rack (desktop), beat-quantized 
 
 | What | On disk | In `git push`? |
 |------|---------|----------------|
-| `analyses/*.md`, `README.md`, `IMPLEMENTATION-BACKLOG.md`, HTML/SVG, clone scripts | `research/webgpu-peers/` | **Only after** `git add` + `git commit` on `main` |
-| Shallow clones under `repos/` | `research/webgpu-peers/repos/` | **Never** — gitignored, local-only by design |
+| `analyses/*.md`, `README.md`, `IMPLEMENTATION-BACKLOG.md`, HTML/SVG, clone scripts | `webgpu-peers/` | **Only after** `git add` + `git commit` on `main` |
+| Shallow clones under `repos/` | `webgpu-peers/repos/` | **Never** — gitignored, local-only by design |
 | Regeneratable GitHits sweep logs | `githits-sweep-*.txt` | **Never** — gitignored |
 
-Research **lives on your machine** under `research/webgpu-peers/` on `main`, but **`git push` does not include new work** until you add and commit the markdown/HTML/scripts you want to share. Cloned peer repos stay local for grep and perf experiments; ship learnings via `analyses/` and backlog docs, not vendored trees.
+Research **lives on your machine** under `webgpu-peers/` on `main`, but **`git push` does not include new work** until you add and commit the markdown/HTML/scripts you want to share. Cloned peer repos stay local for grep and perf experiments; ship learnings via `analyses/` and backlog docs, not vendored trees.
 
 **Typical workflow:**
 
@@ -53,7 +55,7 @@ Research **lives on your machine** under `research/webgpu-peers/` on `main`, but
 #    analyses/beatform.md, githits-sweep-findings.md, etc.
 
 # 3. Commit only the notes — not repos/
-git add research/webgpu-peers/analyses research/webgpu-peers/*.md research/webgpu-peers/*.html
+git add webgpu-peers/analyses webgpu-peers/*.md webgpu-peers/*.html
 git status   # confirm repos/ does NOT appear
 git commit -m "docs: update WebGPU peer research"
 git push
@@ -78,7 +80,7 @@ See also [`RESEARCH-STATUS.md`](./RESEARCH-STATUS.md) for the latest session sum
 .\research\webgpu-peers\clone-peers.ps1
 
 # Linux / cloud / Git Bash
-bash research/webgpu-peers/clone-peers.sh
+bash webgpu-peers/clone-peers.sh
 ```
 
 Refresh (re-fetch latest default branch):
@@ -110,5 +112,6 @@ Cursor MCP uses separate OAuth at `https://mcp.githits.com` (see hermes-notebook
 
 ## Related docs
 
-- [`docs/webgpu-av-landscape.html`](../../docs/webgpu-av-landscape.html) — high-level landscape (prior session)
-- [`svelte/docs/ARCHITECTURE.md`](../../svelte/docs/ARCHITECTURE.md) — Beatsmaxxer runtime ownership
+- [`webgpu-av-landscape.html`](./webgpu-av-landscape.html) — high-level landscape chart
+- [`applied-patterns.md`](./applied-patterns.md) — portable WGSL/TS patterns from GitHits
+- [`../beatsmaxxer-pro/svelte/docs/ARCHITECTURE.md`](../../../svelte/docs/ARCHITECTURE.md) — Beatsmaxxer runtime ownership (product, not research)
