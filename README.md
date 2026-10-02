@@ -4,10 +4,27 @@
   <img src="docs/beatsmaxxer-pro.webp" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
 </p>
 
-Browser-native **audio-reactive video FX rack** with a broadcast-style program
-monitor. Load clips into eight modules, cut on the beat, and drive shader
-effects from live rhythm analysis — **SvelteKit 5 + WebGPU only** (no React,
-no Three.js or WebGL fallback).
+Beatsmaxxer Pro is an audio-reactive video FX rack for live visuals: eight clip
+slots, a program monitor, and shader effects driven by rhythm analysis.
+
+**Stack**
+
+- SvelteKit 5 and **WebGPU only** (WGSL; no WebGL or Three.js fallback)
+- Bun, Vite, static web build (`adapter-static`)
+- Windows desktop via **Tauri 2** (Rust shell only: window, `.env`, Essentia
+  proxy, signed updates)
+- Essentia rhythm/structure analysis with Web Audio fallback; SoundTouchJS for
+  key, pitch, and tempo
+
+**What it does**
+
+- **Perform** — 19 WGSL effect modules, live previews, beat-quantized PGM cuts
+- **Arrange and time** — song sections on a timeline; ramps, stutters, and jump
+  cuts on the beat grid
+- **Ship everywhere** — browser (Chrome/Edge), mobile performance shell, Windows
+  app; browser acceptance scripts in CI and local gates
+
+Not a generative-AI visualizer: effects are WGSL shaders on loaded video clips.
 
 **Live:** [beatsmaxxing.com](https://beatsmaxxing.com) ·
 **Windows app:** [latest release](https://github.com/gordo-v1su4/beatsmaxxer-pro/releases/latest)
