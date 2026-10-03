@@ -130,16 +130,14 @@ See [`linear.md`](./linear.md) for the full issue table and blocker chain.
 
 ## Hosted Essentia analysis
 
-Rhythm/structure analysis uses the **hosted** `essentia-endpoint` service on VM100 `app-vm` — not local Docker and not in-browser Essentia.
+Rhythm/structure analysis can use a **hosted** Essentia Studio API (operator-run), not in-browser Essentia. Configure base URL and credentials in git-ignored `.env` / `.env.local` only; see [`svelte/docs/ESSENTIA.md`](../../svelte/docs/ESSENTIA.md) and [`.env.example`](../../.env.example).
 
-| Item | Value |
-|------|--------|
-| **Public URL** | `https://essentia.v1su4.dev` |
-| **Client env** | `ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev`, `ESSENTIA_API_KEY` (server-side proxy only) |
-| **Service repo** | `essentia-endpoint` (sibling) |
-| **Client routes** | `POST /__api/analyze/studio/jobs` + `GET /__api/analyze/studio/jobs/{id}` (full MP3, GPU allin1 structure) |
-
-Deploy runbook: `essentia-endpoint/docs/DOCKHAND.md`. Queue/GPU details: `essentia-endpoint/docs/STUDIO_AUDIO_JOBS.md`.
+| Item | Role |
+|------|------|
+| **Upstream API** | Essentia Studio jobs (submit MP3, poll structure/rhythm) |
+| **Client env** | `ESSENTIA_API_BASE_URL`, `ESSENTIA_API_KEY` (server-side proxy only; never in the browser bundle) |
+| **App routes** | `POST /__api/analyze/studio/jobs` + `GET /__api/analyze/studio/jobs/{id}` (full MP3) |
+| **Chunk staging** | Optional object-storage gateway vars for uploads larger than the serverless body limit |
 
 ---
 

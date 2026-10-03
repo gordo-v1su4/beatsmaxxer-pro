@@ -1,20 +1,14 @@
-# Beatsmaxxer Pro — app-vm GPU sandbox.
-#
-# Deploy layout on app-vm (matches the /opt/<service> convention):
-#   /opt/beatsmaxxer-pro/          this repo checkout
-#   /opt/beatsmaxxer-pro/.env      secrets (gitignored) — see .env.example
+# Beatsmaxxer Pro — optional GPU sandbox for WebGPU browser gates.
 #
 # Bring up:   docker compose up -d --build
-# Dev server: http://<app-vm-tailscale-ip>:5174  (e.g. http://100.118.78.13:5174)
+# Dev server: http://localhost:5174  (port mapped below)
 #
-# GPU is reserved so browser gates run on the RTX 4090 inside the container:
+# GPU is reserved so browser gates can run inside the container, e.g.:
 #   docker compose exec beatsmaxxer-pro \
 #     xvfb-run -a bun run test:local
 #
-# Essentia analysis proxy (dev only) uses the public endpoint:
-#   ESSENTIA_ANALYSIS_ENABLED=true
-#   ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev
-#   ESSENTIA_API_KEY=<from the essentia-endpoint deployment; stored in BWS>
+# Hosted analysis (dev only): set ESSENTIA_* in `.env` — see `.env.example`
+# (values belong in git-ignored `.env` / `.env.local`, never in this file).
 
 services:
   beatsmaxxer-pro:

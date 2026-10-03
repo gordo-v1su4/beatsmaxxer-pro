@@ -74,7 +74,7 @@ Set before `bun run dev:desktop` (or in `.env`):
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `ESSENTIA_API_BASE_URL` | For ANALYZE | e.g. `https://essentia.v1su4.dev` or `http://100.x.x.x` (Tailscale) |
+| `ESSENTIA_API_BASE_URL` | For ANALYZE | Set in repo-root `.env` / `.env.local` (git-ignored); base URL for your hosted analysis API |
 | `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust `analyze_rhythm` command uses it |
 
 `ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.

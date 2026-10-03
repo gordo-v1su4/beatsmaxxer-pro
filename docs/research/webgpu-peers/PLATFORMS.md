@@ -37,7 +37,7 @@ Same files, same behavior:
 | **Render budget / adaptive PGM scale** | Off (fixed sizing) | Off | Designed for phone — **`?budget=1`** today |
 | **Lifecycle / background** | Window minimize (mild) | Tab background (mild) | **Lock, app switch, bfcache** — critical |
 | **GPU device loss** | Possible | Possible | **Ordinary** (memory pressure, background) |
-| **Secure context** | WebView2 origin | localhost / HTTPS prod | **HTTPS required** (Tailscale serve for dev) |
+| **Secure context** | WebView2 origin | localhost / HTTPS prod | **HTTPS required** (use HTTPS dev tunnel if not on localhost) |
 | **Essentia analysis** | Rust `analyze_rhythm` + `.env` | Vite dev proxy / hosted | Same as web — cellular latency matters |
 | **Desktop-only** | Updater, `.env` on disk | — | — |
 | **Peer research: 8-slot / NLE** | **High** | **High** | Low |

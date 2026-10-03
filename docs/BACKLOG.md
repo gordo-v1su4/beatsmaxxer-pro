@@ -231,12 +231,10 @@ New surface:
 
 ## Ship / infra
 
-- **Vercel project rename — completed 2026-08-30.** Renamed project ID
-  `prj_7W0xfFnHFiHqAAbqwuBx0gDfrPQ4` from `beat-surfer-pro` to
-  `beatsmaxxer-pro` after the restored `main` UI/performance deployment reached
-  READY. `beatsmaxxer-pro.vercel.app`, `beatsmaxxing.com`, and
-  `www.beatsmaxxing.com` remain verified production domains; the old Beat
-  Surfer aliases remain temporarily as compatibility links.
+- **Production hosting — completed 2026-08-30.** Static deploy on the configured
+  host; [beatsmaxxing.com](https://beatsmaxxing.com) and `www.beatsmaxxing.com`
+  are the public domains. Legacy Beat Surfer aliases may still redirect for a
+  transition period.
 - **Releases.** Bump `version` in `desktop/src-tauri/tauri.conf.json`, commit,
   then `git tag vX.Y.Z && git push origin main vX.Y.Z`. Builds on a Windows
   runner (~6 min warm) and attaches installers to a **draft** release.
@@ -254,10 +252,9 @@ New surface:
   desktop right after that fork was deliberately removed. AudioWorklets
   cannot `fetch()`; the `.wasm` must arrive via `processorOptions`.
 - **Cloud-agent / Docker (#7) — done 2026-09-29.** Cursor Cloud setup removed
-  (runbook, `.cursor/environment.json`, install/start scripts). Kept the
-  app-vm GPU sandbox (`Dockerfile`, `docker-compose.yml`) — the only way to run
-  WebGPU browser gates on the 4090 — and `verify:cloud-smoke`, which the
-  Issue #25 CI smoke runs.
+  (runbook, `.cursor/environment.json`, install/start scripts). Kept optional
+  GPU sandbox (`Dockerfile`, `docker-compose.yml`) for WebGPU browser gates and
+  `verify:cloud-smoke`, which the Issue #25 CI smoke runs.
 
 ---
 

@@ -38,4 +38,4 @@ bash docs/research/webgpu-peers/clone-peers.sh
 ```
 
 GitHits from the repo root: `.\scripts\githits.ps1 example "<query>" -l typescript`
-(token from BWS `GITHITS_API_TOKEN`).
+(requires `GITHITS_API_TOKEN` in your local `.env.local`, git-ignored).

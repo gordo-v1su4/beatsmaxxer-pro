@@ -17,7 +17,7 @@ Desktop GitHits sweep focused on **multi-canvas racks, NLE compositors, VJ clip 
 | 8-slot `importExternalTexture` | FreeCut, webgpu-samples | **N/A** — one canvas, one slot |
 | Shader registry / ISF rack | Ghost Arcade, spektral | Low priority |
 | Beat-quantized PGM director | Beatform, Ableton transport | Same engine — audit only |
-| **Secure context / HTTPS** | localhost OK in dev | **Tailscale serve**, prod TLS — `vite.config.ts` |
+| **Secure context / HTTPS** | localhost OK in dev | **HTTPS dev tunnel**, prod TLS — `vite.config.ts` |
 | **Background tab / device loss** | Rare | **Ordinary** — `SharedGpuDevice.ts`, `lifecycle.ts` |
 | **AudioContext suspend** | Uncommon | **Lock screen, app switch** — `startLifecycleWatch()` |
 | **Audio buffer size** | `interactive` | **`playback` hint on mobile web** — `desktopPerformance.ts` |
@@ -42,7 +42,7 @@ Desktop GitHits sweep focused on **multi-canvas racks, NLE compositors, VJ clip 
 | PGM DPR cap + 720p max | `WebGpuCanvas.svelte` | Fragment cost control |
 | Render budget governor | `runtime/renderBudget.ts` | **Designed for phone** — off until internal blit scale |
 | GPU probe flash guard | `MobileStage.svelte` | Needs async store polish |
-| HTTPS dev via Tailscale | `vite.config.ts` comments | WebGPU requires secure context on phone |
+| HTTPS dev tunnel | `vite.config.ts` comments | WebGPU requires secure context on phone |
 | Sequencer background catch-up | `stores/sequencer.ts`, tests | Transport keeps time; UI must recover |
 
 ---
@@ -53,7 +53,7 @@ Desktop GitHits sweep focused on **multi-canvas racks, NLE compositors, VJ clip 
 
 | # | Question | Where to look | Tool |
 |---|----------|---------------|------|
-| A1 | Does `navigator.gpu` exist on **HTTPS Tailscale URL** vs http IP? | In-app note; Chrome `chrome://gpu` | Manual + QA checklist |
+| A1 | Does `navigator.gpu` exist on **HTTPS dev URL** vs plain HTTP IP? | In-app note; Chrome `chrome://gpu` | Manual + QA checklist |
 | A2 | Chrome Android vs Safari iOS adapter limits (max texture size, buffer limits) | gpuweb spec, Chrome status, Can I Use | GitHits `site:developer.chrome.com WebGPU` |
 | A3 | WebCodecs + WebGPU both available on target phones? | `capabilities` store | Extend probe in `capability.ts` |
 | A4 | **In-app browser** matrix (Instagram, Messages link preview) | WebGPU often missing | Manual matrix doc |

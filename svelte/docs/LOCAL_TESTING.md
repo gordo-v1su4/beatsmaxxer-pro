@@ -17,18 +17,19 @@ That single command:
 
 ## Local QA media (your machine)
 
-For real clips + the Redline track from `~/Downloads/archive (2)`:
+For full-size clips and a song track, point `QA_MEDIA_DIR` in your local
+`.env.local` (git-ignored) at a folder on your machine, then:
 
 ```bash
 cd svelte
-bash scripts/link-qa-media.sh   # symlinks 8 mp4s + the track in $REDLINE into tests/fixtures/media/
+bash scripts/setup-qa-media.sh   # or link-qa-media.sh when REDLINE/QA paths are set locally
 bun run dev --host 127.0.0.1
 # open http://127.0.0.1:5174/?qa=1&qaAutoplay=1
 ```
 
 On refresh, `?qa=1` auto-loads song + 8 clips into the rack (same as manual upload, but persistent for dev).
 
-`test:local` uses `link-qa-media.sh` automatically when `~/Downloads/archive (2)` exists; otherwise it falls back to bundled tiny fixtures.
+`test:local` uses `link-qa-media.sh` when local QA media paths exist; otherwise it falls back to bundled tiny fixtures.
 
 ## Prerequisites
 

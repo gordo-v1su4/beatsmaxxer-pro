@@ -2,6 +2,8 @@
 
 Beatsmaxxer Pro is a **SvelteKit 5 + WebGPU** browser app (no backend). See [`README.md`](./README.md) and [`svelte/docs/ARCHITECTURE.md`](./svelte/docs/ARCHITECTURE.md).
 
+Backend and hosting URLs come from environment variables / `.env.local` and must never be hardcoded or committed.
+
 Use **`bun`** for all installs, dev, test, and build commands.
 
 ## Commands
@@ -13,15 +15,15 @@ Use **`bun`** for all installs, dev, test, and build commands.
 | Unit tests | `bun run test` |
 | Full local suite | `bun run test:local` (needs Chrome + WebGPU) |
 | Issue #25 cloud acceptance | `bun run verify:issue25-cloud` (unit + CDP gates; skips headed visual proof) |
-| Issue #25 GPU acceptance | `bun run verify:issue25-gpu` after `bash svelte/scripts/setup-qa-media.sh` (5090 + Redline `test_media`; set `PHYSICAL_BROWSER_OBSERVED=1` and `PHYSICAL_BROWSER_OPERATOR`) |
-| Sequencer ARM cut CDP | `cd svelte && bun run verify:sequencer-cut` (self-hosted; Redline QA media) |
+| Issue #25 GPU acceptance | `bun run verify:issue25-gpu` after `bash svelte/scripts/setup-qa-media.sh` (GPU host + `test_media`; set `PHYSICAL_BROWSER_OBSERVED=1` and `PHYSICAL_BROWSER_OPERATOR`) |
+| Sequencer ARM cut CDP | `cd svelte && bun run verify:sequencer-cut` (GPU worker; QA media from `setup-qa-media.sh`) |
 | Production build | `bun run build` → `svelte/build/` |
 
 QA autoload: `http://localhost:5174/?qa=1&qaAutoplay=1` (fixtures in `svelte/tests/fixtures/media-src/`). Issue #25 CDP gates add `qaSequencerArm=1`, `qaLoopRegion=1` as needed (see `svelte/scripts/ci-sequencer-arm-smoke.sh`).
 
 ## Browser gates and GPU
 
-WebGPU output needs Chrome or Edge on a machine with a GPU (the 5090 desktop or the app-vm 4090 sandbox in `docker-compose.yml`). `bun run test` (vitest) runs anywhere; `bun run test:local` needs Chrome + WebGPU on the machine running it.
+WebGPU output needs Chrome or Edge on a machine with a GPU (local desktop or the optional GPU sandbox in `docker-compose.yml`). `bun run test` (vitest) runs anywhere; `bun run test:local` needs Chrome + WebGPU on the machine running it.
 
 Long runs on a self-hosted worker: **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), summarize with **`bun run test:local:log`**. Headless runs **skip** `verify:visual-proof` and `verify:eight-video-proof` unless `REQUIRE_PHYSICAL_PROOF=1`; capture those on the GPU desktop with `bun run capture:visual-proof` and `bun run capture:eight-video-proof`.
 
@@ -30,7 +32,7 @@ Long runs on a self-hosted worker: **`HEADLESS=1 bun run test:local:detached`** 
 | Variable | Notes |
 |----------|-------|
 | `ESSENTIA_ANALYSIS_ENABLED` | `true` to enable the dev proxy |
-| `ESSENTIA_API_BASE_URL` | e.g. `https://essentia.v1su4.dev` |
+| `ESSENTIA_API_BASE_URL` | Set in `.env.local` (git-ignored); base URL for your hosted analysis API |
 | `ESSENTIA_API_KEY` | Server-side only; injected by the dev proxy |
 
 Production relay is blocked. Without Essentia, local Web Audio rhythm analysis is the fallback.

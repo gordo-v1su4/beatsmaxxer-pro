@@ -13,12 +13,12 @@ The processor asset is copied to `static/soundtouch-processor.js` during prepara
 
 ## Hosted rhythm + structure analysis (Studio jobs)
 
-Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit:
+Playback is local by default. Hosted analysis is **disabled** unless all server-only settings are explicit. Set real values in your local `.env.local` (git-ignored); see [`.env.example`](../../.env.example).
 
 ```bash
 ESSENTIA_ANALYSIS_ENABLED=true
-ESSENTIA_API_BASE_URL=https://essentia.v1su4.dev
-ESSENTIA_API_KEY=server-only-secret
+ESSENTIA_API_BASE_URL=
+ESSENTIA_API_KEY=
 ```
 
 The browser calls same-origin Studio routes:
@@ -37,11 +37,11 @@ Direct multipart uploads are limited to **4 MiB** so they stay under Vercel Hobb
 
 Total hosted analysis size remains capped at **12 MiB**. Typical masters (~7 MiB) use the chunked path on production.
 
-Server-only RustFS gateway variables (required for chunked uploads):
+Server-only object-storage gateway variables (required for chunked uploads; set in `.env.local`):
 
 ```bash
-MEDIA_GATEWAY_URL=https://media.v1su4.dev
-MEDIA_GATEWAY_TOKEN=<from BWS homelab-rustfs>
+MEDIA_GATEWAY_URL=
+MEDIA_GATEWAY_TOKEN=
 MEDIA_GATEWAY_BUCKET=beatsmaxxer-pro
 MEDIA_GATEWAY_USER_ID=beatsmaxxer-pro
 MEDIA_GATEWAY_UPLOAD_PREFIX=media-uploads

@@ -11,7 +11,7 @@ Browser-native **audio-reactive video FX rack** with a beat-quantized **PGM** (p
 | Term | Meaning |
 |------|---------|
 | **Rack** | Eight stable slot IDs (`top-0`…`top-3`, `bottom-0`…`bottom-3`); each slot owns one `HTMLVideoElement` and clip file |
-| **Module** | Catalog effect (18 WGSL `effectMode`s) assigned to a slot; hot-swapping a module does not reload the slot's video |
+| **Module** | Catalog effect (19 WGSL modules) assigned to a slot; hot-swapping a module does not reload the slot's video |
 | **PGM** | Program monitor — one canvas (`pgm`) showing the on-air slot through the selected module's shader |
 | **PgmDirector** | Beat-quantized PGM cuts via `AudioEngine.configurePgmSchedule()` — not rAF promotion |
 | **Slot ID** | Stable media owner (`top-0`, etc.); do not confuse with module ID |
