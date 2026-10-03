@@ -68,7 +68,7 @@ release build is slower than later ones.
 
 Create a repo-root **`.env`** from [`.env.example`](../.env.example) — `dev-desktop.sh` loads it automatically.
 
-> **`.env.example` is intentionally empty** (template for git). Put real values only in **`.env`** at the repo root. The app never reads `.env.example`.
+> **`.env.example` has empty placeholders only.** Put real values in **`.env`** or **`.env.local`** at the repo root (git-ignored). The app never reads `.env.example`.
 
 Set before `bun run dev:desktop` (or in `.env`):
 
