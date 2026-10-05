@@ -10,10 +10,19 @@
     endArrangementRecording,
   } from '$lib/arrangement/recorder';
   import {
+    commitRecordedTake,
     commitTriggerMarksToCuts,
     deleteTriggerMark,
     moveTriggerMark,
   } from '$lib/arrangement/triggerMarks';
+  import {
+    deleteSection,
+    mergeWithNext,
+    moveBoundary,
+    renameSection,
+    splitSection,
+    type SectionEditContext,
+  } from '$lib/arrangement/sectionEdits';
   import { viewMode, playbackWorkspace } from '$lib/stores/rackUi';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import {
@@ -38,7 +47,6 @@
   import { analysisBeatGrid, analysisOnsets } from '$lib/stores/triggerLane';
   import { audioEngine } from '$lib/audio';
   import {
-    arrangementStepToSeconds,
     barNumberAtTime,
     beatGridSongOffset,
     frameViewportFromSeconds,
@@ -67,7 +75,10 @@
     arrangementRecording,
     arrangementTriggers,
     autoBank,
+    autoClips,
     barInSection,
+    captureSectionScene,
+    clearSectionScene,
     clearCutsBetween,
     cuts,
     moduleForSlotIndex,
@@ -432,11 +443,6 @@
     $arrangementRecording || $arrangementClips.length > 0 || $arrangementTriggers.length > 0,
   );
 
-  function toggleArrangementRecording() {
-    if ($arrangementRecording) endArrangementRecording(playheadSeconds);
-    else beginArrangementRecording(playheadSeconds);
-  }
-
   let draggingTriggerId: string | null = $state(null);
   let draggingTrack: HTMLElement | null = $state(null);
 
@@ -463,6 +469,114 @@
   function endTriggerDrag() {
     draggingTriggerId = null;
     draggingTrack = null;
+  }
+
+  /** REC layers onto the last take instead of starting a fresh one. */
+  let overdub = $state(false);
+  /** How COMMIT TAKE lays the take onto existing cuts. */
+  let takeMode = $state<'overdub' | 'replace'>('replace');
+
+  function toggleArrangementRecordingWithMode() {
+    if ($arrangementRecording) endArrangementRecording(playheadSeconds);
+    else beginArrangementRecording(playheadSeconds, !overdub);
+  }
+
+  function commitTake() {
+    commitRecordedTake(takeMode, totalSteps, $analysisBeatGrid, bpm);
+  }
+
+  // ---- section editing (V1S-66) ----
+
+  /** The one section the edit bar acts on: a single selection, else none. */
+  const editIndex = $derived(
+    $selectedArrangementSections.size === 1 ? [...$selectedArrangementSections][0]! : null,
+  );
+  const editSection = $derived(editIndex != null ? $arrangement[editIndex] : undefined);
+  let renamingIndex = $state<number | null>(null);
+  let renameDraft = $state('');
+
+  function editContext(): SectionEditContext {
+    return { bounds: sectionBounds, beatGrid: $analysisBeatGrid, bpm };
+  }
+
+  /** Apply an edit and keep the selection on the section it produced. */
+  function applySectionEdit(next: typeof $arrangement | null, selectIndex: number) {
+    if (!next) return;
+    arrangement.set(next);
+    const index = Math.max(0, Math.min(next.length - 1, selectIndex));
+    $selectedArrangementSections = new Set([index]);
+    activeSectionIndex.set(Math.min($activeSectionIndex, next.length - 1));
+  }
+
+  /** At the playhead when it is inside the section, else at its middle bar. */
+  function splitSelected() {
+    if (editIndex == null) return;
+    const band = sectionBounds[editIndex]!;
+    const at =
+      playheadSeconds > band.startSeconds && playheadSeconds < band.endSeconds
+        ? playheadSeconds
+        : (band.startSeconds + band.endSeconds) / 2;
+    applySectionEdit(splitSection($arrangement, editIndex, at, editContext()), editIndex);
+  }
+
+  function mergeSelected() {
+    if (editIndex == null) return;
+    applySectionEdit(mergeWithNext($arrangement, editIndex, editContext()), editIndex);
+  }
+
+  function deleteSelected() {
+    if (editIndex == null) return;
+    applySectionEdit(deleteSection($arrangement, editIndex, editContext()), editIndex - 1);
+  }
+
+  function startRename(index: number) {
+    renamingIndex = index;
+    renameDraft = $arrangement[index]?.customName ?? $arrangement[index]?.name ?? '';
+    void tick().then(() => document.querySelector<HTMLInputElement>('.arr-rename-input')?.select());
+  }
+
+  function finishRename(commit: boolean) {
+    if (renamingIndex == null) return;
+    const index = renamingIndex;
+    renamingIndex = null;
+    if (commit) arrangement.set(renameSection($arrangement, index, renameDraft));
+  }
+
+  /** Dragging the boundary at the start of section `index`. */
+  let draggingBoundary = $state<{ index: number; track: HTMLElement } | null>(null);
+
+  function startBoundaryDrag(event: PointerEvent, index: number) {
+    if (event.button !== 0) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const track = (event.currentTarget as HTMLElement).closest('.arr-track') as HTMLElement;
+    draggingBoundary = { index, track };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+
+  function moveBoundaryDrag(event: PointerEvent) {
+    if (!draggingBoundary) return;
+    const seconds = secondsFromTrack(event.clientX, draggingBoundary.track);
+    const next = moveBoundary($arrangement, draggingBoundary.index, seconds, editContext());
+    if (next) arrangement.set(next);
+  }
+
+  function nudgeBoundary(index: number, bars: number) {
+    const band = sectionBounds[index];
+    if (!band) return;
+    const barSeconds = (240 / bpm) * bars;
+    const next = moveBoundary($arrangement, index, band.startSeconds + barSeconds, editContext());
+    if (next) arrangement.set(next);
+  }
+
+  function onWindowPointerMove(event: PointerEvent) {
+    moveTriggerDrag(event);
+    moveBoundaryDrag(event);
+  }
+
+  function onWindowPointerUp() {
+    endTriggerDrag();
+    draggingBoundary = null;
   }
 
   function commitRecordedTriggers() {
@@ -534,9 +648,9 @@
 {/snippet}
 
 <svelte:window
-  onpointermove={moveTriggerDrag}
-  onpointerup={endTriggerDrag}
-  onpointercancel={endTriggerDrag}
+  onpointermove={onWindowPointerMove}
+  onpointerup={onWindowPointerUp}
+  onpointercancel={onWindowPointerUp}
 />
 
 <section class="arrange">
@@ -589,9 +703,35 @@
       type="button"
       class="arr-btn arr-btn-rec"
       data-active={$arrangementRecording}
-      onclick={toggleArrangementRecording}
+      onclick={toggleArrangementRecordingWithMode}
       title="Record PGM lane occupancy and effect fires onto the timeline"
     >{$arrangementRecording ? 'REC ●' : 'REC'}</button>
+    <button
+      type="button"
+      class="arr-btn"
+      data-active={overdub}
+      onclick={() => (overdub = !overdub)}
+      title={overdub
+        ? 'Overdub: the next REC adds to the last take'
+        : 'The next REC starts a fresh take (click for overdub)'}
+    >OVERDUB</button>
+    <span class="arr-take" role="group" aria-label="Commit recorded take">
+      <button
+        type="button"
+        class="arr-btn"
+        disabled={$arrangementClips.length === 0 || $arrangementRecording}
+        onclick={commitTake}
+        title="Write the recorded PGM cuts onto the song's cut grid"
+      >COMMIT TAKE</button>
+      <button
+        type="button"
+        class="arr-btn arr-btn-mode"
+        onclick={() => (takeMode = takeMode === 'replace' ? 'overdub' : 'replace')}
+        title={takeMode === 'replace'
+          ? 'Replace: clears existing cuts inside the take span first'
+          : 'Merge: keeps existing cuts; the take wins where both land'}
+      >{takeMode === 'replace' ? 'REPLACE' : 'MERGE'}</button>
+    </span>
     <button
       type="button"
       class="arr-btn"
@@ -613,6 +753,13 @@
       onclick={() => autoBank.update((v) => !v)}
       title="Entering a section rebuilds the rack from its FX bank"
     >AUTO-BANK</button>
+    <button
+      type="button"
+      class="arr-btn"
+      data-active={$autoClips}
+      onclick={() => autoClips.update((v) => !v)}
+      title="Entering a section reloads the clips captured for it"
+    >AUTO-CLIPS</button>
     <button
       type="button"
       class="arr-btn"
@@ -670,6 +817,29 @@
     />
   </header>
 
+  {#if editSection && editIndex != null}
+    <div class="arr-secbar" style="--sec-hue:{editSection.hue}" role="toolbar" aria-label="Edit {editSection.name}">
+      <span class="arr-secbar-name">{editSection.name}</span>
+      <span class="arr-secbar-meta">{editSection.bars} BARS</span>
+      <button type="button" class="arr-btn" onclick={() => startRename(editIndex)} title="Give this section its own label (or double-click it)">RENAME</button>
+      <button type="button" class="arr-btn" disabled={editSection.bars < 2} onclick={splitSelected} title="Split at the playhead (or the middle bar if the playhead is elsewhere)">SPLIT</button>
+      <button type="button" class="arr-btn" disabled={editIndex >= $arrangement.length - 1} onclick={mergeSelected} title="Merge with the next section">MERGE →</button>
+      <button type="button" class="arr-btn" disabled={$arrangement.length <= 1} onclick={deleteSelected} title="Remove this section; its bars go to the one before it">DELETE</button>
+      <span class="arr-secbar-sep" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="arr-btn"
+        data-active={!!editSection.scene}
+        onclick={() => captureSectionScene(editIndex)}
+        title="Save the clips loaded in the rack right now as this section's clip set"
+      >{editSection.scene ? 'RECAPTURE CLIPS' : 'CAPTURE CLIPS'}</button>
+      {#if editSection.scene}
+        <button type="button" class="arr-btn" onclick={() => clearSectionScene(editIndex)} title="Forget this section's clip set">CLEAR CLIPS</button>
+      {/if}
+      <span class="arr-secbar-hint">Drag a section edge to move it · snaps to bars</span>
+    </div>
+  {/if}
+
   <div class="arr-scroll" onwheel={onTimelineWheel}>
    <div class="arr-canvas" style="width:{isFramed ? Math.min(zoomFactor * 100, 6400) : 100}%">
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
@@ -698,7 +868,27 @@
               aria-label="Select {section.name} section"
               aria-pressed={picked}
               onclick={(event) => handleSectionClick(i, event, band)}
+              ondblclick={(event) => {
+                event.stopPropagation();
+                startRename(i);
+              }}
             ></button>
+            {#if renamingIndex === i}
+              <input
+                class="arr-section-edit arr-rename-input"
+                bind:value={renameDraft}
+                maxlength="24"
+                aria-label="Section name"
+                placeholder="Empty restores the part name"
+                onclick={(event) => event.stopPropagation()}
+                onkeydown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === 'Enter') finishRename(true);
+                  else if (event.key === 'Escape') finishRename(false);
+                }}
+                onblur={() => finishRename(true)}
+              />
+            {/if}
             <label
               class="arr-section-edit arr-section-color-wrap"
               style="--sec-hue:{section.hue}"
@@ -740,8 +930,38 @@
                 <span class="arr-kind-chevron" aria-hidden="true">▾</span>
               </button>
             </span>
+            {#if section.customName}
+              <span class="arr-section-custom" title="Custom name — double-click to change">{section.customName}</span>
+            {/if}
+            {#if section.scene}
+              <span class="arr-section-scene" title="Has a captured clip set">CLIPS</span>
+            {/if}
             <span class="arr-section-bars">{section.bars}b</span>
           </div>
+        {/each}
+        {#each sectionBands as band, i (band.id)}
+          {#if i > 0}
+            <span
+              class="arr-boundary"
+              class:is-dragging={draggingBoundary?.index === i}
+              style="left:{band.leftPct}%;--sec-hue:{band.hue}"
+              role="slider"
+              aria-valuemin={1}
+              aria-valuemax={Math.max(1, totalBars)}
+              aria-label="Boundary before {band.name}"
+              aria-valuenow={band.startBar}
+              tabindex="0"
+              title="Drag to move this boundary (snaps to bars); arrow keys nudge by a bar"
+              onpointerdown={(event) => startBoundaryDrag(event, i)}
+              onclick={(event) => event.stopPropagation()}
+              onkeydown={(event) => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                event.stopPropagation();
+                nudgeBoundary(i, event.key === 'ArrowLeft' ? -1 : 1);
+              }}
+            ></span>
+          {/if}
         {/each}
       </div>
     </div>
@@ -811,7 +1031,7 @@
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
               class="arr-cut"
-              style="left:{timePct(arrangementStepToSeconds(cut.step, $arrangement, $sectionStarts, $analysisBeatGrid, $transportDisplay.bpm || 120))}%;background:{info?.color ?? '#5f7378'}"
+              style="left:{timePct(stepSeconds(cut.step, $analysisBeatGrid, bpm))}%;background:{info?.color ?? '#5f7378'}"
             ></span>
           {/each}
         </div>
@@ -909,12 +1129,6 @@
         </div>
       </div>
     {/each}
-
-    {#if $midiChannels.length === 0}
-      <p class="arr-empty">
-        LOAD MIDI STEMS to add trigger channels — one lane per instrument, ticks where its notes land.
-      </p>
-    {/if}
 
     <!-- One playhead for the whole view, over every lane at once. -->
     <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {timePct($transportDisplay.time) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
@@ -1243,6 +1457,119 @@
     background: transparent;
   }
   .arr-section-bars { pointer-events: none; }
+
+  .arr-section-custom,
+  .arr-section-scene {
+    pointer-events: none;
+    font-family: var(--font-ui);
+    font-size: 7px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .arr-section-custom {
+    color: #e6f1f2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .arr-section-scene {
+    padding: 0 3px;
+    border: 1px solid color-mix(in srgb, var(--sec-hue) 60%, transparent);
+    border-radius: 2px;
+    color: color-mix(in srgb, var(--sec-hue) 75%, #ffffff);
+  }
+
+  .arr-rename-input {
+    position: absolute;
+    inset: 3px 4px;
+    z-index: 4;
+    min-width: 0;
+    padding: 0 4px;
+    border: 1px solid var(--sec-hue, #14b8a6);
+    border-radius: 2px;
+    background: #0c0d0f;
+    color: #e6f1f2;
+    font-family: var(--font-ui);
+    font-size: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    outline: none;
+  }
+
+  /* Drag target sits on the seam between two sections; wider than it looks so
+     it can be grabbed without pixel hunting. */
+  .arr-boundary {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 9px;
+    margin-left: -4.5px;
+    z-index: 3;
+    cursor: ew-resize;
+    touch-action: none;
+  }
+  .arr-boundary::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 3.5px;
+    width: 2px;
+    border-radius: 1px;
+    background: color-mix(in srgb, var(--sec-hue) 72%, #ffffff);
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .arr-boundary:hover::after,
+  .arr-boundary.is-dragging::after {
+    opacity: 1;
+  }
+
+  .arr-secbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    min-height: 26px;
+    padding: 3px 10px;
+    border-bottom: 1px solid #141618;
+    background: color-mix(in srgb, var(--sec-hue) 6%, #0c0d0f);
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .arr-secbar-name {
+    color: color-mix(in srgb, var(--sec-hue) 70%, #ffffff);
+    font-family: var(--font-ui);
+    font-size: 8px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    white-space: nowrap;
+  }
+  .arr-secbar-meta,
+  .arr-secbar-hint {
+    color: #4b5d63;
+    font-family: var(--font-ui);
+    font-size: 7px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .arr-secbar-hint {
+    margin-left: auto;
+  }
+  .arr-secbar-sep {
+    width: 1px;
+    height: 14px;
+    background: #1e2226;
+  }
+
+  .arr-take {
+    display: flex;
+    gap: 1px;
+  }
+  .arr-btn-mode {
+    min-width: 46px;
+    justify-content: center;
+  }
   .arr-section[data-selected='true'] {
     box-shadow: inset 0 0 0 1px rgba(184, 212, 220, 0.55);
   }
@@ -1592,14 +1919,6 @@
   .arr-chan-remove:hover {
     background: #7a2222;
     color: #fff;
-  }
-
-  .arr-empty {
-    margin: 8px 0 0 calc(var(--arr-gutter-w) + 6px);
-    font-family: var(--font-ui);
-    font-size: 7px;
-    letter-spacing: 0.1em;
-    color: #2f363a;
   }
 
   /* One line across every lane. On a song-length view this is the only thing

@@ -1,6 +1,6 @@
-import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
+import { resolveSectionBounds, sectionIndexAtSeconds } from '$lib/arrangement/sectionBounds';
 import { cutStepAllowedInLoop } from '$lib/arrangement/sequencerLoopGate';
-import { arrangementStepToSeconds } from '$lib/arrangement/timelineScale';
+import { stepSeconds } from '$lib/arrangement/timelineScale';
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
@@ -33,11 +33,10 @@ import {
   ARRANGEMENT_STEPS,
   activeSectionIndex,
   sectionStarts,
-  applySectionBank,
   arrangement,
   arrangementLoopRegion,
   arrangementTotalSteps,
-  autoBank,
+  enterSection,
   barInSection,
   cutAtStep,
   cuts,
@@ -203,8 +202,8 @@ let sequencerGeneration = -1;
 let lastQueuedPrewarmSlot: string | null = null;
 let lastPgmPrepSlot: string | null = null;
 let sequencerAbsoluteStep: number | null = null;
-/** Absolute bar the active section started on, so its length can be measured. */
-let sectionStartBar = 0;
+/** Section the playhead was last found in; a change is a section entry. */
+let trackedSectionIndex = -1;
 /** Rising-flux strike window for tapdelay when MIDI/analysis are quiet. */
 let liveOnsetStutterState: LiveOnsetStutterState | null = null;
 
@@ -300,53 +299,28 @@ export function timeSamplerVideoTarget(
 }
 
 /**
- * Walk the arrangement. A section owns a bar count, so the playhead leaving its
- * last bar hands over to the next one — and, when auto-bank is on, rebuilds the
- * rack from that section's bank so the chorus plays through different effects
- * than the verse.
+ * Track which section the playhead is in — and, when auto-bank is on, rebuild
+ * the rack from that section's bank on entry, so the chorus plays through
+ * different effects than the verse.
  *
- * Bars are derived from the authoritative beat position rather than counted on
- * step crossings: a dropped frame would otherwise lose a bar and drift the
- * arrangement out of sync with the song permanently.
+ * Looked up by song position, not counted in bars from the last transport
+ * reset. Counting restarted at INTRO on every seek, so clicking into the chorus
+ * recalled the intro's bank in the middle of the chorus.
  */
-function runArrangement(frame: TimelineFrame, generationChanged: boolean) {
+function runArrangement(frame: TimelineFrame) {
   const sections = get(arrangement);
   if (sections.length === 0) return;
 
-  if (get(playbackWorkspace) === 'timing') {
-    const bounds = resolveSectionBounds(sections,get(sectionStarts),get(analysisBeatGrid),frame.bpm);
-    const index = bounds.findIndex(b=>frame.positionSeconds>=b.startSeconds&&frame.positionSeconds<b.endSeconds);
-    if(index>=0){activeSectionIndex.set(index);barInSection.set(Math.max(0,Math.floor((frame.positionSeconds-bounds[index].startSeconds)/frame.beatIntervalSeconds/4)));}
-    return;
-  }
-  const bar = Math.max(0, Math.floor(frame.beatPosition / 4));
+  const bounds = resolveSectionBounds(sections, get(sectionStarts), get(analysisBeatGrid), frame.bpm);
+  const index = sectionIndexAtSeconds(bounds, frame.positionSeconds);
+  if (index < 0) return;
+  const barSeconds = (frame.beatIntervalSeconds || 60 / (frame.bpm || 120)) * 4;
+  barInSection.set(Math.max(0, Math.floor((frame.positionSeconds - bounds[index]!.startSeconds) / barSeconds)));
 
-  if (generationChanged) {
-    sectionStartBar = bar;
-    activeSectionIndex.set(0);
-    barInSection.set(0);
-    if (get(autoBank)) applySectionBank(sections[0]);
-    return;
-  }
-
-  let index = get(activeSectionIndex);
-  if (index >= sections.length) index = 0;
-
-  // `while`, not `if`: a seek can jump past several short sections at once.
-  let elapsed = bar - sectionStartBar;
-  let advanced = false;
-  while (elapsed >= sections[index].bars) {
-    sectionStartBar += sections[index].bars;
-    elapsed = bar - sectionStartBar;
-    index = (index + 1) % sections.length;
-    advanced = true;
-  }
-
-  if (advanced) {
-    activeSectionIndex.set(index);
-    if (get(autoBank)) applySectionBank(sections[index]);
-  }
-  barInSection.set(Math.max(0, elapsed));
+  if (index === trackedSectionIndex && index === get(activeSectionIndex)) return;
+  trackedSectionIndex = index;
+  activeSectionIndex.set(index);
+  if (get(playbackWorkspace) !== 'timing') enterSection(sections[index]!);
 }
 
 function runSequencer(frame: TimelineFrame) {
@@ -356,19 +330,21 @@ function runSequencer(frame: TimelineFrame) {
   sequencerGeneration = frame.generation;
   sequencerAbsoluteStep = crossed.currentAbsoluteStep;
 
+  // Section tracking follows the playhead whether or not cuts are armed:
+  // the strip highlight and auto-bank are about where the song is, not
+  // about the sequencer.
+  if (frame.playing) runArrangement(frame);
+
   if (!frame.playing || !get(sequencerArmed)) {
     sequencerLastStep.set(crossed.currentAbsoluteStep % 16);
     return;
   }
-
-  runArrangement(frame, generationChanged);
 
   const sections = get(arrangement);
   if (sections.length === 0) return;
 
   const cutList = get(cuts);
   const totalSteps = get(arrangementTotalSteps);
-  const starts = get(sectionStarts);
   const beatGrid = get(analysisBeatGrid);
   const loop = get(arrangementLoopRegion);
   const top = get(rackTop);
@@ -379,7 +355,9 @@ function runSequencer(frame: TimelineFrame) {
     // Cuts are placed against the song, so the lookup wraps on the arrangement's
     // length rather than on the bar — bar 34 is its own step, not a repeat of 2.
     const songStep = totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step;
-    const at = arrangementStepToSeconds(songStep, sections, starts, beatGrid, frame.bpm);
+    // Same beat-grid mapping the lane paints with, so the loop gate agrees
+    // with where the cut is drawn.
+    const at = stepSeconds(songStep, beatGrid, frame.bpm);
     if (!cutStepAllowedInLoop(at, loop)) continue;
     const slotIndex = cutAtStep(cutList, songStep);
     if (slotIndex == null) continue;

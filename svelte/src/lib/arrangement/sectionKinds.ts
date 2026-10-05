@@ -117,7 +117,7 @@ export function renumberSectionLabels(
     return {
       ...section,
       kind,
-      name: formatSectionName(kind, next),
+      name: section.customName ?? formatSectionName(kind, next),
     };
   });
 }

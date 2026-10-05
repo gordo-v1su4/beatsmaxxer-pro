@@ -1,5 +1,5 @@
 import { beatAt } from '$lib/stores/triggerLane';
-import { ARRANGEMENT_STEPS, type ArrangementSection } from '$lib/stores/arrangement';
+import { ARRANGEMENT_STEPS } from '$lib/stores/arrangement';
 
 export interface SongTimeline {
   /** Wall-clock span of the arrangement view — 0 is the file start (DAW-style). */
@@ -224,37 +224,6 @@ export function secondsToCutStep(
   totalSteps: number,
 ): number {
   return Math.min(totalSteps, Math.max(0, Math.round(secondsStep(seconds, beatGrid, bpm))));
-}
-
-export function arrangementStepToSeconds(
-  step: number,
-  sections: readonly ArrangementSection[],
-  sectionStarts: readonly number[],
-  beatGrid: readonly number[],
-  bpm: number,
-): number {
-  const bar = Math.floor(step / ARRANGEMENT_STEPS);
-  const sixteenth = step % ARRANGEMENT_STEPS;
-
-  for (let i = 0; i < sections.length; i++) {
-    const startBar = sectionStarts[i]!;
-    const endBar = startBar + sections[i]!.bars;
-    if (bar < startBar || bar >= endBar) continue;
-
-    const section = sections[i]!;
-    if (section.timeStartS != null && section.timeEndS != null) {
-      const off = beatGridSongOffset(beatGrid);
-      const sectionStart = i === 0 ? 0 : Math.max(0, section.timeStartS - off);
-      const sectionEnd = Math.max(sectionStart, section.timeEndS - off);
-      const barsInto = bar - startBar;
-      const span = sectionEnd - sectionStart;
-      const barDur = span / section.bars;
-      return sectionStart + barsInto * barDur + (sixteenth / ARRANGEMENT_STEPS) * barDur;
-    }
-    return stepSeconds(step, beatGrid, bpm);
-  }
-
-  return stepSeconds(step, beatGrid, bpm);
 }
 
 /** @deprecated Prefer songTimeline + timePercent. */
