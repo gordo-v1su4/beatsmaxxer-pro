@@ -66,6 +66,12 @@ The Windows desktop shell lives on `main`. Push a `v*` tag to build the installe
 
 Issues live in GitHub (`gordo-v1su4/beatsmaxxer-pro`) via the `gh` CLI. See [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md).
 
+### PR review bot (Open Code Review)
+
+Every PR gets an automated code review from the **Open Code Review bot** ([alibaba/open-code-review](https://github.com/alibaba/open-code-review), workflow [`.github/workflows/ocr-review.yml`](./.github/workflows/ocr-review.yml)). It runs once when the PR is opened, takes ~10–40 min, and posts **inline review comments** as `github-actions[bot]` (severity badges: bug / performance / maintainability).
+
+Before merging: wait for the `Open Code Review bot` check to finish, read its comments (`gh api repos/gordo-v1su4/beatsmaxxer-pro/pulls/<n>/comments`), fix real findings on the branch, then merge. To re-review an open PR after pushes, run the workflow manually with `pr_number`. CodeRabbit also appears on PRs but currently skips reviews.
+
 ### Triage labels
 
 Five canonical roles mapped to GitHub labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md).

@@ -1,5 +1,5 @@
 # Canonical template: docs/opencode-review-github-actions.md
-name: OpenCodeReview PR Review
+name: Open Code Review bot (automated PR review)
 
 on:
   pull_request_target:
@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   review:
+    name: Open Code Review bot
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
