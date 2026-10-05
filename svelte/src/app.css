@@ -279,10 +279,13 @@ input[type='range']::-moz-range-thumb {
 	overflow: hidden;
 }
 
-/* The desktop rack shares the available viewport below the top bar. */
+/* On the desktop rack, the module rows define the performance surface's
+   bottom edge. Do not stretch the workspace to fill a taller viewport: that
+   makes the side rails continue below the last module row. A window shorter
+   than the rack scrolls (.app-viewport) rather than squeezing it. */
 @media (min-width: 961px) {
 	.rack-workspace {
-		flex: 1 1 0%;
+		flex: 0 0 auto;
 	}
 
 	.side-panels {
@@ -357,7 +360,7 @@ input[type='range']::-moz-range-thumb {
 	min-height: var(--mix-strip-height);
 	background: linear-gradient(180deg, #111214, #0f1012);
 	border-top: 2px solid var(--border);
-	padding: 0 10px 0 6px;
+	padding: 0 10px 0 0;
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -365,6 +368,18 @@ input[type='range']::-moz-range-thumb {
 	isolation: isolate;
 	overflow: hidden;
 	z-index: 2;
+}
+/* Matches .rack-section-rail (Section.svelte): same width, centring and
+   divider, so the MIX label sits in the same column as the section labels. */
+.mix-strip-rail {
+	align-self: stretch;
+	width: 11px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	background: linear-gradient(180deg, #15181b, #0d0f11);
+	border-right: 1px solid var(--edge-dark);
 }
 
 .mix-strip-presets {
@@ -574,13 +589,11 @@ input[type='range']::-moz-range-thumb {
 	display: none;
 }
 
-/* Keep the complete performance surface inside a maximized laptop-height
-   desktop window. Width/height ratios stay intact; only chrome whitespace and
-   the program monitor's display footprint tighten. */
+/* Laptop-height windows tighten the rack rows' floors. The program monitor is
+   deliberately not shrunk here: it is sized from the rack width
+   (MainViewer.svelte) so it always stays the dominant picture; a short window
+   scrolls instead. */
 @media (min-width: 961px) and (max-height: 900px) {
-	.main-viewer {
-		height: clamp(210px, 24vh, 260px) !important;
-	}
 	.top-rack-row {
 		min-height: 270px !important;
 	}
@@ -633,7 +646,8 @@ input[type='range']::-moz-range-thumb {
 
 /* Fit the performance rack to the viewport while keeping preview proportions. */
 @media (min-width: 961px) {
-	.app-shell,
+	/* Perform is not zoomed: below its minimum size the page scrolls, so its
+	   buttons never shrink. Arrange and Timing still fit the viewport. */
 	.app-shell:has(.arrange-workspace),
 	.app-shell:has(.timing-workspace) {
 		/* Keep a usable control budget when browser chrome, display scaling or
@@ -645,30 +659,23 @@ input[type='range']::-moz-range-thumb {
 		height: calc(100dvh / var(--desktop-fit));
 		min-height: 0;
 	}
-	.rack-workspace:not(.timing-workspace) .rack-main {
-		display: grid;
-		grid-template-rows: auto minmax(0, 1.1fr) minmax(0, 1fr) auto;
-	}
+	/*
+	  Rack previews are never squeezed to fit the height. Every preview is the
+	  full width of its card at 16:9, so all ten are the same size and none get
+	  side bars. Fitting a short window is the zoom above's job: it scales the
+	  whole surface — monitor, rack and rails together — so proportions hold.
+
+	  This replaces a per-card rule that shrank each preview to the height left
+	  in its own card. Cards carry different controls, so on a short window
+	  every preview came out a different size with bars beside it, and the rack
+	  previews could outgrow the program monitor.
+	*/
+	/* The rack column is the width the program monitor sizes against. */
+	.rack-workspace:not(.timing-workspace) .rack-main { container-type: inline-size; }
 	.rack-workspace:not(.timing-workspace) .rack-row {
 		grid-template-columns: repeat(5, minmax(var(--rack-module-width), 1fr));
-		height: 100% !important;
-		min-height: 0 !important;
 	}
-	.rack-module { min-height: 0; height: 100%; }
-	.module-media-stack {
-		flex: 1 1 0;
-		min-height: 0;
-		container-type: size;
-	}
-	.module-media-stack > :not(.module-preview) { flex-shrink: 0; }
-	.module-preview {
-		min-height: 0;
-		width: min(100%, max(0px, calc((100cqh - var(--module-patch-row-height) - 2px) * 16 / 9)));
-	}
-	.module-media-stack.midi-ui-open .module-preview {
-		width: min(100%, max(0px, calc((100cqh - var(--module-patch-midi-chrome) - var(--module-midi-lane-height) - 2px) * 16 / 9)));
-	}
-	.rack-module.is-collapsed .module-preview { width: min(100%, calc(100cqh * 16 / 9)); }
+	.module-preview { width: 100%; }
 }
 
 /* Timing has preview-only rows at every desktop height. */
