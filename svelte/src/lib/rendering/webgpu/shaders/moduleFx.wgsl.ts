@@ -1789,3 +1789,27 @@ export const MODULE_FX_IDLE_WGSL = MODULE_FX_WGSL
     'textureSampleLevel(videoTex, videoSampler, clamp(uv, vec2f(0.0), vec2f(1.0)), 0.0)'
   );
 
+/** Every mode a pipeline is built for: 0 is the dry pass-through, the rest are
+ * the catalog's effects. */
+export const SHADER_EFFECT_MODES: readonly number[] = [0, ...new Set(Object.values(SHADER_EFFECT_MODE))];
+
+const RUNTIME_MODE_SELECT = 'let mode = floor(u.effectMode + 0.5);';
+
+/**
+ * The FX shader with its effect mode baked in as a constant.
+ *
+ * Compiling the uber-shader with the mode read from the uniform costs ~11s
+ * cold on an RTX 5090 (D3D12), per variant. With the mode a `const` the
+ * backend folds the dispatch down to one effect and the same source compiles
+ * in ~0.1s. So the engine builds one small pipeline per mode instead of one
+ * huge one, and nothing else about the shader changes — `u.effectMode` is
+ * still written, it is just no longer what selects the branch.
+ */
+export function moduleFxWgslForMode(mode: number, variant: 'video' | 'idle'): string {
+  const base = variant === 'video' ? MODULE_FX_WGSL : MODULE_FX_IDLE_WGSL;
+  if (base.split(RUNTIME_MODE_SELECT).length !== 3) {
+    throw new Error('moduleFx WGSL: expected exactly two runtime mode selects to specialise');
+  }
+  return base.replaceAll(RUNTIME_MODE_SELECT, `const mode = ${mode.toFixed(1)};`);
+}
+
