@@ -21,7 +21,9 @@
 </script>
 
 <div class="mix-strip">
-  <VertLabel text="MIX" {color} />
+  <!-- Same 11px rail as a section's label column, so MIX lines up with
+       PACK / FIRE / SHAPE above it on every card. -->
+  <span class="mix-strip-rail"><VertLabel text="MIX" {color} /></span>
   {#if presets && presets.length > 0}
     <div class="mix-strip-presets">
       <span class="mix-strip-presets-label">PRESET</span>

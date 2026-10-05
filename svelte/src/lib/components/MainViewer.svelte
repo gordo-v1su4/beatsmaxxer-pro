@@ -140,9 +140,17 @@
 </div>
 
 <style>
+  /*
+    The program monitor is the main picture, so it is sized from the rack's
+    width, not the window's height: 21% of the rack's width tall (plus the
+    12px band padding) is just under two rack columns at 16:9, so the screen
+    is always ~1.9x the size of any preview. It used to
+    follow the viewport height, which on a short window shrank it down to a
+    preview's size. The page scrolls below the minimum instead.
+  */
   .main-viewer {
     flex: 0 0 auto;
-    height: clamp(260px, 28vh, 460px);
+    height: clamp(260px, calc(21cqw + 12px), 560px);
     display: flex;
     align-items: stretch;
     justify-content: center;
@@ -152,12 +160,6 @@
     padding: 6px;
     min-width: 0;
     container-type: size;
-  }
-
-  @media (min-width: 961px) and (max-height: 980px) {
-    .main-viewer {
-      height: clamp(200px, 22vh, 320px);
-    }
   }
 
   .pgm-screen {
