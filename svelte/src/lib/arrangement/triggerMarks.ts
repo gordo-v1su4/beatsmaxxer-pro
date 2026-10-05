@@ -1,14 +1,6 @@
 import { get } from 'svelte/store';
+import { cutsFromTriggerMarks, mergeCommittedCuts } from '$lib/arrangement/triggerCommit';
 import {
-  applyTake,
-  cutsFromRecordedClips,
-  cutsFromTriggerMarks,
-  mergeCommittedCuts,
-  type CommitMode,
-} from '$lib/arrangement/triggerCommit';
-import { secondsToCutStep } from '$lib/arrangement/timelineScale';
-import {
-  arrangementClips,
   arrangementTriggers,
   cuts,
   type ArrangementTrigger,
@@ -51,31 +43,4 @@ export function commitTriggerMarksToCuts(
     committed: committedCuts.length,
     skipped: Math.max(0, selected.length - committedCuts.length),
   };
-}
-
-/**
- * Commit the recorded take — the PGM cuts performed while REC was on — onto
- * the song's cut grid. Replace clears the take's own span first; overdub
- * layers it over what is there.
- */
-export function commitRecordedTake(
-  mode: CommitMode,
-  totalSteps: number,
-  beatGrid: readonly number[],
-  bpm: number,
-): CommitTriggerMarksResult {
-  const clips = get(arrangementClips);
-  if (clips.length === 0 || totalSteps <= 0) return { committed: 0, skipped: clips.length };
-  const take = cutsFromRecordedClips(clips, beatGrid, bpm, totalSteps);
-  const start = Math.min(...clips.map((clip) => clip.startSeconds));
-  const end = Math.max(...clips.map((clip) => clip.endSeconds ?? clip.startSeconds));
-  const span = {
-    startStep: secondsToCutStep(start, beatGrid, bpm, totalSteps),
-    endStep: Math.max(
-      secondsToCutStep(end, beatGrid, bpm, totalSteps),
-      secondsToCutStep(start, beatGrid, bpm, totalSteps) + 1,
-    ),
-  };
-  cuts.set(applyTake(get(cuts), take, mode, span));
-  return { committed: take.length, skipped: Math.max(0, clips.length - take.length) };
 }
