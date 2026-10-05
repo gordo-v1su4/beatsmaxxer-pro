@@ -12,6 +12,12 @@
     setArrangementMode,
   } from '$lib/arrangement/transportMode';
   import {
+    cancelArrangementExport,
+    exportState,
+    startArrangementExport,
+    type ExportRange,
+  } from '$lib/export/arrangementExport';
+  import {
     commitTriggerMarksToCuts,
     deleteTriggerMark,
     moveTriggerMark,
@@ -472,6 +478,16 @@
     draggingTrack = null;
   }
 
+  // ---- export (V1S-172) ----
+  let exportOpen = $state(false);
+  let exportRange = $state<ExportRange>('song');
+  let exportFps = $state<30 | 60>(30);
+
+  function formatClock(seconds: number) {
+    const s = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
   // ---- section editing (V1S-66) ----
 
   /** The one section the edit bar acts on: a single selection, else none. */
@@ -760,6 +776,17 @@
       title="Remove every cut in the arrangement"
     >CLEAR CUTS</button>
 
+    <span class="arr-export-wrap">
+      <button
+        type="button"
+        class="arr-btn"
+        data-active={exportOpen || $exportState.status === 'recording'}
+        aria-expanded={exportOpen}
+        onclick={() => (exportOpen = !exportOpen)}
+        title="Export the arrangement as video — program out + song audio"
+      >{$exportState.status === 'recording' ? 'EXPORTING…' : 'EXPORT'}</button>
+    </span>
+
     <span class="arr-paint">
       <span class="arr-paint-label">PAINT</span>
       {#each Array(slotCount) as _, i (i)}
@@ -809,6 +836,43 @@
       }}
     />
   </header>
+
+  {#if exportOpen || $exportState.status === 'recording'}
+    <div class="arr-secbar arr-exportbar" role="group" aria-label="Export arrangement" style="--sec-hue:#9d7bff">
+      <span class="arr-secbar-name">EXPORT VIDEO</span>
+      {#if $exportState.status === 'recording'}
+        {@const s = $exportState}
+        <span class="arr-export-progress" aria-hidden="true">
+          <span style="width:{s.totalSeconds > 0 ? (s.elapsedSeconds / s.totalSeconds) * 100 : 0}%"></span>
+        </span>
+        <span class="arr-secbar-meta" role="status">
+          {formatClock(s.elapsedSeconds)} / {formatClock(s.totalSeconds)} · RECORDING IN REALTIME
+        </span>
+        <button type="button" class="arr-btn" onclick={cancelArrangementExport}>CANCEL</button>
+      {:else}
+        <span class="arr-secbar-meta">RANGE</span>
+        <span class="arr-mode" role="radiogroup" aria-label="Export range">
+          <button type="button" class="arr-btn" role="radio" aria-checked={exportRange === 'song'} data-active={exportRange === 'song'} onclick={() => (exportRange = 'song')}>SONG</button>
+          <button type="button" class="arr-btn" role="radio" aria-checked={exportRange === 'loop'} data-active={exportRange === 'loop'} disabled={!$arrangementLoopRegion} onclick={() => (exportRange = 'loop')} title={$arrangementLoopRegion ? 'Export the loop range' : 'Set a LOOP first'}>LOOP</button>
+        </span>
+        <span class="arr-secbar-meta">FPS</span>
+        <span class="arr-mode" role="radiogroup" aria-label="Frame rate">
+          <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 30} data-active={exportFps === 30} onclick={() => (exportFps = 30)}>30</button>
+          <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 60} data-active={exportFps === 60} onclick={() => (exportFps = 60)}>60</button>
+        </span>
+        <button
+          type="button"
+          class="arr-btn arr-btn-rec"
+          onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps })}
+          title="Plays the range in PLAY mode and records it — takes as long as the range"
+        >START EXPORT</button>
+        {#if $exportState.status === 'error'}
+          <span class="arr-export-error" role="alert">{$exportState.message}</span>
+        {/if}
+        <span class="arr-secbar-hint">Realtime · records the program monitor at its current size · WebM</span>
+      {/if}
+    </div>
+  {/if}
 
   {#if editSection && editIndex != null}
     <div class="arr-secbar" style="--sec-hue:{editSection.hue}" role="toolbar" aria-label="Edit {editSection.name}">
@@ -1553,6 +1617,26 @@
     width: 1px;
     height: 14px;
     background: #1e2226;
+  }
+
+  .arr-export-progress {
+    position: relative;
+    width: 160px;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: #1e2226;
+  }
+  .arr-export-progress > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: #9d7bff;
+  }
+  .arr-export-error {
+    color: #ff8fa3;
+    font-family: var(--font-ui);
+    font-size: 7px;
+    letter-spacing: 0.1em;
   }
 
   .arr-mode {
