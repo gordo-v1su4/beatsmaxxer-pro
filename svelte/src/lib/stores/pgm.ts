@@ -15,6 +15,14 @@ export const PGM_INTERVALS = [
 
 export const pgmSource = writable<ModuleType>('transition');
 export const queuedPgmSource = writable<ModuleType | null>(null);
+/**
+ * Launch quantize for hand cuts, in beats: a queued source lands on the next
+ * bar line (Ableton's global launch quantize, 1 Bar) regardless of the
+ * RAND/LINEAR cadence in intervalBeats.
+ */
+export const PGM_LAUNCH_QUANTIZE_BEATS = 4;
+/** Beat the queued source will land on, or null when nothing is queued. */
+export const queuedCutBeat = writable<number | null>(null);
 export const intervalBeats = writable(4);
 export const feel = writable<PgmFeel>(0);
 export const autoRandom = writable(false);

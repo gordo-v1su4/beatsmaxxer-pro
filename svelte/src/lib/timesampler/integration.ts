@@ -45,7 +45,14 @@ export interface PgmScheduleInput<T> {
   queued: T | null;
   autoRandom: boolean;
   linear?: boolean;
+  /** Cadence for RAND / LINEAR auto-advance. */
   intervalBeats: number;
+  /**
+   * Launch quantize for a manually queued source (Ableton's global launch
+   * quantize). Independent of the cadence, so a fast RAND interval doesn't
+   * make hand cuts land on single beats. Defaults to `intervalBeats`.
+   */
+  queueIntervalBeats?: number;
   feel: PgmFeel;
 }
 
@@ -53,6 +60,8 @@ export interface PgmScheduleOutput<T> {
   selected: T | null;
   consumedQueued: boolean;
   nextBoundaryBeat: number | null;
+  /** Beat the queued source will land on, while one is queued. */
+  queuedBoundaryBeat: number | null;
 }
 
 export interface PgmPreparation<T> {
@@ -207,6 +216,11 @@ export class LiveScheduleRuntime<T = string> {
   private lastTriggerGeneration: number | null = null;
   private pgmGeneration: number | null = null;
   private pgmNextBoundary: number | null = null;
+  /** Where the current queued source lands, and which source it was set for. */
+  private pgmQueueBoundary: number | null = null;
+  private pgmQueuedFor: T | null = null;
+  /** Beat of the previous advance — a queue set between frames was set then. */
+  private pgmLastBeat: number | null = null;
   private pgmConfigurationKey = "";
   private pgmRandomState: number;
   private accent: LiveTimeSamplerAccent | null = null;
@@ -374,10 +388,14 @@ export class LiveScheduleRuntime<T = string> {
     const input = this.pgmInput;
     if (input === null || !transport.playing) {
       this.pgmNextBoundary = null;
+      this.pgmQueueBoundary = null;
+      this.pgmQueuedFor = null;
+      this.pgmLastBeat = null;
       return {
         selected: null,
         consumedQueued: false,
         nextBoundaryBeat: null,
+        queuedBoundaryBeat: null,
       };
     }
 
@@ -405,17 +423,43 @@ export class LiveScheduleRuntime<T = string> {
 
     let selected: T | null = null;
     let consumedQueued = false;
+
+    // A queued source keeps its own boundary: the next launch-quantize line
+    // from when it was queued (or re-queued, or the transport jumped).
+    if (input.queued !== null) {
+      if (this.pgmQueuedFor !== input.queued || this.pgmQueueBoundary === null || discontinuity) {
+        this.pgmQueuedFor = input.queued;
+        this.pgmQueueBoundary = nextQuantizedBeat(
+          discontinuity || this.pgmLastBeat === null ? transport.beatPosition : this.pgmLastBeat,
+          input.queueIntervalBeats ?? input.intervalBeats,
+          input.feel,
+        );
+      }
+      if (transport.beatPosition + 1e-9 >= this.pgmQueueBoundary) {
+        selected = input.queued;
+        consumedQueued = true;
+        this.pgmInput = { ...input, queued: null };
+        this.pgmQueueBoundary = null;
+        this.pgmQueuedFor = null;
+      }
+    } else {
+      this.pgmQueueBoundary = null;
+      this.pgmQueuedFor = null;
+    }
+    const queuePending = input.queued !== null && !consumedQueued;
+    this.pgmLastBeat = transport.beatPosition;
+
     while (
       this.pgmNextBoundary !== null &&
       transport.beatPosition + 1e-9 >= this.pgmNextBoundary
     ) {
-      if (input.queued !== null && !consumedQueued) {
-        selected = input.queued;
-        consumedQueued = true;
-        this.pgmInput = { ...input, queued: null };
-      } else if (input.queued === null && input.linear && !input.autoRandom && input.sources.length > 1) {
+      // A hand cut owns the program while it is queued or just landed; the
+      // cadence only advances its clock.
+      if (queuePending || consumedQueued) {
+        // no auto-advance
+      } else if (input.linear && !input.autoRandom && input.sources.length > 1) {
         selected = input.sources[(input.sources.indexOf(selected ?? input.active)+1)%input.sources.length];
-      } else if (input.queued === null && input.autoRandom) {
+      } else if (input.autoRandom) {
         const candidates = input.sources.filter(
           (source) => source !== (selected ?? input.active),
         );
@@ -441,6 +485,7 @@ export class LiveScheduleRuntime<T = string> {
       selected,
       consumedQueued,
       nextBoundaryBeat: this.pgmNextBoundary,
+      queuedBoundaryBeat: queuePending ? this.pgmQueueBoundary : null,
     };
   }
 }

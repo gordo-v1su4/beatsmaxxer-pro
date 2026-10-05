@@ -4,6 +4,7 @@
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
+  import { queuedCutBeat, queuedPgmSource } from '$lib/stores/pgm';
   import {
     arrangementMode,
     arrangementOverridden,
@@ -37,7 +38,9 @@
     rackBottom,
     moduleParams,
     midiLayers,
-    MAX_RACK_SLOTS_PER_ROW
+    MAX_RACK_SLOTS_PER_ROW,
+    currentRackSlotForModule,
+    rackSlotIndex
   } from '$lib/stores/rack';
   import {
     firingTimes,
@@ -413,6 +416,19 @@
   });
 
   const playheadSeconds = $derived($transportDisplay.time);
+
+  /**
+   * A queued hand cut, drawn ahead at the bar it will land on. Hand cuts are
+   * launch-quantized to the next bar, so where they land is known the moment
+   * they're queued — the lane shows it before the playhead gets there.
+   */
+  const queuedGhost = $derived.by(() => {
+    if ($queuedCutBeat == null || !$queuedPgmSource) return null;
+    const slot = currentRackSlotForModule($queuedPgmSource);
+    const slotIndex = slot ? rackSlotIndex(slot) : null;
+    if (slotIndex == null) return null;
+    return { slotIndex, seconds: stepSeconds($queuedCutBeat * 4, $analysisBeatGrid, bpm) };
+  });
 
   /** PGM occupancy clips — open ends extend to the playhead while REC is on. */
   const clipsBySlot = $derived.by(() => {
@@ -1084,6 +1100,13 @@
                 }}
               ></span>
             {/each}
+          {/if}
+          {#if queuedGhost?.slotIndex === slotIndex}
+            <span
+              class="arr-cut arr-cut-ghost"
+              style="left:{timePct(queuedGhost.seconds)}%;--ghost-color:{info?.color ?? '#5f7378'}"
+              title="Queued — lands on the next bar"
+            ></span>
           {/if}
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
             <span
@@ -1933,6 +1956,22 @@
     margin-left: -1px;
     border-radius: 1px;
     z-index: 2;
+  }
+
+  /* Drawn ahead: an outline in the slot's colour, blinking in step with the
+     PGM rail's queued state, until the playhead reaches it. Opacity only, so
+     it stays on the compositor. */
+  .arr-cut-ghost {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--ghost-color);
+    animation: ghost-blink 0.5s steps(2, jump-none) infinite;
+  }
+  @keyframes ghost-blink {
+    from { opacity: 1; }
+    to { opacity: 0.35; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .arr-cut-ghost { animation: none; opacity: 0.7; }
   }
 
   .arr-chan {
