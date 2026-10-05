@@ -22,6 +22,7 @@ import {
   resetArrangementToDefault,
 } from "$lib/stores/arrangement";
 import { get } from "svelte/store";
+import { queuedCutBeat } from "$lib/stores/pgm";
 import { audioLatencyHint } from "$lib/platform/desktopPerformance";
 import { isMobileShell } from "$lib/mobile/mobileEnv";
 import { audioTimeline, TransportClock, type TimelineFrame } from "$lib/transport";
@@ -965,6 +966,10 @@ export class AudioEngine implements IAudioEngine {
       for (const listener of this.pgmSelectionListeners) {
         listener(frame.pgm.selected);
       }
+    }
+    // Where a queued hand cut will land, so the timeline can draw it ahead.
+    if (frame.pgm.queuedBoundaryBeat !== get(queuedCutBeat)) {
+      queuedCutBeat.set(frame.pgm.queuedBoundaryBeat);
     }
   }
 

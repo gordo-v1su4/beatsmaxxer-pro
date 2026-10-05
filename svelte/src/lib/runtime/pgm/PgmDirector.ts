@@ -5,6 +5,7 @@ import {
   pgmSource,
   queuedPgmSource,
   intervalBeats,
+  PGM_LAUNCH_QUANTIZE_BEATS,
   feel,
   autoRandom,
   linearOrder,
@@ -95,6 +96,7 @@ class PgmDirector {
       autoRandom: get(autoRandom),
       linear: get(linearOrder),
       intervalBeats: get(intervalBeats),
+      queueIntervalBeats: PGM_LAUNCH_QUANTIZE_BEATS,
       feel: get(feel)
     });
   }

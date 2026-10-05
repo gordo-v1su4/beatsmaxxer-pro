@@ -414,3 +414,19 @@ describe('linear PGM ordering',()=>{
     }
   });
 });
+
+describe('PGM launch quantize (hand cuts land on the bar)', () => {
+  test('a queued source waits for the next bar even with a 1-beat cadence, and reports where it lands', () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    const config = { active: 'a', sources: ['a', 'b'], queued: null as string | null, autoRandom: true, linear: false, intervalBeats: 1, queueIntervalBeats: 4, feel: 0 as const };
+    runtime.configurePgm(config);
+    runtime.advance(transport(1.2), []);
+    runtime.configurePgm({ ...config, queued: 'b' });
+    const waiting = runtime.advance(transport(2.1), []).pgm;
+    expect(waiting.queuedBoundaryBeat).toBe(4);
+    expect(waiting.selected).toBeNull();
+    expect(runtime.advance(transport(3.5), []).pgm.selected).toBeNull();
+    const landed = runtime.advance(transport(4.01), []).pgm;
+    expect(landed).toMatchObject({ selected: 'b', consumedQueued: true, queuedBoundaryBeat: null });
+  });
+});
