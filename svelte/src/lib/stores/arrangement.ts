@@ -358,16 +358,16 @@ export function applySectionBank(section: ArrangementSection) {
  */
 export function enterSection(section: ArrangementSection) {
   if (get(autoBank)) applySectionBank(section);
-  if (get(autoClips) && section.scene) void recallScene(section.scene);
+  if (get(autoClips) && section.scene) void recallScene(section.scene).catch(() => {});
 }
 
 /** Jump to a section, recalling its bank and clips when those are on. */
-export function selectSection(index: number, recallBank = true) {
+export function selectSection(index: number, recallRack = true) {
   const sections = get(arrangement);
   if (index < 0 || index >= sections.length) return;
   activeSectionIndex.set(index);
   barInSection.set(0);
-  if (recallBank) enterSection(sections[index]);
+  if (recallRack) enterSection(sections[index]);
 }
 
 /** Snapshot the rack's current clips as this section's scene. */

@@ -23,7 +23,11 @@ export type ArrangementMode = 'live' | 'play' | 'rec';
 
 export const arrangementMode = derived(
   [sequencerArmed, arrangementRecording],
-  ([armed, recording]): ArrangementMode => (recording ? 'rec' : armed ? 'play' : 'live'),
+  ([armed, recording]): ArrangementMode => {
+    if (recording) return 'rec';
+    if (armed) return 'play';
+    return 'live';
+  },
 );
 
 /**

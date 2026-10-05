@@ -47,16 +47,34 @@ export function sceneChanges(
   return changes;
 }
 
-/** Load the scene's clips into the rack. Only differing slots are touched. */
-export async function recallScene(scene: SectionScene): Promise<number> {
-  const { mediaRuntime } = await import('$lib/runtime/media/MediaRuntime');
+/**
+ * Load the scene's clips into the rack. Only differing slots are touched.
+ * Never rejects: a slot that fails to load is logged by name and the rest
+ * still land, so a mid-set recall degrades to "some clips stayed" rather than
+ * an unhandled rejection with no clue which slot broke.
+ */
+export async function recallScene(scene: SectionScene): Promise<{ loaded: number; failed: string[] }> {
   const changes = sceneChanges(scene, get(videoLayers));
-  const results = await Promise.all(
+  if (changes.length === 0) return { loaded: 0, failed: [] };
+  let mediaRuntime: typeof import('$lib/runtime/media/MediaRuntime').mediaRuntime;
+  try {
+    ({ mediaRuntime } = await import('$lib/runtime/media/MediaRuntime'));
+  } catch (err) {
+    console.error('[arrangement] clip recall could not load the media runtime:', err);
+    return { loaded: 0, failed: changes.map((c) => c.slotId) };
+  }
+  const results = await Promise.allSettled(
     changes.map(({ slotId, clip }) =>
       clip.file
         ? mediaRuntime.registerModuleFileClip(slotId, clip.file)
         : mediaRuntime.registerModuleClip(slotId, clip.name, clip.url),
     ),
   );
-  return results.filter((result) => result.status === 'success').length;
+  const failed: string[] = [];
+  results.forEach((result, i) => {
+    const ok = result.status === 'fulfilled' && result.value.status === 'success';
+    if (!ok) failed.push(`${changes[i]!.slotId} (${changes[i]!.clip.name})`);
+  });
+  if (failed.length > 0) console.warn(`[arrangement] clip recall left ${failed.length} slot(s) unchanged:`, failed);
+  return { loaded: results.length - failed.length, failed };
 }

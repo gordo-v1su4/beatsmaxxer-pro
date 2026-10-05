@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { currentRackSlotForModule, videoLayers, bypassed } from '$lib/stores/rack';
-import { pgmSource, queuedPgmSource, clearPgmQueue, cutImmediate, selectPgmSource } from '$lib/stores/pgm';
+import { pgmSource, queuedPgmSource, clearPgmQueue, cutImmediate, markManualCut, selectPgmSource } from '$lib/stores/pgm';
 import { viewMode } from '$lib/stores/rackUi';
 import { selectedTimingSlot, timingEditorCollapsed, timingStatus } from '$lib/stores/timing';
 import { transportDisplay } from '$lib/stores/transportDisplay';
@@ -37,10 +37,12 @@ export function selectRackSource(id: string): void {
   if (id === get(pgmSource)) { clearPgmQueue(); return; }
   if (!get(transportDisplay).playing) {
     clearPgmQueue();
+    markManualCut();
     cutImmediate(id);
   } else if (get(queuedPgmSource) === id) {
     clearPgmQueue();
   } else {
+    markManualCut();
     selectPgmSource(id);
     if (!timing) void mediaRuntime.prewarmModule(slot).catch(() => {});
   }
