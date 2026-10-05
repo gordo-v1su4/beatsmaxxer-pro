@@ -4,7 +4,7 @@ import {
   onSharedWebGpuDeviceLost
 } from './SharedGpuDevice';
 import { SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
-import { ModePipelineCache } from './ModePipelineCache';
+import { ModePipelineCache, type FxVariant } from './ModePipelineCache';
 import { IdleBindGroupCache } from './BindGroupCache';
 import { BLIT_WGSL, advanceFeedbackTo, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
@@ -374,7 +374,12 @@ export class WebGpuEngine {
         // belong to a dead device.
         if (this.modePipelines !== cache) return;
         if (!video || !idle) {
-          console.error('[webgpu] dry FX pipeline failed to build; previews cannot render');
+          console.error('[webgpu] dry FX pipeline failed to build; the next attach retries');
+          // Drop the memo so the next attach rebuilds instead of awaiting this
+          // settled failure forever.
+          cache.dispose();
+          this.modePipelines = null;
+          this.modePipelinesPromise = null;
           return;
         }
         this.fxPipeline = video;
@@ -384,12 +389,12 @@ export class WebGpuEngine {
     return this.modePipelinesPromise;
   }
 
-  /** The pipeline for this binding's effect, or the binding's own (dry)
-   * pipeline while the effect's is still compiling. Injected test bindings
-   * have no cache behind them and always get their own. */
-  private pipelineForMode(binding: CanvasBinding, pipeline: GPURenderPipeline, mode: number) {
+  /** The pipeline for this binding's effect, or `pipeline` (the binding's own
+   * dry one) while the effect's is still compiling or there is no cache, as
+   * for injected test bindings. The variant comes from the encode branch that
+   * picked the bind group, so pipeline and bind group layout always agree. */
+  private pipelineForMode(variant: FxVariant, pipeline: GPURenderPipeline, mode: number) {
     if (!this.modePipelines) return pipeline;
-    const variant = pipeline === binding.pipeline ? 'video' : 'idle';
     return this.modePipelines.get(variant, mode) ?? pipeline;
   }
 
@@ -962,6 +967,7 @@ export class WebGpuEngine {
     // one shot instead of a guessing round-trip.
     let bindGroup: GPUBindGroup;
     let pipeline = binding.idlePipeline;
+    let variant: FxVariant = 'idle';
     if (
       shaderHasVideo &&
       video &&
@@ -989,6 +995,7 @@ export class WebGpuEngine {
           this.taskExternalTextures ?? undefined
         ).bindGroup;
         pipeline = binding.pipeline;
+        variant = 'video';
         externalTextureImported = true;
         externalTextureBound = true;
       } catch {
@@ -1070,7 +1077,7 @@ export class WebGpuEngine {
           }
         ]
       });
-      fxPass.setPipeline(this.pipelineForMode(binding, pipeline, effectMode));
+      fxPass.setPipeline(this.pipelineForMode(variant, pipeline, effectMode));
       fxPass.setBindGroup(0, bindGroup);
       fxPass.draw(3);
       fxPass.end();
