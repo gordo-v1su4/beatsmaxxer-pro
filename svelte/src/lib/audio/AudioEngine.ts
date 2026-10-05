@@ -1026,6 +1026,29 @@ export class AudioEngine implements IAudioEngine {
     highFilter.connect(this.analyserHigh);
   }
 
+  /**
+   * A live MediaStream of exactly what the speakers get (post-gain, post
+   * time-stretch), for recording the program out. Tapped off the analyser the
+   * destination is fed from, so it can't drift from what is heard. `release`
+   * disconnects the tap.
+   */
+  createCaptureStream(): { stream: MediaStream; release: () => void } | null {
+    if (!this.ctx || !this.analyserFull) return null;
+    const destination = this.ctx.createMediaStreamDestination();
+    const tap = this.analyserFull;
+    tap.connect(destination);
+    return {
+      stream: destination.stream,
+      release: () => {
+        try {
+          tap.disconnect(destination);
+        } catch {
+          // already disconnected with the context
+        }
+      },
+    };
+  }
+
   private getTransportTime(): number {
     return audioTimeline.getPositionSeconds();
   }

@@ -407,6 +407,11 @@ export class WebGpuEngine {
       : { settled: 0, total: 0 };
   }
 
+  /** The element a binding draws into — the PGM monitor is what export records. */
+  getCanvas(id: string): HTMLCanvasElement | null {
+    return this.bindings.get(id)?.canvas ?? null;
+  }
+
   /** How many canvases have registered. */
   get boundCanvasCount() {
     return this.bindings.size;
