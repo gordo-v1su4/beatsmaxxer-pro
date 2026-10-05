@@ -131,21 +131,24 @@
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
     stepClock.done();
 
-    // init() only acquires the device; the stall users actually see is the
-    // module shader compiling as each canvas builds its pipeline. Hold the
-    // splash until a frame has genuinely been submitted, and cap the wait so a
-    // GPU that never reports ready cannot lock the app behind the overlay.
+    // init() builds only the dry FX pipelines; each effect's own pipeline
+    // compiles asynchronously after it (see ModePipelineCache). Hold the
+    // splash until a frame has been submitted and those have settled, so the
+    // first frame already has its effects, and cap the wait so a GPU that
+    // never reports ready cannot lock the app behind the overlay.
     if (cap.webgpu) {
       splashPhase = 'shaders';
-      // The long one. It is pushed before the loop for the same reason as the
-      // rest: pipeline creation blocks, so this label is what stays on screen
-      // through the stall.
       const stepShaders = bootStep('Compiling effect shaders');
       const deadline = performance.now() + 12000;
-      while (!webGpuEngine.hasRenderedFrame && performance.now() < deadline) {
-        splashTotal = webGpuEngine.boundCanvasCount;
-        splashDone = Math.min(splashTotal, splashDone + 1);
-        if (splashTotal > 0) stepShaders.note(`${splashDone} / ${splashTotal}`);
+      const warm = () => {
+        const { settled, total } = webGpuEngine.fxPipelineWarmup;
+        return total > 0 && settled >= total;
+      };
+      while ((!webGpuEngine.hasRenderedFrame || !warm()) && performance.now() < deadline) {
+        const { settled, total } = webGpuEngine.fxPipelineWarmup;
+        splashTotal = total;
+        splashDone = settled;
+        if (total > 0) stepShaders.note(`${settled} / ${total}`);
         // Raced against a timer, not a bare rAF. A surface that is not
         // compositing -- a background tab, and every in-app browser pane that
         // has not been scrolled into view -- never fires an animation frame at

@@ -3,7 +3,8 @@ import {
   getSharedWebGpuDevice,
   onSharedWebGpuDeviceLost
 } from './SharedGpuDevice';
-import { MODULE_FX_IDLE_WGSL, MODULE_FX_WGSL, SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
+import { SHADER_EFFECT_MODE } from './shaders/moduleFx.wgsl';
+import { ModePipelineCache } from './ModePipelineCache';
 import { IdleBindGroupCache } from './BindGroupCache';
 import { BLIT_WGSL, advanceFeedbackTo, createFeedbackPair, createFeedbackPlaceholder, feedbackReadView, feedbackWriteView, swapFeedback, type FeedbackPair } from './feedback';
 import { getModuleDef } from '$lib/modules/catalog';
@@ -208,9 +209,13 @@ export class WebGpuEngine {
    *
    * On the phone this is also what a resize costs: PGM reattaches to follow
    * its box, so a URL bar collapsing used to recompile both programs mid
-   * performance. */
-  private fxShaderModule: GPUShaderModule | null = null;
-  private idleShaderModule: GPUShaderModule | null = null;
+   * performance.
+   *
+   * They are further split per effect mode — see ModePipelineCache. The two
+   * fields below are the mode-0 (dry) pipelines a binding falls back to while
+   * its own effect's pipeline is still compiling. */
+  private modePipelines: ModePipelineCache | null = null;
+  private modePipelinesPromise: Promise<void> | null = null;
   private fxBindGroupLayout: GPUBindGroupLayout | null = null;
   private fxIdleBindGroupLayout: GPUBindGroupLayout | null = null;
   private fxPipeline: GPURenderPipeline | null = null;
@@ -258,8 +263,9 @@ export class WebGpuEngine {
     this.sampler = null;
     this.blitPipeline = null;
     this.blitBindGroupLayout = null;
-    this.fxShaderModule = null;
-    this.idleShaderModule = null;
+    this.modePipelines?.dispose();
+    this.modePipelines = null;
+    this.modePipelinesPromise = null;
     this.fxPipeline = null;
     this.fxIdlePipeline = null;
     this.fxBindGroupLayout = null;
@@ -324,15 +330,20 @@ export class WebGpuEngine {
       },
       primitive: { topology: 'triangle-list' }
     });
-    this.createModulePipelines(this.device);
+    await this.ensureModulePipelines(this.device);
     return true;
   }
 
-  /** Compile the shared module-FX programs. Called once from init so the cost
-   * lands during device acquisition rather than on the first canvas attach. */
-  private createModulePipelines(device: GPUDevice) {
-    this.fxShaderModule = device.createShaderModule({ code: MODULE_FX_WGSL });
-    this.idleShaderModule = device.createShaderModule({ code: MODULE_FX_IDLE_WGSL });
+  /**
+   * Build the shared module-FX programs. Called once from init so the cost
+   * lands during device acquisition rather than on the first canvas attach.
+   *
+   * Resolves as soon as the two dry (mode-0) pipelines exist — that is all a
+   * binding needs to render. Every effect's own pipeline keeps compiling in
+   * the background; `fxPipelineWarmup` reports how far that has got.
+   */
+  private ensureModulePipelines(device: GPUDevice): Promise<void> {
+    if (this.modePipelinesPromise) return this.modePipelinesPromise;
     this.fxBindGroupLayout = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
@@ -351,38 +362,52 @@ export class WebGpuEngine {
         { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
       ]
     });
-    this.fxPipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxBindGroupLayout] }),
-      vertex: { module: this.fxShaderModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: this.fxShaderModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }]
-      },
-      primitive: { topology: 'triangle-list' }
+    const cache = new ModePipelineCache(device, {
+      video: this.fxBindGroupLayout,
+      idle: this.fxIdleBindGroupLayout
     });
-    this.fxIdlePipeline = device.createRenderPipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [this.fxIdleBindGroupLayout] }),
-      vertex: { module: this.idleShaderModule, entryPoint: 'vertexMain' },
-      fragment: {
-        module: this.idleShaderModule,
-        entryPoint: 'fragmentMain',
-        targets: [{ format: 'rgba8unorm' }]
-      },
-      primitive: { topology: 'triangle-list' }
-    });
+    this.modePipelines = cache;
+    void cache.warmAll();
+    this.modePipelinesPromise = Promise.all([cache.build('video', 0), cache.build('idle', 0)]).then(
+      ([video, idle]) => {
+        // A device loss mid-build replaces the cache; the stale one's results
+        // belong to a dead device.
+        if (this.modePipelines !== cache) return;
+        if (!video || !idle) {
+          console.error('[webgpu] dry FX pipeline failed to build; previews cannot render');
+          return;
+        }
+        this.fxPipeline = video;
+        this.fxIdlePipeline = idle;
+      }
+    );
+    return this.modePipelinesPromise;
   }
 
-  /** True once at least one binding has been encoded and submitted. The splash
-      waits on this rather than on init(): init only acquires the device and the
-      blit pipeline, while the visible stall is the 52KB module shader compiling
-      as each canvas builds its pipeline. */
+  /** The pipeline for this binding's effect, or the binding's own (dry)
+   * pipeline while the effect's is still compiling. Injected test bindings
+   * have no cache behind them and always get their own. */
+  private pipelineForMode(binding: CanvasBinding, pipeline: GPURenderPipeline, mode: number) {
+    if (!this.modePipelines) return pipeline;
+    const variant = pipeline === binding.pipeline ? 'video' : 'idle';
+    return this.modePipelines.get(variant, mode) ?? pipeline;
+  }
+
+  /** True once at least one binding has been encoded and submitted. */
   get hasRenderedFrame() {
     return this.frameIndex > 0;
   }
 
-  /** How many canvases have registered — the denominator the splash counts
-      pipeline compilation against. */
+  /** How far the per-effect pipelines have got. The splash holds until this
+      settles so the first frame the user sees already has its effects. */
+  get fxPipelineWarmup() {
+    const cache = this.modePipelines;
+    return cache
+      ? { settled: cache.settledCount, total: cache.totalCount }
+      : { settled: 0, total: 0 };
+  }
+
+  /** How many canvases have registered. */
   get boundCanvasCount() {
     return this.bindings.size;
   }
@@ -460,6 +485,12 @@ export class WebGpuEngine {
       const ok = await this.init();
       if (!ok || !this.device) return false;
     }
+    // The device-loss path: handleDeviceLost() drops everything the dead
+    // device produced, and the re-attach that follows rebuilds it here.
+    if (!this.fxPipeline) {
+      await this.ensureModulePipelines(this.device);
+      if (!this.device || !this.fxPipeline) return false;
+    }
     const context = canvas.getContext('webgpu');
     if (!context) return false;
 
@@ -486,15 +517,11 @@ export class WebGpuEngine {
     const feedback = createFeedbackPair(this.device, w, h);
     const placeholderFb = this.placeholderFeedbackView!;
 
-    // Shared across every binding — see createModulePipelines(). A canvas that
-    // attaches before init finished still gets them, because the guard at the
-    // top of this method awaits init(). The null check also covers the
-    // device-loss path: handleDeviceLost() drops everything the dead device
-    // produced, and the re-attach that follows rebuilds it here.
+    // Shared across every binding — see ensureModulePipelines(), awaited at the
+    // top of this method.
     //
     // A binding still carries its own pipeline references rather than reading
     // the engine's, so injected test bindings can substitute one.
-    if (!this.fxPipeline) this.createModulePipelines(this.device);
     const pipeline = this.fxPipeline!;
     const idlePipeline = this.fxIdlePipeline!;
     const bindGroupLayout = this.fxBindGroupLayout!;
@@ -1043,7 +1070,7 @@ export class WebGpuEngine {
           }
         ]
       });
-      fxPass.setPipeline(pipeline);
+      fxPass.setPipeline(this.pipelineForMode(binding, pipeline, effectMode));
       fxPass.setBindGroup(0, bindGroup);
       fxPass.draw(3);
       fxPass.end();
@@ -1161,8 +1188,9 @@ export class WebGpuEngine {
     for (const id of [...this.bindings.keys()]) {
       this.detachCanvas(id);
     }
-    this.fxShaderModule = null;
-    this.idleShaderModule = null;
+    this.modePipelines?.dispose();
+    this.modePipelines = null;
+    this.modePipelinesPromise = null;
     this.fxPipeline = null;
     this.fxIdlePipeline = null;
     this.fxBindGroupLayout = null;
