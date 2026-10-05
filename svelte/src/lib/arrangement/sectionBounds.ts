@@ -32,3 +32,21 @@ export function resolveSectionBounds(
       };
     });
   }
+
+/**
+ * Which section the playhead is in, by position rather than by counting bars
+ * since the last transport reset — so a seek lands in the right section.
+ * Before the first band reads as the first; past the last end stays on the last.
+ */
+export function sectionIndexAtSeconds(
+  bounds: readonly { startSeconds: number }[],
+  seconds: number,
+): number {
+  if (bounds.length === 0) return -1;
+  let index = 0;
+  for (let i = 1; i < bounds.length; i++) {
+    if (seconds >= bounds[i]!.startSeconds) index = i;
+    else break;
+  }
+  return index;
+}

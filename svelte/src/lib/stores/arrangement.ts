@@ -9,7 +9,8 @@ import {
   renumberSectionLabels,
   type SectionKind,
 } from '$lib/arrangement/sectionKinds';
-import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop } from '$lib/stores/rack';
+import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop, videoLayers } from '$lib/stores/rack';
+import { captureScene, recallScene } from '$lib/arrangement/sectionScenes';
 
 export type ArrangementStructureStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -51,6 +52,26 @@ export interface ArrangementSection {
   /** Essentia wall-clock span — lanes align to these on the full song timeline. */
   timeStartS?: number;
   timeEndS?: number;
+  /** Operator's own label (e.g. DANCE BREAK). Survives renumbering. */
+  customName?: string;
+  /**
+   * The clips this section plays — which video sits in each rack slot. Paired
+   * with `bank` (which effect sits in each slot) it is the section's scene.
+   * Absent until the operator captures one.
+   */
+  scene?: SectionScene;
+}
+
+/** One rack slot's clip in a scene — enough to re-register it. */
+export interface SceneClip {
+  name: string;
+  url: string;
+  file?: File;
+}
+
+export interface SectionScene {
+  /** Rack slot id (top-0 … bottom-4) → its clip, or null for an empty slot. */
+  slots: Record<string, SceneClip | null>;
 }
 
 /** Total rack slots across both rows — the range a pattern step can address. */
@@ -289,6 +310,13 @@ export const barInSection = writable(0);
  */
 export const autoBank = writable(false);
 
+/**
+ * Whether entering a section reloads its captured clips into the rack. Off by
+ * default for the same reason as auto-bank, and separate from it so a section
+ * can recall its clips without rewriting the effects, or the other way round.
+ */
+export const autoClips = writable(false);
+
 /** Which rack slot a click paints into the grid. */
 export const paintSlotIndex = writable(0);
 
@@ -323,13 +351,41 @@ export function applySectionBank(section: ArrangementSection) {
   });
 }
 
-/** Jump to a section, recalling its bank when auto-bank is on. */
+/**
+ * What entering a section does to the rack: its bank when auto-bank is on, its
+ * captured clips when auto-clips is on. Both the playhead crossing into a
+ * section and a click on its strip come through here.
+ */
+export function enterSection(section: ArrangementSection) {
+  if (get(autoBank)) applySectionBank(section);
+  if (get(autoClips) && section.scene) void recallScene(section.scene);
+}
+
+/** Jump to a section, recalling its bank and clips when those are on. */
 export function selectSection(index: number, recallBank = true) {
   const sections = get(arrangement);
   if (index < 0 || index >= sections.length) return;
   activeSectionIndex.set(index);
   barInSection.set(0);
-  if (recallBank && get(autoBank)) applySectionBank(sections[index]);
+  if (recallBank) enterSection(sections[index]);
+}
+
+/** Snapshot the rack's current clips as this section's scene. */
+export function captureSectionScene(index: number) {
+  const scene = captureScene(get(videoLayers));
+  arrangement.update((sections) =>
+    sections.map((section, i) => (i === index ? { ...section, scene } : section)),
+  );
+}
+
+export function clearSectionScene(index: number) {
+  arrangement.update((sections) =>
+    sections.map((section, i) => {
+      if (i !== index) return section;
+      const { scene: _drop, ...rest } = section;
+      return rest;
+    }),
+  );
 }
 
 /** Paint or clear one step of the active section. */
@@ -380,7 +436,8 @@ export function updateSectionHue(index: number, hue: string) {
 export function rewindArrangement() {
   activeSectionIndex.set(0);
   barInSection.set(0);
-  if (get(autoBank)) applySectionBank(get(arrangement)[0]);
+  const first = get(arrangement)[0];
+  if (first) enterSection(first);
 }
 
 /** When set, playback loops between these wall-clock seconds (arrangement focus). */
