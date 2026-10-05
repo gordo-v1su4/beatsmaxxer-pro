@@ -107,9 +107,10 @@
     stepProbe.note(cap.webgpu ? 'WebGPU' : 'unavailable');
     stepProbe.done();
 
+    let engineReady = false;
     if (cap.webgpu) {
       const stepDevice = bootStep('Waking up the graphics card');
-      await webGpuEngine.init();
+      engineReady = await webGpuEngine.init();
       webGpuEngine.start();
       stepDevice.done();
     }
@@ -135,20 +136,19 @@
     // compiles asynchronously after it (see ModePipelineCache). Hold the
     // splash until a frame has been submitted and those have settled, so the
     // first frame already has its effects, and cap the wait so a GPU that
-    // never reports ready cannot lock the app behind the overlay.
-    if (cap.webgpu) {
+    // never reports ready cannot lock the app behind the overlay. An engine
+    // that never came up has nothing to compile, so it skips the wait.
+    if (cap.webgpu && engineReady) {
       splashPhase = 'shaders';
       const stepShaders = bootStep('Compiling effect shaders');
       const deadline = performance.now() + 12000;
-      const warm = () => {
-        const { settled, total } = webGpuEngine.fxPipelineWarmup;
-        return total > 0 && settled >= total;
-      };
-      while ((!webGpuEngine.hasRenderedFrame || !warm()) && performance.now() < deadline) {
-        const { settled, total } = webGpuEngine.fxPipelineWarmup;
+      for (;;) {
+        const { settled: compiled, total } = webGpuEngine.fxPipelineWarmup;
+        const warm = total > 0 && compiled >= total;
+        if ((webGpuEngine.hasRenderedFrame && warm) || performance.now() >= deadline) break;
         splashTotal = total;
-        splashDone = settled;
-        if (total > 0) stepShaders.note(`${settled} / ${total}`);
+        splashDone = compiled;
+        if (total > 0) stepShaders.note(`${compiled} / ${total}`);
         // Raced against a timer, not a bare rAF. A surface that is not
         // compositing -- a background tab, and every in-app browser pane that
         // has not been scrolled into view -- never fires an animation frame at

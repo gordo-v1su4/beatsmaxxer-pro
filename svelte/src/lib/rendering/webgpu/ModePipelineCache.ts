@@ -19,7 +19,9 @@ export type FxVariant = 'video' | 'idle';
 export class ModePipelineCache {
   private readonly ready = new Map<string, GPURenderPipeline>();
   private readonly pending = new Map<string, Promise<GPURenderPipeline | null>>();
-  private failed = 0;
+  /** Keys whose last build failed. A later build of the same key retries. */
+  private readonly failed = new Set<string>();
+  private readonly pipelineLayouts = new Map<FxVariant, GPUPipelineLayout>();
   private disposed = false;
 
   constructor(
@@ -46,18 +48,22 @@ export class ModePipelineCache {
     const module = this.device.createShaderModule({ code: moduleFxWgslForMode(mode, variant) });
     const promise = this.device
       .createRenderPipelineAsync({
-        layout: this.device.createPipelineLayout({ bindGroupLayouts: [this.layouts[variant]] }),
+        layout: this.layoutFor(variant),
         vertex: { module, entryPoint: 'vertexMain' },
         fragment: { module, entryPoint: 'fragmentMain', targets: [{ format: 'rgba8unorm' }] },
         primitive: { topology: 'triangle-list' }
       })
       .then((pipeline) => {
         if (this.disposed) return null;
+        this.failed.delete(key);
         this.ready.set(key, pipeline);
         return pipeline;
       })
       .catch((err) => {
-        this.failed += 1;
+        this.failed.add(key);
+        // Forget the attempt so the next get()/build() retries instead of
+        // pinning the dry fallback (or no previews at all) for the session.
+        this.pending.delete(key);
         console.error(`[webgpu] FX pipeline ${key} failed to build:`, err);
         return null;
       });
@@ -74,21 +80,27 @@ export class ModePipelineCache {
     return Promise.all(builds).then(() => undefined);
   }
 
-  get builtCount() {
-    return this.ready.size;
-  }
-
   /** Settled builds, successful or not — what a progress meter counts. */
   get settledCount() {
-    return this.ready.size + this.failed;
+    return this.ready.size + this.failed.size;
   }
 
   get totalCount() {
     return SHADER_EFFECT_MODES.length * 2;
   }
 
+  private layoutFor(variant: FxVariant): GPUPipelineLayout {
+    let layout = this.pipelineLayouts.get(variant);
+    if (!layout) {
+      layout = this.device.createPipelineLayout({ bindGroupLayouts: [this.layouts[variant]] });
+      this.pipelineLayouts.set(variant, layout);
+    }
+    return layout;
+  }
+
   dispose() {
     this.disposed = true;
+    this.pipelineLayouts.clear();
     this.ready.clear();
     this.pending.clear();
   }
