@@ -4,13 +4,14 @@
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
-  import { sequencerArmed } from '$lib/stores/sequencer';
   import {
-    beginArrangementRecording,
-    endArrangementRecording,
-  } from '$lib/arrangement/recorder';
+    arrangementMode,
+    arrangementOverridden,
+    backToArrangement,
+    recordOverdub,
+    setArrangementMode,
+  } from '$lib/arrangement/transportMode';
   import {
-    commitRecordedTake,
     commitTriggerMarksToCuts,
     deleteTriggerMark,
     moveTriggerMark,
@@ -471,20 +472,6 @@
     draggingTrack = null;
   }
 
-  /** REC layers onto the last take instead of starting a fresh one. */
-  let overdub = $state(false);
-  /** How COMMIT TAKE lays the take onto existing cuts. */
-  let takeMode = $state<'overdub' | 'replace'>('replace');
-
-  function toggleArrangementRecordingWithMode() {
-    if ($arrangementRecording) endArrangementRecording(playheadSeconds);
-    else beginArrangementRecording(playheadSeconds, !overdub);
-  }
-
-  function commitTake() {
-    commitRecordedTake(takeMode, totalSteps, $analysisBeatGrid, bpm);
-  }
-
   // ---- section editing (V1S-66) ----
 
   /** The one section the edit bar acts on: a single selection, else none. */
@@ -699,46 +686,52 @@
       title="Toggle beat grid lines"
     >GRID</button>
 
-    <button
-      type="button"
-      class="arr-btn arr-btn-rec"
-      data-active={$arrangementRecording}
-      onclick={toggleArrangementRecordingWithMode}
-      title="Record PGM lane occupancy and effect fires onto the timeline"
-    >{$arrangementRecording ? 'REC ●' : 'REC'}</button>
-    <button
-      type="button"
-      class="arr-btn"
-      data-active={overdub}
-      onclick={() => (overdub = !overdub)}
-      title={overdub
-        ? 'Overdub: the next REC adds to the last take'
-        : 'The next REC starts a fresh take (click for overdub)'}
-    >OVERDUB</button>
-    <span class="arr-take" role="group" aria-label="Commit recorded take">
+    <span class="arr-mode" role="radiogroup" aria-label="Arrangement transport mode">
       <button
         type="button"
         class="arr-btn"
-        disabled={$arrangementClips.length === 0 || $arrangementRecording}
-        onclick={commitTake}
-        title="Write the recorded PGM cuts onto the song's cut grid"
-      >COMMIT TAKE</button>
+        role="radio"
+        aria-checked={$arrangementMode === 'live'}
+        data-active={$arrangementMode === 'live'}
+        onclick={() => setArrangementMode('live', playheadSeconds)}
+        title="LIVE — cut by hand; the arrangement drives nothing and nothing is recorded (Ableton Session)"
+      >LIVE</button>
       <button
         type="button"
-        class="arr-btn arr-btn-mode"
-        onclick={() => (takeMode = takeMode === 'replace' ? 'overdub' : 'replace')}
-        title={takeMode === 'replace'
-          ? 'Replace: clears existing cuts inside the take span first'
-          : 'Merge: keeps existing cuts; the take wins where both land'}
-      >{takeMode === 'replace' ? 'REPLACE' : 'MERGE'}</button>
+        class="arr-btn"
+        role="radio"
+        aria-checked={$arrangementMode === 'play'}
+        data-active={$arrangementMode === 'play'}
+        onclick={() => setArrangementMode('play', playheadSeconds)}
+        title="PLAY — the timeline's cuts drive PGM; a manual cut takes over until BACK TO ARRANGEMENT"
+      >PLAY</button>
+      <button
+        type="button"
+        class="arr-btn arr-btn-rec"
+        role="radio"
+        aria-checked={$arrangementMode === 'rec'}
+        data-active={$arrangementMode === 'rec'}
+        onclick={() => setArrangementMode('rec', playheadSeconds)}
+        title="REC — your cuts are written into the timeline as it plays (Ableton Arrangement Record)"
+      >{$arrangementMode === 'rec' ? 'REC ●' : 'REC'}</button>
     </span>
     <button
       type="button"
       class="arr-btn"
-      data-active={$sequencerArmed}
-      onclick={() => sequencerArmed.update((v) => !v)}
-      title="Let the arrangement drive PGM cuts"
-    >{$sequencerArmed ? 'ARMED' : 'OFF'}</button>
+      data-active={$recordOverdub}
+      onclick={() => recordOverdub.update((v) => !v)}
+      title={$recordOverdub
+        ? 'Overdub: REC keeps existing cuts playing and adds yours'
+        : 'Replace: REC clears cuts under the playhead (click for overdub)'}
+    >OVERDUB</button>
+    {#if $arrangementOverridden}
+      <button
+        type="button"
+        class="arr-btn arr-btn-back"
+        onclick={backToArrangement}
+        title="You took over with a manual cut — hand PGM back to the timeline"
+      >BACK TO ARRANGEMENT</button>
+    {/if}
     <button
       type="button"
       class="arr-btn"
@@ -1562,13 +1555,15 @@
     background: #1e2226;
   }
 
-  .arr-take {
+  .arr-mode {
     display: flex;
     gap: 1px;
   }
-  .arr-btn-mode {
-    min-width: 46px;
-    justify-content: center;
+  /* Lit like Ableton's Back to Arrangement: something is overriding the timeline. */
+  .arr-btn-back {
+    border-color: #ff9f4388;
+    background: #ff9f431c;
+    color: #ffb46b;
   }
   .arr-section[data-selected='true'] {
     box-shadow: inset 0 0 0 1px rgba(184, 212, 220, 0.55);

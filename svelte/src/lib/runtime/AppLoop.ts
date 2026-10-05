@@ -1,6 +1,7 @@
 import { resolveSectionBounds, sectionIndexAtSeconds } from '$lib/arrangement/sectionBounds';
 import { cutStepAllowedInLoop } from '$lib/arrangement/sequencerLoopGate';
-import { stepSeconds } from '$lib/arrangement/timelineScale';
+import { secondsToCutStep, stepSeconds } from '$lib/arrangement/timelineScale';
+import { arrangementMode, arrangementOverridden, recordOverdub } from '$lib/arrangement/transportMode';
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
@@ -16,6 +17,7 @@ import {
 import {
   currentRackAssignments,
   currentRackSlotForModule,
+  rackSlotIndex,
   moduleParams,
   videoLayers,
   rackTop,
@@ -204,6 +206,9 @@ let lastPgmPrepSlot: string | null = null;
 let sequencerAbsoluteStep: number | null = null;
 /** Section the playhead was last found in; a change is a section entry. */
 let trackedSectionIndex = -1;
+/** What PGM was on (or queued to) last frame — a change the sequencer did not
+ * make is the performer cutting by hand. */
+let lastProgramSource: string | null = null;
 /** Rising-flux strike window for tapdelay when MIDI/analysis are quiet. */
 let liveOnsetStutterState: LiveOnsetStutterState | null = null;
 
@@ -335,6 +340,14 @@ function runSequencer(frame: TimelineFrame) {
   // about the sequencer.
   if (frame.playing) runArrangement(frame);
 
+  // A program change the sequencer did not make is the performer cutting by
+  // hand. Tracked every frame, armed or not, so switching mode never reads a
+  // stale change as a fresh cut.
+  const program = get(queuedPgmSource) ?? get(pgmSource);
+  const manualCut =
+    !generationChanged && lastProgramSource !== null && program !== lastProgramSource;
+  lastProgramSource = program;
+
   if (!frame.playing || !get(sequencerArmed)) {
     sequencerLastStep.set(crossed.currentAbsoluteStep % 16);
     return;
@@ -343,13 +356,51 @@ function runSequencer(frame: TimelineFrame) {
   const sections = get(arrangement);
   if (sections.length === 0) return;
 
-  const cutList = get(cuts);
+  const mode = get(arrangementMode);
   const totalSteps = get(arrangementTotalSteps);
   const beatGrid = get(analysisBeatGrid);
+
+  // PLAY: a manual cut takes the program off the arrangement (Ableton's
+  // Session-launch override) until BACK TO ARRANGEMENT.
+  if (mode === 'play' && manualCut) arrangementOverridden.set(true);
+
+  // REC: write the manual cut straight into the timeline.
+  const replacing = mode === 'rec' && !get(recordOverdub);
+  let writtenStep: number | null = null;
+  if (mode === 'rec' && manualCut && totalSteps > 0) {
+    const slot = currentRackSlotForModule(program);
+    const slotIndex = slot ? rackSlotIndex(slot) : null;
+    if (slotIndex != null) {
+      writtenStep = secondsToCutStep(frame.positionSeconds, beatGrid, frame.bpm, totalSteps);
+      const step = writtenStep;
+      cuts.update((list) =>
+        [...list.filter((c) => c.step !== step), { step, slotIndex }].sort((a, b) => a.step - b.step),
+      );
+    }
+  }
+
+  // Replace-record clears what the playhead passes over, Ableton's default
+  // arrangement record. Overdub leaves existing cuts playing.
+  if (replacing) {
+    const passed = new Set(
+      crossed.absoluteSteps.map((step) =>
+        totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step,
+      ),
+    );
+    if (writtenStep != null) passed.delete(writtenStep);
+    if (passed.size > 0) cuts.update((list) => list.filter((c) => !passed.has(c.step)));
+  }
+
+  if (get(arrangementOverridden) || replacing) {
+    sequencerLastStep.set(crossed.currentAbsoluteStep % ARRANGEMENT_STEPS);
+    return;
+  }
+
+  const cutList = get(cuts);
   const loop = get(arrangementLoopRegion);
   const top = get(rackTop);
   const bottom = get(rackBottom);
-  let selected = get(queuedPgmSource) ?? get(pgmSource);
+  let selected = program;
   for (const step of crossed.absoluteSteps) {
     sequencerLastStep.set(step % ARRANGEMENT_STEPS);
     // Cuts are placed against the song, so the lookup wraps on the arrangement's
@@ -369,6 +420,8 @@ function runSequencer(frame: TimelineFrame) {
       if (get(playbackWorkspace) !== 'timing') void mediaRuntime.prewarmModule(targetSlot).catch(() => {});
     }
   }
+  // The sequencer's own cuts are not the performer's.
+  lastProgramSource = get(queuedPgmSource) ?? get(pgmSource);
 }
 
 function syncControlledVideos(
