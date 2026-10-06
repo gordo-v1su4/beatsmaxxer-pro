@@ -24,6 +24,13 @@ jobs:
     name: Open Code Review bot
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # The npm-installed `ocr` wrapper upgrades itself in the background on
+      # each run whenever the pinned version isn't the latest. Mid-job that
+      # swaps the binary out between the action's Configure and Run steps,
+      # and the review fails with `ocr: command not found` (exit 127).
+      # Pin a version and turn self-update off so the job runs what it pins.
+      OCR_NO_UPDATE: '1'
     steps:
       - name: Resolve manually selected PR
         if: github.event_name == 'workflow_dispatch'
@@ -49,7 +56,7 @@ jobs:
         continue-on-error: true
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
-          ocr_version: '1.12.11'
+          ocr_version: '1.12.12'
           llm_url: https://hyper.charm.land/v1
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
           llm_model: qwen3.8-flash
@@ -57,7 +64,7 @@ jobs:
           llm_protocol: openai
           llm_extra_body: '{"thinking":{"type":"enabled"}}'
           llm_reasoning_effort: max
-          review_concurrency: '2'
+          review_concurrency: '1'
           sticky_summary: 'true'
           base_ref: ${{ steps.context.outputs.base_ref }}
           head_sha: ${{ steps.context.outputs.head_sha }}
@@ -67,7 +74,7 @@ jobs:
         if: ${{ !cancelled() && steps.primary.outcome == 'failure' }}
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
-          ocr_version: '1.12.11'
+          ocr_version: '1.12.12'
           llm_url: https://hyper.charm.land/v1
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
           llm_model: glm-5.3-flash
@@ -75,7 +82,7 @@ jobs:
           llm_protocol: openai
           llm_extra_body: '{"thinking":{"type":"enabled"}}'
           llm_reasoning_effort: max
-          review_concurrency: '2'
+          review_concurrency: '1'
           sticky_summary: 'true'
           # The primary attempt already uploaded this run's diagnostic artifacts.
           upload_artifacts: 'false'
