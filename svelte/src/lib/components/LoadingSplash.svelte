@@ -3,7 +3,8 @@
    * First-load title card. The stall it covers is real work, not a fake delay:
    * the GPU device has to be acquired, then the effect pipelines compile.
    *
-   * The mark is the Beatsmaxxer Pro logo rebuilt in HTML/CSS/SVG rather than
+   * The mark is the Beatsmaxxer Pro logo, its letterforms traced from the art
+   * (svelte/scripts/splash/trace.py) and filled here, rather than
    * shipped as a raster, so it stays sharp at any size and every colour can
    * be changed from one place: `--logo-hue` (and `--logo-shift` for the warm
    * accents) at the top of the style block. `?hue=210` overrides it in the
@@ -11,7 +12,7 @@
    *
    * The animation plays in beats: the ring opens, the bolt strikes and flashes
    * the screen, BEATSMAXXER slams in from the left with a chromatic glitch,
-   * the underline bar and PRO follow, then the sparkles come on. Once loading
+   * PRO follows, then the sparkles come on. Once loading
    * is done (`armed`), it shows PRESS ANY KEY until the minimum hold runs out.
    * On `go` the mark punches forward and the card fades out.
    *
@@ -28,6 +29,7 @@
    * step that is taking the time. The hairline above it is the liveness proof.
    */
   import { bootLog } from '$lib/stores/bootLog';
+  import { LOGO_BOLT, LOGO_PRO, LOGO_WORD } from './splashLogoPaths';
 
   interface Props {
     /** 'gpu' while the adapter/device is acquired, 'shaders' while pipelines
@@ -63,7 +65,6 @@
     return Number.isFinite(hue) && hue > 0 ? `--logo-hue:${hue}` : '';
   });
 
-  const WORD_REST = 'EATSMAXXER';
 </script>
 
 {#if phase !== 'ready'}
@@ -84,48 +85,62 @@
       <div class="logo" aria-hidden="true">
         <div class="ring"><span class="ring-stars"></span></div>
 
-        <svg class="bolt" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <!-- Shared shapes and paints. Each visible layer below is its own
+             <svg> rather than a <g>: transforms on SVG children run on the
+             main thread, transforms on an HTML-level <svg> box run on the
+             compositor, and only the latter keeps animating through a stall.
+             The letterforms are traced from the logo art (scripts/splash). -->
+        <svg class="defs" width="0" height="0">
           <defs>
-            <linearGradient id="bmx-bolt-fill" x1="0" y1="0" x2="1" y2="1">
+            <path id="bmx-word" d={LOGO_WORD} fill-rule="evenodd" />
+            <path id="bmx-pro" d={LOGO_PRO} fill-rule="evenodd" />
+            <path id="bmx-bolt" d={LOGO_BOLT} fill-rule="evenodd" />
+            <linearGradient id="bmx-face" gradientUnits="userSpaceOnUse" x1="0" y1="270" x2="0" y2="700">
+              <stop offset="0" style="stop-color: var(--c-face-top)" />
+              <stop offset="0.3" style="stop-color: var(--c-face-top)" />
+              <stop offset="0.42" style="stop-color: var(--c-face-mid)" />
+              <stop offset="0.5" style="stop-color: var(--c-face-mid)" />
+              <stop offset="0.66" style="stop-color: var(--c-face-low)" />
+              <stop offset="1" style="stop-color: var(--c-face-low)" />
+            </linearGradient>
+            <linearGradient id="bmx-pro-fill" gradientUnits="userSpaceOnUse" x1="0" y1="560" x2="0" y2="645">
+              <stop offset="0.1" style="stop-color: var(--c-pro-top)" />
+              <stop offset="0.5" style="stop-color: var(--c-face-mid)" />
+              <stop offset="0.9" style="stop-color: var(--c-pro-low)" />
+            </linearGradient>
+            <linearGradient id="bmx-bolt-fill" gradientUnits="userSpaceOnUse" x1="1300" y1="20" x2="700" y2="750">
               <stop offset="0" style="stop-color: var(--c-bolt-hi)" />
               <stop offset="0.55" style="stop-color: var(--c-bolt-mid)" />
               <stop offset="1" style="stop-color: var(--c-bolt-lo)" />
             </linearGradient>
-            <pattern id="bmx-bolt-lines" width="4" height="1.6" patternUnits="userSpaceOnUse">
-              <rect width="4" height="0.5" fill="rgba(0,0,0,0.22)" />
+            <pattern id="bmx-scan" width="20" height="9" patternUnits="userSpaceOnUse">
+              <rect width="20" height="2.5" fill="rgba(0,16,16,0.28)" />
             </pattern>
           </defs>
-          <polygon
-            class="bolt-edge"
-            points="72,0 18,56 46,50 0,100 84,38 56,44 100,0"
-          />
-          <polygon points="72,0 18,56 46,50 0,100 84,38 56,44 100,0" fill="url(#bmx-bolt-fill)" />
-          <polygon points="72,0 18,56 46,50 0,100 84,38 56,44 100,0" fill="url(#bmx-bolt-lines)" />
         </svg>
 
-        <span class="flare f1"></span>
-        <span class="flare f2"></span>
-        <span class="flare f3"></span>
+        <svg class="art bolt" viewBox="0 0 2000 848">
+          <use href="#bmx-bolt" class="edge" />
+          <use href="#bmx-bolt" fill="url(#bmx-bolt-fill)" />
+          <use href="#bmx-bolt" fill="url(#bmx-scan)" />
+        </svg>
 
-        <div class="word-slam">
-          <div class="word">
-            <!-- Stacked copies of one word: outline behind, glitch slivers,
-                 then the striped gradient face on top. They are siblings
-                 rather than pseudo-elements because `background-clip: text`
-                 paints below an element's own pseudo-elements. -->
-            <span class="layer outline"><span class="cap">B</span>{WORD_REST}</span>
-            <span class="layer ghost ga"><span class="cap">B</span>{WORD_REST}</span>
-            <span class="layer ghost gb"><span class="cap">B</span>{WORD_REST}</span>
-            <span class="layer face"><span class="cap">B</span>{WORD_REST}</span>
-          </div>
-          <span class="spike"></span>
+        <div class="art word-slam">
+          <svg class="art word-base" viewBox="0 0 2000 848">
+            <use href="#bmx-word" class="edge" />
+            <use href="#bmx-word" fill="url(#bmx-face)" />
+            <use href="#bmx-word" fill="url(#bmx-scan)" />
+          </svg>
+          <svg class="art ghost ga" viewBox="0 0 2000 848"><use href="#bmx-word" /></svg>
+          <svg class="art ghost gb" viewBox="0 0 2000 848"><use href="#bmx-word" /></svg>
         </div>
 
-        <span class="bar"></span>
-
-        <div class="pro-slide">
-          <span class="pro outline">PRO</span>
-          <span class="pro face">PRO</span>
+        <div class="art pro-slide">
+          <svg class="art" viewBox="0 0 2000 848">
+            <use href="#bmx-pro" class="edge" />
+            <use href="#bmx-pro" fill="url(#bmx-pro-fill)" />
+            <use href="#bmx-pro" fill="url(#bmx-scan)" />
+          </svg>
         </div>
 
         <span class="spark s1"></span>
@@ -224,7 +239,6 @@
     --t-impact: 760ms;
     --t-word: 640ms;
     --t-glitch: 1060ms;
-    --t-bar: 1000ms;
     --t-pro: 1150ms;
     --t-spark: 1300ms;
     --t-readout: 1350ms;
@@ -358,24 +372,34 @@
     opacity: 0.7;
   }
 
-  .bolt {
+  /* Every art layer shares the 2000 x 848 board, so they register exactly. */
+  .defs {
     position: absolute;
-    left: 35cqw;
-    top: 1cqw;
-    width: 30cqw;
-    height: 37cqw;
+    width: 0;
+    height: 0;
+  }
+  .art {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     overflow: visible;
+  }
+  /* The ink outline: a wide stroke drawn under the fill, which is how the
+     art separates its letters from the field. */
+  .edge {
+    fill: var(--c-ink);
+    stroke: var(--c-ink);
+    stroke-width: 9;
+    stroke-linejoin: round;
+  }
+
+  .bolt {
     filter: drop-shadow(0 0 1.2cqw oklch(0.8 0.2 calc(var(--h-warm) + 22) / 0.55));
+    transform-origin: 50% 50%;
     animation:
       strike 340ms cubic-bezier(0.6, 0, 0.9, 0.6) var(--t-bolt) both,
       flicker 3.7s steps(1, end) calc(var(--t-impact) + 1.4s) infinite;
-  }
-  .bolt-edge {
-    fill: none;
-    stroke: var(--c-ink);
-    stroke-width: 2.4;
-    stroke-linejoin: miter;
-    vector-effect: non-scaling-stroke;
   }
   @keyframes strike {
     0%   { opacity: 0; transform: translate(14cqw, -26cqw) scale(1.15); }
@@ -412,9 +436,6 @@
 
   /* ---- wordmark ---- */
   .word-slam {
-    position: absolute;
-    left: 16.5cqw;
-    top: 11.4cqw;
     animation: slam 560ms cubic-bezier(0.16, 1.02, 0.28, 1) var(--t-word) both;
   }
   @keyframes slam {
@@ -423,186 +444,48 @@
     100% { opacity: 1; transform: translateX(0) scaleX(1); }
   }
 
-  .word {
-    position: relative;
-    font-family: 'Anton', var(--font-ui), sans-serif;
-    font-size: 15cqw;
-    line-height: 1;
-    letter-spacing: -0.012em;
-    white-space: nowrap;
-    /* Condensed on X: the art's letters are taller than Anton's for their
-       width, and the word has to end inside the ring's right shoulder. */
-    transform: skewX(-14deg) scaleX(0.86);
-    transform-origin: 0 100%;
+  .word-base {
+    filter: drop-shadow(0 0 1.6cqw var(--c-glow));
   }
 
-  .layer {
-    display: block;
-  }
-  .layer:not(.face) {
-    position: absolute;
-    left: 0;
-    top: 0;
-  }
-
-  /* The big lead B of the original, hanging below the line. */
-  .cap {
-    display: inline-block;
-    font-size: 1.24em;
-    line-height: 0.8;
-    margin-right: -0.02em;
-    transform: translateY(0.06em);
-  }
-
-  .outline {
-    color: var(--c-ink);
-    -webkit-text-stroke: 0.09em var(--c-ink);
-    filter: drop-shadow(0 0.04em 0.06em rgba(0, 0, 0, 0.8));
-  }
-
-  .face {
-    position: relative;
-    /* Stripes first so they sit over the ramp: the CRT banding in the art. */
-    background-image:
-      repeating-linear-gradient(
-        180deg,
-        transparent 0 0.03em,
-        rgba(0, 20, 20, 0.2) 0.03em 0.045em
-      ),
-      linear-gradient(
-        180deg,
-        var(--c-face-top) 18%,
-        var(--c-face-top) 36%,
-        var(--c-face-mid) 52%,
-        var(--c-face-mid) 56%,
-        var(--c-face-low) 74%,
-        var(--c-face-low) 100%
-      );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-
+  /* Chromatic slivers: the same silhouette in two off-hues, knocked sideways
+     for a few frames on landing and then every few seconds. */
   .ghost {
     opacity: 0;
     mix-blend-mode: screen;
   }
   .ga {
-    color: var(--c-ghost-a);
+    fill: var(--c-ghost-a);
     animation:
       glitch-a 280ms steps(1, end) var(--t-glitch) both,
       glitch-a 280ms steps(1, end) calc(var(--t-glitch) + 5s) infinite;
   }
   .gb {
-    color: var(--c-ghost-b);
+    fill: var(--c-ghost-b);
     animation:
       glitch-b 280ms steps(1, end) var(--t-glitch) both,
       glitch-b 280ms steps(1, end) calc(var(--t-glitch) + 5s) infinite;
   }
   @keyframes glitch-a {
-    0%   { opacity: 0.85; transform: translate(-0.035em, -0.01em); }
-    30%  { opacity: 0.6;  transform: translate(0.02em, 0.005em); }
-    60%  { opacity: 0.8;  transform: translate(-0.015em, 0); }
+    0%   { opacity: 0.7;  transform: translate(-0.6cqw, -0.15cqw); }
+    30%  { opacity: 0.5;  transform: translate(0.35cqw, 0.08cqw); }
+    60%  { opacity: 0.65; transform: translate(-0.25cqw, 0); }
     100% { opacity: 0;    transform: none; }
   }
   @keyframes glitch-b {
-    0%   { opacity: 0.8;  transform: translate(0.035em, 0.01em); }
-    30%  { opacity: 0.55; transform: translate(-0.025em, 0); }
-    60%  { opacity: 0.75; transform: translate(0.012em, -0.005em); }
+    0%   { opacity: 0.65; transform: translate(0.6cqw, 0.15cqw); }
+    30%  { opacity: 0.45; transform: translate(-0.4cqw, 0); }
+    60%  { opacity: 0.6;  transform: translate(0.2cqw, -0.08cqw); }
     100% { opacity: 0;    transform: none; }
-  }
-
-  /* The R's leg kicking out past the ring, bottom right. */
-  .spike {
-    position: absolute;
-    left: 67.5cqw;
-    top: 14.6cqw;
-    width: 9cqw;
-    height: 4.4cqw;
-    background: linear-gradient(160deg, var(--c-face-mid), var(--c-face-low) 60%);
-    clip-path: polygon(0 0, 30% 0, 100% 100%);
-    filter: drop-shadow(0 0 0.4cqw rgba(0, 0, 0, 0.9));
-  }
-
-  /* Speed flares off the B, tapering left. */
-  .flare {
-    position: absolute;
-    height: 0.9cqw;
-    right: 81cqw;
-    border-radius: 50%;
-    background: linear-gradient(90deg, transparent, var(--c-face-top) 70%, var(--c-face-mid));
-    transform-origin: 100% 50%;
-    animation: flare 360ms cubic-bezier(0.2, 0.9, 0.3, 1) calc(var(--t-word) + 180ms) both;
-  }
-  .f1 { top: 14.4cqw; width: 12cqw; }
-  .f2 { top: 16.3cqw; width: 8cqw; height: 0.6cqw; animation-delay: calc(var(--t-word) + 230ms); }
-  .f3 { top: 18cqw; width: 15cqw; height: 0.5cqw; opacity: 0.7; animation-delay: calc(var(--t-word) + 260ms); }
-  @keyframes flare {
-    0%   { opacity: 0; transform: scaleX(0); }
-    100% { opacity: 1; transform: scaleX(1); }
-  }
-
-  /* The striped underline that runs into PRO. */
-  .bar {
-    position: absolute;
-    left: 23cqw;
-    top: 28.6cqw;
-    width: 39cqw;
-    height: 3.2cqw;
-    border: 0.3cqw solid var(--c-ink);
-    background:
-      repeating-linear-gradient(180deg, transparent 0 0.45cqw, rgba(0, 0, 0, 0.18) 0.45cqw 0.65cqw),
-      linear-gradient(180deg, var(--c-face-mid) 0 30%, var(--c-face-low) 55%);
-    box-shadow: 0 0 1.4cqw oklch(0.9 0.17 var(--h-warm) / 0.35);
-    transform: skewX(-24deg);
-    transform-origin: 0 50%;
-    animation: bar 340ms cubic-bezier(0.2, 0.9, 0.3, 1) var(--t-bar) both;
-  }
-  @keyframes bar {
-    0%   { opacity: 0; transform: skewX(-24deg) scaleX(0); }
-    100% { opacity: 1; transform: skewX(-24deg) scaleX(1); }
   }
 
   /* ---- PRO ---- */
   .pro-slide {
-    position: absolute;
-    left: 62cqw;
-    top: 26.3cqw;
     animation: pro-in 460ms cubic-bezier(0.2, 1.25, 0.35, 1) var(--t-pro) both;
   }
   @keyframes pro-in {
     0%   { opacity: 0; transform: translateX(16cqw); }
     100% { opacity: 1; transform: translateX(0); }
-  }
-
-  .pro {
-    display: block;
-    font-family: 'Audiowide', var(--font-ui), sans-serif;
-    font-size: 8.6cqw;
-    line-height: 1;
-    letter-spacing: -0.02em;
-    transform: skewX(-16deg) scaleY(0.82);
-    transform-origin: 0 100%;
-  }
-  .pro.outline {
-    position: absolute;
-    left: 0;
-    top: 0;
-  }
-  .pro.face {
-    position: relative;
-    background-image:
-      repeating-linear-gradient(180deg, transparent 0 0.05em, rgba(0, 10, 30, 0.22) 0.05em 0.075em),
-      linear-gradient(
-        180deg,
-        var(--c-pro-top) 20%,
-        var(--c-face-mid) 50%,
-        var(--c-face-mid) 56%,
-        var(--c-pro-low) 76%
-      );
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
   }
 
   /* ---- sparkles ----
