@@ -4,9 +4,12 @@
 # Other repos call that workflow with `uses: ...@main`, but this repository is
 # public and proxmox-home is private: GitHub only lets private repositories call
 # a private repo's reusable workflow, so the call fails with "workflow was not
-# found". The job below is the shared implementation unchanged; the triggers are
-# the canonical caller's (proxmox-home/infra/github-actions/ocr-review.yml).
-# Re-sync from proxmox-home when the shared workflow changes.
+# found". The job below is the shared implementation with three hardening
+# changes from its own review (PR #39): the comment-posting helper is
+# SHA-256 verified, the Kimi key is scrubbed from the (public) diagnostic
+# artifacts, and an unused step output is gone. The triggers are the canonical
+# caller's (proxmox-home/infra/github-actions/ocr-review.yml). Re-sync from
+# proxmox-home when the shared workflow changes, keeping those three.
 name: Alibaba OpenCodeReview PR Review
 
 on:
@@ -35,6 +38,9 @@ jobs:
       OCR_VERSION: '1.12.12'
       # Keep posting behavior pinned independently of the native CLI release.
       OCR_POST_REF: a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+      # SHA-256 of scripts/github-actions/post-review-comments.js at OCR_POST_REF.
+      # It runs with a write-scoped token, so it is verified like the binary.
+      OCR_POST_SHA256: 1d5decf90627353f1e7a2cad291d4ee4ec0a661d9724b93b2d7d5246f33462e2
       OCR_LLM_TIMEOUT: '300'
     steps:
       - name: Resolve current open pull request
@@ -87,9 +93,10 @@ jobs:
           echo "$dir" >> "$GITHUB_PATH"
           "$dir/ocr" version
           # This upstream helper has only Node built-in dependencies.
-          curl --fail --silent --show-error --retry 3 \
+          curl --fail --silent --show-error --retry 3 --max-time 60 \
             "https://raw.githubusercontent.com/alibaba/open-code-review/${OCR_POST_REF}/scripts/github-actions/post-review-comments.js" \
             -o "$RUNNER_TEMP/ocr-post-review.cjs"
+          echo "${OCR_POST_SHA256}  $RUNNER_TEMP/ocr-post-review.cjs" | sha256sum --check -
 
       - name: Configure Kimi Code
         env:
@@ -121,7 +128,6 @@ jobs:
           result=$?
           wait "$progress_pid"
           rm -f "$fifo"
-          echo "exit_code=$result" >> "$GITHUB_OUTPUT"
           exit "$result"
 
       - name: Validate complete review output
@@ -145,6 +151,18 @@ jobs:
             const completed = new Set([...coverage.completed, ...coverage.reused].map(item => item.item_id));
             if (coverage.failed.length || coverage.waived.length || coverage.selected.some(item => !completed.has(item.item_id))) throw new Error('OCR did not review every selected item');
             core.info(`Complete review verified for ${manifest.input.resolved_head}: ${coverage.selected.length} selected items, ${result.comments.length} findings`);
+
+      # This repository is public, so its artifacts are too. ::add-mask:: only
+      # redacts the log, not uploaded files — scrub the key from them directly.
+      - name: Redact the Kimi key from diagnostics
+        if: always() && steps.review.outcome != 'skipped'
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: |
+          for f in "$RUNNER_TEMP/ocr-result.json" "$RUNNER_TEMP/ocr-stderr.log"; do
+            [ -f "$f" ] && perl -pi -e 's/\Q$ENV{KIMI_API_KEY}\E/***/g' "$f"
+          done
+          true
 
       - name: Upload review diagnostics
         if: always() && steps.review.outcome != 'skipped'
