@@ -28,8 +28,8 @@ jobs:
       # The npm-installed `ocr` wrapper upgrades itself in the background on
       # each run whenever the pinned version isn't the latest. Mid-job that
       # swaps the binary out between the action's Configure and Run steps,
-      # and the review fails with `ocr: command not found` (exit 127).
-      # Pin a version and turn self-update off so the job runs what it pins.
+      # and the review fails with `ocr: command not found` (exit 127). The
+      # static binary below avoids the wrapper; this is the belt to its braces.
       OCR_NO_UPDATE: '1'
     steps:
       - name: Resolve manually selected PR
@@ -50,6 +50,30 @@ jobs:
             if (pr.state !== 'open') throw new Error('The selected PR must be open');
             core.setOutput('base_ref', pr.base.ref);
             core.setOutput('head_sha', pr.head.sha);
+
+      # Run the release's static binary instead of the npm wrapper. The action
+      # still `npm install -g`s its own copy (hardcoded in the action), but this
+      # directory is prepended to PATH, so every `ocr` call resolves here. The
+      # static binary never self-updates and needs no npm at runtime.
+      - name: Install OpenCodeReview static binary
+        env:
+          OCR_VERSION: '1.12.12'
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/ocr-bin"
+          mkdir -p "$dir"
+          gh release download "v${OCR_VERSION}" -R alibaba/open-code-review \
+            -p opencodereview-linux-amd64 -p sha256sum.txt -D "$dir"
+          expected="$(grep 'opencodereview-linux-amd64$' "$dir/sha256sum.txt" | awk '{print $1}')"
+          actual="$(sha256sum "$dir/opencodereview-linux-amd64" | awk '{print $1}')"
+          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+            echo "::error::opencodereview-linux-amd64 checksum mismatch (expected '$expected', got '$actual')"
+            exit 1
+          fi
+          mv "$dir/opencodereview-linux-amd64" "$dir/ocr"
+          chmod +x "$dir/ocr"
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/ocr" version
 
       - name: Review with Qwen 3.8 Flash
         id: primary
