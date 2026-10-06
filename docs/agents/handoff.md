@@ -31,6 +31,11 @@ Read [`continuity.md`](./continuity.md) for the longer-running lanes.
 
 ## Next, in order
 
+> **Kimi Code has a 5-hour usage window.** The last #39 verification run (37410304750)
+> got `403 You've reached your 5-hour usage limit`. Every step around the model call
+> passed (both pinned hashes, token-less fetch, key scrub, upload). Space out review
+> runs, and don't re-dispatch a review that's still running.
+
 1. **Review what merged without a finished bot review: #32, #33, #34, #35, #38.**
    The workflow only reviews *open* PRs, so open a temporary **draft** PR whose
    base is a branch at `d97968d` (just before #32) and whose head is current `main`.
