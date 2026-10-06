@@ -1,5 +1,5 @@
-# Canonical template: docs/opencode-review-github-actions.md
-name: Open Code Review bot (automated PR review)
+# Implementation: gordo-v1su4/proxmox-home/.github/workflows/ocr-review-reusable.yml
+name: Alibaba OpenCodeReview PR Review
 
 on:
   pull_request_target:
@@ -21,75 +21,8 @@ concurrency:
 
 jobs:
   review:
-    name: Open Code Review bot
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      # The npm-installed `ocr` wrapper upgrades itself in the background on
-      # each run whenever the pinned version isn't the latest. Mid-job that
-      # swaps the binary out between the action's Configure and Run steps,
-      # and the review fails with `ocr: command not found` (exit 127). The
-      # static binary below avoids the wrapper; this is the belt to its braces.
-      OCR_NO_UPDATE: '1'
-    steps:
-      - name: Resolve manually selected PR
-        if: github.event_name == 'workflow_dispatch'
-        id: context
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          PR_NUMBER: ${{ inputs.pr_number }}
-        with:
-          script: |
-            const number = Number(process.env.PR_NUMBER);
-            if (!Number.isSafeInteger(number) || number < 1) {
-              throw new Error('pr_number must be a positive integer');
-            }
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
-            });
-            if (pr.state !== 'open') throw new Error('The selected PR must be open');
-            core.setOutput('base_ref', pr.base.ref);
-            core.setOutput('head_sha', pr.head.sha);
-
-      # Run the release's static binary instead of the npm wrapper. The action
-      # still `npm install -g`s its own copy (hardcoded in the action), but this
-      # directory is prepended to PATH, so every `ocr` call resolves here. The
-      # static binary never self-updates and needs no npm at runtime.
-      - name: Install OpenCodeReview static binary
-        env:
-          OCR_VERSION: '1.12.12'
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          dir="$RUNNER_TEMP/ocr-bin"
-          mkdir -p "$dir"
-          gh release download "v${OCR_VERSION}" -R alibaba/open-code-review \
-            -p opencodereview-linux-amd64 -p sha256sum.txt -D "$dir"
-          expected="$(grep 'opencodereview-linux-amd64$' "$dir/sha256sum.txt" | awk '{print $1}')"
-          actual="$(sha256sum "$dir/opencodereview-linux-amd64" | awk '{print $1}')"
-          if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
-            echo "::error::opencodereview-linux-amd64 checksum mismatch (expected '$expected', got '$actual')"
-            exit 1
-          fi
-          mv "$dir/opencodereview-linux-amd64" "$dir/ocr"
-          chmod +x "$dir/ocr"
-          echo "$dir" >> "$GITHUB_PATH"
-          "$dir/ocr" version
-
-      # Kimi Code subscription (OpenAI-compatible endpoint, model k3) instead of
-      # Hyper's Free plan, whose rate limit (429, ~9 min retry-after) failed
-      # reviews. Key: GitHub secret KIMI_API_KEY, copied from the canonical BWS
-      # record of the same name (also used by creative-studio-pro).
-      - name: Review with Kimi Code (k3)
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
-        with:
-          ocr_version: '1.12.12'
-          llm_url: https://api.kimi.com/coding/v1
-          llm_auth_token: ${{ secrets.KIMI_API_KEY }}
-          llm_model: k3
-          llm_use_anthropic: 'false'
-          llm_protocol: openai
-          review_concurrency: '1'
-          sticky_summary: 'true'
-          base_ref: ${{ steps.context.outputs.base_ref }}
-          head_sha: ${{ steps.context.outputs.head_sha }}
-          pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
+    uses: gordo-v1su4/proxmox-home/.github/workflows/ocr-review-reusable.yml@main
+    with:
+      pr_number: ${{ inputs.pr_number || '' }}
+    secrets:
+      KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}

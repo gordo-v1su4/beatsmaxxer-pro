@@ -68,9 +68,11 @@ Issues live in GitHub (`gordo-v1su4/beatsmaxxer-pro`) via the `gh` CLI. See [`do
 
 ### PR review bot (Open Code Review)
 
-Every PR gets an automated code review from the **Open Code Review bot** ([alibaba/open-code-review](https://github.com/alibaba/open-code-review), workflow [`.github/workflows/ocr-review.yml`](./.github/workflows/ocr-review.yml)). It runs once when the PR is opened, takes ~10–40 min, and posts **inline review comments** as `github-actions[bot]` (severity badges: bug / performance / maintainability).
+Every PR gets an automated code review from **Alibaba OpenCodeReview** ([alibaba/open-code-review](https://github.com/alibaba/open-code-review)) running on **Kimi Code (`k3`)**. [`.github/workflows/ocr-review.yml`](./.github/workflows/ocr-review.yml) is a thin caller of the shared workflow `gordo-v1su4/proxmox-home/.github/workflows/ocr-review-reusable.yml@main`; implementation and rollout live there (`proxmox-home/docs/opencode-review-github-actions.md`). Don't hand-edit the caller — re-copy `proxmox-home/infra/github-actions/ocr-review.yml`. It needs the repo secret `KIMI_API_KEY`, mirrored from the BWS record of the same name.
 
-Before merging: wait for the `Open Code Review bot` check to finish, read its comments (`gh api repos/gordo-v1su4/beatsmaxxer-pro/pulls/<n>/comments`), fix real findings on the branch, then merge. To re-review an open PR after pushes, run the workflow manually with `pr_number`. CodeRabbit also appears on PRs but currently skips reviews.
+It runs once when the PR is opened and posts **inline review comments** plus a summary as `github-actions[bot]` (severity badges: bug / performance / maintainability). A run only passes when every selected file was reviewed.
+
+Before merging: wait for the review check to finish, read its comments (`gh api repos/gordo-v1su4/beatsmaxxer-pro/pulls/<n>/comments` and the summary comment), fix real findings on the branch, then merge. Pushes don't re-trigger it; to re-review an open PR run the workflow manually with `pr_number`. CodeRabbit also appears on PRs but currently skips reviews.
 
 ### Triage labels
 
