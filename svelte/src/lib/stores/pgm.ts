@@ -23,6 +23,16 @@ export const queuedPgmSource = writable<ModuleType | null>(null);
 export const PGM_LAUNCH_QUANTIZE_BEATS = 4;
 /** Beat the queued source will land on, or null when nothing is queued. */
 export const queuedCutBeat = writable<number | null>(null);
+/**
+ * Bumped each time the performer picks a PGM source by hand (rail, viewport,
+ * digit keys). The arrangement reads this — not PGM changing — to know a cut
+ * was the performer's: dropping an effect into a slot, the mobile shell and
+ * the sequencer all move PGM too.
+ */
+export const manualCutRequests = writable(0);
+export function markManualCut() {
+  manualCutRequests.update((n) => n + 1);
+}
 export const intervalBeats = writable(4);
 export const feel = writable<PgmFeel>(0);
 export const autoRandom = writable(false);

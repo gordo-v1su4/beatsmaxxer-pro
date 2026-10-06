@@ -25,7 +25,7 @@ import {
   midiLayers,
   bypassed
 } from '$lib/stores/rack';
-import { pgmSource, queuedPgmSource, selectPgmSource } from '$lib/stores/pgm';
+import { manualCutRequests, pgmSource, queuedPgmSource, selectPgmSource } from '$lib/stores/pgm';
 import {
   crossedSequencerSteps,
   sequencerArmed,
@@ -204,11 +204,28 @@ let sequencerGeneration = -1;
 let lastQueuedPrewarmSlot: string | null = null;
 let lastPgmPrepSlot: string | null = null;
 let sequencerAbsoluteStep: number | null = null;
-/** Section the playhead was last found in; a change is a section entry. */
-let trackedSectionIndex = -1;
-/** What PGM was on (or queued to) last frame — a change the sequencer did not
- * make is the performer cutting by hand. */
-let lastProgramSource: string | null = null;
+/** Section the playhead was last found in, by id — an index can outlive the
+ * section it named once sections can be split, merged and deleted. */
+let trackedSectionId: string | null = null;
+/** Last `manualCutRequests` value seen; a bump is the performer picking PGM. */
+let manualCutSerialSeen: number | null = null;
+/** A hand pick is queued and hasn't landed on PGM yet. */
+let manualCutPending = false;
+/** PGM as of last frame, to see a pending hand pick land. */
+let lastLandedPgm: string | null = null;
+
+function resetArrangementTracking() {
+  trackedSectionId = null;
+  manualCutSerialSeen = null;
+  manualCutPending = false;
+  lastLandedPgm = null;
+}
+
+/** Cuts are placed against the song, so a step wraps on the arrangement's
+ * length rather than on the bar — bar 34 is its own step, not a repeat of 2. */
+function wrapSongStep(step: number, totalSteps: number) {
+  return totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step;
+}
 /** Rising-flux strike window for tapdelay when MIDI/analysis are quiet. */
 let liveOnsetStutterState: LiveOnsetStutterState | null = null;
 
@@ -322,8 +339,9 @@ function runArrangement(frame: TimelineFrame) {
   const barSeconds = (frame.beatIntervalSeconds || 60 / (frame.bpm || 120)) * 4;
   barInSection.set(Math.max(0, Math.floor((frame.positionSeconds - bounds[index]!.startSeconds) / barSeconds)));
 
-  if (index === trackedSectionIndex && index === get(activeSectionIndex)) return;
-  trackedSectionIndex = index;
+  const id = sections[index]!.id;
+  if (id === trackedSectionId && index === get(activeSectionIndex)) return;
+  trackedSectionId = id;
   activeSectionIndex.set(index);
   if (get(playbackWorkspace) !== 'timing') enterSection(sections[index]!);
 }
@@ -340,13 +358,27 @@ function runSequencer(frame: TimelineFrame) {
   // about the sequencer.
   if (frame.playing) runArrangement(frame);
 
-  // A program change the sequencer did not make is the performer cutting by
-  // hand. Tracked every frame, armed or not, so switching mode never reads a
-  // stale change as a fresh cut.
-  const program = get(queuedPgmSource) ?? get(pgmSource);
-  const manualCut =
-    !generationChanged && lastProgramSource !== null && program !== lastProgramSource;
-  lastProgramSource = program;
+  // A hand cut is what the performer asked for (manualCutRequests), not any
+  // PGM change: dropping an effect into a slot, the mobile shell and the
+  // sequencer all move PGM too. Tracked every frame, armed or not.
+  const serial = get(manualCutRequests);
+  const manualRequested = manualCutSerialSeen !== null && serial !== manualCutSerialSeen;
+  manualCutSerialSeen = serial;
+  if (manualRequested) manualCutPending = true;
+  const landedPgm = get(pgmSource);
+  const pgmChanged = lastLandedPgm !== null && landedPgm !== lastLandedPgm;
+  lastLandedPgm = landedPgm;
+  // The pick lands when PGM actually changes (on the next bar while playing);
+  // a pick cancelled before it landed clears the queue without a change.
+  const manualLanded = manualCutPending && pgmChanged;
+  if (manualLanded || (manualCutPending && !manualRequested && get(queuedPgmSource) === null)) {
+    manualCutPending = false;
+  }
+
+  const mode = get(arrangementMode);
+  // PLAY: a hand pick takes the program off the arrangement (Ableton's
+  // Session-launch override) until BACK TO ARRANGEMENT — stopped or playing.
+  if (mode === 'play' && manualRequested) arrangementOverridden.set(true);
 
   if (!frame.playing || !get(sequencerArmed)) {
     sequencerLastStep.set(crossed.currentAbsoluteStep % 16);
@@ -356,19 +388,14 @@ function runSequencer(frame: TimelineFrame) {
   const sections = get(arrangement);
   if (sections.length === 0) return;
 
-  const mode = get(arrangementMode);
   const totalSteps = get(arrangementTotalSteps);
   const beatGrid = get(analysisBeatGrid);
 
-  // PLAY: a manual cut takes the program off the arrangement (Ableton's
-  // Session-launch override) until BACK TO ARRANGEMENT.
-  if (mode === 'play' && manualCut) arrangementOverridden.set(true);
-
-  // REC: write the manual cut straight into the timeline.
+  // REC: write the hand cut into the timeline where it landed.
   const replacing = mode === 'rec' && !get(recordOverdub);
   let writtenStep: number | null = null;
-  if (mode === 'rec' && manualCut && totalSteps > 0) {
-    const slot = currentRackSlotForModule(program);
+  if (mode === 'rec' && manualLanded && totalSteps > 0) {
+    const slot = currentRackSlotForModule(landedPgm);
     const slotIndex = slot ? rackSlotIndex(slot) : null;
     if (slotIndex != null) {
       writtenStep = secondsToCutStep(frame.positionSeconds, beatGrid, frame.bpm, totalSteps);
@@ -382,11 +409,7 @@ function runSequencer(frame: TimelineFrame) {
   // Replace-record clears what the playhead passes over, Ableton's default
   // arrangement record. Overdub leaves existing cuts playing.
   if (replacing) {
-    const passed = new Set(
-      crossed.absoluteSteps.map((step) =>
-        totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step,
-      ),
-    );
+    const passed = new Set(crossed.absoluteSteps.map((step) => wrapSongStep(step, totalSteps)));
     if (writtenStep != null) passed.delete(writtenStep);
     if (passed.size > 0) cuts.update((list) => list.filter((c) => !passed.has(c.step)));
   }
@@ -400,12 +423,10 @@ function runSequencer(frame: TimelineFrame) {
   const loop = get(arrangementLoopRegion);
   const top = get(rackTop);
   const bottom = get(rackBottom);
-  let selected = program;
+  let selected = get(queuedPgmSource) ?? landedPgm;
   for (const step of crossed.absoluteSteps) {
     sequencerLastStep.set(step % ARRANGEMENT_STEPS);
-    // Cuts are placed against the song, so the lookup wraps on the arrangement's
-    // length rather than on the bar — bar 34 is its own step, not a repeat of 2.
-    const songStep = totalSteps > 0 ? ((step % totalSteps) + totalSteps) % totalSteps : step;
+    const songStep = wrapSongStep(step, totalSteps);
     // Same beat-grid mapping the lane paints with, so the loop gate agrees
     // with where the cut is drawn.
     const at = stepSeconds(songStep, beatGrid, frame.bpm);
@@ -420,8 +441,6 @@ function runSequencer(frame: TimelineFrame) {
       if (get(playbackWorkspace) !== 'timing') void mediaRuntime.prewarmModule(targetSlot).catch(() => {});
     }
   }
-  // The sequencer's own cuts are not the performer's.
-  lastProgramSource = get(queuedPgmSource) ?? get(pgmSource);
 }
 
 function syncControlledVideos(
@@ -557,6 +576,7 @@ export function startAppLoop() {
   running = true;
   sequencerGeneration = -1;
   sequencerAbsoluteStep = null;
+  resetArrangementTracking();
   speedRampSourceState = null;
   unsubscribeTimeSamplerConfig = audioTimeline.subscribe(configureTimeSampler, -10);
   unsubscribeTimeline = audioTimeline.subscribe((frame) => {
@@ -691,6 +711,7 @@ export function stopAppLoop() {
   unsubscribeTimeSamplerConfig = null;
   sequencerGeneration = -1;
   sequencerAbsoluteStep = null;
+  resetArrangementTracking();
   speedRampSourceState = null;
   liveOnsetStutterState = null;
   manualFireByModule.clear();

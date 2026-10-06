@@ -58,6 +58,7 @@
   import { audioEngine } from '$lib/audio';
   import {
     barNumberAtTime,
+    barStartSeconds,
     beatGridSongOffset,
     frameViewportFromSeconds,
     isFullViewport,
@@ -583,8 +584,10 @@
   function nudgeBoundary(index: number, bars: number) {
     const band = sectionBounds[index];
     if (!band) return;
-    const barSeconds = (240 / bpm) * bars;
-    const next = moveBoundary($arrangement, index, band.startSeconds + barSeconds, editContext());
+    // Aim at the grid's own bar line (startBar is 1-based; barStartSeconds
+    // takes a 0-based index) — a fixed 240/bpm drifts on tempo-varying songs.
+    const target = barStartSeconds(band.startBar - 1 + bars, $analysisBeatGrid, bpm);
+    const next = moveBoundary($arrangement, index, target, editContext());
     if (next) arrangement.set(next);
   }
 
@@ -718,12 +721,29 @@
       title="Toggle beat grid lines"
     >GRID</button>
 
-    <span class="arr-mode" role="radiogroup" aria-label="Arrangement transport mode">
+    <!-- Arrow keys move between modes like native radios. -->
+    <span
+      class="arr-mode"
+      role="radiogroup"
+      tabindex="-1"
+      aria-label="Arrangement transport mode"
+      onkeydown={(event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        const modes = ['live', 'play', 'rec'] as const;
+        const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+        const next = modes[(modes.indexOf($arrangementMode) + step + modes.length) % modes.length]!;
+        setArrangementMode(next, playheadSeconds);
+        const buttons = (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
+        buttons[modes.indexOf(next)]?.focus();
+      }}
+    >
       <button
         type="button"
         class="arr-btn"
         role="radio"
         aria-checked={$arrangementMode === 'live'}
+        tabindex={$arrangementMode === 'live' ? 0 : -1}
         data-active={$arrangementMode === 'live'}
         onclick={() => setArrangementMode('live', playheadSeconds)}
         title="LIVE — cut by hand; the arrangement drives nothing and nothing is recorded (Ableton Session)"
@@ -733,6 +753,7 @@
         class="arr-btn"
         role="radio"
         aria-checked={$arrangementMode === 'play'}
+        tabindex={$arrangementMode === 'play' ? 0 : -1}
         data-active={$arrangementMode === 'play'}
         onclick={() => setArrangementMode('play', playheadSeconds)}
         title="PLAY — the timeline's cuts drive PGM; a manual cut takes over until BACK TO ARRANGEMENT"
@@ -742,6 +763,7 @@
         class="arr-btn arr-btn-rec"
         role="radio"
         aria-checked={$arrangementMode === 'rec'}
+        tabindex={$arrangementMode === 'rec' ? 0 : -1}
         data-active={$arrangementMode === 'rec'}
         onclick={() => setArrangementMode('rec', playheadSeconds)}
         title="REC — your cuts are written into the timeline as it plays (Ableton Arrangement Record)"

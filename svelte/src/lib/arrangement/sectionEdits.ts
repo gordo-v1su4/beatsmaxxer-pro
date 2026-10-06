@@ -49,6 +49,9 @@ function withSpans(
   spans: readonly { startSeconds: number; endSeconds: number }[],
   ctx: SectionEditContext,
 ): ArrangementSection[] {
+  if (spans.length !== sections.length) {
+    throw new Error(`section edit: ${sections.length} sections but ${spans.length} spans`);
+  }
   return sections.map((section, i) => {
     const span = spans[i]!;
     const startBar = barIndexAt(span.startSeconds, ctx);
