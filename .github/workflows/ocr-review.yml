@@ -5,11 +5,12 @@
 # public and proxmox-home is private: GitHub only lets private repositories call
 # a private repo's reusable workflow, so the call fails with "workflow was not
 # found". The job below is the shared implementation with three hardening
-# changes from its own review (PR #39): the comment-posting helper is
-# SHA-256 verified, the Kimi key is scrubbed from the (public) diagnostic
-# artifacts, and an unused step output is gone. The triggers are the canonical
+# changes from its own review (PR #39): the binary and comment-posting helper
+# are SHA-256 pinned in this file, the Kimi key is scrubbed (fail-closed) from
+# the public diagnostic artifacts, checkout keeps no token, and an unused step
+# output is gone. The triggers are the canonical
 # caller's (proxmox-home/infra/github-actions/ocr-review.yml). Re-sync from
-# proxmox-home when the shared workflow changes, keeping those three.
+# proxmox-home when the shared workflow changes, keeping those changes.
 name: Alibaba OpenCodeReview PR Review
 
 on:
@@ -38,6 +39,10 @@ jobs:
       OCR_VERSION: '1.12.12'
       # Keep posting behavior pinned independently of the native CLI release.
       OCR_POST_REF: a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+      # SHA-256 of the v1.12.12 opencodereview-linux-amd64 asset, pinned here so
+      # a tampered release can't ship a matching sha256sum.txt. Update with
+      # OCR_VERSION.
+      OCR_BIN_SHA256: 3e34d6250d27d3a75b3979752d2816a8723f0070e89662b5b953ce2c9473b233
       # SHA-256 of scripts/github-actions/post-review-comments.js at OCR_POST_REF.
       # It runs with a write-scoped token, so it is verified like the binary.
       OCR_POST_SHA256: 1d5decf90627353f1e7a2cad291d4ee4ec0a661d9724b93b2d7d5246f33462e2
@@ -63,6 +68,8 @@ jobs:
         with:
           ref: ${{ steps.context.outputs.base_ref }}
           fetch-depth: 0
+          # Public repo: fetches need no token, so don't leave one in .git/config.
+          persist-credentials: false
 
       - name: Fetch review objects without executing PR files
         id: range
@@ -88,6 +95,7 @@ jobs:
           cd "$dir"
           grep -E ' [*]?opencodereview-linux-amd64$' sha256sum.txt > binary.sha256
           sha256sum --check binary.sha256
+          echo "${OCR_BIN_SHA256}  opencodereview-linux-amd64" | sha256sum --check -
           mv opencodereview-linux-amd64 ocr
           chmod +x ocr
           echo "$dir" >> "$GITHUB_PATH"
@@ -159,10 +167,12 @@ jobs:
         env:
           KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
         run: |
+          # Fail closed: if a scrub fails, this step fails and nothing uploads.
           for f in "$RUNNER_TEMP/ocr-result.json" "$RUNNER_TEMP/ocr-stderr.log"; do
-            [ -f "$f" ] && perl -pi -e 's/\Q$ENV{KIMI_API_KEY}\E/***/g' "$f"
+            if [ -f "$f" ]; then
+              perl -pi -e 's/\Q$ENV{KIMI_API_KEY}\E/***/g' "$f"
+            fi
           done
-          true
 
       - name: Upload review diagnostics
         if: always() && steps.review.outcome != 'skipped'
@@ -172,7 +182,7 @@ jobs:
           path: |
             ${{ runner.temp }}/ocr-result.json
             ${{ runner.temp }}/ocr-stderr.log
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
       - name: Post review on the reviewed head
         if: steps.review.outcome == 'success' && steps.result.outcome == 'success'
