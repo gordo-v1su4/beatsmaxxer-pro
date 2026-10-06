@@ -65,7 +65,9 @@
   import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
 
-  let splashPhase = $state<'gpu' | 'shaders' | 'go' | 'ready'>('gpu');
+  /** Shortest the title card stays up, from navigation start (V1S-64). */
+  const SPLASH_MIN_MS = 5000;
+  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
 
@@ -173,10 +175,34 @@
     // A warm load dismisses it in well under a second, which is too fast to
     // iterate on and the reason it could not be reviewed when first built.
     if (params.get('splash') !== 'hold') {
+      // A warm load finishes in well under a second, which flashed the card
+      // and its intro away mid-animation (V1S-64). Hold it to a minimum
+      // measured from navigation start, so a cold load that already took that
+      // long is not held any further. Any key or tap skips the remainder.
+      // Automation skips the hold: CDP gates should not wait on a title card.
+      const automated = params.has('qa') || navigator.webdriver;
+      const holdMs = automated ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
       // 'go' plays the exit; unmount only once it has actually run, so the
       // card hands off instead of blinking out from under the user.
-      splashPhase = 'go';
-      setTimeout(() => { splashPhase = 'ready'; }, 900);
+      let dismissed = false;
+      const dismiss = () => {
+        if (dismissed) return;
+        dismissed = true;
+        window.removeEventListener('keydown', dismiss);
+        window.removeEventListener('pointerdown', dismiss);
+        clearTimeout(holdTimer);
+        splashPhase = 'go';
+        setTimeout(() => { splashPhase = 'ready'; }, 900);
+      };
+      let holdTimer: ReturnType<typeof setTimeout> | undefined;
+      if (holdMs > 0) {
+        splashPhase = 'armed';
+        window.addEventListener('keydown', dismiss);
+        window.addEventListener('pointerdown', dismiss);
+        holdTimer = setTimeout(dismiss, holdMs);
+      } else {
+        dismiss();
+      }
     }
 
     if (params.has('qa')) {
