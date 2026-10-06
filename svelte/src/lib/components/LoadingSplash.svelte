@@ -1,14 +1,15 @@
 <script lang="ts">
   /**
-   * First-load title card. It rises out of black, holds while the real work
-   * runs (GPU device, then ~40 effect pipelines compiling), and hands off into
-   * the app: the mark wipes away first, then the black lifts.
+   * First-load title card. It comes on out of black like a CRT (a beam, then
+   * the picture opening out of it), holds while the real work runs (GPU
+   * device, then ~40 effect pipelines compiling), and powers off into the
+   * app: the picture collapses to a line, then the black lifts.
    *
    * Two marks, chosen with `?logo=`:
    *
    *   bolt (default)  the lightning logo, its letterforms traced from the art
    *                   (svelte/scripts/splash/trace.py). `?look=neon` gives it
-   *                   lit outlines inside a ring.
+   *                   lit outlines.
    *   wordmark        BEATSMAXXER set in a display face over a chrome bar with
    *                   a lens flare. The face is a CSS variable (`--wm-face`
    *                   and friends), a stand-in until the real one is chosen.
@@ -19,11 +20,10 @@
    *
    * Every keyframe animates `transform` or `opacity`, nothing else. The stall
    * behind this card blocks the main thread for whole seconds and only
-   * compositor-driven animations keep running through that (V1S-161). Wipes
-   * and the light sweep are therefore not clip-path or background-position
-   * animations: each is a pair of boxes sliding in opposite directions, an
-   * overflow-hidden window moving one way and its content moving back the
-   * other, so the content stays put while the window uncovers it.
+   * compositor-driven animations keep running through that (V1S-161). The
+   * light sweep is therefore not a background-position animation: it is a
+   * narrow window moving one way with a bright copy of the word moving back the
+   * other, so the copy stays registered on the letters it lights.
    */
   import { bootLog } from '$lib/stores/bootLog';
   import { BOLT_LOGO } from './splashLogoPaths';
@@ -74,11 +74,13 @@
     <span class="halo" aria-hidden="true"></span>
 
     <div class="stage">
+      <div class="screen">
+      <span class="beam" aria-hidden="true"></span>
       {#if logo === 'wordmark'}
         <!-- ---- the wordmark ---- -->
         <div class="mark wm" aria-hidden="true">
-          <div class="wipe wipe-x">
-            <div class="wipe-x-inner">
+          <div class="catch">
+            <div>
               <div class="wm-word">BEATSMAXXER</div>
             </div>
           </div>
@@ -142,10 +144,9 @@
             </defs>
           </svg>
 
-          <span class="ring"></span>
 
-          <div class="art wipe wipe-y">
-            <div class="art wipe-y-inner">
+          <div class="art catch">
+            <div class="art">
               <svg class="art bolt" viewBox="0 0 2000 848">
                 <use href="#bmx-bolt" class="edge" />
                 <use href="#bmx-bolt" fill="url(#bmx-bolt-fill)" />
@@ -155,8 +156,8 @@
             </div>
           </div>
 
-          <div class="art wipe wipe-x">
-            <div class="art wipe-x-inner">
+          <div class="art catch">
+            <div class="art">
               <svg class="art word" viewBox="0 0 2000 848">
                 <use href="#bmx-word" class="edge" />
                 <use href="#bmx-word" class="face" fill="url(#bmx-face)" />
@@ -179,6 +180,7 @@
           </div>
         </div>
       {/if}
+      </div>
 
       <!-- Plain words, not a progress readout. The dots are opacity-only
            keyframes, so they keep going through a main-thread stall and are
@@ -189,7 +191,7 @@
             <span class="fine">PRESS ANY KEY</span><span class="coarse">TAP TO START</span>
           </span>
         {:else}
-          <span class="status">LOADING<span class="dots"><span>.</span><span>.</span><span>.</span></span></span>
+          <span class="status" aria-hidden="true"><span class="dots"><span>.</span><span>.</span><span>.</span></span></span>
         {/if}
       </div>
     </div>
@@ -255,12 +257,14 @@
 
     /* Timeline, in one place so the beats can be re-spaced together. */
     --t-start: 250ms;
-    --t-word: 350ms;
+    --t-open: 520ms;
+    --t-catch: 980ms;
+    --t-word: 980ms;
     --t-bar: 900ms;
     --t-flare: 1250ms;
-    --t-pro: 1150ms;
-    --t-sweep: 1700ms;
-    --t-readout: 1300ms;
+    --t-pro: 1300ms;
+    --t-sweep: 2000ms;
+    --t-readout: 1500ms;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --ease-in: cubic-bezier(0.55, 0, 0.8, 0.2);
 
@@ -328,49 +332,83 @@
     container-type: inline-size;
   }
 
-  /* ---- wipes ----
-     The window slides one way and the content slides back the other at the
-     same rate, so the art holds still while it is uncovered. Both keyframes
-     share duration and easing; that is what keeps them cancelling. On exit
-     they run on past zero, so the mark is wiped away to the right. */
-  .wipe {
-    overflow: hidden;
-  }
-  .wipe-x {
-    animation: win-in-x 820ms var(--ease-out) var(--t-word) both;
-  }
-  .wipe-x-inner {
-    animation: con-in-x 820ms var(--ease-out) var(--t-word) both;
-  }
-  @keyframes win-in-x { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-  @keyframes con-in-x { from { transform: translateX(100%); }  to { transform: translateX(0); } }
+  /* ---- power on / power off ----
+     The mark comes on like a CRT: a beam of light draws across the centre,
+     the picture opens vertically out of it with a slight overshoot, and the
+     letters flicker as they catch. Off is the same in reverse: the picture
+     collapses to a line, the line to a point, then the black lifts.
 
-  .leaving .wipe-x {
-    animation: win-out-x 460ms var(--ease-in) both;
+     Transform and opacity only, so it all runs on the compositor and keeps
+     moving through a main-thread stall. */
+  .screen {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    width: 100%;
   }
-  .leaving .wipe-x-inner {
-    animation: con-out-x 460ms var(--ease-in) both;
-  }
-  @keyframes win-out-x { from { transform: translateX(0); } to { transform: translateX(100%); } }
-  @keyframes con-out-x { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 
-  .wipe-y {
-    animation: win-in-y 560ms var(--ease-out) var(--t-start) both;
+  .beam {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--logo-w);
+    height: 3px;
+    margin: -1.5px 0 0 calc(var(--logo-w) / -2);
+    border-radius: 50%;
+    background: linear-gradient(90deg, transparent, var(--c-chrome-hi) 18%, var(--c-chrome-white) 50%, var(--c-chrome-hi) 82%, transparent);
+    box-shadow: 0 0 14px var(--c-chrome-hi), 0 0 40px var(--c-accent);
+    opacity: 0;
+    animation: beam-on 640ms var(--ease-out) var(--t-start) both;
   }
-  .wipe-y-inner {
-    animation: con-in-y 560ms var(--ease-out) var(--t-start) both;
+  @keyframes beam-on {
+    0%   { opacity: 1; transform: scaleX(0.01); }
+    40%  { opacity: 1; transform: scaleX(1); }
+    60%  { opacity: 1; transform: scaleX(1); }
+    100% { opacity: 0; transform: scaleX(1.05); }
   }
-  @keyframes win-in-y { from { transform: translateY(-100%); } to { transform: translateY(0); } }
-  @keyframes con-in-y { from { transform: translateY(100%); }  to { transform: translateY(0); } }
 
-  .leaving .wipe-y,
-  .leaving .wipe-y-inner,
-  .leaving .pro-in,
-  .leaving .wm-pro-in,
-  .leaving .wm-bar,
-  .leaving .ring,
+  .mark {
+    transform-origin: 50% 50%;
+    animation: picture-on 520ms cubic-bezier(0.2, 0.9, 0.3, 1.15) var(--t-open) both;
+  }
+  @keyframes picture-on {
+    0%   { opacity: 0; transform: scale(1, 0.008); }
+    15%  { opacity: 1; }
+    100% { opacity: 1; transform: scale(1, 1); }
+  }
+
+  /* The letters catch a beat after the picture opens. */
+  .catch {
+    animation: catch 620ms steps(1, end) var(--t-catch) both;
+  }
+  @keyframes catch {
+    0%   { opacity: 0.35; }
+    12%  { opacity: 1; }
+    24%  { opacity: 0.5; }
+    36%  { opacity: 1; }
+    52%  { opacity: 0.75; }
+    64%, 100% { opacity: 1; }
+  }
+
+  .leaving .mark {
+    animation: picture-off 360ms cubic-bezier(0.6, 0, 0.9, 0.5) both;
+  }
+  @keyframes picture-off {
+    0%   { opacity: 1; transform: scale(1, 1); }
+    55%  { opacity: 1; transform: scale(1, 0.008); }
+    100% { opacity: 0; transform: scale(0.002, 0.008); }
+  }
+  .leaving .beam {
+    animation: beam-off 380ms ease-in both;
+  }
+  @keyframes beam-off {
+    0%, 45% { opacity: 0; transform: scaleX(1); }
+    55%     { opacity: 1; transform: scaleX(1); }
+    100%    { opacity: 0; transform: scaleX(0.002); }
+  }
+
   .leaving .sweep-window {
-    animation: lift 300ms ease-out both;
+    animation: lift 200ms ease-out both;
   }
 
   /* ================= the wordmark ================= */
@@ -378,12 +416,6 @@
   .wm {
     display: flex;
     flex-direction: column;
-  }
-  /* The slant pushes the last letter past the text box; the wipe window gets
-     room on both sides so it does not crop the R once it has finished. */
-  .wm > .wipe {
-    margin: 0 -4cqw;
-    padding: 0 4cqw;
   }
 
   .wm-word {
@@ -573,9 +605,6 @@
     height: 100%;
     overflow: visible;
   }
-  .wipe.art {
-    overflow: hidden;
-  }
   /* The ink outline: a wide stroke under the fill. */
   .edge {
     fill: var(--c-ink);
@@ -618,13 +647,12 @@
     32%, 100% { transform: translateX(760%) skewX(-24deg); }
   }
 
-  /* `.line` and `.ring` are only switched on by the neon look. */
-  .line,
-  .ring {
+  /* `.line` is only switched on by the neon look. */
+  .line {
     display: none;
   }
 
-  /* Neon: lit outlines over a dark, faintly tinted fill, inside a ring. */
+  /* Neon: lit outlines over a dark, faintly tinted fill. */
   .look-neon .line {
     display: inline;
     fill: none;
@@ -640,22 +668,6 @@
   .look-neon .pro,
   .look-neon .bolt {
     filter: drop-shadow(0 0 0.35cqw var(--c-chrome-hi)) drop-shadow(0 0 1.6cqw var(--c-accent));
-  }
-  .look-neon .ring {
-    display: block;
-    position: absolute;
-    left: 20cqw;
-    top: 9cqw;
-    width: 62cqw;
-    height: 37cqw;
-    border-radius: 50%;
-    border: 0.35cqw solid var(--c-accent-hi);
-    box-shadow: 0 0 1.2cqw var(--c-accent), inset 0 0 1.2cqw var(--c-accent);
-    animation: ring-in 700ms var(--ease-out) var(--t-start) both;
-  }
-  @keyframes ring-in {
-    0%   { opacity: 0; transform: scale(0.92); }
-    100% { opacity: 0.85; transform: scale(1); }
   }
 
   /* ================= readout ================= */
@@ -676,8 +688,22 @@
     font-size: 12px;
     font-weight: 500;
     letter-spacing: 0.4em;
-    /* Letter-spacing trails the last glyph; this re-centres the word. */
+    /* Letter-spacing trails the last glyph; this re-centres the text. */
     margin-right: -0.4em;
+  }
+  /* Dots alone, no word: drawn as discs, since a full stop is too small a
+     glyph to carry the signal on its own. */
+  .dots {
+    display: inline-flex;
+    gap: 10px;
+  }
+  .dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--c-ui);
+    box-shadow: 0 0 8px var(--c-glow);
+    font-size: 0;
   }
 
   .dots span {
