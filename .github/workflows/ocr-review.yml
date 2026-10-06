@@ -1,5 +1,17 @@
-# Canonical template: docs/opencode-review-github-actions.md
-name: Open Code Review bot (automated PR review)
+# Vendored copy of gordo-v1su4/proxmox-home/.github/workflows/ocr-review-reusable.yml
+# (proxmox-home 89c507c; implementation commits df9a8b5, 10d809f).
+#
+# Other repos call that workflow with `uses: ...@main`, but this repository is
+# public and proxmox-home is private: GitHub only lets private repositories call
+# a private repo's reusable workflow, so the call fails with "workflow was not
+# found". The job below is the shared implementation with three hardening
+# changes from its own review (PR #39): the binary and comment-posting helper
+# are SHA-256 pinned in this file, the Kimi key is scrubbed (fail-closed) from
+# the public diagnostic artifacts, checkout keeps no token, and an unused step
+# output is gone. The triggers are the canonical
+# caller's (proxmox-home/infra/github-actions/ocr-review.yml). Re-sync from
+# proxmox-home when the shared workflow changes, keeping those changes.
+name: Alibaba OpenCodeReview PR Review
 
 on:
   pull_request_target:
@@ -18,67 +30,187 @@ permissions:
 concurrency:
   group: ocr-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
-
 jobs:
   review:
-    name: Open Code Review bot
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 35
+    env:
+      OCR_NO_UPDATE: '1'
+      OCR_VERSION: '1.12.12'
+      # Keep posting behavior pinned independently of the native CLI release.
+      OCR_POST_REF: a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+      # SHA-256 of the v1.12.12 opencodereview-linux-amd64 asset, pinned here so
+      # a tampered release can't ship a matching sha256sum.txt. Update with
+      # OCR_VERSION.
+      OCR_BIN_SHA256: 3e34d6250d27d3a75b3979752d2816a8723f0070e89662b5b953ce2c9473b233
+      # SHA-256 of scripts/github-actions/post-review-comments.js at OCR_POST_REF.
+      # It runs with a write-scoped token, so it is verified like the binary.
+      OCR_POST_SHA256: 1d5decf90627353f1e7a2cad291d4ee4ec0a661d9724b93b2d7d5246f33462e2
+      OCR_LLM_TIMEOUT: '300'
     steps:
-      - name: Resolve manually selected PR
-        if: github.event_name == 'workflow_dispatch'
+      - name: Resolve current open pull request
         id: context
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
         with:
           script: |
             const number = Number(process.env.PR_NUMBER);
-            if (!Number.isSafeInteger(number) || number < 1) {
-              throw new Error('pr_number must be a positive integer');
-            }
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner, repo: context.repo.repo, pull_number: number,
-            });
+            if (!Number.isSafeInteger(number) || number < 1) throw new Error('A positive PR number is required');
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
             if (pr.state !== 'open') throw new Error('The selected PR must be open');
+            core.setOutput('number', String(number));
             core.setOutput('base_ref', pr.base.ref);
             core.setOutput('head_sha', pr.head.sha);
 
-      - name: Review with Qwen 3.8 Flash
-        id: primary
-        continue-on-error: true
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+      - name: Checkout trusted base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ocr_version: '1.12.11'
-          llm_url: https://hyper.charm.land/v1
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: qwen3.8-flash
-          llm_use_anthropic: 'false'
-          llm_protocol: openai
-          llm_extra_body: '{"thinking":{"type":"enabled"}}'
-          llm_reasoning_effort: max
-          review_concurrency: '2'
-          sticky_summary: 'true'
-          base_ref: ${{ steps.context.outputs.base_ref }}
-          head_sha: ${{ steps.context.outputs.head_sha }}
-          pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
+          ref: ${{ steps.context.outputs.base_ref }}
+          fetch-depth: 0
+          # Public repo: fetches need no token, so don't leave one in .git/config.
+          persist-credentials: false
 
-      - name: Retry with GLM 5.3 Flash
-        if: ${{ !cancelled() && steps.primary.outcome == 'failure' }}
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
+      - name: Fetch review objects without executing PR files
+        id: range
+        env:
+          PR_NUMBER: ${{ steps.context.outputs.number }}
+          BASE_REF: ${{ steps.context.outputs.base_ref }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+        run: |
+          git fetch origin "pull/${PR_NUMBER}/head"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          base=$(git merge-base "origin/${BASE_REF}" "$HEAD_SHA")
+          echo "merge_base=$base" >> "$GITHUB_OUTPUT"
+          echo "Reviewing $HEAD_SHA from merge-base $base"
+
+      - name: Install and verify Alibaba native reviewer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/ocr-bin"
+          mkdir -p "$dir"
+          gh release download "v${OCR_VERSION}" -R alibaba/open-code-review \
+            -p opencodereview-linux-amd64 -p sha256sum.txt -D "$dir"
+          cd "$dir"
+          grep -E ' [*]?opencodereview-linux-amd64$' sha256sum.txt > binary.sha256
+          sha256sum --check binary.sha256
+          echo "${OCR_BIN_SHA256}  opencodereview-linux-amd64" | sha256sum --check -
+          mv opencodereview-linux-amd64 ocr
+          chmod +x ocr
+          echo "$dir" >> "$GITHUB_PATH"
+          "$dir/ocr" version
+          # This upstream helper has only Node built-in dependencies.
+          curl --fail --silent --show-error --retry 3 --max-time 60 \
+            "https://raw.githubusercontent.com/alibaba/open-code-review/${OCR_POST_REF}/scripts/github-actions/post-review-comments.js" \
+            -o "$RUNNER_TEMP/ocr-post-review.cjs"
+          echo "${OCR_POST_SHA256}  $RUNNER_TEMP/ocr-post-review.cjs" | sha256sum --check -
+
+      - name: Configure Kimi Code
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: |
+          test -n "$KIMI_API_KEY" || { echo '::error::KIMI_API_KEY is not configured'; exit 1; }
+          ocr config set llm.url https://api.kimi.com/coding/v1
+          ocr config set llm.model k3
+          ocr config set llm.protocol openai
+          ocr config set llm.use_anthropic false
+          ocr config set llm.auth_token_cmd 'printf "%s" "$KIMI_API_KEY"'
+          ocr config set language English
+
+      - name: Review with Alibaba OpenCodeReview and Kimi
+        id: review
+        continue-on-error: true
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+          MERGE_BASE: ${{ steps.range.outputs.merge_base }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+        run: |
+          fifo="$RUNNER_TEMP/ocr-stderr.fifo"
+          mkfifo "$fifo"
+          tee "$RUNNER_TEMP/ocr-stderr.log" < "$fifo" >&2 &
+          progress_pid=$!
+          set +e
+          ocr review --from "$MERGE_BASE" --to "$HEAD_SHA" --format json \
+            --timeout 20 --concurrency 1 > "$RUNNER_TEMP/ocr-result.json" 2> "$fifo"
+          result=$?
+          wait "$progress_pid"
+          rm -f "$fifo"
+          exit "$result"
+
+      - name: Validate complete review output
+        id: result
+        if: steps.review.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
         with:
-          ocr_version: '1.12.11'
-          llm_url: https://hyper.charm.land/v1
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: glm-5.3-flash
-          llm_use_anthropic: 'false'
-          llm_protocol: openai
-          llm_extra_body: '{"thinking":{"type":"enabled"}}'
-          llm_reasoning_effort: max
-          review_concurrency: '2'
-          sticky_summary: 'true'
-          # The primary attempt already uploaded this run's diagnostic artifacts.
-          upload_artifacts: 'false'
-          base_ref: ${{ steps.context.outputs.base_ref }}
-          head_sha: ${{ steps.context.outputs.head_sha }}
-          pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const result = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'ocr-result.json'), 'utf8'));
+            const manifest = result.manifest;
+            if (!Array.isArray(result.comments) || manifest?.terminal_state !== 'complete') {
+              throw new Error('OCR result is incomplete or invalid; diagnostics retained without publishing a successful review');
+            }
+            if (manifest.input?.resolved_head !== process.env.HEAD_SHA) throw new Error('OCR result reviewed an unexpected commit');
+            const coverage = manifest.coverage;
+            if (!coverage || !Array.isArray(coverage.selected) || !Array.isArray(coverage.completed) || !Array.isArray(coverage.reused) || !Array.isArray(coverage.failed) || !Array.isArray(coverage.waived)) throw new Error('OCR coverage manifest is invalid');
+            const completed = new Set([...coverage.completed, ...coverage.reused].map(item => item.item_id));
+            if (coverage.failed.length || coverage.waived.length || coverage.selected.some(item => !completed.has(item.item_id))) throw new Error('OCR did not review every selected item');
+            core.info(`Complete review verified for ${manifest.input.resolved_head}: ${coverage.selected.length} selected items, ${result.comments.length} findings`);
+
+      # This repository is public, so its artifacts are too. ::add-mask:: only
+      # redacts the log, not uploaded files — scrub the key from them directly.
+      - name: Redact the Kimi key from diagnostics
+        if: always() && steps.review.outcome != 'skipped'
+        env:
+          KIMI_API_KEY: ${{ secrets.KIMI_API_KEY }}
+        run: |
+          # Fail closed: if a scrub fails, this step fails and nothing uploads.
+          for f in "$RUNNER_TEMP/ocr-result.json" "$RUNNER_TEMP/ocr-stderr.log"; do
+            if [ -f "$f" ]; then
+              perl -pi -e 's/\Q$ENV{KIMI_API_KEY}\E/***/g' "$f"
+            fi
+          done
+
+      - name: Upload review diagnostics
+        if: always() && steps.review.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ocr-review-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/ocr-result.json
+            ${{ runner.temp }}/ocr-stderr.log
+          if-no-files-found: warn
+
+      - name: Post review on the reviewed head
+        if: steps.review.outcome == 'success' && steps.result.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ steps.context.outputs.number }}
+          HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const number = Number(process.env.PR_NUMBER);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+            if (pr.state !== 'open' || pr.head.sha !== process.env.HEAD_SHA) {
+              core.setFailed('PR closed or changed during review; diagnostics retained without posting stale findings');
+              return;
+            }
+            const { runPostReviewComments } = require(path.join(process.env.RUNNER_TEMP, 'ocr-post-review.cjs'));
+            await runPostReviewComments({
+              github, context, core, fs, prNumber: number,
+              resultPath: path.join(process.env.RUNNER_TEMP, 'ocr-result.json'),
+              stderrPath: path.join(process.env.RUNNER_TEMP, 'ocr-stderr.log'),
+              stickySummary: true, incremental: false, checkpointEnabled: false,
+              reviewCommentBatchSize: 50, resolveOutdated: 'true',
+            });
+
+      - name: Fail incomplete reviewer runs
+        if: always() && steps.review.outcome == 'failure'
+        run: |
+          echo '::error::OpenCodeReview did not complete; see its diagnostic artifact'
+          exit 1
