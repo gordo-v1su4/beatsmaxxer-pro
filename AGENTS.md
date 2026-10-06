@@ -68,7 +68,7 @@ Issues live in GitHub (`gordo-v1su4/beatsmaxxer-pro`) via the `gh` CLI. See [`do
 
 ### PR review bot (Open Code Review)
 
-Every PR gets an automated code review from **Alibaba OpenCodeReview** ([alibaba/open-code-review](https://github.com/alibaba/open-code-review)) running on **Kimi Code (`k3`)**. [`.github/workflows/ocr-review.yml`](./.github/workflows/ocr-review.yml) is a thin caller of the shared workflow `gordo-v1su4/proxmox-home/.github/workflows/ocr-review-reusable.yml@main`; implementation and rollout live there (`proxmox-home/docs/opencode-review-github-actions.md`). Don't hand-edit the caller — re-copy `proxmox-home/infra/github-actions/ocr-review.yml`. It needs the repo secret `KIMI_API_KEY`, mirrored from the BWS record of the same name.
+Every PR gets an automated code review from **Alibaba OpenCodeReview** ([alibaba/open-code-review](https://github.com/alibaba/open-code-review)) running on **Kimi Code (`k3`)**. [`.github/workflows/ocr-review.yml`](./.github/workflows/ocr-review.yml) is a **vendored copy** of the shared workflow in `gordo-v1su4/proxmox-home` (`.github/workflows/ocr-review-reusable.yml`; docs in `proxmox-home/docs/opencode-review-github-actions.md`). Other repos call it with `uses:`, but this repo is public and proxmox-home is private, and GitHub doesn't let a public repo call a private repo's reusable workflow. Don't hand-edit the job — re-sync it from proxmox-home when the shared workflow changes. It needs the repo secret `KIMI_API_KEY`, mirrored from the BWS record of the same name.
 
 It runs once when the PR is opened and posts **inline review comments** plus a summary as `github-actions[bot]` (severity badges: bug / performance / maintainability). A run only passes when every selected file was reviewed.
 
