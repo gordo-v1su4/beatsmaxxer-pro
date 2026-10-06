@@ -1,34 +1,32 @@
 <script lang="ts">
   /**
-   * First-load title card. The stall it covers is real work, not a fake delay:
-   * the GPU device has to be acquired, then the effect pipelines compile.
+   * First-load title card. It rises out of black, holds while the real work
+   * runs (GPU device, then ~40 effect pipelines compiling), and hands off into
+   * the app: the mark wipes away first, then the black lifts.
    *
-   * The mark is the Beatsmaxxer Pro logo: its letterforms are traced from the
-   * art (svelte/scripts/splash/trace.py -> splashLogoPaths.ts) and filled
-   * here, so the shapes match the art while every colour is one CSS knob:
-   * `--logo-hue` and `--logo-shift` at the top of the style block. `?hue=210`
-   * overrides the hue in the browser; `?splash=hold` keeps the card up.
+   * Two marks, chosen with `?logo=`:
    *
-   * Motion is deliberately restrained: a light streak opens across the
-   * screen, the bolt wipes down, the word wipes in left to right, PRO settles,
-   * and a band of light sweeps the letters now and then. Once loading is done
-   * (`armed`) it shows PRESS ANY KEY until the minimum hold runs out; on `go`
-   * the mark eases forward and the card fades.
+   *   bolt (default)  the lightning logo, its letterforms traced from the art
+   *                   (svelte/scripts/splash/trace.py). `?look=neon` gives it
+   *                   lit outlines inside a ring.
+   *   wordmark        BEATSMAXXER set in a display face over a chrome bar with
+   *                   a lens flare. The face is a CSS variable (`--wm-face`
+   *                   and friends), a stand-in until the real one is chosen.
+   *
+   * Colour is two numbers at the top of the style block, `--logo-hue` and
+   * `--logo-shift`; `?hue=210` tries another hue. `?splash=hold` keeps the
+   * card up, `?bootlog=1` shows the step-by-step boot log under it.
    *
    * Every keyframe animates `transform` or `opacity`, nothing else. The stall
-   * behind this card blocks the main thread for whole seconds, and only
-   * compositor-driven animations keep running through that (V1S-161). The
-   * wipes are therefore not clip-path animations: each is a pair of boxes
-   * sliding in opposite directions, an overflow-hidden window moving one way
-   * and its content moving back the other, so the content stays put while the
-   * window uncovers it. Static filters are fine; only animating them is not.
-   *
-   * The boot log strip is written from JS, so it *does* freeze during a block,
-   * and that is intended: the line frozen on screen names the step that is
-   * taking the time. The hairline above it is the liveness proof.
+   * behind this card blocks the main thread for whole seconds and only
+   * compositor-driven animations keep running through that (V1S-161). Wipes
+   * and the light sweep are therefore not clip-path or background-position
+   * animations: each is a pair of boxes sliding in opposite directions, an
+   * overflow-hidden window moving one way and its content moving back the
+   * other, so the content stays put while the window uncovers it.
    */
   import { bootLog } from '$lib/stores/bootLog';
-  import { LOGO_BOLT, LOGO_PRO, LOGO_WORD } from './splashLogoPaths';
+  import { BOLT_LOGO } from './splashLogoPaths';
 
   interface Props {
     /** 'gpu' while the adapter/device is acquired, 'shaders' while pipelines
@@ -38,175 +36,174 @@
     done?: number;
     total?: number;
   }
-  let { phase, done = 0, total = 0 }: Props = $props();
+  let { phase }: Props = $props();
 
   const leaving = $derived(phase === 'go');
   const armed = $derived(phase === 'armed' || phase === 'go');
-  // A plausible block count for the pre-count phase, so the meter has
-  // something to sweep across before the denominator is known.
-  const segments = $derived(total > 0 ? total : 12);
-  const filled = $derived(armed ? segments : Math.min(done, segments));
-  const known = $derived(phase === 'shaders' && total > 0);
+  const status = $derived(armed ? 'Ready' : 'Loading');
 
-  const label = $derived(
-    armed ? 'READY' : phase === 'gpu' ? 'ACQUIRING GPU DEVICE' : 'COMPILING SHADERS'
-  );
-  const detail = $derived(known ? `${done} / ${total}` : 'INITIALISING');
+  const params =
+    typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search);
 
-  // Last five only: the strip grows upward from the bottom of the screen, so
-  // an uncapped log would eventually walk over the mark.
+  const logo = params.get('logo') === 'wordmark' ? 'wordmark' : 'bolt';
+  const look = params.get('look') === 'neon' ? 'neon' : 'chrome';
+  const showBootLog = params.has('bootlog');
+  const hueOverride = (() => {
+    const hue = Number(params.get('hue'));
+    return Number.isFinite(hue) && hue > 0 ? `--logo-hue:${hue}` : '';
+  })();
+
+  // Last five only: the strip grows upward from the bottom of the screen.
   const tail = $derived($bootLog.slice(-5));
 
-  /**
-   * The sweep is masked to the letterforms with a static CSS mask, so the
-   * band only lights the chrome and its travel stays a compositor transform.
-   */
-  const wordMask = `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2000 848'><path fill-rule='evenodd' d='${LOGO_WORD}'/></svg>`
+  /** The bolt logo's sweep is masked to its letterforms with a static mask. */
+  const boltWordMask = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2000 848'><path fill-rule='evenodd' d='${BOLT_LOGO.word}'/></svg>`
   )}")`;
-
-  /**
-   * Finish of the mark. `?look=neon` tries the outline treatment; the default
-   * is the clean chrome fill.
-   */
-  const LOOKS = ['chrome', 'neon'] as const;
-  const look = $derived.by(() => {
-    if (typeof window === 'undefined') return 'chrome';
-    const q = new URLSearchParams(window.location.search).get('look');
-    return (LOOKS as readonly string[]).includes(q ?? '') ? q : 'chrome';
-  });
-
-  /** `?hue=` for trying palettes without editing CSS. */
-  const hueOverride = $derived.by(() => {
-    if (typeof window === 'undefined') return '';
-    const hue = Number(new URLSearchParams(window.location.search).get('hue'));
-    return Number.isFinite(hue) && hue > 0 ? `--logo-hue:${hue}` : '';
-  });
 </script>
 
 {#if phase !== 'ready'}
   <div
-    class="splash look-{look}"
+    class="splash logo-{logo} look-{look}"
     class:leaving
     role="status"
     aria-live="polite"
-    aria-label="Loading Beatsmaxxer Pro"
+    aria-label="Beatsmaxxer Pro, {status}"
     style={hueOverride}
   >
     <span class="halo" aria-hidden="true"></span>
 
     <div class="stage">
-      <!-- Every layer shares the art's 2000 x 848 board inside a box sized in
-           container units, so one width scales the whole mark together. -->
-      <div class="logo" aria-hidden="true">
-        <!-- Shared shapes and paints. Each visible layer is its own <svg>
-             rather than a <g>, because transforms on SVG children run on the
-             main thread and transforms on an HTML-level box do not. -->
-        <svg class="defs" width="0" height="0">
-          <defs>
-            <path id="bmx-word" d={LOGO_WORD} fill-rule="evenodd" />
-            <path id="bmx-pro" d={LOGO_PRO} fill-rule="evenodd" />
-            <path id="bmx-bolt" d={LOGO_BOLT} fill-rule="evenodd" />
-            <!-- Two-tone chrome: a light top, a bright horizon, a deeper
-                 lower half lifting to a rim at the bottom edge. -->
-            <linearGradient id="bmx-face" gradientUnits="userSpaceOnUse" x1="0" y1="280" x2="0" y2="660">
-              <stop offset="0" style="stop-color: var(--c-chrome-top)" />
-              <stop offset="0.4" style="stop-color: var(--c-chrome-hi)" />
-              <stop offset="0.47" style="stop-color: var(--c-chrome-white)" />
-              <stop offset="0.5" style="stop-color: var(--c-chrome-deep)" />
-              <stop offset="0.82" style="stop-color: var(--c-chrome-low)" />
-              <stop offset="1" style="stop-color: var(--c-chrome-rim)" />
-            </linearGradient>
-            <linearGradient id="bmx-pro-fill" gradientUnits="userSpaceOnUse" x1="0" y1="560" x2="0" y2="645">
-              <stop offset="0.1" style="stop-color: var(--c-chrome-white)" />
-              <stop offset="0.5" style="stop-color: var(--c-accent-hi)" />
-              <stop offset="1" style="stop-color: var(--c-accent)" />
-            </linearGradient>
-            <linearGradient id="bmx-bolt-fill" gradientUnits="userSpaceOnUse" x1="1300" y1="20" x2="700" y2="750">
-              <stop offset="0" style="stop-color: var(--c-chrome-white)" />
-              <stop offset="0.45" style="stop-color: var(--c-accent-hi)" />
-              <stop offset="1" style="stop-color: var(--c-accent-deep)" />
-            </linearGradient>
-            <!-- Fine scanlines inside the letters. -->
-            <pattern id="bmx-scan" width="20" height="7" patternUnits="userSpaceOnUse">
-              <rect width="20" height="1.6" fill="rgba(0,10,20,0.32)" />
-            </pattern>
-          </defs>
-        </svg>
-
-        <span class="ring"></span>
-        <span class="streak"></span>
-
-        <div class="art wipe-down">
-          <div class="art wipe-down-inner">
-            <svg class="art bolt" viewBox="0 0 2000 848">
-              <use href="#bmx-bolt" class="edge" />
-              <use href="#bmx-bolt" fill="url(#bmx-bolt-fill)" />
-              <use href="#bmx-bolt" fill="url(#bmx-scan)" />
-              <use href="#bmx-bolt" class="line" />
-            </svg>
+      {#if logo === 'wordmark'}
+        <!-- ---- the wordmark ---- -->
+        <div class="mark wm" aria-hidden="true">
+          <div class="wipe wipe-x">
+            <div class="wipe-x-inner">
+              <div class="wm-word">BEATSMAXXER</div>
+            </div>
           </div>
-        </div>
 
-        <div class="art wipe-right">
-          <div class="art wipe-right-inner">
-            <svg class="art word" viewBox="0 0 2000 848">
-              <use href="#bmx-word" class="edge" />
-              <use href="#bmx-word" fill="url(#bmx-face)" />
-              <use href="#bmx-word" fill="url(#bmx-scan)" />
-              <use href="#bmx-word" class="line" />
-            </svg>
-            <div class="art sweep-mask" style="mask-image:{wordMask};-webkit-mask-image:{wordMask}">
-              <span class="sweep"></span>
+          <!-- The light sweep: a narrow window carrying a bright copy of the
+               word, counter-moved so the copy stays registered on the base. -->
+          <div class="sweep-window">
+            <div class="sweep-inner">
+              <div class="wm-word wm-word-lit">BEATSMAXXER</div>
+            </div>
+          </div>
+
+          <div class="wm-foot">
+            <div class="wm-bar">
+              <span class="wm-bar-line"></span>
+              <span class="flare">
+                <span class="flare-core"></span>
+                <span class="flare-h"></span>
+                <span class="flare-v"></span>
+              </span>
+            </div>
+            <div class="wm-pro-in">
+              <span class="wm-pro">PRO</span>
             </div>
           </div>
         </div>
-
-        <div class="art pro-in">
-          <svg class="art pro" viewBox="0 0 2000 848">
-            <use href="#bmx-pro" class="edge" />
-            <use href="#bmx-pro" fill="url(#bmx-pro-fill)" />
-            <use href="#bmx-pro" fill="url(#bmx-scan)" />
-            <use href="#bmx-pro" class="line" />
+      {:else}
+        <!-- ---- the lightning logo ---- -->
+        <!-- Every layer shares the art's 2000 x 848 board, sized in container
+             units so one width scales the whole mark together. -->
+        <div class="mark bolt-logo" aria-hidden="true">
+          <!-- Shared shapes and paints. Each visible layer is its own <svg>
+               rather than a <g>, because transforms on SVG children run on the
+               main thread and transforms on an HTML-level box do not. -->
+          <svg class="defs" width="0" height="0">
+            <defs>
+              <path id="bmx-word" d={BOLT_LOGO.word} fill-rule="evenodd" />
+              <path id="bmx-pro" d={BOLT_LOGO.pro} fill-rule="evenodd" />
+              <path id="bmx-bolt" d={BOLT_LOGO.bolt} fill-rule="evenodd" />
+              <linearGradient id="bmx-face" gradientUnits="userSpaceOnUse" x1="0" y1="280" x2="0" y2="660">
+                <stop offset="0" style="stop-color: var(--c-chrome-top)" />
+                <stop offset="0.4" style="stop-color: var(--c-chrome-hi)" />
+                <stop offset="0.47" style="stop-color: var(--c-chrome-white)" />
+                <stop offset="0.5" style="stop-color: var(--c-chrome-deep)" />
+                <stop offset="0.82" style="stop-color: var(--c-chrome-low)" />
+                <stop offset="1" style="stop-color: var(--c-chrome-rim)" />
+              </linearGradient>
+              <linearGradient id="bmx-pro-fill" gradientUnits="userSpaceOnUse" x1="0" y1="560" x2="0" y2="645">
+                <stop offset="0.1" style="stop-color: var(--c-chrome-white)" />
+                <stop offset="0.5" style="stop-color: var(--c-accent-hi)" />
+                <stop offset="1" style="stop-color: var(--c-accent)" />
+              </linearGradient>
+              <linearGradient id="bmx-bolt-fill" gradientUnits="userSpaceOnUse" x1="1300" y1="20" x2="700" y2="750">
+                <stop offset="0" style="stop-color: var(--c-chrome-white)" />
+                <stop offset="0.45" style="stop-color: var(--c-accent-hi)" />
+                <stop offset="1" style="stop-color: var(--c-accent-deep)" />
+              </linearGradient>
+              <pattern id="bmx-scan" width="20" height="7" patternUnits="userSpaceOnUse">
+                <rect width="20" height="1.6" fill="rgba(0,10,20,0.32)" />
+              </pattern>
+            </defs>
           </svg>
-        </div>
-      </div>
 
+          <span class="ring"></span>
+
+          <div class="art wipe wipe-y">
+            <div class="art wipe-y-inner">
+              <svg class="art bolt" viewBox="0 0 2000 848">
+                <use href="#bmx-bolt" class="edge" />
+                <use href="#bmx-bolt" fill="url(#bmx-bolt-fill)" />
+                <use href="#bmx-bolt" fill="url(#bmx-scan)" />
+                <use href="#bmx-bolt" class="line" />
+              </svg>
+            </div>
+          </div>
+
+          <div class="art wipe wipe-x">
+            <div class="art wipe-x-inner">
+              <svg class="art word" viewBox="0 0 2000 848">
+                <use href="#bmx-word" class="edge" />
+                <use href="#bmx-word" class="face" fill="url(#bmx-face)" />
+                <use href="#bmx-word" fill="url(#bmx-scan)" />
+                <use href="#bmx-word" class="line" />
+              </svg>
+              <div class="art sweep-mask" style="mask-image:{boltWordMask};-webkit-mask-image:{boltWordMask}">
+                <span class="sweep"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="art pro-in">
+            <svg class="art pro" viewBox="0 0 2000 848">
+              <use href="#bmx-pro" class="edge" />
+              <use href="#bmx-pro" class="face" fill="url(#bmx-pro-fill)" />
+              <use href="#bmx-pro" fill="url(#bmx-scan)" />
+              <use href="#bmx-pro" class="line" />
+            </svg>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Plain words, not a progress readout. The dots are opacity-only
+           keyframes, so they keep going through a main-thread stall and are
+           themselves the proof the app has not hung. -->
       <div class="readout">
-        <div class="meta">
-          <span class="phase">{label}</span>
-          {#if armed}
-            <span class="detail press">
-              <span class="fine">PRESS ANY KEY</span><span class="coarse">TAP TO START</span>
-            </span>
-          {:else}
-            <span class="detail">{detail}</span>
-          {/if}
-        </div>
-
-        <div class="meter" class:sweeping={!known && !armed} aria-hidden="true">
-          {#each Array(segments) as _, i (i)}
-            <span class="seg" class:on={i < filled} style="--i:{i}"></span>
-          {/each}
-        </div>
+        {#if armed}
+          <span class="status press">
+            <span class="fine">PRESS ANY KEY</span><span class="coarse">TAP TO START</span>
+          </span>
+        {:else}
+          <span class="status">LOADING<span class="dots"><span>.</span><span>.</span><span>.</span></span></span>
+        {/if}
       </div>
     </div>
 
-    <!-- aria-hidden: the readout above already announces phase and progress
-         through the live region; five churning log lines would be noise. -->
-    <div class="tty" aria-hidden="true">
-      <div class="wire">
-        <span class="shuttle"></span>
-      </div>
-      <ol class="lines">
+    {#if showBootLog}
+      <ol class="bootlog" aria-hidden="true">
         {#each tail as step (step.id)}
           <li class:done={step.state === 'done'}>
-            <span class="mark">{step.state === 'done' ? 'ok' : '>'}</span>
+            <span class="mark-ok">{step.state === 'done' ? 'ok' : '>'}</span>
             <span class="text">{step.label}{step.note ? ` ${step.note}` : ''}</span>
           </li>
         {/each}
       </ol>
-    </div>
+    {/if}
 
     <div class="scanlines" aria-hidden="true"></div>
     <div class="vignette" aria-hidden="true"></div>
@@ -220,9 +217,8 @@
     Every colour on the card derives from two numbers:
 
       --logo-hue    the lead colour: the chrome, the UI accents, the glow
-      --logo-shift  how far the accent (bolt, PRO, streak core) rotates from
-                    it. Positive moves toward blue, which keeps the whole card
-                    cool; a negative value would warm it toward green.
+      --logo-shift  how far the accent (bar, flare, PRO, bolt) rotates from
+                    it. Positive moves toward blue, which keeps the card cool.
 
     OKLCH holds lightness steady as the hue moves, so any hue stays legible.
   */
@@ -246,24 +242,33 @@
     --c-glow: oklch(0.75 0.13 var(--h) / 0.35);
     --c-ui: oklch(0.86 0.08 var(--h));
     --c-ui-strong: oklch(0.76 0.12 var(--h));
-    --c-ui-deep: oklch(0.6 0.1 var(--h));
-    --c-ui-dim: oklch(0.55 0.03 var(--h));
-    --c-ui-faint: oklch(0.4 0.02 var(--h));
+
+    /*
+      Wordmark face. A stand-in until the chosen display face is self-hosted
+      under static/fonts: Russo One is already there, slanted to match the
+      italic of the art. Swap these four for the real face.
+    */
+    --wm-face: 'Russo One';
+    --wm-weight: 400;
+    --wm-style: normal;
+    --wm-skew: -14deg;
 
     /* Timeline, in one place so the beats can be re-spaced together. */
-    --t-streak: 150ms;
-    --t-bolt: 300ms;
-    --t-word: 520ms;
-    --t-pro: 1050ms;
-    --t-sweep: 1350ms;
-    --t-readout: 1200ms;
+    --t-start: 250ms;
+    --t-word: 350ms;
+    --t-bar: 900ms;
+    --t-flare: 1250ms;
+    --t-pro: 1150ms;
+    --t-sweep: 1700ms;
+    --t-readout: 1300ms;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-in: cubic-bezier(0.55, 0, 0.8, 0.2);
 
-    /* As wide as the screen allows, but short enough to leave the readout
-       its room when a phone lies on its side. */
-    --logo-w: min(960px, 92vw, 110vh);
+    --logo-w: min(980px, 90vw, 120vh);
   }
 
+  /* The black is there from the first frame: no fade-in on the card itself,
+     only on what is drawn on it. */
   .splash {
     position: fixed;
     inset: 0;
@@ -274,14 +279,14 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background: radial-gradient(120% 80% at 50% 40%, oklch(0.16 0.025 var(--h-acc)), #030507 70%);
-    animation: fade-in 260ms ease-out both;
+    background: radial-gradient(120% 80% at 50% 42%, oklch(0.15 0.025 var(--h-acc)), #030507 70%);
   }
 
+  /* Exit: the mark leaves first (below), then the black lifts off the app. */
   .splash.leaving {
-    animation: fade-out 520ms cubic-bezier(0.4, 0, 0.9, 0.4) 260ms both;
+    animation: lift 480ms ease-out 380ms both;
   }
-  @keyframes fade-out {
+  @keyframes lift {
     from { opacity: 1; }
     to   { opacity: 0; }
   }
@@ -294,13 +299,18 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: radial-gradient(50% 32% at 50% 44%, var(--c-glow), transparent 72%);
-    opacity: 0.5;
-    animation: halo 5s ease-in-out var(--t-sweep) infinite;
+    background: radial-gradient(50% 30% at 50% 45%, var(--c-glow), transparent 72%);
+    opacity: 0;
+    animation:
+      fade-in 1200ms ease-out var(--t-word) both,
+      halo 5s ease-in-out var(--t-sweep) infinite;
   }
   @keyframes halo {
-    0%, 100% { opacity: 0.5; }
-    50%      { opacity: 0.8; }
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 0.85; }
+  }
+  .leaving .halo {
+    animation: lift 400ms ease-out both;
   }
 
   .stage {
@@ -312,20 +322,243 @@
     width: 100%;
   }
 
-  /* ---- the mark ----
-     Art board is 2000 x 848; 1cqw is 20 art pixels. */
-  .logo {
+  .mark {
     position: relative;
     width: var(--logo-w);
-    aspect-ratio: 2000 / 848;
     container-type: inline-size;
   }
-  .splash.leaving .logo {
-    animation: ease-away 700ms cubic-bezier(0.5, 0, 0.75, 0) both;
+
+  /* ---- wipes ----
+     The window slides one way and the content slides back the other at the
+     same rate, so the art holds still while it is uncovered. Both keyframes
+     share duration and easing; that is what keeps them cancelling. On exit
+     they run on past zero, so the mark is wiped away to the right. */
+  .wipe {
+    overflow: hidden;
   }
-  @keyframes ease-away {
-    from { transform: scale(1); opacity: 1; }
-    to   { transform: scale(1.06); opacity: 0; }
+  .wipe-x {
+    animation: win-in-x 820ms var(--ease-out) var(--t-word) both;
+  }
+  .wipe-x-inner {
+    animation: con-in-x 820ms var(--ease-out) var(--t-word) both;
+  }
+  @keyframes win-in-x { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+  @keyframes con-in-x { from { transform: translateX(100%); }  to { transform: translateX(0); } }
+
+  .leaving .wipe-x {
+    animation: win-out-x 460ms var(--ease-in) both;
+  }
+  .leaving .wipe-x-inner {
+    animation: con-out-x 460ms var(--ease-in) both;
+  }
+  @keyframes win-out-x { from { transform: translateX(0); } to { transform: translateX(100%); } }
+  @keyframes con-out-x { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+
+  .wipe-y {
+    animation: win-in-y 560ms var(--ease-out) var(--t-start) both;
+  }
+  .wipe-y-inner {
+    animation: con-in-y 560ms var(--ease-out) var(--t-start) both;
+  }
+  @keyframes win-in-y { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+  @keyframes con-in-y { from { transform: translateY(100%); }  to { transform: translateY(0); } }
+
+  .leaving .wipe-y,
+  .leaving .wipe-y-inner,
+  .leaving .pro-in,
+  .leaving .wm-pro-in,
+  .leaving .wm-bar,
+  .leaving .ring,
+  .leaving .sweep-window {
+    animation: lift 300ms ease-out both;
+  }
+
+  /* ================= the wordmark ================= */
+
+  .wm {
+    display: flex;
+    flex-direction: column;
+  }
+  /* The slant pushes the last letter past the text box; the wipe window gets
+     room on both sides so it does not crop the R once it has finished. */
+  .wm > .wipe {
+    margin: 0 -4cqw;
+    padding: 0 4cqw;
+  }
+
+  .wm-word {
+    font-family: var(--wm-face), var(--font-ui), sans-serif;
+    font-weight: var(--wm-weight);
+    font-style: var(--wm-style);
+    font-size: 13.4cqw;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    text-align: center;
+    padding: 0 0.12em;
+    transform: skewX(var(--wm-skew));
+    /* Two-tone chrome with a bright horizon, scanlines laid over it. */
+    background-image:
+      repeating-linear-gradient(180deg, transparent 0 0.05em, rgba(0, 10, 20, 0.28) 0.05em 0.065em),
+      linear-gradient(
+        180deg,
+        var(--c-chrome-top) 16%,
+        var(--c-chrome-hi) 42%,
+        var(--c-chrome-white) 49%,
+        var(--c-chrome-deep) 52%,
+        var(--c-chrome-low) 80%,
+        var(--c-chrome-rim) 94%
+      );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 0.018em var(--c-ink);
+    filter: drop-shadow(0 0.03em 0.05em rgba(0, 0, 0, 0.7)) drop-shadow(0 0 0.2em var(--c-glow));
+  }
+
+  .sweep-window {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 12%;
+    height: calc(13.4cqw * 1.05);
+    overflow: hidden;
+    transform: translateX(-120%) skewX(-20deg);
+    animation: sweep-win 4.4s cubic-bezier(0.45, 0, 0.25, 1) var(--t-sweep) infinite;
+  }
+  .sweep-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100cqw;
+    transform: skewX(20deg) translateX(14.4%);
+    animation: sweep-con 4.4s cubic-bezier(0.45, 0, 0.25, 1) var(--t-sweep) infinite;
+  }
+  /* The window is 12% of the board and travels in its own widths; the copy
+     inside is the board's width, so it travels back the same distance in
+     units of 0.12 of itself (-120% of the window = 14.4% of the board). */
+  @keyframes sweep-win {
+    0%        { transform: translateX(-120%) skewX(-20deg); }
+    36%, 100% { transform: translateX(950%) skewX(-20deg); }
+  }
+  @keyframes sweep-con {
+    0%        { transform: skewX(20deg) translateX(14.4%); }
+    36%, 100% { transform: skewX(20deg) translateX(-114%); }
+  }
+  .wm-word-lit {
+    background-image: linear-gradient(180deg, var(--c-chrome-white), oklch(0.9 0.08 var(--h)));
+    filter: none;
+    -webkit-text-stroke: 0.018em transparent;
+    opacity: 0.85;
+  }
+
+  .wm-foot {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 2cqw;
+    margin-top: -0.6cqw;
+    padding: 0 2.5cqw 0 3cqw;
+  }
+
+  .wm-bar {
+    position: relative;
+    flex: 1 1 auto;
+    height: 1.4cqw;
+    margin-top: 1.2cqw;
+    transform: skewX(-24deg);
+  }
+  .wm-bar-line {
+    position: absolute;
+    inset: 0;
+    border-radius: 0.2cqw;
+    background: linear-gradient(180deg, var(--c-chrome-white) 0 35%, var(--c-accent) 55%, var(--c-accent-deep) 100%);
+    box-shadow: 0 0 0 0.15cqw var(--c-ink), 0 0 1.2cqw var(--c-accent);
+    transform-origin: 0 50%;
+    animation: bar-in 620ms var(--ease-out) var(--t-bar) both;
+  }
+  @keyframes bar-in {
+    from { opacity: 0; transform: scaleX(0); }
+    to   { opacity: 1; transform: scaleX(1); }
+  }
+
+  /* Lens flare where the bar catches the light. */
+  .flare {
+    position: absolute;
+    left: 74%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    transform: skewX(24deg);
+    opacity: 0;
+    animation:
+      flare-in 520ms var(--ease-out) var(--t-flare) both,
+      flare-breathe 3.6s ease-in-out calc(var(--t-flare) + 600ms) infinite;
+  }
+  .flare-core,
+  .flare-h,
+  .flare-v {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .flare-core {
+    width: 7cqw;
+    height: 7cqw;
+    background: radial-gradient(circle, #fff 0 6%, oklch(0.92 0.06 var(--h-acc) / 0.9) 14%, oklch(0.7 0.14 var(--h-acc) / 0.35) 34%, transparent 66%);
+  }
+  .flare-h {
+    width: 46cqw;
+    height: 0.5cqw;
+    background: linear-gradient(90deg, transparent, oklch(0.9 0.08 var(--h-acc) / 0.9) 50%, transparent);
+  }
+  .flare-v {
+    width: 0.3cqw;
+    height: 9cqw;
+    background: linear-gradient(180deg, transparent, oklch(0.9 0.06 var(--h-acc) / 0.6) 50%, transparent);
+  }
+  @keyframes flare-in {
+    0%   { opacity: 0; transform: skewX(24deg) scale(0.2); }
+    60%  { opacity: 1; transform: skewX(24deg) scale(1.15); }
+    100% { opacity: 1; transform: skewX(24deg) scale(1); }
+  }
+  @keyframes flare-breathe {
+    0%, 100% { opacity: 1;    transform: skewX(24deg) scale(1); }
+    50%      { opacity: 0.75; transform: skewX(24deg) scale(0.92); }
+  }
+
+  .wm-pro-in {
+    flex: none;
+    animation: pro-in 560ms var(--ease-out) var(--t-pro) both;
+  }
+  .wm-pro {
+    display: block;
+    font-family: var(--wm-face), var(--font-ui), sans-serif;
+    font-weight: var(--wm-weight);
+    font-style: var(--wm-style);
+    font-size: 7.6cqw;
+    line-height: 1;
+    transform: skewX(var(--wm-skew));
+    background-image:
+      repeating-linear-gradient(180deg, transparent 0 0.09em, rgba(0, 10, 20, 0.4) 0.09em 0.12em),
+      linear-gradient(180deg, var(--c-chrome-white) 12%, var(--c-accent-hi) 50%, var(--c-accent) 92%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 0.02em var(--c-ink);
+    filter: drop-shadow(0 0 0.18em var(--c-glow));
+  }
+  @keyframes pro-in {
+    0%   { opacity: 0; transform: translateY(2.4cqw); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ================= the lightning logo ================= */
+
+  .bolt-logo {
+    aspect-ratio: 2000 / 848;
   }
 
   .defs {
@@ -340,8 +573,10 @@
     height: 100%;
     overflow: visible;
   }
-  /* The ink outline: a wide stroke under the fill separates the letters from
-     the field the way the art does. */
+  .wipe.art {
+    overflow: hidden;
+  }
+  /* The ink outline: a wide stroke under the fill. */
   .edge {
     fill: var(--c-ink);
     stroke: var(--c-ink);
@@ -349,79 +584,18 @@
     stroke-linejoin: round;
   }
 
-  /* A thin horizontal light under the word, opening from the centre. */
-  .streak {
-    position: absolute;
-    left: -20%;
-    right: -20%;
-    top: 74.5%;
-    height: 0.35cqw;
-    border-radius: 50%;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      var(--c-accent) 25%,
-      var(--c-chrome-white) 50%,
-      var(--c-accent) 75%,
-      transparent
-    );
-    box-shadow: 0 0 1.4cqw var(--c-accent);
-    opacity: 0.9;
-    animation: streak 900ms var(--ease-out) var(--t-streak) both;
-  }
-  @keyframes streak {
-    0%   { opacity: 0; transform: scaleX(0); }
-    40%  { opacity: 1; }
-    100% { opacity: 0.85; transform: scaleX(1); }
-  }
-
-  /* ---- wipes ----
-     The window slides one way and the content slides back the other at the
-     same rate, so the art holds still while it is uncovered. Both keyframes
-     share duration and easing; that is what keeps them cancelling. */
-  .wipe-down,
-  .wipe-right {
-    overflow: hidden;
-  }
-
-  .wipe-down {
-    animation: from-up 520ms var(--ease-out) var(--t-bolt) both;
-  }
-  .wipe-down-inner {
-    animation: from-down 520ms var(--ease-out) var(--t-bolt) both;
-  }
-  @keyframes from-up {
-    from { transform: translateY(-100%); }
-    to   { transform: translateY(0); }
-  }
-  @keyframes from-down {
-    from { transform: translateY(100%); }
-    to   { transform: translateY(0); }
-  }
-
-  .wipe-right {
-    animation: from-left 760ms var(--ease-out) var(--t-word) both;
-  }
-  .wipe-right-inner {
-    animation: from-right 760ms var(--ease-out) var(--t-word) both;
-  }
-  @keyframes from-left {
-    from { transform: translateX(-100%); }
-    to   { transform: translateX(0); }
-  }
-  @keyframes from-right {
-    from { transform: translateX(100%); }
-    to   { transform: translateX(0); }
-  }
-
   .bolt {
     filter: drop-shadow(0 0 1cqw var(--c-accent));
     opacity: 0.92;
   }
-
   .word {
-    filter: drop-shadow(0 0.4cqw 0.8cqw rgba(0, 0, 0, 0.7))
-      drop-shadow(0 0 1.6cqw var(--c-glow));
+    filter: drop-shadow(0 0.4cqw 0.8cqw rgba(0, 0, 0, 0.7)) drop-shadow(0 0 1.6cqw var(--c-glow));
+  }
+  .pro {
+    filter: drop-shadow(0 0 1cqw var(--c-glow));
+  }
+  .pro-in {
+    animation: pro-in 560ms var(--ease-out) var(--t-pro) both;
   }
 
   .sweep-mask {
@@ -429,51 +603,28 @@
     mask-size: 100% 100%;
     -webkit-mask-size: 100% 100%;
   }
-  /* A band of light across the chrome, now and then. */
   .sweep {
     position: absolute;
     top: 0;
     bottom: 0;
     left: 0;
     width: 14%;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      oklch(0.98 0.03 var(--h) / 0.75) 50%,
-      transparent
-    );
+    background: linear-gradient(90deg, transparent, oklch(0.98 0.03 var(--h) / 0.75) 50%, transparent);
     transform: translateX(-120%) skewX(-24deg);
     animation: sweep 4.2s cubic-bezier(0.5, 0, 0.3, 1) var(--t-sweep) infinite;
   }
   @keyframes sweep {
-    0%   { transform: translateX(-120%) skewX(-24deg); }
-    32%  { transform: translateX(760%) skewX(-24deg); }
-    100% { transform: translateX(760%) skewX(-24deg); }
+    0%        { transform: translateX(-120%) skewX(-24deg); }
+    32%, 100% { transform: translateX(760%) skewX(-24deg); }
   }
 
-  .pro-in {
-    animation: pro-in 560ms var(--ease-out) var(--t-pro) both;
-  }
-  @keyframes pro-in {
-    0%   { opacity: 0; transform: translateY(2.4cqw); }
-    100% { opacity: 1; transform: translateY(0); }
-  }
-  .pro {
-    filter: drop-shadow(0 0 1cqw var(--c-glow));
-  }
-
-  /* ---- looks ----
-     `.line` and `.ring` exist in the markup for every look and are only
-     switched on by the looks that use them. */
-  .line {
-    display: none;
-  }
+  /* `.line` and `.ring` are only switched on by the neon look. */
+  .line,
   .ring {
     display: none;
   }
 
-  /* Neon: the letters become lit outlines over a dark, faintly tinted fill,
-     inside a thin ring, the treatment of the outlined logo art. */
+  /* Neon: lit outlines over a dark, faintly tinted fill, inside a ring. */
   .look-neon .line {
     display: inline;
     fill: none;
@@ -481,10 +632,9 @@
     stroke-width: 3.5;
     stroke-linejoin: round;
   }
-  .look-neon .word use[fill^='url(#bmx-face)'],
-  .look-neon .pro use[fill^='url(#bmx-pro-fill)'],
+  .look-neon .face,
   .look-neon .bolt use[fill^='url(#bmx-bolt-fill)'] {
-    opacity: 0.3;
+    opacity: 0.16;
   }
   .look-neon .word,
   .look-neon .pro,
@@ -500,94 +650,48 @@
     height: 37cqw;
     border-radius: 50%;
     border: 0.35cqw solid var(--c-accent-hi);
-    box-shadow:
-      0 0 1.2cqw var(--c-accent),
-      inset 0 0 1.2cqw var(--c-accent);
-    opacity: 0.85;
-    animation: ring-in 700ms var(--ease-out) var(--t-streak) both;
-  }
-  .look-neon .streak {
-    display: none;
+    box-shadow: 0 0 1.2cqw var(--c-accent), inset 0 0 1.2cqw var(--c-accent);
+    animation: ring-in 700ms var(--ease-out) var(--t-start) both;
   }
   @keyframes ring-in {
     0%   { opacity: 0; transform: scale(0.92); }
     100% { opacity: 0.85; transform: scale(1); }
   }
 
-  /* ---- readout ---- */
+  /* ================= readout ================= */
+
   .readout {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: min(360px, 76vw);
-    margin-top: clamp(18px, 5vh, 56px);
-    animation: fade-in 500ms ease-out var(--t-readout) both;
+    justify-content: center;
+    margin-top: clamp(24px, 6vh, 64px);
+    animation: fade-in 600ms ease-out var(--t-readout) both;
+  }
+  .leaving .readout {
+    animation: lift 250ms ease-out both;
   }
 
-  .meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 16px;
-  }
-
-  .phase {
+  .status {
     color: var(--c-ui);
     font-family: var(--font-ui), system-ui, sans-serif;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.4em;
+    /* Letter-spacing trails the last glyph; this re-centres the word. */
+    margin-right: -0.4em;
   }
 
-  .detail {
-    color: var(--c-ui-dim);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 10px;
-    letter-spacing: 0.14em;
-    font-variant-numeric: tabular-nums;
+  .dots span {
+    animation: dot 1.4s ease-in-out infinite;
   }
-
-  /* Slim segmented meter: one block per preview pipeline. */
-  .meter {
-    display: flex;
-    gap: 2px;
-    width: 100%;
-  }
-
-  .seg {
-    position: relative;
-    flex: 1 1 0;
-    height: 3px;
-    background: oklch(0.26 0.02 var(--h));
-  }
-
-  /* The fill is a layer revealed by opacity, never a swapped `background`, so
-     the pre-count charge keeps running through a main-thread stall. */
-  .seg::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: var(--c-ui-strong);
-    box-shadow: 0 0 6px var(--c-glow);
-    opacity: 0;
-    transition: opacity 160ms linear;
-  }
-  .seg.on::after {
-    opacity: 1;
-  }
-
-  .meter.sweeping .seg::after {
-    animation: charge 1.25s ease-in-out infinite;
-    animation-delay: calc(var(--i) * 70ms);
-  }
-  @keyframes charge {
-    0%, 70%, 100% { opacity: 0; }
-    22%           { opacity: 1; }
+  .dots span:nth-child(2) { animation-delay: 0.2s; }
+  .dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot {
+    0%, 100% { opacity: 0.15; }
+    40%      { opacity: 1; }
   }
 
   .press {
-    color: var(--c-ui);
-    animation: pulse 1.6s ease-in-out infinite;
+    animation: pulse 1.8s ease-in-out infinite;
   }
   .press .coarse { display: none; }
   @media (pointer: coarse) {
@@ -599,94 +703,32 @@
     50%      { opacity: 0.35; }
   }
 
-  /* ---- terminal strip ----
-     Bottom-anchored, so new lines push the stack upward and nothing above it
-     ever moves. */
-  .tty {
+  /* ---- boot log (debug, ?bootlog=1) ---- */
+  .bootlog {
     position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 50%;
+    bottom: max(14px, env(safe-area-inset-bottom, 0px));
     z-index: 3;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 9px;
-    padding: 0 20px max(14px, env(safe-area-inset-bottom, 0px));
-    pointer-events: none;
-    opacity: 0.8;
-    animation: fade-in 300ms ease-out 180ms both;
-  }
-
-  .wire,
-  .lines {
-    width: min(560px, 100%);
-  }
-
-  /* ---- the liveness hairline ----
-     Fixed geometry and a single translated child, so the compositor runs it
-     without the main thread and it keeps sweeping through a blocked compile. */
-  .wire {
-    position: relative;
-    height: 1px;
-    overflow: hidden;
-    background: oklch(0.6 0.1 var(--h) / 0.14);
-  }
-
-  .shuttle {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 26%;
-    background: linear-gradient(90deg, transparent, var(--c-ui-deep) 42%, var(--c-chrome-white) 52%, var(--c-ui-deep) 62%, transparent);
-    will-change: transform;
-    transform: translate3d(-100%, 0, 0);
-    animation: shuttle 1.15s linear infinite;
-  }
-  /* 26% wide, so 385% clears the right edge exactly. */
-  @keyframes shuttle {
-    from { transform: translate3d(-100%, 0, 0); }
-    to   { transform: translate3d(385%, 0, 0); }
-  }
-
-  .lines {
-    list-style: none;
+    transform: translateX(-50%);
+    width: min(560px, calc(100% - 28px));
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
+    list-style: none;
+    pointer-events: none;
   }
-
-  .lines li {
+  .bootlog li {
     display: flex;
     gap: 8px;
-    align-items: baseline;
     font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 11px;
     line-height: 1.5;
     color: oklch(0.62 0.03 var(--h));
   }
-  .lines li.done { color: var(--c-ui-faint); }
+  .bootlog li.done { color: oklch(0.4 0.02 var(--h)); }
+  .mark-ok { flex: none; width: 2ch; text-align: right; color: var(--c-ui-strong); }
+  .text { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
-  .mark {
-    flex: none;
-    width: 2ch;
-    text-align: right;
-    color: var(--c-ui-strong);
-  }
-  .lines li.done .mark { color: var(--c-ui-deep); }
-
-  .text {
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  /* ---- scanlines ----
-     The one retro note: fine, faint, over everything. */
+  /* ---- scanlines: the one retro note, fine and faint over everything ---- */
   .scanlines {
     position: absolute;
     inset: 0;
@@ -712,55 +754,27 @@
   /* ---- phone ---- */
   @media (max-width: 820px), (pointer: coarse) and (max-height: 500px) {
     .splash {
-      --logo-w: min(960px, 96vw, 100vh);
-    }
-    .readout {
-      width: min(360px, calc(100% - 40px));
-    }
-    .lines li {
-      font-size: 11px;
-    }
-    .tty {
-      padding-left: 14px;
-      padding-right: 14px;
+      --logo-w: min(980px, 94vw, 110vh);
     }
   }
 
-  /* A phone on its side has ~375px of height: the log keeps only the line
-     that is running, so it never climbs into the readout. */
-  @media (max-height: 500px) {
-    .lines li:not(:last-child) {
-      display: none;
-    }
-    .readout {
-      margin-top: 8px;
-    }
-  }
-
-  /* Motion is decoration; the readout still carries the information. */
+  /* Motion is decoration. */
   @media (prefers-reduced-motion: reduce) {
     .splash *,
     .splash {
       animation: none !important;
     }
-    .sweep {
+    .sweep,
+    .sweep-window {
       display: none;
+    }
+    .halo,
+    .flare {
+      opacity: 0.6;
     }
     .splash.leaving {
       opacity: 0;
-      transition: opacity 400ms ease-out 300ms;
-    }
-
-    /* The hairline keeps going even here. Travel is what people object to, so
-       it stops travelling and breathes instead, still on the compositor. */
-    .shuttle {
-      width: 100%;
-      transform: none;
-      animation: breathe 2.6s ease-in-out infinite !important;
-    }
-    @keyframes breathe {
-      0%, 100% { opacity: 0.16; }
-      50%      { opacity: 0.75; }
+      transition: opacity 400ms ease-out 200ms;
     }
   }
 </style>

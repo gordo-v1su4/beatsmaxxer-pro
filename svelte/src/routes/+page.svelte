@@ -184,12 +184,19 @@
       const holdMs = automated ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
       // 'go' plays the exit; unmount only once it has actually run, so the
       // card hands off instead of blinking out from under the user.
+      // The skip key is swallowed in the capture phase: it belongs to the
+      // splash, and would otherwise land in whatever the app focuses first
+      // (the access-code field types the space that dismissed the card).
       let dismissed = false;
-      const dismiss = () => {
+      const dismiss = (e?: Event) => {
+        if (e?.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         if (dismissed) return;
         dismissed = true;
-        window.removeEventListener('keydown', dismiss);
-        window.removeEventListener('pointerdown', dismiss);
+        window.removeEventListener('keydown', dismiss, true);
+        window.removeEventListener('pointerdown', dismiss, true);
         clearTimeout(holdTimer);
         splashPhase = 'go';
         setTimeout(() => { splashPhase = 'ready'; }, 900);
@@ -197,8 +204,8 @@
       let holdTimer: ReturnType<typeof setTimeout> | undefined;
       if (holdMs > 0) {
         splashPhase = 'armed';
-        window.addEventListener('keydown', dismiss);
-        window.addEventListener('pointerdown', dismiss);
+        window.addEventListener('keydown', dismiss, true);
+        window.addEventListener('pointerdown', dismiss, true);
         holdTimer = setTimeout(dismiss, holdMs);
       } else {
         dismiss();

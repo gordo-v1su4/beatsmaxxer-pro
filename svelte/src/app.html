@@ -1,5 +1,11 @@
 <!doctype html>
-<html lang="en">
+<!--
+	Black before anything else exists: the app is `ssr = false`, so until the
+	bundle boots and the splash mounts, this is the whole first paint. The splash
+	then rises out of the same black rather than flashing a white page first.
+-->
+<html lang="en" style="background: #030507">
+
 	<head>
 		<meta charset="utf-8" />
 		<!--
