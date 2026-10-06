@@ -75,41 +75,21 @@ jobs:
           echo "$dir" >> "$GITHUB_PATH"
           "$dir/ocr" version
 
-      - name: Review with Qwen 3.8 Flash
-        id: primary
-        continue-on-error: true
+      # Kimi Code subscription (OpenAI-compatible endpoint, model k3) instead of
+      # Hyper's Free plan, whose rate limit (429, ~9 min retry-after) failed
+      # reviews. Key: GitHub secret KIMI_API_KEY, copied from the canonical BWS
+      # record of the same name (also used by creative-studio-pro).
+      - name: Review with Kimi Code (k3)
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
           ocr_version: '1.12.12'
-          llm_url: https://hyper.charm.land/v1
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: qwen3.8-flash
+          llm_url: https://api.kimi.com/coding/v1
+          llm_auth_token: ${{ secrets.KIMI_API_KEY }}
+          llm_model: k3
           llm_use_anthropic: 'false'
           llm_protocol: openai
-          llm_extra_body: '{"thinking":{"type":"enabled"}}'
-          llm_reasoning_effort: max
           review_concurrency: '1'
           sticky_summary: 'true'
-          base_ref: ${{ steps.context.outputs.base_ref }}
-          head_sha: ${{ steps.context.outputs.head_sha }}
-          pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
-
-      - name: Retry with GLM 5.3 Flash
-        if: ${{ !cancelled() && steps.primary.outcome == 'failure' }}
-        uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
-        with:
-          ocr_version: '1.12.12'
-          llm_url: https://hyper.charm.land/v1
-          llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
-          llm_model: glm-5.3-flash
-          llm_use_anthropic: 'false'
-          llm_protocol: openai
-          llm_extra_body: '{"thinking":{"type":"enabled"}}'
-          llm_reasoning_effort: max
-          review_concurrency: '1'
-          sticky_summary: 'true'
-          # The primary attempt already uploaded this run's diagnostic artifacts.
-          upload_artifacts: 'false'
           base_ref: ${{ steps.context.outputs.base_ref }}
           head_sha: ${{ steps.context.outputs.head_sha }}
           pr_number: ${{ github.event.pull_request.number || inputs.pr_number }}
