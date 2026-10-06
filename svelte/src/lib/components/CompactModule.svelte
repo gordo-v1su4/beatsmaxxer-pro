@@ -200,7 +200,7 @@
     <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div
         style={mod.id === 'mirror'
-          ? 'display:grid;grid-template-columns:repeat(6,1fr);gap:2px'
+          ? 'display:grid;grid-template-columns:repeat(12,1fr);gap:2px'
           : 'display:flex;gap:2px;flex-wrap:wrap'}
       >
         {#each spec.buttons as btn (btn.label)}
@@ -208,12 +208,14 @@
             Math.abs((params[spec.primary] ?? 50) - btn.set[spec.primary]) <= activeTolerance}
           {#if mod.id === 'mirror'}
             <!-- Twelve folds named MIR L / SLB V / COR A read as codes, not as
-                 shapes. The glyph carries the geometry; the label stays under it
-                 so the name is still learnable. -->
+                 shapes. The glyph carries the geometry; the name is on hover
+                 and for screen readers, so all twelve fit one row and INCEPTION
+                 stays the same height as the cards beside it. -->
             <button
               type="button"
               class="fold-btn"
               title={btn.label}
+              aria-label={btn.label}
               aria-pressed={isActive}
               style="border-color:{isActive ? mod.accentColor + '66' : '#0e1012'};background:{isActive
                 ? `linear-gradient(180deg,${mod.accentColor}22,${mod.accentColor}11)`
@@ -221,7 +223,6 @@
               onclick={() => updateParams(mod.id, btn.set)}
             >
               <FoldGlyph kind={btn.label} color={mod.accentColor} dim={!isActive} />
-              <span class="fold-btn-label">{btn.label}</span>
             </button>
           {:else}
             <RackBtn
@@ -319,15 +320,16 @@
 </div>
 
 <style>
-  /* Taller than the 16px rack control tier because it carries a diagram as well
-     as a label — the one place the extra height buys comprehension. */
+  /* A little taller than the 16px rack control tier because the glyph is the
+     whole label; one row of twelve. */
   .fold-btn {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 1px;
-    height: 28px;
+    min-width: 0;
+    height: 20px;
     padding: 0;
     border-style: solid;
     border-width: 1px;
@@ -338,13 +340,6 @@
   }
   .fold-btn:hover {
     background: #1e2022 !important;
-  }
-  .fold-btn-label {
-    font-family: var(--font-ui);
-    font-size: 5.5px;
-    font-weight: 500;
-    letter-spacing: 0.06em;
-    line-height: 1;
   }
 
 </style>

@@ -110,11 +110,13 @@
 {#if moduleId === 'transition'}
   <div style="display:flex;flex-direction:column;flex:1">
     <Section label="PACK" {color}>
-      <!-- Six across, not eight. At the 272px module minimum an 8-column grid
-           gives each move ~30px, and the longest labels ("WHP L", "GLTC") need
-           about 30px of glyph on their own — so they clipped. Six columns gives
-           ~41px and costs one extra 16px row. -->
-      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:2px">
+      <!-- As many columns as fit at 34px each. The longest labels ("WHP L",
+           "GLTC") need ~30px of glyph, so a fixed 8 clipped at the 272px
+           module minimum — but a fixed 6 cost a third row at normal widths,
+           making TRANSITION the card that sets the whole top row's height.
+           At a normal ~320px card this is two even rows of 8; it only wraps to
+           a third row near the minimum. -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(34px,1fr));gap:2px">
         {#each TRANSITION_PACK as o (o.l)}
           <!-- fill, not a fixed 34px: these sit in `repeat(8, 1fr)`, so on a
                narrow module the tracks shrink while a pixel-width button does
