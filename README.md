@@ -1,7 +1,7 @@
 # Beatsmaxxer Pro
 
 <p align="center">
-  <img src="docs/beatsmaxxer-pro.webp" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
+  <img src="docs/images/beatsmaxxer-workspace.png" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
 </p>
 
 Beatsmaxxer Pro is an audio-reactive video FX rack for live visuals: eight clip
