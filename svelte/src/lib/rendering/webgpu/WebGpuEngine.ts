@@ -338,9 +338,9 @@ export class WebGpuEngine {
    * Build the shared module-FX programs. Called once from init so the cost
    * lands during device acquisition rather than on the first canvas attach.
    *
-   * Resolves as soon as the two dry (mode-0) pipelines exist — that is all a
-   * binding needs to render. Every effect's own pipeline keeps compiling in
-   * the background; `fxPipelineWarmup` reports how far that has got.
+   * Resolves once every effect's pipeline has settled (built or failed);
+   * `fxPipelineWarmup` reports how far that has got. A mode that failed keeps
+   * the dry fallback until a later get() rebuilds it.
    */
   private ensureModulePipelines(device: GPUDevice): Promise<void> {
     if (this.modePipelinesPromise) return this.modePipelinesPromise;
@@ -367,8 +367,17 @@ export class WebGpuEngine {
       idle: this.fxIdleBindGroupLayout
     });
     this.modePipelines = cache;
-    void cache.warmAll();
-    this.modePipelinesPromise = Promise.all([cache.build('video', 0), cache.build('idle', 0)]).then(
+    // Wait for every effect, not just the dry pair. Rendering on the dry
+    // fallback meant the first frame — often the only frame while the
+    // transport is stopped — showed the bare test card with no effect, and
+    // nothing repainted it once the real pipeline landed. The builds are async
+    // and parallel (~3s cold), so this costs no GPU-process stall, and the
+    // splash already holds until warmup settles.
+    this.modePipelinesPromise = Promise.all([
+      cache.build('video', 0),
+      cache.build('idle', 0),
+      cache.warmAll()
+    ]).then(
       ([video, idle]) => {
         // A device loss mid-build replaces the cache; the stale one's results
         // belong to a dead device.
@@ -630,7 +639,11 @@ export class WebGpuEngine {
     this.videoTextureCache.beginFrame();
     try {
       for (const [id, binding, moduleId, sourceId, changeKey, stateKey] of scheduled) {
-        this.encodeBinding(encoder, binding, binding.color, moduleId, sourceId);
+        // A change in WHAT the binding shows must re-run the effect even when
+        // the timeline has not stepped (transport stopped): otherwise the blit
+        // just re-presents the stale feedback frame.
+        const stateChanged = this.bindingSchedule.get(id)?.lastStateKey !== stateKey;
+        this.encodeBinding(encoder, binding, binding.color, moduleId, sourceId, stateChanged);
         this.recordRenderedBinding(id, moduleId, frame, changeKey, stateKey);
       }
     } finally {
@@ -729,8 +742,18 @@ export class WebGpuEngine {
       sourceId,
       this.renderParamVersions.get(moduleId) ?? 0,
       binding.canvas?.width ?? 0,
-      binding.canvas?.height ?? 0
+      binding.canvas?.height ?? 0,
+      this.effectPipelineReady(moduleId) ? 'fx' : 'dry'
     ].join(':');
+  }
+
+  /** Whether this module's effect renders with its own pipeline rather than
+      the dry fallback. Part of the state key: a card drawn on the fallback is
+      showing the wrong picture, and must repaint once its pipeline lands. */
+  private effectPipelineReady(moduleId: string) {
+    if (!this.modePipelines) return true;
+    const mode = SHADER_EFFECT_MODE[getModuleDef(moduleId)?.shaderKey ?? moduleId] ?? 0;
+    return this.modePipelines.isReady('idle', mode) && this.modePipelines.isReady('video', mode);
   }
 
   private bindingChangeKey(
@@ -848,7 +871,8 @@ export class WebGpuEngine {
     binding: CanvasBinding,
     color: [number, number, number],
     moduleId: string,
-    sourceId: string
+    sourceId: string,
+    forceEffectPass = false
   ) {
     if (!this.device || !this.sampler) return;
     const sampler = this.sampler;
@@ -1071,7 +1095,7 @@ export class WebGpuEngine {
 
     let blitSource = readView;
 
-    if (feedbackAdvance.steps > 0) {
+    if (feedbackAdvance.steps > 0 || forceEffectPass) {
       const fxPass = encoder.beginRenderPass({
         colorAttachments: [
           {

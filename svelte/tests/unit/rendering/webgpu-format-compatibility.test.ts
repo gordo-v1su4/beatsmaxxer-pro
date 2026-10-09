@@ -122,12 +122,24 @@ describe.each([
     if (id !== 'pgm') engine.setModuleParams('transition', { mix: 75 });
 
     expect(() => engine.renderAll(timeline(1.1))).not.toThrow();
-    expect(submittedPasses[1]).toEqual([
-      {
-        attachment: expect.objectContaining({ format: 'bgra8unorm', name: 'canvas' }),
-        pipeline: expect.objectContaining({ targetFormat: 'bgra8unorm', name: 'canvas-blit' })
-      }
-    ]);
+    const blit = {
+      attachment: expect.objectContaining({ format: 'bgra8unorm', name: 'canvas' }),
+      pipeline: expect.objectContaining({ targetFormat: 'bgra8unorm', name: 'canvas-blit' })
+    };
+    // PGM on a duplicate step only re-presents. The preview's params changed,
+    // so it re-runs the effect into the RGBA feedback target before blitting —
+    // a stopped transport must not hold a stale picture.
+    expect(submittedPasses[1]).toEqual(
+      id === 'pgm'
+        ? [blit]
+        : [
+            {
+              attachment: expect.objectContaining({ format: 'rgba8unorm' }),
+              pipeline: expect.objectContaining({ targetFormat: 'rgba8unorm' })
+            },
+            blit
+          ]
+    );
   });
 });
 
