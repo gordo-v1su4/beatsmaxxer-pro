@@ -378,6 +378,9 @@ function runSequencer(frame: TimelineFrame) {
   }
 
   const mode = get(arrangementMode);
+  // LIVE is unarmed and can be stopped: retire the previous take before
+  // either early return, so a subsequent replace take can erase its cuts.
+  if (mode !== 'rec') takeSteps.clear();
   // PLAY: a hand pick takes the program off the arrangement (Ableton's
   // Session-launch override) until BACK TO ARRANGEMENT — stopped or playing.
   if (mode === 'play' && manualRequested) arrangementOverridden.set(true);
@@ -398,7 +401,6 @@ function runSequencer(frame: TimelineFrame) {
   // driving PGM during a replace take, so every change is the performance.
   // Overdub keeps to hand cuts, since there the timeline's own cuts move PGM.
   const replacing = mode === 'rec' && !get(recordOverdub);
-  if (mode !== 'rec') takeSteps.clear();
   let writtenStep: number | null = null;
   const performed = manualLanded || (replacing && pgmChanged);
   if (mode === 'rec' && performed && totalSteps > 0) {
