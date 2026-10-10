@@ -20,7 +20,7 @@
   import { BOLT_LOGO } from './splashLogoPaths';
   import { splitWordmark } from './splashLogoParts';
 
-  const { beats, maxxer, swoosh } = splitWordmark(BOLT_LOGO);
+  const { beats, maxxer, swoosh, pro } = splitWordmark(BOLT_LOGO);
   const WORD = BOLT_LOGO.word;
 
   // Back to front, in the order they arrive.
@@ -29,7 +29,7 @@
     { cls: 'beats', d: beats, fill: 'url(#bmx-face)' },
     { cls: 'maxxer', d: maxxer, fill: 'url(#bmx-face)' },
     { cls: 'swoosh', d: swoosh, fill: 'url(#bmx-face)' },
-    { cls: 'pro', d: BOLT_LOGO.pro, fill: 'url(#bmx-pro-fill)' }
+    { cls: 'pro', d: pro, fill: 'url(#bmx-pro-fill)' }
   ];
 
   // The glint is clipped to the whole mark with a CSS mask, which wants an image.
@@ -144,6 +144,11 @@
           </svg>
         {/each}
 
+        <!-- The strike: a flat white bolt that flashes as it lands. -->
+        <svg class="part bolt-flash" viewBox="0 0 2000 848">
+          <path d={BOLT_LOGO.bolt} fill-rule="evenodd" />
+        </svg>
+
         <!-- RGB split on impact: flat cyan and magenta copies of the word that
              snap together into the chrome one. -->
         <svg class="part ghost ghost-c" viewBox="0 0 2000 848">
@@ -244,14 +249,16 @@
   }
 
   /*
-    Intro, ~1.2s from first paint, everything on transform/opacity:
-      0      glow blooms, bolt strikes in behind, warp streaks burst out
-      90     BEATS slams in from the left
-      170    MAXXER slams in from the right
-      380    impact: cyan/magenta copies snap together into the chrome
-      360    swoosh wipes out under the word
-      520    PRO stamps down
-      760    one glint runs across the finished mark
+    Intro, ~1.4s from first paint, everything on transform/opacity:
+      0      glow blooms, warp streaks burst out, the bolt drops from above
+      140    the bolt lands: white flash, flicker
+      180    BEATS slams in from the left edge
+      240    MAXXER slams in from the right edge
+      540    swoosh wipes out under the word
+      560    impact: cyan/magenta copies snap together into the chrome
+      680    PRO stamps down
+      920    one glint runs across the finished mark
+      1400+  the bolt crackles every 2.4s until the app is ready
   */
   .mark {
     position: relative;
@@ -304,28 +311,60 @@
     to   { opacity: 1; transform: scale(1); }
   }
 
+  /* The bolt drops from above, lands with a white flash, flickers, then
+     crackles every few seconds while loading continues. */
   .bolt {
     transform-origin: 52% 40%;
-    animation: bolt-in 280ms linear both;
+    animation:
+      bolt-strike 320ms cubic-bezier(0.55, 0, 1, 0.45) both,
+      bolt-crackle 2.4s linear 1.4s infinite;
   }
-  @keyframes bolt-in {
-    0%   { opacity: 0;    transform: scale(1.14); }
-    30%  { opacity: 1;    transform: scale(1.04); }
-    45%  { opacity: 0.25; }
-    65%  { opacity: 1;    transform: scale(1); }
-    100% { opacity: 0.92; transform: scale(1); }
+  @keyframes bolt-strike {
+    0%   { opacity: 0;    transform: translate(4%, -45%) scale(1.05); }
+    20%  { opacity: 1; }
+    45%  { opacity: 1;    transform: none; }
+    60%  { opacity: 0.3; }
+    75%  { opacity: 1; }
+    85%  { opacity: 0.55; }
+    100% { opacity: 0.92; transform: none; }
+  }
+  @keyframes bolt-crackle {
+    0%, 8%, 100% { opacity: 0.92; }
+    2%           { opacity: 0.35; }
+    4%           { opacity: 1; }
+    6%           { opacity: 0.5; }
   }
 
-  .beats { animation: slam-left 300ms cubic-bezier(0.16, 1, 0.3, 1) 90ms both; }
-  .maxxer { animation: slam-right 300ms cubic-bezier(0.16, 1, 0.3, 1) 170ms both; }
+  .bolt-flash {
+    fill: #fff;
+    filter: drop-shadow(0 0 18px oklch(0.95 0.08 var(--h))) drop-shadow(0 0 48px var(--c-glow));
+    opacity: 0;
+    animation:
+      flash 260ms ease-out 140ms both,
+      flash-crackle 2.4s linear 1.4s infinite;
+  }
+  @keyframes flash {
+    0%   { opacity: 0; }
+    15%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  @keyframes flash-crackle {
+    0%, 6%, 100% { opacity: 0; }
+    2%           { opacity: 0.55; }
+  }
+
+  /* BEATS and MAXXER come in from nearly off-screen on their own sides and
+     meet under the bolt. */
+  .beats { animation: slam-left 380ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both; }
+  .maxxer { animation: slam-right 380ms cubic-bezier(0.16, 1, 0.3, 1) 240ms both; }
   @keyframes slam-left {
-    from { opacity: 0; transform: translateX(-16%) skewX(-14deg); }
-    35%  { opacity: 1; }
+    from { opacity: 0; transform: translateX(-75%) skewX(-18deg); }
+    25%  { opacity: 1; }
     to   { opacity: 1; transform: none; }
   }
   @keyframes slam-right {
-    from { opacity: 0; transform: translateX(16%) skewX(-14deg); }
-    35%  { opacity: 1; }
+    from { opacity: 0; transform: translateX(75%) skewX(-18deg); }
+    25%  { opacity: 1; }
     to   { opacity: 1; transform: none; }
   }
 
@@ -334,8 +373,8 @@
     mix-blend-mode: screen;
     opacity: 0;
   }
-  .ghost-c { fill: oklch(0.82 0.15 200); animation: ghost-c 260ms ease-out 380ms both; }
-  .ghost-m { fill: oklch(0.65 0.25 340); animation: ghost-m 260ms ease-out 380ms both; }
+  .ghost-c { fill: oklch(0.82 0.15 200); animation: ghost-c 260ms ease-out 560ms both; }
+  .ghost-m { fill: oklch(0.65 0.25 340); animation: ghost-m 260ms ease-out 560ms both; }
   @keyframes ghost-c {
     from { opacity: 0.9; transform: translate(-1.1%, 0.3%); }
     to   { opacity: 0;   transform: none; }
@@ -347,7 +386,7 @@
 
   .swoosh {
     transform-origin: 23.8% 72%;
-    animation: wipe 240ms cubic-bezier(0.3, 0.9, 0.3, 1) 360ms both;
+    animation: wipe 240ms cubic-bezier(0.3, 0.9, 0.3, 1) 540ms both;
   }
   @keyframes wipe {
     from { opacity: 0; transform: scaleX(0); }
@@ -357,7 +396,7 @@
 
   .pro {
     transform-origin: 72.5% 70%;
-    animation: stamp 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms both;
+    animation: stamp 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 680ms both;
   }
   @keyframes stamp {
     from { opacity: 0; transform: scale(1.6); }
@@ -381,7 +420,7 @@
     width: 16%;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 50%, transparent);
     will-change: transform;
-    animation: glint 480ms cubic-bezier(0.45, 0, 0.25, 1) 760ms both;
+    animation: glint 480ms cubic-bezier(0.45, 0, 0.25, 1) 920ms both;
   }
   @keyframes glint {
     from { transform: translateX(-160%) skewX(-22deg); }

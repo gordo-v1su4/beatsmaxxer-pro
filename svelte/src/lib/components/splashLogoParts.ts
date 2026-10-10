@@ -16,7 +16,11 @@ export interface SplashLogoParts {
   beats: string;
   maxxer: string;
   swoosh: string;
+  pro: string;
 }
+
+/** Largest bbox area a stray sliver can have and still count as a line tip. */
+const TIP_MAX_AREA = 2000;
 
 type Point = [number, number];
 
@@ -76,7 +80,8 @@ export function splitWordmark(logo: SplashLogo): SplashLogoParts {
     return root;
   });
 
-  const parts: Record<keyof SplashLogoParts, string[]> = { beats: [], maxxer: [], swoosh: [] };
+  const parts: Record<keyof SplashLogoParts, string[]> = { beats: [], maxxer: [], swoosh: [], pro: [] };
+  const swooshShapes: Shape[] = [];
   shapes.forEach((shape, i) => {
     const root = rootOf[i];
     const w = root.x1 - root.x0;
@@ -85,6 +90,22 @@ export function splitWordmark(logo: SplashLogo): SplashLogoParts {
     const key: keyof SplashLogoParts =
       w > 500 && h < 100 ? 'swoosh' : (root.x0 + root.x1) / 2 < WORD_SPLIT_X ? 'beats' : 'maxxer';
     parts[key].push(shape.d);
+    if (key === 'swoosh' && root === shape) swooshShapes.push(shape);
   });
-  return { beats: parts.beats.join(''), maxxer: parts.maxxer.join(''), swoosh: parts.swoosh.join('') };
+
+  // The trace put the underline's last sliver, touching the P, into PRO. It
+  // belongs to the line: left in PRO it flies off with the stamp.
+  const touchesSwoosh = (s: Shape) =>
+    swooshShapes.some((l) => s.x0 <= l.x1 + 4 && s.x1 >= l.x0 && s.y0 <= l.y1 && s.y1 >= l.y0);
+  for (const shape of parseShapes(logo.pro)) {
+    const area = (shape.x1 - shape.x0) * (shape.y1 - shape.y0);
+    parts[area < TIP_MAX_AREA && touchesSwoosh(shape) ? 'swoosh' : 'pro'].push(shape.d);
+  }
+
+  return {
+    beats: parts.beats.join(''),
+    maxxer: parts.maxxer.join(''),
+    swoosh: parts.swoosh.join(''),
+    pro: parts.pro.join('')
+  };
 }

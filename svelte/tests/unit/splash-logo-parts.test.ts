@@ -15,14 +15,16 @@ describe('splash wordmark split', () => {
   const parts = splitWordmark(BOLT_LOGO);
 
   test('every subpath of the word lands in exactly one part', () => {
-    expect(subpaths(parts.beats) + subpaths(parts.maxxer) + subpaths(parts.swoosh)).toBe(
-      subpaths(BOLT_LOGO.word)
-    );
+    expect(
+      subpaths(parts.beats) + subpaths(parts.maxxer) + subpaths(parts.swoosh) + subpaths(parts.pro)
+    ).toBe(subpaths(BOLT_LOGO.word) + subpaths(BOLT_LOGO.pro));
   });
 
-  test('BEATS sits left of MAXXER, and the swoosh is one flat shape', () => {
+  test('BEATS sits left of MAXXER, and the line tip moves from PRO to the swoosh', () => {
     expect(Math.max(...xs(parts.beats))).toBeLessThan(1100);
     expect(Math.min(...xs(parts.maxxer))).toBeGreaterThan(880);
-    expect(subpaths(parts.swoosh)).toBe(1);
+    // The line plus its tip, which the trace had put in PRO.
+    expect(subpaths(parts.swoosh)).toBe(2);
+    expect(Math.min(...xs(parts.pro))).toBeGreaterThan(1226);
   });
 });
