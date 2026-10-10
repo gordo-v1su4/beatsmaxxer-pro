@@ -68,7 +68,7 @@
   /** Shortest the title card stays up, from navigation start (V1S-64). */
   const SPLASH_MIN_MS = 1500;
   /** How long the splash intro takes to land, from when it mounts. */
-  const SPLASH_INTRO_MS = 1450;
+  const SPLASH_INTRO_MS = 1800;
   /** False while the intro plays: the app is not mounted and the GPU is idle. */
   let introDone = $state(false);
   let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');

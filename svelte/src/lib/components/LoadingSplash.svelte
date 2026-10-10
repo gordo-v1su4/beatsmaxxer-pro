@@ -37,6 +37,10 @@
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 848"><path fill-rule="evenodd" d="${BOLT_LOGO.word}${BOLT_LOGO.pro}"/></svg>`
   )}")`;
 
+  const BOLT_MASK = `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 848"><path fill-rule="evenodd" d="${BOLT_LOGO.bolt}"/></svg>`
+  )}")`;
+
   // Fixed, not random: the burst looks the same on every load.
   const STREAKS = Array.from({ length: 18 }, (_, i) => ({
     angle: Math.round((i * 360) / 18 + ((i * 37) % 11) - 5),
@@ -146,6 +150,10 @@
               <path d={layer.tip} fill-rule="evenodd" fill="url(#bmx-pro-fill)" />
             {/if}
           </svg>
+          {#if layer.cls === 'bolt'}
+            <!-- Right above the bolt, under the word, so it only lights the bolt. -->
+            <div class="bolt-shine" style="--mask: {BOLT_MASK}"><span></span></div>
+          {/if}
         {/each}
 
         <!-- The strike: a flat white bolt that flashes as it lands. -->
@@ -251,7 +259,7 @@
   }
 
   /*
-    Intro, ~1.5s from black, everything on transform/opacity:
+    Intro, ~1.8s from black, everything on transform/opacity:
       60     BEATS slams in from the left edge
       120    MAXXER slams in from the right edge
       420    the bolt drops from above, behind the joined word
@@ -259,8 +267,8 @@
       560    white flash on the bolt; cyan/magenta copies snap into the chrome
       600    swoosh wipes out under the word
       720    PRO stamps down
-      960    one glint runs across the finished mark
-      1600+  the bolt crackles every 2.4s until the app is ready
+      900    one slow glint runs across the finished mark (900ms)
+      1700+  a soft glint sweeps down the bolt every 2.6s until the app is ready
   */
   .mark {
     position: relative;
@@ -313,46 +321,58 @@
     to   { opacity: 1; transform: scale(1); }
   }
 
-  /* Once the halves meet, the bolt drops from above behind them, lands with a
-     white flash, flickers, then crackles every few seconds while loading. */
+  /* Once the halves meet, the bolt drops from above behind them and lands
+     with one white flash. After that a glint sweeps down it every 2.6s
+     (.bolt-shine) for as long as the splash is up. */
   .bolt {
     transform-origin: 52% 40%;
-    animation:
-      bolt-strike 320ms cubic-bezier(0.55, 0, 1, 0.45) 420ms both,
-      bolt-crackle 2.4s linear 1.6s infinite;
+    animation: bolt-strike 320ms cubic-bezier(0.55, 0, 1, 0.45) 420ms both;
   }
   @keyframes bolt-strike {
     0%   { opacity: 0;    transform: translate(4%, -45%) scale(1.05); }
     20%  { opacity: 1; }
     45%  { opacity: 1;    transform: none; }
-    60%  { opacity: 0.3; }
-    75%  { opacity: 1; }
-    85%  { opacity: 0.55; }
     100% { opacity: 0.92; transform: none; }
-  }
-  @keyframes bolt-crackle {
-    0%, 8%, 100% { opacity: 0.92; }
-    2%           { opacity: 0.35; }
-    4%           { opacity: 1; }
-    6%           { opacity: 0.5; }
   }
 
   .bolt-flash {
     fill: #fff;
     filter: drop-shadow(0 0 18px oklch(0.95 0.08 var(--h))) drop-shadow(0 0 48px var(--c-glow));
     opacity: 0;
-    animation:
-      flash 260ms ease-out 560ms both,
-      flash-crackle 2.4s linear 1.6s infinite;
+    animation: flash 300ms ease-out 560ms both;
   }
   @keyframes flash {
     0%   { opacity: 0; }
     15%  { opacity: 1; }
     100% { opacity: 0; }
   }
-  @keyframes flash-crackle {
-    0%, 6%, 100% { opacity: 0; }
-    2%           { opacity: 0.55; }
+
+  /* The bolt's glint: the same soft sheen as the word's, tilted, sweeping
+     down the bolt once every couple of seconds. Masked to the bolt and
+     layered under the word, so it only lights the bolt. */
+  .bolt-shine {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    -webkit-mask: var(--mask) center / 100% 100% no-repeat;
+    mask: var(--mask) center / 100% 100% no-repeat;
+  }
+  .bolt-shine span {
+    position: absolute;
+    top: 0;
+    left: -20%;
+    right: -20%;
+    height: 16%;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.9) 50%, transparent);
+    will-change: transform;
+    animation: shine-down 2.6s cubic-bezier(0.45, 0, 0.25, 1) 1700ms infinite both;
+  }
+  /* Top to bottom over the bolt above the word (board y 25-300), then it
+     rests out of sight below until the next pass. */
+  @keyframes shine-down {
+    0%        { transform: translateY(-110%) skewY(-14deg); }
+    35%, 100% { transform: translateY(260%) skewY(-14deg); }
   }
 
   /* From black, BEATS and MAXXER come in from nearly off-screen on their own
@@ -422,7 +442,7 @@
     width: 16%;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 50%, transparent);
     will-change: transform;
-    animation: glint 480ms cubic-bezier(0.45, 0, 0.25, 1) 960ms both;
+    animation: glint 900ms cubic-bezier(0.45, 0, 0.25, 1) 900ms both;
   }
   @keyframes glint {
     from { transform: translateX(-160%) skewX(-22deg); }
