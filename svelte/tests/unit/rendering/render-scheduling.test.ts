@@ -27,9 +27,11 @@ function scheduledEngine(active = true) {
   const submit = vi.fn();
   const createCommandEncoder = vi.fn(() => ({ finish }));
   const renderDiag = new Map<string, Record<string, unknown>>();
-  const encodeBinding = vi.fn((_: unknown, __: unknown, ___: unknown, moduleId: string) => {
-    renderDiag.set(moduleId, {});
-  });
+  const encodeBinding = vi.fn(
+    (_: unknown, __: unknown, ___: unknown, moduleId: string, _sourceId?: string, _force?: boolean) => {
+      renderDiag.set(moduleId, {});
+    }
+  );
   const bindings = new Map<string, CanvasBinding>([
     ['pgm', binding('transition', active)],
     ...Array.from({ length: 8 }, (_, index) => [
@@ -91,6 +93,32 @@ describe('bounded WebGPU render scheduling', () => {
     engine.renderAll(frame(0.2, 4));
     expect(encodeBinding).toHaveBeenCalledTimes(2);
     expect(encodeBinding.mock.calls.map((call) => call[3])).toEqual(['transition', 'module-3']);
+  });
+
+  test('repaints a stopped preview, effect pass forced, once its effect pipeline lands', () => {
+    const { engine, encodeBinding } = scheduledEngine();
+    let ready = false;
+    Object.assign(engine, { modePipelines: { isReady: () => ready } });
+
+    // Transport stopped: context time and fixed step never advance, so the
+    // cadence gate alone would hold the dry-fallback frame forever.
+    engine.renderAll(frame(0, 0));
+    engine.renderAll(frame(0, 0));
+    encodeBinding.mockClear();
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding.mock.calls.map((call) => call[3])).toEqual(['transition']);
+
+    ready = true;
+    encodeBinding.mockClear();
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding).toHaveBeenCalledTimes(9);
+    expect(encodeBinding.mock.calls.every((call) => call[5] === true)).toBe(true);
+
+    encodeBinding.mockClear();
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding.mock.calls.map((call) => [call[3], call[5]])).toEqual([
+      ['transition', false]
+    ]);
   });
 
   test('never encodes inactive bindings and avoids empty command submissions', () => {

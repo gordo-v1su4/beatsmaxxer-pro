@@ -33,7 +33,8 @@ describe('PGM render source ownership', () => {
       pgmBinding,
       pgmBinding.color,
       'shake',
-      'bottom-1'
+      'bottom-1',
+      true
     );
     expect(submit).toHaveBeenCalledOnce();
   });

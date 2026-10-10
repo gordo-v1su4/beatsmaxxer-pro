@@ -37,6 +37,11 @@ export class ModePipelineCache {
     return null;
   }
 
+  /** Whether this mode's own pipeline is built. Never starts a build. */
+  isReady(variant: FxVariant, mode: number): boolean {
+    return this.ready.has(cacheKey(variant, mode));
+  }
+
   /** Resolves once this mode's pipeline exists (null if it failed to build). */
   build(variant: FxVariant, mode: number): Promise<GPURenderPipeline | null> {
     const key = cacheKey(variant, mode);
