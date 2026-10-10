@@ -94,5 +94,17 @@ and eight skips in the existing media-capable validation image, using the
 read-only real-media bundle. The dependency-only image lacked ffprobe for one
 fixture check; that tooling limitation was resolved before final validation.
 
+The revised Dockhand app and worker are healthy. A deliberately invalid owned
+media job failed explicitly, removed its scratch directory, and retained its
+RustFS original and SQLite provenance. Python's public-health probe received a
+Cloudflare 403 after successful activation; rollback restored the prior images.
+Reactivation using the established Bun health request verified the public SHA.
+
+CI additionally exposed a frozen sequencer marker in recorded PLAY: that branch
+returned before updating the step. A new AppLoop regression failed before the
+one-line marker update and passed afterward (four lifecycle tests). The real
+server-browser reproduction changed from stepMoved=false/PGM moved to both true.
+CI assertions and timing limits were retained.
+
 Exact-main deployment, mandatory GitHub reviews and final canonical-domain
 migration remain release gates; candidate browser evidence does not claim them.

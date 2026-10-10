@@ -449,6 +449,7 @@ function runSequencer(frame: TimelineFrame) {
   const top = get(rackTop);
   const bottom = get(rackBottom);
   if(mode==='play'){
+    sequencerLastStep.set(crossed.currentAbsoluteStep % ARRANGEMENT_STEPS);
     const current=activeTakeCutAt(cutList,frame.positionSeconds,step=>stepSeconds(step,beatGrid,frame.bpm));
     if(current){const target=moduleForSlotIndex(top,bottom,current.slotIndex);if(target&&target!==landedPgm)cutImmediate(target);}
     return;

@@ -30,11 +30,11 @@ vi.mock('$lib/runtime/renderBudget', () => ({
 
 import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
 import { setArrangementMode, recordOverdub } from '$lib/arrangement/transportMode';
-import { cuts } from '$lib/stores/arrangement';
+import { arrangement, cuts } from '$lib/stores/arrangement';
 import { rackTop } from '$lib/stores/rack';
 import { pgmSource } from '$lib/stores/pgm';
 import { playbackWorkspace } from '$lib/stores/rackUi';
-import { sequencerArmed } from '$lib/stores/sequencer';
+import { sequencerArmed, sequencerLastStep } from '$lib/stores/sequencer';
 import { arrangementClips } from '$lib/stores/arrangement';
 
 function publish(step: number, generation = 1, playing = true) {
@@ -45,6 +45,16 @@ function publish(step: number, generation = 1, playing = true) {
 afterEach(() => { stopAppLoop(); vi.unstubAllGlobals(); });
 
 describe('replace recording take lifecycle', () => {
+  test('recorded PLAY advances the sequencer marker with the shared timeline',()=>{
+    vi.stubGlobal('requestAnimationFrame',()=>1);playbackWorkspace.set('timing');
+    setArrangementMode('live',0);
+    arrangement.set([{id:'marker',name:'Marker',bars:4}]);
+    cuts.set([{step:0,slotIndex:0,timeSeconds:0}]);pgmSource.set(get(rackTop)[0]);
+    setArrangementMode('play',0);startAppLoop();
+    publish(0);expect(get(sequencerLastStep)).toBe(0);
+    publish(5);expect(get(sequencerLastStep)).toBe(5);
+    setArrangementMode('live',1);
+  });
   test('Timing recording closes each occupancy lane when PGM changes', () => {
     vi.stubGlobal('requestAnimationFrame', () => 1);
     playbackWorkspace.set('timing');
