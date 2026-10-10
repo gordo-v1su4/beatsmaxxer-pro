@@ -1,5 +1,6 @@
 <script lang="ts">
   import { get } from 'svelte/store';
+  import ClipGroupSets from './ClipGroupSets.svelte';
   import { FolderOpen, X } from '@lucide/svelte';
   import {
     clipDragState,
@@ -125,6 +126,8 @@
     endClipDrag();
   }
 </script>
+
+<ClipGroupSets />
 
 <div class="cb-tools">
   <input class="cb-search" placeholder="Search…" bind:value={query} spellcheck="false" />

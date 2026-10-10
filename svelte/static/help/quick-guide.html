@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Beatsmaxxer — a quick guide</title>
+  <style>
+    *{box-sizing:border-box} :root{color-scheme:dark;--paper:#0d1012;--layer:#151b1e;--layer-2:#1b2428;--ink:#dce5e8;--muted:#9aaab1;--rule:#2b383e;--ramp:#99f6e4;--stutter:#14b8a6;--purple:#c4b5fd;--ramp-matte:#213630;--stutter-matte:#153631;--purple-matte:#28243a;font-family:Arial,Helvetica,"Liberation Sans",sans-serif}
+    body{margin:0;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.6}
+    main{max-width:1120px;margin:auto;padding:28px 36px 44px} nav{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px}a{color:var(--ramp)}nav a{color:var(--muted);text-decoration:none;border:1px solid var(--rule);padding:7px 12px;border-radius:3px}nav a[aria-current="page"],nav a:hover,nav a:focus-visible{background:var(--layer-2);color:var(--ink)}
+    h1{font-size:30px;line-height:1.15;letter-spacing:-.035em;margin:0 0 12px}h2{font-size:22px;letter-spacing:-.02em;margin:0 0 8px}h3{font-size:15px;margin:0 0 6px;font-weight:600}p{margin:0 0 12px;max-width:80ch;color:var(--muted)}strong{color:var(--ink);font-weight:600}section{scroll-margin-top:20px;margin-bottom:32px} .lead{font-size:16px}
+    .legend{display:flex;gap:24px;flex-wrap:wrap;margin:16px 0 24px;font-size:12px;color:var(--muted)}.legend span{display:flex;align-items:center;gap:8px}.swatch{width:14px;height:14px;border-radius:2px;background:var(--ramp-matte);border:1px solid var(--ramp)}.swatch.stutter{background:var(--stutter-matte);border-color:var(--stutter)}.swatch.position{background:var(--purple-matte);border-color:var(--purple)}
+    .diagram-container{width:100%;overflow-x:auto;border:1px solid var(--rule);border-radius:4px;background:var(--layer);margin:16px 0}svg{display:block;width:100%;min-width:960px}svg text{font-family:Arial,Helvetica,"Liberation Sans",sans-serif;fill:var(--ink);font-size:18px}svg .sub{fill:var(--muted);font-size:14px}svg .small{font-size:13px}svg .node{fill:var(--layer-2);stroke:var(--rule)}svg .ramp{fill:var(--ramp-matte);stroke:var(--ramp)}svg .stutter{fill:var(--stutter-matte);stroke:var(--stutter)}svg .purple{fill:var(--purple-matte);stroke:var(--purple)}svg .connection{stroke:var(--muted);stroke-width:1.5;fill:none}svg .axis{stroke:var(--rule);stroke-width:1}
+    .explain{display:grid;grid-template-columns:1.15fr 1fr;gap:24px}.explain>div{padding:16px 20px;background:var(--layer);border-left:2px solid var(--rule)}.explain .ramp-note{border-color:var(--ramp)}.explain .stutter-note{border-color:var(--stutter)}dl{display:grid;grid-template-columns:150px 1fr;gap:8px 20px;margin:12px 0}dt{font-weight:600}dd{margin:0;color:var(--muted)}.note{border-left:2px solid var(--purple);background:var(--purple-matte);padding:14px 18px;margin:16px 0;color:var(--ink)}details{border-top:1px solid var(--rule);padding:12px 0}summary{cursor:pointer;font-weight:600;color:var(--ink)}details p{margin-top:10px}footer{border-top:1px solid var(--rule);padding-top:16px;font-size:12px;color:var(--muted)}
+    @media(max-width:650px){main{padding:20px 18px}h1{font-size:25px}.explain{grid-template-columns:1fr;gap:12px}dl{grid-template-columns:1fr;gap:3px}dd{margin-bottom:10px}.legend{gap:12px}nav{gap:6px}}
+    @media print{section[hidden]{display:block}.diagram-container{overflow:visible}svg{min-width:0}body{print-color-adjust:exact}main{padding:12px}details{break-inside:avoid}}
+  </style>
+</head>
+<body><main>
+  <nav aria-label="Quick guide topics"><a href="#start">Start here</a><a href="#timing">Timing explained</a><a href="#length">Beats &amp; bars</a><a href="#arrange">Record &amp; export</a></nav>
+  <section id="start">
+    <h1>Your clips. The music. One finished take.</h1>
+    <p class="lead"><strong>Perform</strong> is your live effects rack. <strong>Timing</strong> changes clip speed or repeats short slices to the music. <strong>Arrange</strong> records and replays your choices over the song.</p>
+    <div class="legend" aria-label="Timing legend"><span><i class="swatch" aria-hidden="true"></i>Mint · Speedramp</span><span><i class="swatch stutter" aria-hidden="true"></i>Teal · Stutter</span><span><i class="swatch position" aria-hidden="true"></i>Purple · clip position</span><span>S0–S9 · your ten decks</span><span>PGM · the video on air</span></div>
+    <div class="diagram-container"><svg viewBox="0 0 960 320" role="img" aria-labelledby="workflow-title workflow-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="workflow-title">From clips to a finished take</title><desc id="workflow-desc">Load a song and clips, choose music triggers, record a take, replay it, and export. Reusable clip sets can be assigned to several song sections.</desc>
+      <defs><marker id="workflow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#9aaab1"/></marker></defs>
+      <path class="connection" d="M208 92H236" marker-end="url(#workflow-arrow)"/><path class="connection" d="M440 92H468" marker-end="url(#workflow-arrow)"/><path class="connection" d="M672 92H700" marker-end="url(#workflow-arrow)"/>
+      <rect class="node" x="24" y="48" width="184" height="88" rx="4"/><text x="44" y="80">Load your media</text><text class="sub" x="44" y="108">Song + ten clip decks</text>
+      <rect class="node" x="240" y="48" width="200" height="88" rx="4"/><text x="260" y="80">Pick music triggers</text><text class="sub" x="260" y="108">Notes, attacks or beats</text>
+      <rect class="ramp" x="472" y="48" width="200" height="88" rx="4"/><text x="492" y="80">Record your take</text><text class="sub" x="492" y="108">Cuts + section settings</text>
+      <rect class="node" x="704" y="48" width="232" height="88" rx="4"/><text x="724" y="80">Replay → export</text><text class="sub" x="724" y="108">Whole song or selected loop</text>
+      <rect class="node" x="24" y="184" width="416" height="104" rx="4"/><text x="44" y="216">Reuse a clip set across the song</text><text class="sub" x="44" y="244">+ Section → fill decks or Capture Rack → drag</text><text class="sub" x="44" y="268">Section 1 to choruses; Section 2 to verses</text>
+      <text x="492" y="216">The same set can appear many times.</text><text class="sub" x="492" y="244">Assign Selected is an alternative to dragging.</text><text class="sub" x="492" y="268">Save/load keeps sets and their song-section links.</text>
+    </svg></div>
+    <p><strong>Only Speedramp clips need 96 FPS preparation.</strong> In a five-ramp / five-stutter rack, five clips use the server worker. Stutter uses the originals. All ten load locally for playback. Wait for preparation before PLAY, REC or export.</p>
+  </section>
+  <section id="timing">
+    <h2>What makes an effect happen?</h2><p>A <strong>trigger</strong> is a musical event that can start an effect. An <strong>onset</strong> means the start of a sound: a drum hit, a plucked note or a vocal syllable. <strong>Mix</strong> means the whole song.</p>
+    <div class="diagram-container"><svg viewBox="0 0 960 240" role="img" aria-labelledby="trigger-title trigger-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="trigger-title">An effect starts only from an eligible musical event</title><desc id="trigger-desc">Threshold and density filter music events. Events during an effect or its following gap are ignored. Eligible ramp events also pass the ramp-chance setting. An accepted event starts the complete effect, followed by normal playback.</desc>
+      <defs><marker id="trigger-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="#9aaab1"/></marker></defs>
+      <path class="connection" d="M192 92H216" marker-end="url(#trigger-arrow)"/><path class="connection" d="M416 92H440" marker-end="url(#trigger-arrow)"/><path class="connection" d="M656 92H680" marker-end="url(#trigger-arrow)"/>
+      <rect class="node" x="24" y="48" width="168" height="88" rx="4"/><text x="44" y="80">A music event</text><text class="sub" x="44" y="108">From your source</text>
+      <rect class="node" x="220" y="48" width="196" height="88" rx="4"/><text x="240" y="80">Strong enough?</text><text class="sub" x="240" y="108">Threshold + density</text>
+      <rect class="node" x="444" y="48" width="212" height="88" rx="4"/><text x="464" y="80">Ready to start?</text><text class="sub" x="464" y="108">No effect or gap active</text>
+      <rect class="stutter" x="684" y="48" width="252" height="88" rx="4"/><text x="704" y="80">Play the complete effect</text><text class="sub" x="704" y="108">Then leave normal-playback time</text>
+      <text class="sub" x="24" y="180">Rejected events are skipped; they are not saved up.</text><text class="sub" x="24" y="208">Ramp Chance decides what share of otherwise eligible events start a Speedramp.</text>
+    </svg></div>
+    <dl>
+      <dt>Source / Channel</dt><dd>MIDI uses note starts. Audio sources use the whole song or an isolated stem. Choose Vocals to follow that part, or Channels by Deck to distribute available channels across the decks.</dd>
+      <dt>Threshold</dt><dd>A minimum trigger strength from 0 to 1. Raise it to ignore weaker events.</dd>
+      <dt>Density</dt><dd>Keep the strongest share in each channel. 40% keeps the loudest 40%. Lower density also adds spacing after each effect: (100% − Density) × 2 beats. It does not change clip speed.</dd>
+      <dt>Ramp Chance</dt><dd>40% gives eligible events a 40% chance to start a ramp. It does not shorten the ramp.</dd>
+      <dt>Gap</dt><dd>The minimum normal-playback time after an effect finishes, plus Density's extra spacing. 180 ms is 0.18 seconds; at 120 BPM and 65% Density, the added 0.7 beats makes the total gap 0.53 seconds. Triggers during the effect or total gap are ignored.</dd>
+    </dl>
+    <details><summary>Global, Modular, Follow on Air and PGM</summary><p><strong>Global</strong> shares Timing parameters across the decks; each deck keeps its Speedramp/Stutter assignment. <strong>Modular</strong> edits the selected deck separately. <strong>Follow on Air</strong> makes the editor follow the deck currently on PGM; turn it off to keep editing one deck.</p><p>With MIDI or audio triggers, accepted effect bursts drive automatic PGM cuts. The upper random/interval/feel controls are inactive for those sources. A manual cut takes priority and resets the automatic cadence. The <strong>PGM</strong> trigger source instead starts an effect when that deck becomes the on-air video.</p></details>
+    <details><summary>More about the audio sources</summary><p><strong>Mix onsets:</strong> attacks anywhere in the whole song. <strong>Vocals onsets:</strong> attacks in the isolated vocal track. <strong>Stem onsets:</strong> attacks in a selected part such as drums or bass. <strong>Vocals activity:</strong> vocal phrase entrances after quiet gaps. <strong>Mix loudness:</strong> broader loud peaks in the whole song. These come from audio analysis, while MIDI follows written notes.</p></details>
+  </section>
+  <section id="length">
+    <h2>Beats, bars and effect length</h2><p>In this app’s 4/4 grid, <strong>4 beats = 1 bar</strong>. Two beats is half a bar; two bars is eight beats. At 120 BPM, one beat lasts half a second.</p>
+    <div class="diagram-container"><svg viewBox="0 0 960 336" role="img" aria-labelledby="length-title length-desc" xmlns="http://www.w3.org/2000/svg">
+      <title id="length-title">One trigger, one two-bar Speedramp, then normal playback</title><desc id="length-desc">A trigger at beat one starts a two-bar speed curve covering eight beats. Triggers during that curve are ignored. The following gap is normal playback, and then the next eligible trigger may start a new curve. The timeline example uses 120 BPM and a half-second gap.</desc>
+      <text x="32" y="40">Example: 2-bar ramp at 120 BPM, with a 500 ms gap</text>
+      <rect class="ramp" x="64" y="80" width="608" height="112" rx="4"/><path d="M80 172C208 172 240 100 368 100S528 172 656 172" fill="none" stroke="#99f6e4" stroke-width="2"/>
+      <rect class="node" x="672" y="80" width="76" height="112"/><rect class="node" x="748" y="80" width="148" height="112" rx="4"/>
+      <text x="224" y="232">One complete curve · eight beats</text><text class="small" x="692" y="232">Gap</text><text class="small" x="768" y="232">Normal playback</text>
+      <path class="axis" d="M64 264H900M64 256V272M368 256V272M672 256V272M748 256V272M900 256V272"/>
+      <text class="sub" x="64" y="296">0s · trigger</text><text class="sub" x="340" y="296">2s · bar 2</text><text class="sub" x="644" y="296">4s</text><text class="sub" x="730" y="296">4.5s</text><text class="sub" x="864" y="296">5.5s</text>
+    </svg></div>
+    <div class="explain"><div class="ramp-note"><h3>Speedramp: Cycle is the curve’s length</h3><p><strong>2 bars</strong> runs one complete curve for eight beats after an accepted trigger. It then returns to normal playback. Another eligible trigger can start a new curve after the gap.</p><p><strong>Fixed</strong> uses one length. <strong>Random</strong> chooses one of your four length choices for each accepted trigger.</p></div><div class="stutter-note"><h3>Stutter: Division and repeats make a burst</h3><p><strong>1/8</strong> is an eighth-note slice: half a beat. With <strong>Fixed / 3 repeats</strong>, that slice repeats three times, making a burst of one and a half beats.</p><p><strong>By Energy</strong> chooses the burst from trigger strength. Stronger events produce more energetic repeat patterns. This control applies to Stutter, not Speedramp.</p></div></div>
+    <p class="note">An effect finishes before another event can start it. Music triggers do not restart a ramp halfway through its curve.</p>
+    <details><summary>Cycle, Every and Snap do different jobs</summary><p><strong>Cycle</strong> sets a Speedramp’s duration. <strong>Every</strong>, under the Beat trigger source, sets how often beat events are offered—for example every four beats. The effect still has to finish before another is accepted. <strong>Snap</strong> only aligns the points while you draw the speed curve.</p><p><strong>Min × / Max ×</strong> set the speed range: 0.5× is half speed, 1× is normal, and 2× is double speed. The curve shows how that speed changes over one cycle. <strong>Continuous</strong> cycles without waiting for note/onset triggers; density, chance and gaps do not apply.</p></details>
+  </section>
+  <section id="arrange"><h2>Record it. Check it. Export it.</h2><dl>
+    <dt>REC</dt><dd>Your on-air cuts are written to the song timeline, with the actual deck settings and clips captured for that take. A new pass replaces cuts under the playhead unless Overdub is on.</dd>
+    <dt>PLAY</dt><dd>The recorded cuts and section snapshots drive PGM. Clip-set edits are locked in REC and PLAY. Click the active mode again to return to the live workspace.</dd>
+    <dt>Save / Load</dt><dd>Download Arrangement saves the take, reusable clip sets and assignments. It does not embed your song or video files; keep those original files available.</dd>
+    <dt>Export</dt><dd>Choose the whole song or the selected loop, then the output frame rate. Prepared 96 FPS ramp media supplies smooth retiming; your exported video still uses the selected output rate, normally 24 FPS.</dd>
+  </dl></section>
+  <footer>Use HELP in the header or ? beside Timing’s trigger controls whenever you want this guide. Close it to return to your current workspace.</footer>
+</main>
+<script>
+  // Keep this a quick, one-topic-at-a-time guide. All topics remain readable
+  // when opened without JavaScript (including printed copies).
+  const topics = [...document.querySelectorAll('main > section')];
+  const links = [...document.querySelectorAll('nav a')];
+  function showTopic() {
+    const requested = location.hash.slice(1);
+    const id = topics.some(topic => topic.id === requested) ? requested : 'start';
+    topics.forEach(topic => topic.hidden = topic.id !== id);
+    links.forEach(link => link.getAttribute('href') === '#' + id ? link.setAttribute('aria-current', 'page') : link.removeAttribute('aria-current'));
+    window.scrollTo(0, 0);
+  }
+  addEventListener('hashchange', showTopic);
+  showTopic();
+</script>
+</body></html>

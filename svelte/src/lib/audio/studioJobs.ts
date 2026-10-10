@@ -179,7 +179,7 @@ async function pollStudioJob(
   throw new Error(`Analysis is still running (job ${jobId}). Try again shortly.`);
 }
 
-function studioToRhythmAnalysis(studio: StudioAudioV1): EssentiaRhythmAnalysis {
+export function studioToRhythmAnalysis(studio: StudioAudioV1): EssentiaRhythmAnalysis {
   const structure = normalizeStructureAnalysis(studio.structure);
   const analysisResult = buildStudioAnalysisResult(studio);
   return {

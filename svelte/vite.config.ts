@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { analysisProxyConfigFromEnv, essentiaDevProxyPlugin } from './vite/essentiaDevProxy';
 import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
 import { accessGateConfigFromEnv } from '../api/gate/policy';
-import { mediaGatewayConfigFromEnv } from '../api/lib/mediaGateway';
+import { mediaGatewayConfigFromEnv } from '../api/_lib/mediaGateway';
 import { playbackBenchmarkPlugin } from './vite/playbackBenchmark';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

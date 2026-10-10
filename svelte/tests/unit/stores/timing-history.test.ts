@@ -4,7 +4,7 @@ import { defaultClipTiming } from '$lib/runtime/timing/envelope';
 import { beginTimingGesture, endTimingGesture, canUndoTiming, canRedoTiming, clipTiming, parseTimingSettings,
   redoTiming, resetTimingHistory, selectedTimingSlot, setClipTiming, timingEditorTab, timingSettings, toggleTimingBypass, undoTiming } from '$lib/stores/timing';
 
-beforeEach(() => { resetTimingHistory(); timingSettings.set(parseTimingSettings(null)); selectedTimingSlot.set('top-0'); });
+beforeEach(() => { resetTimingHistory(); timingSettings.set({...parseTimingSettings(null),scope:'deck'}); selectedTimingSlot.set('top-0'); });
 describe('Timing editing history and identity', () => {
   it('alternates all ten defaults across the row boundary while preserving explicit clip choices', () => {
     const slots=Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`);

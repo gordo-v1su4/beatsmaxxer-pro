@@ -1,0 +1,30 @@
+name: beatsmaxxer-pro
+services:
+  app:
+    image: beatsmaxxer-pro-web:${APP_REVISION:-development}
+    build:
+      context: ../..
+      dockerfile: infra/app-vm/Dockerfile
+      args:
+        APP_REVISION: ${APP_REVISION:-development}
+        ESSENTIA_API_BASE_URL: ${ESSENTIA_API_BASE_URL:-}
+    container_name: beatsmaxxer-pro-web
+    restart: unless-stopped
+    network_mode: host
+    cpus: 1.0
+    mem_limit: 512m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    env_file:
+      - path: /opt/beatsmaxxer-pro/private.env
+        format: raw
+    environment:
+      HOST: 127.0.0.1
+      PORT: "18074"
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3

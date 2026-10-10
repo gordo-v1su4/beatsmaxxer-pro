@@ -23,7 +23,7 @@ describe('finite musical Timing effects',()=>{
   });
   it('matches R&D MIDI stutter slice choices, repeats and normal play after the burst',()=>{
     const config=defaultClipTiming('top-1');config.stutter.mode='jump';
-    const trigger={...defaultTimingTrigger(),source:'midi' as const,threshold:0,gapSeconds:0};
+    const trigger={...defaultTimingTrigger(),repeatStyle:'fixed' as const,source:'midi' as const,threshold:0,gapSeconds:0};
     const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(10).fill(20),42,100,'midi-stems');
     for(let slot=0;slot<10;slot++){
       const actual=buildTimingSchedule(config,trigger,signal,slot,20);
@@ -57,7 +57,7 @@ describe('finite musical Timing effects',()=>{
     const swung=stutterBoundaries({...stutter,groove:'swing'});
     expect(swung[1]).toBeCloseTo(2/3);expect(swung[2]).toBe(1);expect(swung[4]).toBe(2);
     const config=defaultClipTiming('top-1');config.stutter.groove='swing';
-    const plan=buildTimingSchedule(config,{...defaultTimingTrigger(),source:'midi',gapSeconds:0},signal,0,20);
+    const plan=buildTimingSchedule(config,{...defaultTimingTrigger(),repeatStyle:'fixed',source:'midi',gapSeconds:0},signal,0,20);
     expect(sampleTimingSchedule(plan,.1+1/3).sourceSeconds).toBeCloseTo(.1);
   });
   it('uses the new controls in persisted settings and keeps old curve values',()=>{

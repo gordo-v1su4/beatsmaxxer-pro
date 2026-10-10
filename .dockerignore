@@ -1,0 +1,16 @@
+.git
+**/.env
+**/.env.*
+**/node_modules
+svelte/.artifacts
+test_media
+brag-output*
+**/.svelte-kit
+svelte/build
+.vercel
+.claude
+.cursor
+docs/research/webgpu-peers/repos
+desktop/target
+**/__pycache__
+.playwright-cli

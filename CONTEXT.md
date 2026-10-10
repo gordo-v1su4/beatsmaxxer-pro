@@ -10,14 +10,20 @@ Browser-native **audio-reactive video FX rack** with a beat-quantized **PGM** (p
 
 | Term | Meaning |
 |------|---------|
-| **Rack** | Eight stable slot IDs (`top-0`…`top-3`, `bottom-0`…`bottom-3`); each slot owns one `HTMLVideoElement` and clip file |
+| **Rack** | Ten stable slot IDs (`top-0`…`top-4`, `bottom-0`…`bottom-4`); each slot owns its clip and video source |
+| **Workspace** | PERFORM (effect rack), TIMING (RAMP/STUTTER decks), or ARRANGE (timeline editor for whichever playback workspace it was opened from) |
+| **Deck** | One TIMING slot S0–S9: a clip plus its RAMP or STUTTER settings |
+| **Take** | One REC pass over the song or a loop section |
+| **Deck snapshot** | The deck settings and clip set captured for a section's take, used to reproduce it during PLAY |
+| **RAND** | Selects a random deck at the next configured quantize boundary; a landed hand cut restarts its interval |
 | **Module** | Catalog effect (19 WGSL modules) assigned to a slot; hot-swapping a module does not reload the slot's video |
 | **PGM** | Program monitor — one canvas (`pgm`) showing the on-air slot through the selected module's shader |
-| **PgmDirector** | Beat-quantized PGM cuts via `AudioEngine.configurePgmSchedule()` — not rAF promotion |
+| **PgmDirector** | Perform/beat-mode PGM scheduling via `AudioEngine.configurePgmSchedule()`. Timing MIDI/audio source bursts are selected by `TimingRuntime` against the audio transport; queued manual cuts and recorded-take playback take priority. |
 | **Slot ID** | Stable media owner (`top-0`, etc.); do not confuse with module ID |
 | **MobileShell** | Phone UI (`svelte/src/lib/mobile/`) — one stage canvas, not the full rack |
 | **AppLoop** | Single rAF driver for `WebGpuEngine` + transport |
 | **Essentia** | Offline rhythm analysis (hosted API); Web Audio is live fallback |
+| **Interpolation worker** | Optional serial GPU preparation service: NVDEC → CUDA RIFE → NVENC; RustFS stores source/render/provenance. Its GPU process exits after each job, releasing VRAM. No CPU pixel-processing fallback. |
 | **Arrangement** | Song-length structure: sections (bars, module banks, 16-step patterns) unrolled to sixteenth-note **cuts** on the timeline |
 | **Sequencer (armed)** | While transport plays with ARMED on, beat-quantized PGM cuts driven by the arrangement **cut** list (not manual PGM alone) |
 | **Cut** | One sixteenth-note step in the song mapped to a rack **slot index** (0–9), resolved to whichever module occupies that slot when the cut fires |

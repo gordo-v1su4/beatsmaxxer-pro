@@ -61,72 +61,6 @@ export function sectionSpanToBars(
   return Math.max(1, Math.round(beatsInSection / BEATS_PER_BAR));
 }
 
-function beatIndexAtOrBefore(beats: readonly number[], time: number): number {
-  if (beats.length === 0) return 0;
-  let lo = 0;
-  let hi = beats.length - 1;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (beats[mid]! <= time) lo = mid;
-    else hi = mid - 1;
-  }
-  return lo;
-}
-
-function barIndexAtTime(beats: readonly number[], time: number): number {
-  return Math.floor(beatIndexAtOrBefore(beats, time) / BEATS_PER_BAR);
-}
-
-function timeAtBar(beats: readonly number[], barIndex: number): number {
-  const beatIndex = Math.min(Math.max(0, barIndex) * BEATS_PER_BAR, beats.length - 1);
-  return beats[beatIndex] ?? 0;
-}
-
-/**
- * Snap Essentia section edges onto the analysed bar grid so the ARRANGE strip
- * shows whole measures (e.g. intro ending on bar 5, not 4.3 bars from seconds).
- */
-export function alignStructureSectionsToBarGrid(
-  sections: readonly EssentiaStructureSection[],
-  beats: readonly number[],
-): EssentiaStructureSection[] {
-  if (sections.length === 0 || beats.length < BEATS_PER_BAR * 2) return [...sections];
-
-  const songEnd = sections.at(-1)?.end ?? beats.at(-1) ?? 0;
-  const interiorBoundaries = sections.slice(1).map((section) => {
-    const bar = barIndexAtTime(beats, section.start);
-    return timeAtBar(beats, bar);
-  });
-
-  // Typical pop intro: ~4–5 bars. Pin when Essentia called it intro and we are close.
-  if (sections[0]?.label.trim().toLowerCase() === 'intro' && interiorBoundaries.length > 0) {
-    const introEndBar = barIndexAtTime(beats, sections[0].end);
-    if (introEndBar >= 3 && introEndBar <= 7) {
-      interiorBoundaries[0] = timeAtBar(beats, 5);
-    }
-  }
-
-  const boundaries = [0, ...interiorBoundaries, songEnd];
-  for (let i = 1; i < boundaries.length; i++) {
-    const minGap = (beats[1] ?? 0.5) * BEATS_PER_BAR * 0.5;
-    if (boundaries[i] <= boundaries[i - 1]! + minGap) {
-      boundaries[i] = boundaries[i - 1]! + minGap;
-    }
-    if (boundaries[i] > songEnd) boundaries[i] = songEnd;
-  }
-
-  return sections.map((section, index) => {
-    const start = boundaries[index] ?? 0;
-    const end = boundaries[index + 1] ?? songEnd;
-    return {
-      ...section,
-      start,
-      end,
-      duration: Math.max(0, end - start),
-    };
-  });
-}
-
 function templateForLabel(label: string): ArrangementSection {
   const key = label.trim().toLowerCase();
   const templateId = LABEL_TEMPLATE[key] ?? 'verse1';
@@ -154,8 +88,9 @@ export function arrangementFromStructureSections(
 ): ArrangementSection[] {
   if (sections.length === 0) return [];
 
-  const aligned = alignStructureSectionsToBarGrid(sections, beats);
-  const seeded = aligned.map((section, index) => {
+  // Analysis timestamps are song-relative facts. Bar counts describe the strip;
+  // they must not move the intro, verses, or other detected boundaries.
+  const seeded = sections.map((section, index) => {
     const kind = inferSectionKind(section.label);
     const template = templateForLabel(section.label);
     const bars = sectionSpanToBars(section.start, section.end, beats, bpm);

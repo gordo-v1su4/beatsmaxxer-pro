@@ -2,15 +2,18 @@ import { normalizeTimingRamp } from '$lib/runtime/timing/rampPresets';
 import { derived, get, writable } from 'svelte/store';
 import { defaultClipTiming, normalizePoints, type ClipTiming, type CurveShape } from '$lib/runtime/timing/envelope';
 import { defaultTimingTrigger, TRIGGER_SOURCES, type TimingTriggerConfig } from '$lib/runtime/timing/triggers';
+import { arrangementMode } from '$lib/arrangement/transportMode';
 
 const KEY = 'beatsmaxxer.timing.v1';
+const PRESET_KEY = 'beatsmaxxer.timing.preset.v1';
+const HOT_KEY = 'beatsmaxxer.timing.hmr.v1';
 // Isolated browser acceptance sessions must not overwrite the user's curves.
 const transientQa = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('qaTimingTransient');
 const slotPattern = /^(top|bottom)-[0-4]$/;
 export const DEFAULT_TIMING_BUDGET_GIB = 12;
 export const TIMING_BUDGET_OPTIONS = [.25,1,2,4,8,12,20,24,32];
-export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig }
-const initial = (): TimingSettings => ({ version: 1, capacityRevision: 1, clips: {}, budgetGiB: DEFAULT_TIMING_BUDGET_GIB, outputFps: 24, preloadHeight:0, trigger:defaultTimingTrigger() });
+export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }
+const initial = (): TimingSettings => ({ version: 1, capacityRevision: 1, clips: {}, budgetGiB: DEFAULT_TIMING_BUDGET_GIB, outputFps: 24, preloadHeight:0, trigger:defaultTimingTrigger(),scope:'global',master:defaultClipTiming('top-0') });
 const finite = (n: unknown, fallback: number, min: number, max: number) => typeof n === 'number' && Number.isFinite(n) ? Math.max(min,Math.min(max,n)) : fallback;
 
 export function parseTimingSettings(raw: string | null): TimingSettings {
@@ -18,18 +21,23 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
   try {
     const value = JSON.parse(raw || 'null');
     if (value?.version !== 1) return result;
+    result.scope=value.scope==='deck'?'deck':'global';
+    if(value.master)result.master=parseTimingSettings(JSON.stringify({version:1,clips:{'top-0':value.master}})).clips['top-0'];
+    result.deckTriggers={};
+    for(const [slot,trigger] of Object.entries(value.deckTriggers??{}))if(slotPattern.test(slot))result.deckTriggers[slot]=parseTimingSettings(JSON.stringify({version:1,trigger})).trigger;
     // Each origin has separate storage. Migrate the old default once, including
     // previously visited localhost/Tailscale URLs. Subsequent explicit 8 GiB
     // selections carry this revision and remain user-controlled.
     result.budgetGiB = value.capacityRevision !== 1 && value.budgetGiB === 8
       ? DEFAULT_TIMING_BUDGET_GIB : finite(value.budgetGiB,DEFAULT_TIMING_BUDGET_GIB,0.25,32);
     result.outputFps = [24,30,60].includes(value.outputFps) ? value.outputFps : 24;
-    result.preloadHeight=[360,540,720].includes(value.preloadHeight)?value.preloadHeight:0;
+    result.preloadHeight=[270,360,540,720].includes(value.preloadHeight)?value.preloadHeight:0;
     const t=value.trigger;
     if(t && typeof t==='object'){
       result.trigger={...result.trigger,
         source:TRIGGER_SOURCES.some(([id])=>id===t.source)?t.source:result.trigger.source,
         channel:typeof t.channel==='string'?t.channel:'all',
+density:finite(t.density,100,10,100),repeatStyle:t.repeatStyle==='fixed'?'fixed':'energy',
         everyBeats:finite(t.everyBeats,4,.125,64),rampChance:finite(t.rampChance,40,0,100),stutterChance:finite(t.stutterChance,100,0,100),
         gapSeconds:finite(t.gapSeconds,.12,0,30),threshold:finite(t.threshold,.45,0,1),seed:Math.round(finite(t.seed,42,0,0xffffffff))};
     }
@@ -39,6 +47,9 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
       next.effect = ['ramp','stutter','off'].includes(c.effect) ? c.effect : 'ramp';
       next.lastEffect = next.effect !== 'off' ? next.effect : c.lastEffect === 'stutter' ? 'stutter' : 'ramp';
       next.ramp.cycleBeats = finite(c.ramp?.cycleBeats,2,0.125,32);
+      next.ramp.cycleMode = c.ramp?.cycleMode === 'random' ? 'random' : 'fixed';
+      const cycleChoices = Array.isArray(c.ramp?.cycleChoices) ? c.ramp.cycleChoices.filter(n => typeof n === 'number' && Number.isFinite(n) && n >= .125 && n <= 32).slice(0,4) : [];
+      next.ramp.cycleChoices = cycleChoices.length ? cycleChoices : [1,2,4,8];
       const shapes: CurveShape[] = ['linear','smooth','tension','hold','sine'];
       next.ramp.shape = shapes.includes(c.ramp?.shape) ? c.ramp.shape : 'smooth';
       if (Array.isArray(c.ramp?.points) && c.ramp.points.length >= 2) {
@@ -63,11 +74,40 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
 }
 
 function readSettings() {
-  if (transientQa) return initial();
+  if(import.meta.hot){
+    if(import.meta.hot.data.settings)return parseTimingSettings(JSON.stringify(import.meta.hot.data.settings));
+    try{
+      const saved=JSON.parse(sessionStorage.getItem(HOT_KEY)||'null');sessionStorage.removeItem(HOT_KEY);
+      if(saved?.url===location.href&&Date.now()-saved.at<30000)return parseTimingSettings(JSON.stringify(saved.settings));
+    }catch{}
+  }
+  if (transientQa) return readTimingPreset()??initial();
   try { return parseTimingSettings(typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY)); }
   catch { return initial(); }
 }
 export const timingSettings = writable<TimingSettings>(readSettings());
+export const timingPresetStatus=writable('');
+export function readTimingPreset():TimingSettings|null {
+  try{const raw=localStorage.getItem(PRESET_KEY);return raw?parseTimingSettings(raw):null;}catch{return null;}
+}
+export function saveTimingPreset(){
+  if(get(arrangementMode)!=='live')return;
+  try{localStorage.setItem(PRESET_KEY,JSON.stringify(get(timingSettings)));timingPresetStatus.set('PRESET SAVED');}
+  catch{timingPresetStatus.set('STORAGE UNAVAILABLE');}
+}
+export function loadTimingPreset(){
+  if(get(arrangementMode)!=='live')return;
+  const preset=readTimingPreset();
+  if(!preset){timingPresetStatus.set('NO SAVED PRESET');return;}
+  endTimingGesture();remember({settings:structuredClone(get(timingSettings))});
+  timingSettings.set(preset);timingPresetStatus.set('PRESET LOADED');
+}
+if(import.meta.hot){
+  import.meta.hot.dispose(data=>{data.settings=structuredClone(get(timingSettings));});
+  import.meta.hot.on('vite:beforeFullReload',()=>{
+    try{sessionStorage.setItem(HOT_KEY,JSON.stringify({url:location.href,at:Date.now(),settings:get(timingSettings)}));}catch{}
+  });
+}
 export const selectedTimingSlot = writable('top-0');
 export const timingEditorCollapsed = writable(false);
 export const timingEditorTab = derived([timingSettings, selectedTimingSlot], ([settings, slot]) => {
@@ -91,13 +131,36 @@ timingSettings.subscribe(value => {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { try { localStorage.setItem(KEY,JSON.stringify(value)); } catch {} },150);
 });
-export function clipTiming(slot: string) { return get(timingSettings).clips[slot] ?? defaultClipTiming(slot); }
+const effectiveCache=new WeakMap<TimingSettings,Map<string,ClipTiming>>();
+export function effectiveClipTiming(settings: TimingSettings, slot: string) {
+  let cached=effectiveCache.get(settings);
+  if(!cached){cached=new Map();effectiveCache.set(settings,cached);}
+  const hit=cached.get(slot);if(hit)return hit;
+  const clip=settings.clips[slot]??defaultClipTiming(slot);
+  const result=settings.scope!=='deck'&&settings.master?{...clip,ramp:settings.master.ramp,stutter:settings.master.stutter}:clip;
+  cached.set(slot,result);return result;
+}
+export function effectiveTimingTrigger(settings: TimingSettings, slot: string) {
+  return settings.scope==='deck'?settings.deckTriggers?.[slot]??settings.trigger:settings.trigger;
+}
+/** Musical triggers own PGM; its independent interval controls are inactive. */
+export function timingPgmFollowsTriggers(settings: TimingSettings) {
+  return Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`)
+    .some(slot=>!['pgm','beat','continuous'].includes(effectiveTimingTrigger(settings,slot).source));
+}
+export function clipTiming(slot: string) { return effectiveClipTiming(get(timingSettings),slot); }
 export function setClipTiming(slot: string, config: ClipTiming) {
+  if(get(arrangementMode)!=='live')return;
   if (!slotPattern.test(slot)) return;
   if(!allowTimingClip(slot,get(timingStatus)[slot]?.interpolationFactor??1,config))return;
   const previous = clipTiming(slot);
   const next = { ...config, lastEffect: config.effect === 'off' ? previous.lastEffect ?? (previous.effect === 'stutter' ? 'stutter' : 'ramp') : config.effect };
   if (JSON.stringify(previous) === JSON.stringify(next)) return;
+  if(get(timingSettings).scope!=='deck'){
+    if(gesture?.slot!==slot){endTimingGesture();remember({settings:structuredClone(get(timingSettings))});}
+    timingSettings.update(s=>({...s,master:next,clips:{...s.clips,[slot]:{...(s.clips[slot]??defaultClipTiming(slot)),effect:next.effect,lastEffect:next.lastEffect}}}));
+    return;
+  }
   if (gesture?.slot !== slot) {
     if (gesture) endTimingGesture();
     remember({ slot, config: structuredClone(previous) });
@@ -106,28 +169,54 @@ export function setClipTiming(slot: string, config: ClipTiming) {
 }
 
 type ClipEdit = { slot: string; config: ClipTiming };
-const undo: ClipEdit[] = [], redo: ClipEdit[] = [];
-let gesture: ClipEdit | null = null;
+type TimingEdit = ClipEdit | { trigger: TimingTriggerConfig } | {settings:TimingSettings};
+const undo: TimingEdit[] = [], redo: TimingEdit[] = [];
+let gesture: (ClipEdit & {settings?:TimingSettings}) | null = null;
 export const canUndoTiming = writable(false), canRedoTiming = writable(false);
 const notifyHistory = () => { canUndoTiming.set(undo.length > 0); canRedoTiming.set(redo.length > 0); };
 function applyClip(slot: string, config: ClipTiming) {
   timingSettings.update(s => ({ ...s, clips: { ...s.clips, [slot]: { ...config, ramp: normalizeTimingRamp(config.ramp) } } }));
 }
-function remember(edit: ClipEdit) {
+function remember(edit: TimingEdit) {
   undo.push(edit); if (undo.length > 60) undo.shift(); redo.length = 0; notifyHistory();
 }
 export function beginTimingGesture(slot = get(selectedTimingSlot)) {
   if (gesture) endTimingGesture();
-  gesture = { slot, config: structuredClone(clipTiming(slot)) };
+  gesture = { slot, config: structuredClone(clipTiming(slot)),settings:get(timingSettings).scope==='global'?structuredClone(get(timingSettings)):undefined };
 }
 export function endTimingGesture() {
   if (!gesture) return;
   const before = gesture; gesture = null;
-  if (JSON.stringify(before.config) !== JSON.stringify(clipTiming(before.slot))) remember(before);
+  if (JSON.stringify(before.config) !== JSON.stringify(clipTiming(before.slot))) remember(before.settings?{settings:before.settings}:{slot:before.slot,config:before.config});
 }
-function moveHistory(from: ClipEdit[], to: ClipEdit[]) {
+export function setTimingTrigger(patch: Partial<TimingTriggerConfig>) {
+  if(get(arrangementMode)!=='live')return;
+  const settings=get(timingSettings),slot=get(selectedTimingSlot);
+  const previous = effectiveTimingTrigger(settings,slot);
+  const next = { ...previous, ...patch };
+  if (JSON.stringify(previous) === JSON.stringify(next)) return;
+  endTimingGesture();
+  remember({ settings: structuredClone(settings) });
+  timingSettings.update(s => s.scope==='deck'?{...s,deckTriggers:{...s.deckTriggers,[slot]:next}}:({ ...s, trigger: next }));
+}
+export function setTimingScope(scope:'global'|'deck') {
+  if(get(arrangementMode)!=='live')return;
+  if(get(timingSettings).scope===scope)return;
+  endTimingGesture();remember({settings:structuredClone(get(timingSettings))});
+  timingSettings.update(s=>({...s,scope,master:scope==='global'?(s.master??structuredClone(effectiveClipTiming(s,get(selectedTimingSlot)))):s.master}));
+}
+function moveHistory(from: TimingEdit[], to: TimingEdit[]) {
+  if(get(arrangementMode)!=='live')return;
   endTimingGesture();
   const edit = from.pop(); if (!edit) return;
+  if ('settings' in edit) {
+    to.push({settings:structuredClone(get(timingSettings))});timingSettings.set(edit.settings);notifyHistory();return;
+  }
+  if ('trigger' in edit) {
+    to.push({ trigger: structuredClone(get(timingSettings).trigger) });
+    timingSettings.update(s => ({ ...s, trigger: edit.trigger }));
+    notifyHistory(); return;
+  }
   to.push({ slot: edit.slot, config: structuredClone(clipTiming(edit.slot)) });
   applyClip(edit.slot, edit.config); selectedTimingSlot.set(edit.slot); notifyHistory();
 }
@@ -146,6 +235,10 @@ export interface TimingSlotStatus {
   requiredBytes?: number;
 }
 export const timingStatus = writable<Record<string, TimingSlotStatus>>({});
+/** Actual resident allocations include shared clips and cached song sections. */
+export const timingCacheCapacity = writable({ usedBytes: 0, requiredBytes: 0, pending: 0 });
+export const timingSceneErrors=writable<Record<string,string>>({});
 export interface TimingLive { sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
 export const timingLive = writable<Record<string, TimingLive>>({});
 export const timingSchedules = writable<Record<string, import('$lib/runtime/timing/triggers').TimingBurst[]>>({});
+export const timingSceneStatus=writable<Record<string,{state:'loading'|'ready'|'error';message?:string}>>({});

@@ -20,6 +20,7 @@ let lastTriggerSecondBySlot = new Map<number, number>();
 const prevTriggerActive = new Map<string, boolean>();
 let clipSerial = 0;
 let triggerSerial = 0;
+export let recordingTakeSerial = 0;
 
 export function resetArrangementRecorderState() {
   openClipId = null;
@@ -29,6 +30,7 @@ export function resetArrangementRecorderState() {
 }
 
 export function beginArrangementRecording(startSeconds: number, clearPrevious = true) {
+  recordingTakeSerial++;
   if (clearPrevious) {
     arrangementClips.set([]);
     arrangementTriggers.set([]);

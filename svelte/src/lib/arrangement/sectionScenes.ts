@@ -3,6 +3,10 @@ import type { VideoLayer } from '$lib/engine/contracts';
 import { RACK_SLOT_IDS, videoLayers } from '$lib/stores/rack';
 import type { SceneClip, SectionScene } from '$lib/stores/arrangement';
 
+type SceneMediaRuntime=typeof import('$lib/runtime/media/MediaRuntime').mediaRuntime;
+let recalledRuntime:SceneMediaRuntime|null=null;
+let runtimeLoad:Promise<typeof import('$lib/runtime/media/MediaRuntime')>|null=null;
+
 /**
  * A section's scene: which clip sits in each rack slot while it plays.
  *
@@ -55,14 +59,20 @@ export function sceneChanges(
  */
 export async function recallScene(scene: SectionScene): Promise<{ loaded: number; failed: string[] }> {
   const changes = sceneChanges(scene, get(videoLayers));
-  if (changes.length === 0) return { loaded: 0, failed: [] };
-  let mediaRuntime: typeof import('$lib/runtime/media/MediaRuntime').mediaRuntime;
+  let mediaRuntime=recalledRuntime;
   try {
-    ({ mediaRuntime } = await import('$lib/runtime/media/MediaRuntime'));
+    // Resolve the circular dependency lazily once, before PLAY starts.
+    // Repeated imports in the dev browser add a network wait at every cut.
+    if(!mediaRuntime){
+      runtimeLoad??=import('$lib/runtime/media/MediaRuntime');
+      mediaRuntime=recalledRuntime=(await runtimeLoad).mediaRuntime;
+    }
   } catch (err) {
+    runtimeLoad=null;
     console.error('[arrangement] clip recall could not load the media runtime:', err);
     return { loaded: 0, failed: changes.map((c) => c.slotId) };
   }
+  if (changes.length === 0) return { loaded: 0, failed: [] };
   const results = await Promise.allSettled(
     changes.map(({ slotId, clip }) =>
       clip.file

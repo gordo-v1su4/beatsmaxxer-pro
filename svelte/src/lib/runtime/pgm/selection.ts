@@ -3,6 +3,7 @@ import { currentRackSlotForModule, videoLayers, bypassed } from '$lib/stores/rac
 import { pgmSource, queuedPgmSource, clearPgmQueue, cutImmediate, markManualCut, selectPgmSource } from '$lib/stores/pgm';
 import { playbackWorkspace, viewMode } from '$lib/stores/rackUi';
 import { selectedTimingSlot, timingEditorCollapsed, timingStatus } from '$lib/stores/timing';
+import { arrangementMode } from '$lib/arrangement/transportMode';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 
@@ -27,6 +28,7 @@ export function pgmSourceAvailable(id: string): boolean {
 
 /** Rail, viewport, ARRANGE pads and digit keys share selection and beat-quantized routing. */
 export function selectRackSource(id: string): void {
+  if(get(arrangementMode)==='play')return;
   const slot = currentRackSlotForModule(id);
   if (!slot) return;
   const timing = get(playbackWorkspace) === 'timing';

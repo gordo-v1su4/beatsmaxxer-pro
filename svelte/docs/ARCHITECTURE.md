@@ -2,7 +2,15 @@
 
 Beatsmaxxer Pro is a browser-native SvelteKit application with one rendering backend: **WebGPU**. It does not ship a WebGL, Three.js, or alternate renderer fallback.
 
+The optional `media-worker/` service prepares slow-motion clips before playback. A same-origin authenticated proxy uploads chunks and submits content-addressed jobs to a durable SQLite queue. One job at a time uses the shared GPU lock, NVIDIA hardware decoding, CUDA RIFE inference, and NVIDIA hardware encoding. RustFS retains originals, renders and provenance. The browser verifies downloaded bytes/frame rates and prepares local resident frame banks; server video is not streamed per cut. Pending or failed preparation blocks transport REC/PLAY and export, with explicit retry. The per-job GPU process exits after publication to release server VRAM.
+
 This document describes the current runtime under `svelte/src/`. See [SHIP_PLAN.md](SHIP_PLAN.md) for release status and [LOCAL_TESTING.md](LOCAL_TESTING.md) for test commands.
+
+The self-hosted browser surface uses `adapter-static` plus `runtime/server.ts`:
+Docker serves static assets and same-origin authenticated API handlers on VM100.
+Dockhand manages that container and the separate interpolation worker through
+Hawser. Server settings come from private environment files; realtime video
+rendering remains browser-side. See [the deployment guide](../../docs/deploy-app-vm.md).
 
 ## Runtime ownership
 
@@ -15,6 +23,14 @@ This document describes the current runtime under `svelte/src/`. See [SHIP_PLAN.
 | Clip registration and replacement | `MediaRuntime` | [`src/lib/runtime/media/MediaRuntime.ts`](../src/lib/runtime/media/MediaRuntime.ts) |
 | Live video elements | `VideoPool` | [`src/lib/media/VideoPool.ts`](../src/lib/media/VideoPool.ts) |
 | Beat-quantized PGM selection | `PgmDirector` | [`src/lib/runtime/pgm/PgmDirector.ts`](../src/lib/runtime/pgm/PgmDirector.ts) |
+| Timing MIDI/audio-source PGM selection | `TimingRuntime` | [`src/lib/runtime/timing/TimingRuntime.ts`](../src/lib/runtime/timing/TimingRuntime.ts) |
+
+In Perform and Timing beat/PGM modes, `PgmDirector` owns automatic scheduling.
+For Timing MIDI/audio sources, `TimingRuntime` instead selects the accepted burst
+at the audio transport position during its tick; visual rAF does not supply the
+musical clock. `timingPgmFollowsTriggers` disables the competing random/interval
+selection. A queued manual cut takes priority and resets the source cadence;
+recorded-take PLAY disables live source selection and follows its stored cuts.
 
 ## WebGPU-only render path
 

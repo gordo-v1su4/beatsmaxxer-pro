@@ -13,10 +13,9 @@
   } from '$lib/stores/pgm';
   import { pgmRailOpen, playbackWorkspace, viewMode } from '$lib/stores/rackUi';
   import { currentRackSlotForModule, rackBottom, rackTop, videoLayers, bypassed } from '$lib/stores/rack';
-  import { timingStatus, timingSettings } from '$lib/stores/timing';
+  import { timingStatus, timingSettings, effectiveClipTiming, timingPgmFollowsTriggers } from '$lib/stores/timing';
   import { timingEffectAccent } from './timing/presentation';
   import RampReadiness from './timing/RampReadiness.svelte';
-  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { pgmDigit, pgmSlotNumber } from '$lib/runtime/pgm/keyboard';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { ChevronLeft, ChevronRight } from '@lucide/svelte';
@@ -30,10 +29,11 @@
   const active = $derived(modules.find((m) => m.id === $pgmSource) ?? modules[0]);
   const queuedModule = $derived(modules.find((m) => m.id === $queuedPgmSource));
   const quantizeLabel = $derived(formatQuantizeLabel($intervalBeats, $feel));
+  const triggerDriven = $derived($playbackWorkspace==='timing' && timingPgmFollowsTriggers($timingSettings));
   function moduleColor(mod: ModuleDefinition | undefined) {
     if (!mod) return '#556070';
     const slot = currentRackSlotForModule(mod.id, $rackTop, $rackBottom);
-    return $viewMode === 'timing' && slot ? timingEffectAccent(($timingSettings.clips[slot] ?? defaultClipTiming(slot)).effect) : mod.accentColor;
+    return $viewMode === 'timing' && slot ? timingEffectAccent(effectiveClipTiming($timingSettings,slot).effect) : mod.accentColor;
   }
   const activeColor = $derived(moduleColor(active));
   const queuedColor = $derived(moduleColor(queuedModule));
@@ -117,10 +117,11 @@
         <button
           type="button"
           class="rounded border px-1.5 py-0.5 text-[8px] font-medium tracking-wider transition-colors
-            {$autoRandom
+            {$autoRandom && !triggerDriven
             ? 'rand-blink border-red-500/50 bg-red-500/20 text-red-400 shadow-[0_0_8px_#ef444433]'
             : 'border-[#1e2226] bg-gradient-to-b from-[#1a1c1f] to-[#131517] text-[#4a5260]'}"
-          title="Auto-switch to a random channel on the next {quantizeLabel} boundary"
+          disabled={triggerDriven}
+          title={triggerDriven?'PGM follows the Timing trigger source below. Choose PGM SOURCE there to use these controls.':`Auto-switch to a random channel on the next ${quantizeLabel} boundary`}
           onclick={() => autoRandom.update((v) => !v)}
         >
           RAND
@@ -128,7 +129,7 @@
       </div>
 
       <span class="font-mono text-[7px] tracking-wide text-[#33383f]">
-        CUTS ON NEXT {quantizeLabel}
+        {triggerDriven?'PGM FOLLOWS TIMING TRIGGERS':`CUTS ON NEXT ${quantizeLabel}`}
       </span>
 
       <div class="mt-0.5 flex flex-col gap-1">
@@ -136,11 +137,12 @@
           {#each PGM_INTERVALS as option (option.label)}
             <button
               type="button"
+              disabled={triggerDriven}
               class="min-w-[26px] rounded border px-1 py-0.5 text-[7.5px] font-medium tracking-wide transition-colors
-                {$intervalBeats === option.beats
+                {$intervalBeats === option.beats && !triggerDriven
                 ? 'border-current/30 text-current'
                 : 'border-[#1e2226] bg-gradient-to-b from-[#17191c] to-[#121416] text-[#556070]'}"
-              style={$intervalBeats === option.beats
+              style={$intervalBeats === option.beats && !triggerDriven
                 ? `color:${activeColor}; border-color:${activeColor}55; background:linear-gradient(180deg,${activeColor}22,${activeColor}12)`
                 : undefined}
               onclick={() => intervalBeats.set(option.beats)}
@@ -153,11 +155,12 @@
           {#each [{ label: 'STR8', value: 0 as PgmFeel }, { label: 'SWNG', value: 1 as PgmFeel }, { label: 'DOT', value: 2 as PgmFeel }] as opt (opt.label)}
             <button
               type="button"
+              disabled={triggerDriven}
               class="flex-1 rounded border py-0.5 text-[7.5px] font-medium tracking-wide transition-colors
-                {$feel === opt.value
+                {$feel === opt.value && !triggerDriven
                 ? 'border-current/30 text-current'
                 : 'border-[#1e2226] bg-gradient-to-b from-[#17191c] to-[#121416] text-[#556070]'}"
-              style={$feel === opt.value
+              style={$feel === opt.value && !triggerDriven
                 ? `color:${activeColor}; border-color:${activeColor}55; background:linear-gradient(180deg,${activeColor}22,${activeColor}12)`
                 : undefined}
               onclick={() => feel.set(opt.value)}

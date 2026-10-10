@@ -22,4 +22,12 @@ describe('arrangement export helpers', () => {
     expect(exportFileName('video/webm;codecs=vp9,opus', at)).toBe('beatsmaxxer-2026-10-05-23-10-00.webm');
     expect(exportFileName('video/mp4', at)).toBe('beatsmaxxer-2026-10-05-23-10-00.mp4');
   });
+
+  test('rejects stale or non-finite loops instead of exporting an empty range', () => {
+    expect(resolveExportRange('loop', 50, { startSeconds: 60, endSeconds: 80 })).toBeNull();
+    expect(resolveExportRange('loop', 0, { startSeconds: 0, endSeconds: 10 })).toBeNull();
+    expect(resolveExportRange('song', Infinity, null)).toBeNull();
+    expect(resolveExportRange('loop', 50, { startSeconds: NaN, endSeconds: 20 })).toBeNull();
+    expect(resolveExportRange('loop', 50, { startSeconds: -2, endSeconds: 10 })).toEqual({ startSeconds: 0, endSeconds: 10 });
+  });
 });

@@ -396,6 +396,16 @@ describe("central deterministic PGM schedule", () => {
 
 
 describe('linear PGM ordering',()=>{
+  test('a landed hand cut restarts an eight-beat RAND interval without disabling RAND',()=>{
+    const runtime=new LiveScheduleRuntime<string>();
+    const config={active:'a',sources:['a','b','c'],queued:null as string|null,autoRandom:true,intervalBeats:8,queueIntervalBeats:4,feel:0 as const};
+    runtime.configurePgm(config);runtime.advance(transport(0),[]);
+    runtime.configurePgm({...config,queued:'b'});runtime.advance(transport(1),[]);
+    expect(runtime.advance(transport(4),[]).pgm).toMatchObject({selected:'b',consumedQueued:true,nextBoundaryBeat:12});
+    runtime.configurePgm({...config,active:'b'});
+    expect(runtime.advance(transport(8),[]).pgm.selected).toBeNull();
+    expect(runtime.advance(transport(12),[]).pgm.selected).not.toBeNull();
+  });
   test('prepares the next source, wraps and gives manual queued cuts priority across skipped boundaries',()=>{
     const runtime=new LiveScheduleRuntime<string>();
     const config={active:'a',sources:['a','c','d'],queued:null as string|null,autoRandom:false,linear:true,intervalBeats:1,feel:0 as const};

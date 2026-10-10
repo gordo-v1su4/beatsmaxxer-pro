@@ -27,7 +27,7 @@
     icon
   }: Props = $props();
   let hov = $state(false);
-  const c = $derived(danger ? '#ef4444' : accent ? '#22c55e' : '#6a7080');
+  const c = $derived(danger ? '#ef4444' : accent ? '#14b8a6' : '#6a7080');
   const lit = $derived((hov || active) && !disabled);
 </script>
 

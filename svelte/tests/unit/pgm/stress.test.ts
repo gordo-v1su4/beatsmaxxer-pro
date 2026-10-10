@@ -73,6 +73,22 @@ describe('PGM stress — fast RAND 1BT swing', () => {
     expect(cut.pgm.consumedQueued).toBe(true);
   });
 
+  test('manual bar landing restarts a four-bar RAND interval from the landing',()=>{
+    const runtime=new LiveScheduleRuntime<string>(0x1234);
+    const config={active:'m1',sources,queued:null,autoRandom:true,intervalBeats:16,queueIntervalBeats:4,feel:0 as const};
+    runtime.configurePgm(config);runtime.advance(transport(0),[]);
+    runtime.advance(transport(4.5),[]);
+    runtime.configurePgm({...config,queued:'m8'});
+    const landed=runtime.advance(transport(8),[]);
+    expect(landed.pgm.selected).toBe('m8');
+    expect(landed.pgm.consumedQueued).toBe(true);
+    runtime.configurePgm({...config,active:'m8'});
+    expect(runtime.advance(transport(16),[]).pgm.selected).toBeNull();
+    expect(runtime.advance(transport(23.9),[]).pgm.selected).toBeNull();
+    const resumed=runtime.advance(transport(24),[]).pgm.selected;
+    expect(resumed).not.toBeNull();expect(resumed).not.toBe('m8');
+  });
+
   test('sparse sampling still lands every 1BT boundary', () => {
     const runtime = new LiveScheduleRuntime<string>(0x1234);
     runtime.configurePgm({

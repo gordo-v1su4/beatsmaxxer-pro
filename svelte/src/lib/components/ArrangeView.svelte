@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
   import { tick } from 'svelte';
+  import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import ArrangeMonitor from '$lib/components/ArrangeMonitor.svelte';
-  import { timingSettings } from '$lib/stores/timing';
-  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
+  import { downloadArrangement, loadArrangementFile, arrangementSaveStatus } from '$lib/arrangement/persistence';
+  let arrangementFileInput=$state<HTMLInputElement>();
+  import { timingSettings, effectiveClipTiming } from '$lib/stores/timing';
   import { timingEffectAccent } from '$lib/components/timing/presentation';
   import { selectedArrangementSections } from '$lib/stores/arrangement';
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
+  import { clipGroups } from '$lib/arrangement/clipGroups';
   import { Upload, X } from '@lucide/svelte';
   import { getModuleDef } from '$lib/modules/catalog';
   import { queuedCutBeat, queuedPgmSource } from '$lib/stores/pgm';
@@ -341,7 +345,7 @@
     // Opened from TIMING, a lane is a deck: S0-S9 and its ramp or stutter.
     if ($playbackWorkspace === 'timing') {
       const slotId = slotIndex < MAX_RACK_SLOTS_PER_ROW ? `top-${slotIndex}` : `bottom-${slotIndex - MAX_RACK_SLOTS_PER_ROW}`;
-      const effect = ($timingSettings.clips[slotId] ?? defaultClipTiming(slotId)).effect;
+      const effect = effectiveClipTiming($timingSettings,slotId).effect;
       return {
         name: `S${slotIndex} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
         color: timingEffectAccent(effect)
@@ -426,12 +430,12 @@
   // drawn as a bar over that span: you can read who is on air, and for how
   // long, straight off the lanes.
   const cutsBySlot = $derived.by(() => {
-    const lanes: Array<Array<{ step: number; endStep: number }>> = Array.from({ length: slotCount }, () => []);
+    const lanes: Array<Array<{ step: number; endStep: number; key:string }>> = Array.from({ length: slotCount }, () => []);
     const sorted = [...$cuts].sort((a, b) => a.step - b.step);
     sorted.forEach((cut, i) => {
       if (cut.slotIndex < 0 || cut.slotIndex >= slotCount) return;
       const endStep = sorted[i + 1]?.step ?? totalSteps;
-      lanes[cut.slotIndex].push({ step: cut.step, endStep });
+      lanes[cut.slotIndex].push({ step: cut.step, endStep, key:`${cut.step}:${cut.timeSeconds??'grid'}` });
     });
     return lanes;
   });
@@ -518,7 +522,7 @@
   // ---- export (V1S-172) ----
   let exportOpen = $state(false);
   let exportRange = $state<ExportRange>('song');
-  let exportFps = $state<30 | 60>(30);
+  let exportFps = $state<24 | 30 | 60>(24);
 
   function formatClock(seconds: number) {
     const s = Math.max(0, Math.floor(seconds));
@@ -750,9 +754,10 @@
       onkeydown={(event) => {
         if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
         event.preventDefault();
-        const modes = ['live', 'play', 'rec'] as const;
+        const modes = ['play', 'rec'] as const;
         const step = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
-        const next = modes[(modes.indexOf($arrangementMode) + step + modes.length) % modes.length]!;
+        const current=$arrangementMode==='rec'?1:0;
+        const next = modes[(current + step + modes.length) % modes.length]!;
         setArrangementMode(next, playheadSeconds);
         const buttons = (event.currentTarget as HTMLElement).querySelectorAll<HTMLButtonElement>('[role="radio"]');
         buttons[modes.indexOf(next)]?.focus();
@@ -762,21 +767,12 @@
         type="button"
         class="arr-btn"
         role="radio"
-        aria-checked={$arrangementMode === 'live'}
-        tabindex={$arrangementMode === 'live' ? 0 : -1}
-        data-active={$arrangementMode === 'live'}
-        onclick={() => setArrangementMode('live', playheadSeconds)}
-        title="LIVE — cut by hand; the arrangement drives nothing and nothing is recorded (Ableton Session)"
-      >LIVE</button>
-      <button
-        type="button"
-        class="arr-btn"
-        role="radio"
         aria-checked={$arrangementMode === 'play'}
         tabindex={$arrangementMode === 'play' ? 0 : -1}
         data-active={$arrangementMode === 'play'}
-        onclick={() => setArrangementMode('play', playheadSeconds)}
-        title="PLAY — the timeline's cuts drive PGM; a manual cut takes over until BACK TO ARRANGEMENT"
+        disabled={$arrangementMode!=='play'&&$timingPreparationBlocked}
+        onclick={() => setArrangementMode($arrangementMode==='play'?'live':'play', playheadSeconds)}
+        title="PLAY — reproduce the recorded take; click again to return to the workspace's live state"
       >PLAY</button>
       <button
         type="button"
@@ -785,7 +781,8 @@
         aria-checked={$arrangementMode === 'rec'}
         tabindex={$arrangementMode === 'rec' ? 0 : -1}
         data-active={$arrangementMode === 'rec'}
-        onclick={() => setArrangementMode('rec', playheadSeconds)}
+        disabled={$arrangementMode!=='rec'&&$timingPreparationBlocked}
+        onclick={() => setArrangementMode($arrangementMode==='rec'?'live':'rec', playheadSeconds)}
         title="REC — your cuts are written into the timeline as it plays (Ableton Arrangement Record)"
       >{$arrangementMode === 'rec' ? 'REC ●' : 'REC'}</button>
     </span>
@@ -838,11 +835,11 @@
       <button
         type="button"
         class="arr-btn"
-        data-active={exportOpen || $exportState.status === 'recording'}
+        data-active={exportOpen || $exportState.status === 'recording' || $exportState.status === 'preparing' || $exportState.status === 'finalizing'}
         aria-expanded={exportOpen}
         onclick={() => (exportOpen = !exportOpen)}
         title="Export the arrangement as video — program out + song audio"
-      >{$exportState.status === 'recording' ? 'EXPORTING…' : 'EXPORT'}</button>
+      >{$exportState.status === 'preparing' ? 'PREPARING…' : $exportState.status === 'finalizing' ? 'FINALIZING…' : $exportState.status === 'recording' ? 'EXPORTING…' : 'EXPORT'}</button>
     </span>
 
     <span class="arr-paint">
@@ -860,47 +857,27 @@
       {/each}
     </span>
 
-    <button
-      type="button"
-      class="arr-btn arr-btn-load"
-      onclick={() => midiInput?.click()}
-      title="Load stem .mid files as trigger channels"
-    >
-      <Upload size={9} /> LOAD MIDI STEMS
-    </button>
-    <!-- Importing appends lanes, so without this the only way back from a
-         wrong set of stems was reloading the app. Deliberately not called
-         CLEAR: that word already means cuts one button along, and losing
-         imported stems when you meant to clear cuts is the worse mistake. -->
-    {#if $midiChannels.length > 0}
-      <button
-        type="button"
-        class="arr-btn"
-        onclick={() => clearMidiChannels()}
-        title="Remove every imported MIDI stem lane (does not touch cuts)"
-      >DROP STEMS</button>
-    {/if}
-    <input
-      bind:this={midiInput}
-      type="file"
-      accept=".mid,.midi"
-      multiple
-      hidden
-      onchange={(e) => {
-        const input = e.currentTarget;
-        void addMidiChannels(Array.from(input.files ?? [])).then(() => {
-          input.value = '';
-        });
-      }}
-    />
   </header>
 
   <ArrangeMonitor />
+  <div class="arr-secbar" aria-label="Arrangement files">
+    <button class="arr-btn" disabled={!$transportDisplay.trackName} onclick={downloadArrangement}>DOWNLOAD ARRANGEMENT</button>
+    <button class="arr-btn" disabled={$arrangementMode!=='live'} onclick={()=>arrangementFileInput?.click()}>LOAD ARRANGEMENT</button>
+    <input hidden type="file" accept=".json" bind:this={arrangementFileInput} onchange={async e=>{
+      const file=e.currentTarget.files?.[0];if(!file)return;
+      try{loadArrangementFile(await file.text());}catch(error){arrangementSaveStatus.set(error instanceof Error?error.message:String(error));}
+      arrangementFileInput!.value='';
+    }}/>
+    <span class="arr-save-status" role="status" title={$arrangementSaveStatus}>{$arrangementSaveStatus}</span>
+  </div>
 
-  {#if exportOpen || $exportState.status === 'recording'}
+  {#if exportOpen || $exportState.status === 'recording' || $exportState.status === 'preparing' || $exportState.status === 'finalizing'}
     <div class="arr-secbar arr-exportbar" role="group" aria-label="Export arrangement" style="--sec-hue:#9d7bff">
       <span class="arr-secbar-name">EXPORT VIDEO</span>
-      {#if $exportState.status === 'recording'}
+      {#if $exportState.status === 'preparing'}
+        <span class="arr-secbar-meta" role="status">PREPARING TAKE FRAMES…</span>
+        <button type="button" class="arr-btn" onclick={cancelArrangementExport}>CANCEL</button>
+      {:else if $exportState.status === 'recording'}
         {@const s = $exportState}
         <span class="arr-export-progress" aria-hidden="true">
           <span style="width:{s.totalSeconds > 0 ? (s.elapsedSeconds / s.totalSeconds) * 100 : 0}%"></span>
@@ -908,6 +885,9 @@
         <span class="arr-secbar-meta" role="status">
           {formatClock(s.elapsedSeconds)} / {formatClock(s.totalSeconds)} · RECORDING IN REALTIME
         </span>
+        <button type="button" class="arr-btn" onclick={cancelArrangementExport}>CANCEL</button>
+      {:else if $exportState.status === 'finalizing'}
+        <span class="arr-secbar-meta" role="status">FINALIZING {$exportState.fps} FPS · {Math.round($exportState.progress*100)}%</span>
         <button type="button" class="arr-btn" onclick={cancelArrangementExport}>CANCEL</button>
       {:else}
         <span class="arr-secbar-meta">RANGE</span>
@@ -917,19 +897,21 @@
         </span>
         <span class="arr-secbar-meta">FPS</span>
         <span class="arr-mode" role="radiogroup" aria-label="Frame rate">
+          <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 24} data-active={exportFps === 24} onclick={() => (exportFps = 24)}>24</button>
           <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 30} data-active={exportFps === 30} onclick={() => (exportFps = 30)}>30</button>
           <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 60} data-active={exportFps === 60} onclick={() => (exportFps = 60)}>60</button>
         </span>
         <button
           type="button"
           class="arr-btn arr-btn-rec"
+          disabled={$timingPreparationBlocked}
           onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps })}
           title="Plays the range in PLAY mode and records it — takes as long as the range"
         >START EXPORT</button>
         {#if $exportState.status === 'error'}
           <span class="arr-export-error" role="alert">{$exportState.message}</span>
         {/if}
-        <span class="arr-secbar-hint">Realtime · records the program monitor at its current size · WebM</span>
+        <span class="arr-secbar-hint">Realtime recording · finalizes at selected FPS · current monitor size · WebM</span>
       {/if}
     </div>
   {/if}
@@ -947,11 +929,12 @@
         type="button"
         class="arr-btn"
         data-active={!!editSection.scene}
+        disabled={$arrangementMode !== 'live'}
         onclick={() => captureSectionScene(editIndex)}
         title="Save the clips loaded in the rack right now as this section's clip set"
       >{editSection.scene ? 'RECAPTURE CLIPS' : 'CAPTURE CLIPS'}</button>
       {#if editSection.scene}
-        <button type="button" class="arr-btn" onclick={() => clearSectionScene(editIndex)} title="Forget this section's clip set">CLEAR CLIPS</button>
+        <button type="button" class="arr-btn" disabled={$arrangementMode !== 'live'} onclick={() => clearSectionScene(editIndex)} title="Forget this section's clip set">CLEAR CLIPS</button>
       {/if}
       <span class="arr-secbar-hint">Drag a section edge to move it · snaps to bars</span>
     </div>
@@ -967,15 +950,16 @@
           <span class="arr-section-loading">Detecting sections…</span>
         {/if}
         {#each sectionBands as band, i (band.id)}
-          {@const section = $arrangement[i]}
+          {@const section = {...$arrangement[i],hue:band.hue}}
           {@const on = i === $activeSectionIndex}
           {@const picked = $selectedArrangementSections.has(i)}
           <div
             class="arr-section arr-section-abs"
+            data-song-section-target={band.id}
             data-active={on}
             data-selected={picked}
             style="left:{band.leftPct}%;width:{band.widthPct}%;--sec-hue:{section.hue};{on
-              ? `background:${section.hue}1c;box-shadow:inset 0 0 0 1px ${section.hue}77`
+              ? `background:${section.hue}1c`
               : ''}"
             title="{section.name} — {section.bars} bars, from bar {band.startBar}. Shift+click to multi-select."
           >
@@ -1051,7 +1035,7 @@
               <span class="arr-section-custom" title="Custom name — double-click to change">{section.customName}</span>
             {/if}
             {#if section.scene}
-              <span class="arr-section-scene" title="Has a captured clip set">CLIPS</span>
+              <span class="arr-section-scene" title="Assigned clip set">{$clipGroups.find(g=>g.id===section.clipGroupId)?.name??'CLIPS'}</span>
             {/if}
             <span class="arr-section-bars">{section.bars}b</span>
           </div>
@@ -1152,7 +1136,7 @@
               title="Queued — lands on the next bar"
             ></span>
           {/if}
-          {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
+          {#each cutsBySlot[slotIndex] ?? [] as cut (cut.key)}
             {@const startPct = timePct(stepSeconds(cut.step, $analysisBeatGrid, bpm))}
             {@const endPct = timePct(stepSeconds(cut.endStep, $analysisBeatGrid, bpm))}
             <span
@@ -1164,103 +1148,12 @@
       </div>
     {/each}
 
-    <!-- Trigger channels. Ticks at true song positions, so a part that only
-         enters in the last third reads as entering in the last third. -->
-    <div class="arr-row arr-row-chan">
-      <span class="arr-gutter arr-gutter-chan">AUDIO</span>
-      <div class="arr-track arr-chan" data-empty={audioTicks.length === 0} role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
-        {@render sectionOverlay()}
-        {@render loopRegionOverlay()}
-        {@render beatGridOverlay()}
-        {#each audioTicks as left, i (i)}
-          <span class="arr-tick arr-tick-audio" style="left:{left}%"></span>
-        {/each}
-        {#if analysisTruncated}
-          <span
-            class="arr-chan-uncovered"
-            style="left:{analysisEndPct}%"
-            title="Analysis covers only the first 90 seconds of a track, so onsets stop here. The song keeps playing; there is just no onset data past this point."
-          ></span>
-        {/if}
-        {#if audioTicks.length === 0}
-          <span class="arr-chan-empty">no onset data — load a track and run analysis</span>
-        {/if}
-      </div>
-    </div>
-
-    {#each moduleMidiTicks as { moduleId, layer, module, density, source, keptCount, ticks } (moduleId)}
-      <div
-        class="arr-row arr-row-chan arr-row-module-midi"
-        data-active={source === 'midi'}
-        data-midi-module={moduleId}
-        data-midi-identity={layer.identity ?? layer.name}
-        data-midi-kept={ticks.length}
-        data-midi-total={layer.notes.length}
-        data-midi-density={Math.round(density * 100)}
-      >
-        <button
-          type="button"
-          class="arr-gutter arr-gutter-chan arr-gutter-module-midi"
-          onclick={() => setModuleTriggerSource(moduleId, source === 'midi' ? 'audio' : 'midi')}
-          title="{module?.name ?? moduleId}: {keptCount}/{layer.notes.length} notes at {Math.round(density * 100)}% density — click to use {source === 'midi' ? 'audio' : 'MIDI'}"
-        >
-          <span class="arr-chan-dot" style="background:{module?.accentColor ?? '#7aa2ff'}"></span>
-          {module?.shortName ?? moduleId}
-          <small>{source === 'midi' ? 'MIDI' : 'AUD'} · {keptCount}/{layer.notes.length}</small>
-        </button>
-        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="{layer.name} — click to seek; Enter or Space seeks to the playhead">
-          {@render sectionOverlay()}
-          {@render loopRegionOverlay()}
-          {@render beatGridOverlay()}
-          {#each ticks as left, i (i)}
-            <span
-              class="arr-tick arr-tick-module"
-              style="left:{left}%;background:{module?.accentColor ?? '#7aa2ff'}"
-            ></span>
-          {/each}
-          <span class="arr-midi-count">{layer.name}</span>
-        </div>
-      </div>
-    {/each}
-
-    {#each channelTicks as { channel, ticks, keptCount } (channel.id)}
-      <div class="arr-row arr-row-chan">
-        <button
-          type="button"
-          class="arr-gutter arr-gutter-chan arr-gutter-midi"
-          data-active={$activeChannelId === channel.id}
-          onclick={() => activeChannelId.set(channel.id)}
-          title="{channel.name} — {keptCount}/{channel.noteCount} onsets"
-        >
-          <span class="arr-chan-dot" style="background:{channel.color}"></span>
-          {channel.name}
-          <small>{keptCount}/{channel.noteCount}</small>
-        </button>
-        <div class="arr-track arr-chan" role="button" tabindex="0" onclick={seekAt} onkeydown={seekAtKeyboard} title="Click to seek; Enter or Space seeks to the playhead">
-          {@render sectionOverlay()}
-          {@render loopRegionOverlay()}
-          {@render beatGridOverlay()}
-          {#each ticks as left, i (i)}
-            <span
-              class="arr-tick"
-              style="left:{left}%;background:{channel.color}"
-            ></span>
-          {/each}
-          <button
-            type="button"
-            class="arr-chan-remove"
-            onclick={(event) => { event.stopPropagation(); removeMidiChannel(channel.id); }}
-            aria-label="Remove {channel.name}"
-          ><X size={9} /></button>
-        </div>
-      </div>
-    {/each}
-
     <!-- One playhead for the whole view, over every lane at once. -->
     <span class="arr-playhead" style="left:calc(var(--arr-gutter-w) + 6px + {timePct($transportDisplay.time) / 100} * (100% - var(--arr-gutter-w) - 6px))"></span>
    </div>
   </div>
 
+  {#if $playbackWorkspace === 'timing'}<TimingPanel />{/if}
   {#if openSectionKindIndex !== null && kindMenuRect}
     {@const menuSection = $arrangement[openSectionKindIndex]}
     <div
@@ -1304,11 +1197,8 @@
 </section>
 
 <style>
-  .arr-gutter-chan small {
-    display: block;
-    font-size: 5.5px;
-    color: #52606d;
-  }
+  .arr-save-status{font:7px var(--font-ui);color:#839399;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
 
   .arrange {
     --arr-gutter-w: 74px;
@@ -1376,9 +1266,7 @@
     background: #ff4d6d18;
     color: #ff8fa3;
   }
-  .arr-btn-load {
-    margin-left: auto;
-  }
+
 
   .arr-paint {
     display: flex;
@@ -1462,11 +1350,7 @@
     min-height: 28px;
     max-height: 72px;
   }
-  .arr-row-chan {
-    flex: 2 0 auto;
-    min-height: 22px;
-    max-height: 48px;
-  }
+
   /* The seam between the two rack rows. */
   .arr-row-slot.is-rowbreak {
     margin-top: 5px;
@@ -1512,25 +1396,8 @@
     white-space: nowrap;
   }
 
-  .arr-gutter-chan {
-    gap: 4px;
-    padding-right: 4px;
-    border: 0;
-    border-right: 1px solid #16181b;
-    background: transparent;
-    color: #55696e;
-    text-align: left;
-  }
-  .arr-gutter-midi[data-active='true'] {
-    background: #131619;
-    color: #cfe0e2;
-  }
-  .arr-chan-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
+
+
 
   .arr-track {
     position: relative;
@@ -1719,7 +1586,8 @@
     color: #ffb46b;
   }
   .arr-section[data-selected='true'] {
-    box-shadow: inset 0 0 0 1px rgba(184, 212, 220, 0.55);
+    box-shadow: none;
+    background: #253035;
   }
   .arr-section-abs {
     position: absolute;
@@ -1728,8 +1596,8 @@
     min-width: 52px;
     overflow: visible;
     z-index: 2;
-    border: 1px solid color-mix(in srgb, var(--sec-hue, #14b8a6) 22%, rgba(255, 255, 255, 0.14));
-    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 14%, rgba(255, 255, 255, 0.05));
+    border: 0;
+    background: color-mix(in srgb, var(--sec-hue, #14b8a6) 22%, #101416);
     backdrop-filter: blur(14px) saturate(1.15);
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
   }
@@ -1742,7 +1610,7 @@
     flex-shrink: 0;
     border-radius: 1px;
     pointer-events: none;
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec-hue, #14b8a6) 55%, transparent);
+    box-shadow: none;
   }
   .arr-section-color-wrap {
     position: relative;
@@ -1842,7 +1710,7 @@
     height: 7px;
     flex-shrink: 0;
     border-radius: 1px;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+    box-shadow: none;
   }
   .arr-kind-option-label {
     flex: 1;
@@ -1859,7 +1727,7 @@
     color: color-mix(in srgb, var(--sec-hue, #f6fcfd) 80%, #ffffff);
   }
   .arr-kind-option.is-active .arr-kind-swatch {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--sec-hue, #7d9196) 70%, #ffffff);
+    box-shadow: none;
   }
   .arr-section-bars {
     flex-shrink: 0;
@@ -1919,19 +1787,7 @@
 
   /* Hatched span where analysis never reached. Reads as absent data rather
      than an empty lane someone forgot to fill. */
-  .arr-chan-uncovered {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    border-left: 1px dashed #3a4a3f;
-    background: repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.028) 0 3px,
-      transparent 3px 7px
-    );
-    pointer-events: auto;
-  }
+
 
   .arr-lane {
     border-radius: 2px;
@@ -1957,8 +1813,8 @@
     bottom: 0;
     width: 0;
     margin-left: -1px;
-    border-left: 2px solid color-mix(in srgb, var(--sec-hue) 72%, #ffffff);
-    opacity: 0.85;
+    border-left: 1px solid color-mix(in srgb, var(--sec-hue) 35%, transparent);
+    opacity: 0.35;
     pointer-events: none;
     z-index: 1;
   }
@@ -1973,8 +1829,8 @@
     z-index: 1;
     pointer-events: none;
     background: color-mix(in srgb, var(--clip-color) 42%, transparent);
-    border: 1px solid color-mix(in srgb, var(--clip-color) 55%, transparent);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+    border: 0;
+    box-shadow: none;
     background-image: repeating-linear-gradient(
       -45deg,
       color-mix(in srgb, var(--clip-color) 18%, transparent) 0 4px,
@@ -1999,7 +1855,7 @@
     top: 3px;
     bottom: 3px;
     box-sizing: border-box;
-    border-left: 2px solid var(--c);
+    border: 0;
     border-radius: 2px;
     background: color-mix(in srgb, var(--c) 32%, transparent);
     z-index: 2;
@@ -2015,12 +1871,12 @@
     z-index: 2;
   }
 
-  /* Drawn ahead: an outline in the slot's colour, blinking in step with the
+  /* Drawn ahead: a matte fill in the slot's colour, blinking in step with the
      PGM rail's queued state, until the playhead reaches it. Opacity only, so
      it stays on the compositor. */
   .arr-cut-ghost {
-    background: transparent;
-    box-shadow: inset 0 0 0 1px var(--ghost-color);
+    background: color-mix(in srgb,var(--ghost-color) 28%,transparent);
+    box-shadow: none;
     animation: ghost-blink 0.5s steps(2, jump-none) infinite;
   }
   @keyframes ghost-blink {
@@ -2031,70 +1887,16 @@
     .arr-cut-ghost { animation: none; opacity: 0.7; }
   }
 
-  .arr-chan {
-    border-radius: 2px;
-    background: #0c0e10;
-  }
-  .arr-chan[data-empty='true'] {
-    background: transparent;
-  }
-  .arr-tick {
-    position: absolute;
-    top: 3px;
-    bottom: 3px;
-    width: 1px;
-    background: #4fd6e8;
-    opacity: 0.75;
-    z-index: 2;
-  }
-  .arr-tick-audio {
-    background: #55696e;
-  }
-  .arr-row-module-midi[data-active='false'] { opacity: 0.48; }
-  .arr-gutter-module-midi { color: #809298; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .arr-midi-count {
-    position: sticky;
-    left: calc(var(--arr-gutter-w) + 10px);
-    padding: 0 3px;
-    font: 6.5px var(--font-mono);
-    color: #526168;
-    background: rgba(10, 11, 12, 0.8);
-  }
-  .arr-chan-empty {
-    position: absolute;
-    inset: 0 auto 0 4px;
-    display: flex;
-    align-items: center;
-    font-family: var(--font-ui);
-    font-size: 6.5px;
-    letter-spacing: 0.1em;
-    color: #2f363a;
-  }
-  .arr-chan-remove {
-    position: absolute;
-    top: 1px;
-    right: 2px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 12px;
-    height: 12px;
-    padding: 0;
-    border: 0;
-    border-radius: 1px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #55696e;
-    opacity: 0;
-    transition: opacity 0.12s;
-  }
-  .arr-row-chan:hover .arr-chan-remove,
-  .arr-chan-remove:focus-visible {
-    opacity: 1;
-  }
-  .arr-chan-remove:hover {
-    background: #7a2222;
-    color: #fff;
-  }
+
+
+
+
+
+
+
+
+
+
 
   /* One line across every lane. On a song-length view this is the only thing
      that says where you are. */
@@ -2112,7 +1914,7 @@
   @media (max-width: 1200px) {
     .arr-head { height: auto; min-height: 38px; flex-wrap: wrap; padding-block: 5px; }
     .arr-paint { order: 3; width: 100%; margin-left: 0; overflow-x: auto; }
-    .arr-btn-load { margin-left: 0; }
+
     .arrange { --arr-gutter-w: 64px; }
     .arr-scroll { padding-inline: 6px; }
   }

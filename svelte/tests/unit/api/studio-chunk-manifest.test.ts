@@ -5,7 +5,7 @@ import {
   STUDIO_CHUNK_MANIFEST_VERSION,
   validateStudioChunkManifest,
   type StudioChunkManifest,
-} from "../../../../api/lib/studioChunkManifest";
+} from "../../../../api/_lib/studioChunkManifest";
 
 const gateway = {
   bucket: "beatsmaxxer-pro",

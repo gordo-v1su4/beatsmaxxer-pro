@@ -17,7 +17,7 @@
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import { audioEngine } from '$lib/audio';
   import { playbackWorkspace } from '$lib/stores/rackUi';
-  import { timingSettings, timingLive } from '$lib/stores/timing';
+  import { timingSettings, timingLive, effectiveClipTiming } from '$lib/stores/timing';
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { timingEffectAccent } from './timing/presentation';
 
@@ -38,7 +38,7 @@
   const clock = $derived(td.hud.clock);
   const sampler = $derived(td.hud.sampler);
   const timing = $derived($playbackWorkspace === 'timing');
-  const timingConfig = $derived(sourceSlot ? $timingSettings.clips[sourceSlot] ?? defaultClipTiming(sourceSlot) : defaultClipTiming());
+  const timingConfig = $derived(sourceSlot ? effectiveClipTiming($timingSettings,sourceSlot) : defaultClipTiming());
   const timingPosition = $derived(sourceSlot ? $timingLive[sourceSlot] : null);
   const accent = $derived(timing ? timingEffectAccent(timingConfig.effect) : live?.accentColor ?? '#38bdf8');
   const liveColor = $derived(parseAccentColor(accent));

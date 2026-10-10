@@ -6,6 +6,26 @@ function context(currentTime = 0, sampleRate = 48_000) {
 }
 
 describe("AudioTimeline", () => {
+  test("temporarily disables song wrapping without resetting the timeline", () => {
+    const ctx = context();
+    const timeline = new AudioTimeline();
+    timeline.bindContext(ctx);
+    timeline.configureSource({ durationSeconds: 10, loop: true, positionSeconds: 9 });
+    timeline.play();
+    const before = timeline.publishFrame();
+    timeline.setLooping(false);
+    ctx.currentTime = 2;
+    const atEnd = timeline.publishFrame();
+    // The central clock remains unwrapped; the media actuator owns its end event.
+    expect(atEnd.positionSeconds).toBe(11);
+    expect(atEnd.generation).toBe(before.generation);
+    timeline.pause();
+    timeline.setLooping(true);
+    timeline.play(9);
+    ctx.currentTime = 4;
+    expect(timeline.publishFrame().positionSeconds).toBe(1);
+  });
+
   test("is slaved to context time and remains continuous across rate and pause changes", () => {
     const ctx = context();
     const timeline = new AudioTimeline();

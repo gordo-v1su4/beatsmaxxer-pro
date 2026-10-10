@@ -66,6 +66,8 @@ work on any machine.
 
 ## Stack
 
+Slow-motion preparation can use the optional [GPU interpolation worker](media-worker/README.md). It queues clips serially, stores media in RustFS, and uses NVDEC → CUDA RIFE → NVENC to create 96 FPS sources from 24 FPS clips. The browser downloads verified renders before playback and keeps cuts on local resident WebGPU frames. Playback output defaults to 24 FPS. Processing errors remain visible and block playback, recording and export until resolved.
+
 | Layer | Tech |
 |-------|------|
 | UI | SvelteKit 5 + runes |
@@ -100,6 +102,7 @@ docs/                       Backlog, research, timing-workspace notes
 - [`svelte/docs/LOCAL_TESTING.md`](svelte/docs/LOCAL_TESTING.md) — browser acceptance gates
 - [`svelte/docs/MODULES.md`](svelte/docs/MODULES.md) — register new effects
 - [`desktop/README.md`](desktop/README.md) — desktop build and releases
+- [`docs/deploy-app-vm.md`](docs/deploy-app-vm.md) — self-hosted app/API and Dockhand deployment
 - [Portfolio case study](docs/portfolio-case-study/README.md) — interactive architecture walkthrough
 
 ## Roadmap

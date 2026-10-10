@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  alignStructureSectionsToBarGrid,
   arrangementFromStructureSections,
   sectionSpanToBars,
 } from '$lib/arrangement/seedFromStructure';
@@ -21,24 +20,6 @@ describe('sectionSpanToBars', () => {
   });
 });
 
-describe('alignStructureSectionsToBarGrid', () => {
-  const beats = Array.from({ length: 80 }, (_, i) => i * 0.5);
-
-  it('pins intro end to bar 5 when Essentia intro is in the 3–7 bar window', () => {
-    const sections = [
-      { start: 0, end: 9.2, label: 'intro', duration: 9.2, energy: 0.1 },
-      { start: 9.2, end: 32, label: 'verse', duration: 22.8, energy: 0.2 },
-    ];
-    const aligned = alignStructureSectionsToBarGrid(sections, beats);
-    expect(barCount(aligned[0]!, beats)).toBe(5);
-    expect(aligned[0]?.end).toBe(10);
-  });
-});
-
-function barCount(section: { start: number; end: number }, beats: number[]) {
-  return sectionSpanToBars(section.start, section.end, beats, 120);
-}
-
 describe('arrangementFromStructureSections', () => {
   it('maps labels and bar counts from Essentia sections', () => {
     const sections = [
@@ -56,10 +37,21 @@ describe('arrangementFromStructureSections', () => {
     expect(arrangement[0]?.bars).toBeGreaterThan(0);
     expect(arrangement.every((section) => section.pattern.every((step) => step === null))).toBe(true);
     expect(arrangement[0]?.timeStartS).toBe(0);
-    expect(arrangement[0]?.timeEndS).toBe(10);
+    expect(arrangement[0]?.timeEndS).toBe(8);
   });
 
   it('returns empty for no sections', () => {
     expect(arrangementFromStructureSections([], [], 120)).toEqual([]);
+  });
+
+  it('preserves API timestamps even between beats and inside the old intro pin window', () => {
+    const boundary = 9.217;
+    const sections = [
+      { start: 0, end: boundary, label: 'intro', duration: boundary, energy: .1 },
+      { start: boundary, end: 31.337, label: 'verse', duration: 31.337 - boundary, energy: .2 },
+    ];
+    const beats = Array.from({ length: 80 }, (_, i) => .52 + i * .48);
+    const arrangement = arrangementFromStructureSections(sections, beats, 125);
+    expect(arrangement.map(s => [s.timeStartS, s.timeEndS])).toEqual([[0, boundary], [boundary, 31.337]]);
   });
 });

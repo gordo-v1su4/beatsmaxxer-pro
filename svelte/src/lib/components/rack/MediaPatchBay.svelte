@@ -51,7 +51,7 @@
 
   const statusColor = $derived.by(() => {
     if (clipStatus === 'loading') return '#f59e0b';
-    if (clipStatus === 'ready') return '#22c55e';
+    if (clipStatus === 'ready') return '#14b8a6';
     if (clipStatus === 'error') return '#ef4444';
     return '#4a5260';
   });

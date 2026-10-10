@@ -15,7 +15,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function createHarness(prepareVideo: (id: string, url: string) => Promise<HTMLVideoElement>) {
+function createHarness(prepareVideo: (id: string, url: string) => Promise<HTMLVideoElement>,residentReady?: (source:File|string)=>boolean,residentFactor?: (source:File|string)=>number|null) {
   const published: Array<{ id: string; url: string | null }> = [];
   let token = 0;
   const pool = {
@@ -40,6 +40,7 @@ function createHarness(prepareVideo: (id: string, url: string) => Promise<HTMLVi
   const runtime = new MediaRuntime({
     clipRegistry: new ClipRegistry(),
     pool,
+    residentFactor:residentFactor??(residentReady?source=>residentReady(source)?1:null:undefined),
     decks: {
       lifecycle: () => undefined,
       upsert: () => ({}) as never,
@@ -56,7 +57,7 @@ describe('MediaRuntime clip transactions', () => {
 
   beforeEach(() => {
     timingActive.set(false);
-    timingSettings.set(parseTimingSettings(null));
+    timingSettings.set({...parseTimingSettings(null),scope:'deck'});
     create.mockReset();
     revoke.mockReset();
     let id = 0;
@@ -82,6 +83,150 @@ describe('MediaRuntime clip transactions', () => {
       expect(published).toHaveLength(1);
       expect(get(timingClipRestrictions)['top-1']).toContain('Speedramp slot');
     } finally { identify.mockRestore(); timingActive.set(false); }
+  });
+
+  test('publishes a verified resident clip before its HTML video is ready',async()=>{
+    const pending=deferred<HTMLVideoElement>();
+    const file=new File(['resident'],'resident.mp4');
+    const {runtime,pool,published}=createHarness(()=>pending.promise,source=>source===file);
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      const registering=runtime.registerModuleFileClip('top-1',file);
+      await vi.waitFor(()=>expect(pool.prepare).toHaveBeenCalledOnce());
+      expect(published).toEqual([{id:'top-1',url:'blob:runtime-1'}]);
+      expect(runtime.clipRegistry.get('top-1')?.file).toBe(file);
+      expect(pool.commitCandidate).not.toHaveBeenCalled();
+      pending.resolve({} as HTMLVideoElement);
+      await expect(registering).resolves.toMatchObject({status:'success'});
+      expect(published).toHaveLength(1);
+    }finally{identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('publishes a ready verified bank synchronously without repeating verification',async()=>{
+    const pending=deferred<HTMLVideoElement>();
+    const file=new File(['ready'],'ready.mp4');
+    const {runtime,published}=createHarness(()=>pending.promise,undefined,source=>source===file?1:null);
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      const result=runtime.registerModuleFileClip('top-1',file);
+      expect(published).toEqual([{id:'top-1',url:'blob:runtime-1'}]);
+      expect(identify).not.toHaveBeenCalled();
+      pending.resolve({} as HTMLVideoElement);
+      await expect(result).resolves.toMatchObject({status:'success'});
+    }finally{pending.resolve({} as HTMLVideoElement);identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('recalling the same verified resident file preserves the registered layer and URL',async()=>{
+    const file=new File(['ready'],'same.mp4');
+    const {runtime,pool,published}=createHarness(async()=>({} as HTMLVideoElement),undefined,source=>source===file?1:null);
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      await runtime.registerModuleFileClip('top-1',file);
+      const clip=runtime.clipRegistry.get('top-1');
+      await expect(runtime.registerModuleFileClip('top-1',file)).resolves.toMatchObject({status:'success',clip});
+      expect(runtime.clipRegistry.get('top-1')).toBe(clip);
+      expect(published).toHaveLength(1);
+      expect(pool.prepare).toHaveBeenCalledOnce();
+      expect(create).toHaveBeenCalledOnce();
+    }finally{identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('an immediate repeated recall still attaches the current resident clip to the HTML pool',async()=>{
+    const file=new File(['ready'],'same.mp4');
+    const {runtime,pool}=createHarness(async()=>({} as HTMLVideoElement),undefined,source=>source===file?1:null);
+    timingActive.set(true);
+    try{
+      const first=runtime.registerModuleFileClip('top-1',file);
+      await expect(runtime.registerModuleFileClip('top-1',file)).resolves.toMatchObject({status:'success'});
+      await first;
+      expect(pool.commitCandidate).toHaveBeenCalledOnce();
+    }finally{timingActive.set(false);}
+  });
+
+  test('recalling the mounted file supersedes a pending replacement without remounting',async()=>{
+    const file=new File(['ready'],'same.mp4'),pending=deferred<HTMLVideoElement>();let calls=0;
+    const {runtime,pool,published}=createHarness(async()=>++calls===2?pending.promise:{} as HTMLVideoElement,undefined,source=>source===file?1:null);
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      await runtime.registerModuleFileClip('top-1',file);
+      const clip=runtime.clipRegistry.get('top-1');
+      const replacement=runtime.registerModuleFileClip('top-1',new File(['other'],'other.mp4'));
+      await vi.waitFor(()=>expect(pool.prepare).toHaveBeenCalledTimes(2));
+      await expect(runtime.registerModuleFileClip('top-1',file)).resolves.toMatchObject({status:'success',clip});
+      pending.resolve({} as HTMLVideoElement);
+      await expect(replacement).resolves.toMatchObject({status:'superseded'});
+      expect(runtime.clipRegistry.get('top-1')).toBe(clip);
+      expect(published).toHaveLength(1);
+      expect(pool.commitCandidate).toHaveBeenCalledOnce();
+      expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:runtime-2');
+    }finally{pending.resolve({} as HTMLVideoElement);identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('restores the previous committed resident source if HTML attachment fails',async()=>{
+    const pending=deferred<HTMLVideoElement>();let calls=0;
+    const file=new File(['resident'],'new.mp4');
+    const {runtime,published}=createHarness(async()=>++calls===1?{} as HTMLVideoElement:pending.promise,source=>source===file);
+    await runtime.registerModuleFileClip('top-1',new File(['old'],'old.mp4'));
+    const previous=runtime.clipRegistry.get('top-1');
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      const registering=runtime.registerModuleFileClip('top-1',file);
+      await vi.waitFor(()=>expect(published).toHaveLength(2));
+      pending.reject(new Error('decode-failed'));
+      await expect(registering).resolves.toMatchObject({status:'failed'});
+      expect(runtime.clipRegistry.get('top-1')).toBe(previous);
+      expect(published).toEqual([{id:'top-1',url:'blob:runtime-1'},{id:'top-1',url:'blob:runtime-2'},{id:'top-1',url:'blob:runtime-1'}]);
+      expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:runtime-2');
+    }finally{identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('superseded resident publication cannot restore an older clip or leak pool URLs',async()=>{
+    const pending=deferred<HTMLVideoElement>();let calls=0;
+    const {runtime,pool,published}=createHarness(async()=>++calls===2?pending.promise:{} as HTMLVideoElement,()=>true);
+    await runtime.registerModuleFileClip('top-1',new File(['old'],'old.mp4'));
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      const first=runtime.registerModuleFileClip('top-1',new File(['a'],'a.mp4'));
+      await vi.waitFor(()=>expect(published).toHaveLength(2));
+      await vi.waitFor(()=>expect(pool.prepare).toHaveBeenCalledTimes(2));
+      const second=runtime.registerModuleFileClip('top-1',new File(['b'],'b.mp4'));
+      await vi.waitFor(()=>expect(published).toHaveLength(3));
+      expect(runtime.clipRegistry.get('top-1')?.name).toBe('b.mp4');
+      // HTML attachments remain serialized, while the prepared GPU source lands.
+      expect(pool.prepare).toHaveBeenCalledTimes(2);
+      pending.resolve({} as HTMLVideoElement);
+      await expect(first).resolves.toMatchObject({status:'superseded'});
+      await expect(second).resolves.toMatchObject({status:'success'});
+      expect(runtime.clipRegistry.get('top-1')?.name).toBe('b.mp4');
+      expect(published.map(value=>value.url)).toEqual(['blob:runtime-1','blob:runtime-2','blob:runtime-3']);
+      expect(pool.discardCandidate).toHaveBeenCalledOnce();
+      expect(revoke.mock.calls.map(call=>call[0]).sort()).toEqual(['blob:runtime-1','blob:runtime-2']);
+    }finally{identify.mockRestore();timingActive.set(false);}
+  });
+
+  test('clearing an early resident commit prevents late publication',async()=>{
+    const pending=deferred<HTMLVideoElement>();
+    const {runtime,pool,published}=createHarness(()=>pending.promise,()=>true);
+    timingActive.set(true);
+    const identify=vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
+    try{
+      const registering=runtime.registerModuleFileClip('top-1',new File(['a'],'a.mp4'));
+      await vi.waitFor(()=>expect(published).toHaveLength(1));
+      await vi.waitFor(()=>expect(pool.prepare).toHaveBeenCalledOnce());
+      await runtime.removeModuleClip('top-1');
+      pending.resolve({} as HTMLVideoElement);
+      await expect(registering).resolves.toMatchObject({status:'superseded'});
+      expect(runtime.clipRegistry.get('top-1')).toBeNull();
+      expect(published.map(value=>value.url)).toEqual(['blob:runtime-1',null]);
+      expect(pool.discardCandidate).toHaveBeenCalledOnce();
+      expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:runtime-1');
+    }finally{identify.mockRestore();timingActive.set(false);}
   });
 
   test('allows verified RIFE in Speedramp and original clips in Stutter', async () => {

@@ -18,11 +18,13 @@ describe('arrangement sequencer entry', () => {
     expect(arrange).toContain('>PERFORM</button>');
   });
 
-  test('paints section splits across MIDI and audio lanes, not only cut slots', () => {
+  test('paints section splits across cut lanes after removing MIDI and audio lanes', () => {
     const arrange = source('components/ArrangeView.svelte');
     expect(arrange).toContain('arr-section-abs');
     expect(arrange).toContain('sectionOverlay');
     expect(arrange).toContain('arr-sec-split');
-    expect(arrange.match(/\{@render sectionOverlay\(\)\}/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(arrange.match(/\{@render sectionOverlay\(\)\}/g)?.length).toBe(1);
+    expect(arrange).not.toContain('arr-row-module-midi');
+    expect(arrange).not.toContain('>LOAD MIDI STEMS</button>');
   });
 });

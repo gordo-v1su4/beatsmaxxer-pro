@@ -1,0 +1,44 @@
+name: media-worker
+services:
+  interpolation-worker:
+    image: beatsmaxxer-interpolation-worker:local
+    pull_policy: never
+    container_name: beatsmaxxer-interpolation-worker
+    labels:
+      dockhand.update: "false"
+    restart: unless-stopped
+    cpus: 1.0
+    network_mode: host
+    environment:
+      MEDIA_GATEWAY_URL: ${MEDIA_GATEWAY_URL:?MEDIA_GATEWAY_URL required}
+      MEDIA_GATEWAY_TOKEN: ${MEDIA_GATEWAY_TOKEN:?MEDIA_GATEWAY_TOKEN required}
+      MEDIA_GATEWAY_BUCKET: ${MEDIA_GATEWAY_BUCKET:?MEDIA_GATEWAY_BUCKET required}
+      MEDIA_GATEWAY_USER_ID: ${MEDIA_GATEWAY_USER_ID:?MEDIA_GATEWAY_USER_ID required}
+      MEDIA_GATEWAY_UPLOAD_PREFIX: ${MEDIA_GATEWAY_UPLOAD_PREFIX:?MEDIA_GATEWAY_UPLOAD_PREFIX required}
+      PORT: "18096"
+      WORKER_BIND: 127.0.0.1
+      GPU_LOCK_PATH: /gpu-lock/stack-structure-gpu.lock
+    volumes:
+      - interpolation-work:/work
+      - /var/lock/stack-structure-gpu:/gpu-lock
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:18096/health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  interpolation-work:
+    external: true
+    name: media-worker_interpolation-work

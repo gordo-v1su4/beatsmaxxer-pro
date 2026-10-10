@@ -35,6 +35,7 @@ import { rackTop } from '$lib/stores/rack';
 import { pgmSource } from '$lib/stores/pgm';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import { sequencerArmed } from '$lib/stores/sequencer';
+import { arrangementClips } from '$lib/stores/arrangement';
 
 function publish(step: number, generation = 1, playing = true) {
   harness.publish!({ generation, beatPosition: step / 4, positionSeconds: step / 8,
@@ -44,6 +45,23 @@ function publish(step: number, generation = 1, playing = true) {
 afterEach(() => { stopAppLoop(); vi.unstubAllGlobals(); });
 
 describe('replace recording take lifecycle', () => {
+  test('Timing recording closes each occupancy lane when PGM changes', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    playbackWorkspace.set('timing');
+    setArrangementMode('live', 0);
+    const decks = get(rackTop);
+    pgmSource.set(decks[0]!);
+    setArrangementMode('rec', 0);
+    startAppLoop();
+    publish(0);
+    pgmSource.set(decks[1]!);
+    publish(4);
+    expect(get(arrangementClips)).toEqual([
+      expect.objectContaining({slotIndex: 0, startSeconds: 0, endSeconds: .5}),
+      expect.objectContaining({slotIndex: 1, startSeconds: .5, endSeconds: null}),
+    ]);
+    setArrangementMode('live', .75);
+  });
   test.each([true, false])('clears earlier take protection through LIVE (playing=%s)', (playing) => {
     vi.stubGlobal('requestAnimationFrame', () => 1);
     playbackWorkspace.set('timing');
@@ -58,7 +76,7 @@ describe('replace recording take lifecycle', () => {
     publish(0);
     pgmSource.set(decks[1]!);
     publish(4);
-    expect(get(cuts)).toContainEqual({ step: 4, slotIndex: 1 });
+    expect(get(cuts)).toContainEqual(expect.objectContaining({ step: 4, slotIndex: 1 }));
 
     setArrangementMode('live', 0.5);
     sequencerArmed.set(false);
@@ -67,6 +85,6 @@ describe('replace recording take lifecycle', () => {
     sequencerArmed.set(true);
     publish(0, 2);
     publish(5, 2);
-    expect(get(cuts)).not.toContainEqual({ step: 4, slotIndex: 1 });
+    expect(get(cuts)).not.toContainEqual(expect.objectContaining({ step: 4, slotIndex: 1 }));
   });
 });

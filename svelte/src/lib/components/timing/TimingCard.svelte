@@ -9,17 +9,20 @@
   import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import RampReadiness from './RampReadiness.svelte';
   import { videoLayers } from '$lib/stores/rack';
-  import { selectedTimingSlot, timingSettings, timingStatus, timingClipRestrictions } from '$lib/stores/timing';
+  import { effectiveClipTiming, selectedTimingSlot, timingSettings, timingStatus, timingClipRestrictions } from '$lib/stores/timing';
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { timingEffectAccent } from './presentation';
   import { parseAccentColor } from '$lib/modules/registry';
   import { selectRackSource } from '$lib/runtime/pgm/selection';
+  import { slotPreparation, retrySlotPreparation } from '$lib/runtime/timing/preparation';
   let { slot, moduleId, onAir = false, onVideoUpload, onVideosUpload, onClearVideo }: { slot: string; moduleId: string; onAir?: boolean; onVideoUpload?: (file:File)=>void; onVideosUpload?: (files:File[])=>void; onClearVideo?: ()=>void } = $props();
-  const config = $derived($timingSettings.clips[slot] ?? defaultClipTiming(slot));
+  const config = $derived(effectiveClipTiming($timingSettings,slot));
   const status = $derived($timingStatus[slot]);
   const number = $derived(Number(slot.split('-')[1]) + (slot.startsWith('bottom') ? 5 : 0));
   const color = $derived(timingEffectAccent(config.effect));
   const selected = $derived($selectedTimingSlot === slot);
+  const preparation=$derived($slotPreparation[slot]);
+  async function retry(){if(!preparation)return;try{await retrySlotPreparation(slot,preparation);}catch(error){slotPreparation.update(s=>({...s,[slot]:{...preparation,error:String(error)}}));}}
   function select() { selectRackSource(moduleId); }
 </script>
 
@@ -37,6 +40,23 @@
   <div class="timing-preview">
     {#if $timingClipRestrictions[slot]}<div class="clip-restriction" role="alert">{$timingClipRestrictions[slot]}</div>{/if}
     <WebGpuCanvas id={slot} {moduleId} color={parseAccentColor(color)} class="absolute inset-0 w-full h-full" />
+    {#if preparation}
+      <div class="clip-preparation worker-preparation" role="status">
+        {#if preparation.state==='working'}<span class="preparation-spinner" aria-hidden="true"></span>{/if}
+        <span>{preparation.state==='failed'?'PROCESSING FAILED':preparation.stage.replaceAll('-',' ').toUpperCase()}</span>
+        {#if preparation.state==='failed'}<small>{preparation.error}</small><button onclick={retry}>RETRY GPU PROCESSING</button>
+        {:else if preparation.total>0}<progress value={preparation.completed} max={preparation.total} aria-label="GPU preparation progress"></progress><small>{preparation.completed} / {preparation.total}</small>{/if}
+      </div>
+    {:else if $videoLayers[slot] && status?.state!=='ready' && status?.state!=='error' && !$timingClipRestrictions[slot]}
+      <div class="clip-preparation" aria-label={`Preparing source ${number} frames`}>
+        <span class="preparation-spinner" aria-hidden="true"></span>
+        <span role="status">{status?.state==='loading'?'PREPARING FRAMES':'WAITING TO PREPARE'}</span>
+        {#if status?.total>0}
+          <progress value={status.frames} max={status.total} aria-label={`Source ${number} preparation progress`}></progress>
+          <small>{Math.min(100,Math.round(status.frames/status.total*100))}% · {status.frames} / {status.total} FRAMES</small>
+        {/if}
+      </div>
+    {/if}
     <button class="preview-select" onclick={select} aria-label="Select source {number} preview" aria-pressed={selected}></button>
     <div class="preview-badge">
       <ScreenBadge color={status?.state === 'error' ? '#e49879' : color} text={!$videoLayers[slot] ? 'LOAD A CLIP' : status?.state === 'ready' ? `${status.fps?.toFixed(0)} FPS SOURCE · ${$timingSettings.outputFps} FPS OUT` : status?.state === 'loading' ? `LOADING ${status.frames} / ${status.total}` : status?.state === 'error' ? status.requiredBytes ? 'CAPACITY LIMIT · SEE TIMING PANEL' : 'LOAD FAILED · SELECT TO REVIEW' : 'QUEUED'}/>
@@ -45,6 +65,8 @@
 </div>
 
 <style>
+  .clip-preparation.worker-preparation{z-index:4;pointer-events:auto;padding:10px;text-align:center}.worker-preparation button{background:#253331;color:#a6c9bf;border:0;padding:7px;font:8px var(--font-ui)}
+  .clip-preparation{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#0b0e11c9;color:#b5c8cc;font:9px var(--font-ui);letter-spacing:.09em;pointer-events:none}.clip-preparation small{font:8px var(--font-mono);color:#8b9ba4}.clip-preparation progress{width:45%;height:3px;accent-color:#14b8a6}.preparation-spinner{width:14px;height:14px;border:1px solid #46565d;border-top-color:#14b8a6;border-radius:50%;animation:preparation-spin 1s linear infinite}@keyframes preparation-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.preparation-spinner{animation:none}}
   .timing-card.is-on-air{box-shadow:inset 0 0 0 1px var(--timing-accent)}
   .clip-restriction{position:absolute;inset:0;z-index:2;display:grid;place-content:center;padding:10px;background:#101214e8;color:#e4bca3;font:10px/1.5 var(--font-ui);pointer-events:none}
   .timing-card-header.is-selected{background:linear-gradient(180deg,color-mix(in srgb,var(--timing-accent) 16%,#1e2124),color-mix(in srgb,var(--timing-accent) 8%,#141618))}

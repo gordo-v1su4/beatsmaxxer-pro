@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { selectedTimingSlot, timingSettings, timingEditorCollapsed, setClipTiming } from '$lib/stores/timing';
+  import { effectiveClipTiming, selectedTimingSlot, timingSettings, timingEditorCollapsed, setClipTiming } from '$lib/stores/timing';
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { timingEffectAccent } from './presentation';
-  const config=$derived($timingSettings.clips[$selectedTimingSlot]??defaultClipTiming($selectedTimingSlot));
+  const config=$derived(effectiveClipTiming($timingSettings,$selectedTimingSlot));
   function choose(effect:'ramp'|'stutter') {setClipTiming($selectedTimingSlot,{...config,effect});timingEditorCollapsed.set(false);}
 </script>
 <div class="timing-palette">

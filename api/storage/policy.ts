@@ -10,9 +10,10 @@ import {
   isMediaGatewayConfigured,
   mediaGatewayConfigFromEnv,
   studioChunkObjectKey,
+  studioChunkFolder,
   uploadToMediaGateway,
   type MediaGatewayConfig,
-} from "../lib/mediaGateway.js";
+} from "../_lib/mediaGateway.js";
 import { isTrustedSameOriginRequest } from "../analyze/policy.js";
 
 export const STORAGE_CHUNK_MAX_BYTES = 3 * 1024 * 1024 + 512_000;
@@ -41,6 +42,7 @@ export interface StorageUploadResponse {
 }
 
 export interface StorageUploadOptions {
+  mediaKind?: 'audio'|'video';
   fetch?: typeof globalThis.fetch;
   maxChunkBytes?: number;
 }
@@ -195,7 +197,7 @@ export async function proxyStorageUpload(
     }
 
     const partName = `${String(chunkIndex).padStart(5, "0")}.part`;
-    const folder = `${config.uploadPrefix}/source-audio/chunks/${uploadId}`;
+    const folder = studioChunkFolder(config.uploadPrefix, uploadId, options.mediaKind);
     const uploaded = await uploadToMediaGateway(
       config,
       {
@@ -208,7 +210,7 @@ export async function proxyStorageUpload(
       options,
     );
 
-    const expectedKey = studioChunkObjectKey(config.uploadPrefix, uploadId, chunkIndex);
+    const expectedKey = studioChunkObjectKey(config.uploadPrefix, uploadId, chunkIndex, options.mediaKind);
     if (uploaded.objectKey !== expectedKey) {
       return jsonError(502, "storage_unavailable", "Chunk staging returned an unexpected object key.");
     }

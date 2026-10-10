@@ -15,6 +15,9 @@ describe('uploaded-media timeline resynchronization', () => {
     expect(mediaTimelineResyncAction('pause', 4, 4)).toEqual({
       action: 'pause', positionSeconds: 4
     });
+    expect(mediaTimelineResyncAction('ended', 180, 179.99)).toEqual({
+      action: 'pause', positionSeconds: 180
+    });
   });
 
   test('classifies explicit seeks and native loop wraps centrally', () => {

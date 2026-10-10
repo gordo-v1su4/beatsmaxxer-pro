@@ -3,6 +3,8 @@
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
   import { onMount, onDestroy } from 'svelte';
+  import { installArrangementPersistence } from '$lib/arrangement/persistence';
+  onMount(installArrangementPersistence);
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
   import { probeWebGpu } from '$lib/rendering/webgpu/capability';
   import { capabilities } from '$lib/stores/capabilities';
@@ -64,14 +66,16 @@
   import { seedMobileQaClips } from '$lib/mobile/mobileSession';
   import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
+  import { skipDevSplashReplay } from '$lib/runtime/devBoot';
+  const skipSplash=skipDevSplashReplay();
 
   /** Shortest the title card stays up, from navigation start (V1S-64). */
   const SPLASH_MIN_MS = 1500;
   /** How long the splash intro takes to land, from when it mounts. */
   const SPLASH_INTRO_MS = 1800;
   /** False while the intro plays: the app is not mounted and the GPU is idle. */
-  let introDone = $state(false);
-  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');
+  let introDone = $state(skipSplash);
+  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>(skipSplash?'ready':'gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
 
@@ -118,7 +122,7 @@
     // through the same GPU process. So the app mounts, and the GPU wakes, only
     // once the intro has landed, behind the settled logo. Automation skips it.
     const automated = params.has('qa') || navigator.webdriver;
-    if (!automated) {
+    if (!automated && !skipSplash) {
       const remaining = SPLASH_INTRO_MS - (performance.now() - introStartedAt);
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, remaining)));
     }
@@ -162,7 +166,7 @@
     // never reports ready cannot lock the app behind the overlay. An engine
     // that never came up has nothing to compile, so it skips the wait.
     if (cap.webgpu && engineReady) {
-      splashPhase = 'shaders';
+      if(!skipSplash)splashPhase = 'shaders';
       const stepShaders = bootStep('Compiling effect shaders');
       const deadline = performance.now() + 12000;
       for (;;) {
@@ -197,7 +201,7 @@
     // ?splash=hold keeps the title card up so it can be designed against.
     // A warm load dismisses it in well under a second, which is too fast to
     // iterate on and the reason it could not be reviewed when first built.
-    if (params.get('splash') !== 'hold') {
+    if (!skipSplash && params.get('splash') !== 'hold') {
       // A warm load finishes in well under a second, which flashed the card
       // and its intro away mid-animation (V1S-64). Hold it to a minimum
       // measured from navigation start, so a cold load that already took that

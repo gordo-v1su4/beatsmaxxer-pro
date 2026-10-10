@@ -5,6 +5,8 @@ export type Snap = 'off' | 'bar' | 'beat' | '16th' | '32nd' | '64th';
 export interface CurvePoint { id: string; x: number; y: number; tension: number }
 export interface RampConfig {
   cycleBeats: number;
+  cycleMode?: 'fixed' | 'random';
+  cycleChoices?: number[];
   shape: CurveShape;
   points: CurvePoint[];
   legacy?: Record<string, number>;

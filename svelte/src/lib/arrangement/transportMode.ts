@@ -2,6 +2,10 @@ import { derived, get, writable } from 'svelte/store';
 import { sequencerArmed } from '$lib/stores/sequencer';
 import { arrangementRecording } from '$lib/stores/arrangement';
 import { beginArrangementRecording, endArrangementRecording } from './recorder';
+import { rememberLiveWorkspace, restoreLiveWorkspace, captureTakeSection, applyTakeAt } from './takeSnapshot';
+import { transportDisplay } from '$lib/stores/transportDisplay';
+import { viewMode } from '$lib/stores/rackUi';
+import { timingPreparationBlocked } from '$lib/runtime/timing/readiness';
 
 /**
  * The arrangement's three transport modes, modelled on Ableton:
@@ -40,17 +44,30 @@ export const arrangementOverridden = writable(false);
 export const recordOverdub = writable(false);
 
 export function setArrangementMode(mode: ArrangementMode, playheadSeconds: number) {
+  if(mode!=='live'&&get(timingPreparationBlocked))return;
   const current = get(arrangementMode);
   if (current === mode) return;
   if (current === 'rec') endArrangementRecording(playheadSeconds);
+  if (mode === 'live') restoreLiveWorkspace();
+  else rememberLiveWorkspace();
   arrangementOverridden.set(false);
   sequencerArmed.set(mode !== 'live');
   // Each REC pass is its own take on the lanes; overdub only changes what
   // happens to the cuts underneath.
-  if (mode === 'rec') beginArrangementRecording(playheadSeconds, true);
+  if (mode === 'rec') {
+    captureTakeSection(playheadSeconds,get(transportDisplay).bpm||120);
+    beginArrangementRecording(playheadSeconds, true);
+  }
+  if(mode==='play')return applyTakeAt(playheadSeconds,get(transportDisplay).bpm||120);
 }
 
 /** Hand the program back to the timeline (Ableton's Back to Arrangement). */
 export function backToArrangement() {
   arrangementOverridden.set(false);
 }
+
+let previousView = get(viewMode);
+viewMode.subscribe(mode => {
+  if (previousView === 'arrange' && mode !== 'arrange') setArrangementMode('live',get(transportDisplay).time);
+  previousView = mode;
+});

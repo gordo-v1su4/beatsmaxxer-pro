@@ -3,7 +3,7 @@ import { ACCESS_COOKIE_NAME, mintSessionToken } from "../../../../api/gate/polic
 import {
   mediaGatewayConfigFromEnv,
   studioChunkObjectKey,
-} from "../../../../api/lib/mediaGateway";
+} from "../../../../api/_lib/mediaGateway";
 import { proxyStorageUpload } from "../../../../api/storage/policy";
 
 const gateway = mediaGatewayConfigFromEnv({

@@ -6,8 +6,9 @@ export interface SoundTouchHandle extends AudioNode {
   pitchSemitones: { value: number };
 }
 
-let registered = false;
-let registerPromise: Promise<boolean> | null = null;
+// Worklet processors belong to an AudioContext, not to the JS module. HMR
+// and context recovery can create another context in the same document.
+const registrations = new WeakMap<AudioContext, Promise<boolean>>();
 
 async function loadSoundTouchModule() {
   if (typeof AudioWorkletNode === 'undefined') return null;
@@ -26,16 +27,15 @@ async function processorUrl(): Promise<string> {
 }
 
 export async function ensureSoundTouchRegistered(ctx: AudioContext): Promise<boolean> {
-  if (registered) return true;
-  if (registerPromise) return registerPromise;
+  const pending = registrations.get(ctx);
+  if (pending) return pending;
 
-  registerPromise = (async () => {
+  const registerPromise = (async () => {
     const mod = await loadSoundTouchModule();
     if (!mod) return false;
     try {
       const url = await processorUrl();
       await mod.SoundTouchNode.register(ctx, url);
-      registered = true;
       return true;
     } catch (err) {
       console.warn('[SoundTouch] processor registration failed — pitch/tempo use fallback', err);
@@ -43,7 +43,10 @@ export async function ensureSoundTouchRegistered(ctx: AudioContext): Promise<boo
     }
   })();
 
-  return registerPromise;
+  registrations.set(ctx, registerPromise);
+  const registered = await registerPromise;
+  if (!registered) registrations.delete(ctx);
+  return registered;
 }
 
 export async function createSoundTouchNode(ctx: AudioContext): Promise<SoundTouchHandle | null> {

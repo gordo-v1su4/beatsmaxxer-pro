@@ -15,7 +15,8 @@ import {
 } from '$lib/stores/rack';
 import type { DeckFrameHandleRef } from '$lib/engine/contracts';
 import { get } from 'svelte/store';
-import { timingActive, allowTimingClip, RIFE_RAMP_ONLY } from '$lib/stores/timing';
+import { timingActive, allowTimingClip, RIFE_RAMP_ONLY, clipTiming } from '$lib/stores/timing';
+import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation } from '$lib/runtime/timing/preparation';
 import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 
 interface MediaPoolPort {
@@ -39,9 +40,15 @@ export interface MediaRuntimeDependencies {
   pool?: MediaPoolPort;
   decks?: Pick<HotDeckManager, 'lifecycle' | 'upsert' | 'dispose'>;
   publish?: (moduleId: string, clip: RegisteredClip | null) => void;
+  residentFactor?: (source:File|string)=>number|null;
 }
 
+export const mediaPublicationHistory: {time:number;slot:string;clip:string|null;stack:string}[]=[];
 function publishVideoLayer(sourceId: string, clip: RegisteredClip | null) {
+  if(import.meta.env.DEV){
+    mediaPublicationHistory.push({time:performance.now(),slot:sourceId,clip:clip?.name??null,stack:new Error().stack??''});
+    if(mediaPublicationHistory.length>64)mediaPublicationHistory.shift();
+  }
   const layer = clip ? { name: clip.name, url: clip.url, file: clip.file } : null;
   videoLayers.update((state) => ({
     ...state,
@@ -61,16 +68,20 @@ export class MediaRuntime {
   private disposePromise: Promise<void> | null = null;
   private disposed = false;
   private readonly enforceRackSlots: boolean;
+  private residentFactor:((source:File|string)=>number|null)|null;
 
   constructor(dependencies: MediaRuntimeDependencies = {}) {
     this.clipRegistry = dependencies.clipRegistry ?? new ClipRegistry();
     this.pool = dependencies.pool ?? videoPool;
     this.decks = dependencies.decks ?? hotDeckManager;
     this.publish = dependencies.publish ?? publishVideoLayer;
+    this.residentFactor=dependencies.residentFactor??null;
     // Dependency-injected runtimes remain generic for isolated lifecycle tests.
-    // The production singleton is hard-capped to the eight stable rack slots.
+    // The production singleton is hard-capped to the ten stable rack slots.
     this.enforceRackSlots = !dependencies.pool && !dependencies.clipRegistry;
   }
+
+  setResidentSourceFactor(factor:((source:File|string)=>number|null)|null){this.residentFactor=factor;}
 
   private resolveSourceId(id: string) {
     const sourceId = currentRackSlotForModule(id) ?? id;
@@ -87,7 +98,50 @@ export class MediaRuntime {
     } catch (error) {
       return Promise.resolve({ status: 'failed', error: String(error), previous: null });
     }
-    return this.registerStaged(sourceId, file.name, () => this.clipRegistry.stageFile(sourceId, file));
+    let target=file;
+    if(this.enforceRackSlots&&get(timingActive)&&clipTiming(sourceId).effect==='ramp'){
+      const prepared=preparedSlowMotionFile(file);
+      if(!prepared||this.residentFactor?.(prepared)==null)return this.prepareAndRegister(sourceId,file);
+      target=prepared;
+    }
+    const current=this.clipRegistry.get(sourceId),factor=this.residentFactor?.(target);
+    if(current?.file===target&&this.poolClips.get(sourceId)===current&&factor!=null&&(!get(timingActive)||allowTimingClip(sourceId,factor))){
+      // A recall can supersede a pending replacement without remounting the
+      // unchanged bank or clearing its selected GPU frame.
+      this.bumpGeneration(sourceId);
+      clearSlotPreparation(sourceId);setClipReady(sourceId,current.name);
+      return Promise.resolve({status:'success',clip:current,previous:current});
+    }
+    clearSlotPreparation(sourceId);
+    return this.registerStaged(sourceId, target.name, () => this.clipRegistry.stageFile(sourceId, target));
+  }
+
+  private async prepareAndRegister(sourceId:string,file:File):Promise<ClipRegistrationResult>{
+    if(this.disposePromise)await this.disposePromise;
+    const generation=this.bumpGeneration(sourceId),previous=this.clipRegistry.get(sourceId);
+    setClipLoading(sourceId,file.name);
+    slotPreparation.update(s=>({...s,[sourceId]:{state:'working',name:file.name,original:file,stage:'checking-clip',completed:0,total:0}}));
+    try{
+      const prepared=await prepareSlowMotionFile(file,p=>{
+        if(this.isFresh(sourceId,generation))slotPreparation.update(s=>({...s,[sourceId]:{...p,state:'working',name:file.name,original:file}}));
+      });
+      if(!this.isFresh(sourceId,generation))return {status:'superseded',previous};
+      const operation=this.registerStaged(sourceId,file.name,()=>this.clipRegistry.stageFile(sourceId,prepared));
+      const attachedGeneration=this.generations.get(sourceId);
+      const result=await operation;
+      if(this.generations.get(sourceId)===attachedGeneration){
+        if(result.status==='failed')slotPreparation.update(s=>({...s,[sourceId]:{...s[sourceId],state:'failed',error:result.error}}));
+        else clearSlotPreparation(sourceId);
+      }
+      return result;
+    }catch(error){
+      const message=error instanceof Error?error.message:String(error);
+      if(this.isFresh(sourceId,generation)){
+        setClipError(sourceId,message,file.name);
+        slotPreparation.update(s=>({...s,[sourceId]:{...s[sourceId],state:'failed',error:message}}));
+      }
+      return {status:'failed',error:message,previous};
+    }
   }
 
   /** URL clips are supported for bundled/QA media; file URLs are always created by ClipRegistry. */
@@ -131,9 +185,7 @@ export class MediaRuntime {
     }
 
     const predecessor = this.queues.get(moduleId) ?? Promise.resolve();
-    const operation = predecessor
-      .catch(() => {})
-      .then(() => this.attachAndCommit(moduleId, generation, clip, previous));
+    const operation = this.attachAndCommit(moduleId, generation, clip, previous, predecessor);
     const queueTail = operation.then(
       () => {},
       () => {}
@@ -150,7 +202,8 @@ export class MediaRuntime {
     generation: number,
     clip: RegisteredClip,
     previous: RegisteredClip | null,
-    interpolationFactor = 1
+    interpolationFactor = 1,
+    residentCommit?:ReturnType<ClipRegistry['commit']>
   ): Promise<ClipRegistrationResult> {
     let candidate: VideoCandidate | null = null;
     try {
@@ -168,11 +221,12 @@ export class MediaRuntime {
 
       this.pool.markFreeRun(moduleId);
       const poolCommit = this.pool.commitCandidate(candidate);
-      const committed = this.clipRegistry.commit(clip);
+      const committed = residentCommit??this.clipRegistry.commit(clip);
+      const previousPoolClip=this.poolClips.get(moduleId);
       this.poolClips.set(moduleId, clip);
-      this.publish(moduleId, clip);
+      if(!residentCommit)this.publish(moduleId, clip);
       await poolCommit.previousReleased;
-      if (committed.previous) this.clipRegistry.releaseReference(committed.previous);
+      if (previousPoolClip) this.clipRegistry.releaseReference(previousPoolClip);
       try {
         this.markDeckReady(moduleId, clip);
       } catch (error) {
@@ -190,7 +244,8 @@ export class MediaRuntime {
     moduleId: string,
     generation: number,
     clip: RegisteredClip,
-    previous: RegisteredClip | null
+    previous: RegisteredClip | null,
+    predecessor: Promise<unknown>
   ): Promise<ClipRegistrationResult> {
     if (!this.isFresh(moduleId, generation)) {
       this.clipRegistry.rollback(clip);
@@ -198,17 +253,39 @@ export class MediaRuntime {
     }
 
     this.clipRegistry.retain(clip);
+    let residentCommit:ReturnType<ClipRegistry['commit']>|undefined;
+    let heldPrevious:RegisteredClip|null=null;
     try {
-      const interpolationFactor=get(timingActive)
-        ? await identifyInterpolation(clip.file??clip.url,96) : 1;
+      const cachedFactor=get(timingActive)?this.residentFactor?.(clip.file??clip.url):null;
+      const interpolationFactor=cachedFactor??(get(timingActive)
+        ? await identifyInterpolation(clip.file??clip.url,96) : 1);
       if(!this.isFresh(moduleId,generation)){
         this.clipRegistry.releaseReference(clip);
         this.clipRegistry.rollback(clip);
         return {status:'superseded',previous};
       }
       if(get(timingActive) && !allowTimingClip(moduleId,interpolationFactor))throw new Error(RIFE_RAMP_ONLY);
-      return await this.attachViaHtmlVideo(moduleId, generation, clip, previous, interpolationFactor);
+      if(get(timingActive)&&this.residentFactor?.(clip.file??clip.url)!=null){
+        heldPrevious=this.clipRegistry.get(moduleId);
+        if(heldPrevious)this.clipRegistry.retain(heldPrevious);
+        residentCommit=this.clipRegistry.commit(clip);
+        this.publish(moduleId,clip);
+        try {this.markDeckReady(moduleId,clip);} catch(error) {
+          console.warn(`[MediaRuntime] hot-deck bookkeeping failed for ${moduleId}:`,error);
+        }
+        setClipReady(moduleId,clip.name);
+      }
+      // HTML pool changes stay ordered, but a ready resident source must not
+      // wait behind a previous decoder before landing at a section boundary.
+      await predecessor.catch(()=>{});
+      if(!this.isFresh(moduleId,generation)){
+        this.clipRegistry.releaseReference(clip);
+        this.clipRegistry.rollback(clip);
+        return {status:'superseded',previous};
+      }
+      return await this.attachViaHtmlVideo(moduleId, generation, clip, previous, interpolationFactor,residentCommit);
     } catch (error) {
+      if(residentCommit&&this.isFresh(moduleId,generation)&&this.clipRegistry.restoreCurrent(clip,residentCommit.previous))this.publish(moduleId,residentCommit.previous);
       this.clipRegistry.releaseReference(clip);
       this.clipRegistry.rollback(clip);
       const message = String(error);
@@ -216,6 +293,8 @@ export class MediaRuntime {
       setClipError(moduleId, message, clip.name);
       this.markDeckFailed(moduleId, message);
       return { status: 'failed', error: message, previous };
+    }finally{
+      if(heldPrevious)this.clipRegistry.releaseReference(heldPrevious);
     }
   }
 
@@ -253,6 +332,7 @@ export class MediaRuntime {
   }
 
   async removeModuleClip(moduleId: string) {
+    clearSlotPreparation(this.resolveSourceId(moduleId));
     moduleId = this.resolveSourceId(moduleId);
     this.bumpGeneration(moduleId);
     if (isTauriRuntime()) {
@@ -277,7 +357,7 @@ export class MediaRuntime {
       ...this.poolClips.keys(),
       ...this.clipRegistry.list().map((clip) => clip.id)
     ]);
-    for (const id of ids) this.bumpGeneration(id);
+    for (const id of ids) {this.bumpGeneration(id);clearSlotPreparation(id);}
     const operation = this.pool.dispose().then(() => {
       for (const clip of this.poolClips.values()) {
         this.clipRegistry.releaseReference(clip);

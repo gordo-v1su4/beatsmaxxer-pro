@@ -21,7 +21,8 @@ import {
   videoLayers
 } from '$lib/stores/rack';
 import { playbackWorkspace } from '$lib/stores/rackUi';
-import { timingStatus } from '$lib/stores/timing';
+import { timingStatus, timingSettings, timingPgmFollowsTriggers } from '$lib/stores/timing';
+import { arrangementMode } from '$lib/arrangement/transportMode';
 
 /** Beat-quantized PGM cuts via AudioEngine live schedule — no React rAF promotion. */
 class PgmDirector {
@@ -56,6 +57,8 @@ class PgmDirector {
       linearOrder.subscribe(sync),
       playbackWorkspace.subscribe(sync),
       timingStatus.subscribe(sync),
+      timingSettings.subscribe(sync),
+      arrangementMode.subscribe(sync),
       bypassed.subscribe(sync),
       videoLayers.subscribe(sync),
       rackTop.subscribe(sync),
@@ -93,8 +96,8 @@ class PgmDirector {
       active,
       sources,
       queued: queued && sources.includes(queued) ? queued : null,
-      autoRandom: get(autoRandom),
-      linear: get(linearOrder),
+      autoRandom: get(arrangementMode)!=='play' && get(autoRandom) && !(get(playbackWorkspace) === 'timing' && timingPgmFollowsTriggers(get(timingSettings))),
+      linear: get(arrangementMode)!=='play' && get(linearOrder) && !(get(playbackWorkspace) === 'timing' && timingPgmFollowsTriggers(get(timingSettings))),
       intervalBeats: get(intervalBeats),
       queueIntervalBeats: PGM_LAUNCH_QUANTIZE_BEATS,
       feel: get(feel)

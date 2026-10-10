@@ -3,6 +3,7 @@
 | Path | What's there |
 |------|--------------|
 | [`BACKLOG.md`](./BACKLOG.md) | Open work, highest leverage first |
+| [`deploy-app-vm.md`](./deploy-app-vm.md) | Docker app/API, Dockhand ownership and exact-main deployment |
 | [`timing-workspace/`](./timing-workspace/) | Timing workspace plan, integration evidence and follow-up notes |
 | [`research/`](./research/) | Research that still informs the build (see below) |
 | [`agents/`](./agents/) | Agent continuity, issue tracker, triage labels, Linear |
