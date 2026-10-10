@@ -182,11 +182,59 @@ function cloneDefaultArrangement(): ArrangementSection[] {
   }));
 }
 
-export const arrangement = writable<ArrangementSection[]>(cloneDefaultArrangement());
+/** Bars in the one section a blank arrangement starts with. */
+export const BLANK_SECTION_BARS = 16;
 
-/** Restore the built-in demo arrangement before a new hosted analysis pass. */
-export function resetArrangementToDefault() {
+/**
+ * Where a session starts, Ableton-style: one plain section and no cuts. The
+ * demo used to be the starting state, so a fresh load opened onto seven
+ * sections and hundreds of cuts nobody had made. Sections arrive from the
+ * song's structure analysis or from the operator; DEFAULT_ARRANGEMENT stays
+ * as the bank templates that seeding borrows, and as loadDemoArrangement().
+ * The section holds whatever the rack holds, so entering it swaps nothing.
+ */
+function blankArrangement(): ArrangementSection[] {
+  return renumberSectionLabels([
+    {
+      id: 'section-0',
+      name: 'SECTION 1',
+      kind: 'section',
+      bars: BLANK_SECTION_BARS,
+      hue: hueForSectionKind('section'),
+      bank: { top: [...get(rackTop)], bottom: [...get(rackBottom)] },
+      pattern: Array.from({ length: ARRANGEMENT_STEPS }, () => null),
+    },
+  ]);
+}
+
+export const arrangement = writable<ArrangementSection[]>(blankArrangement());
+
+/** Back to a blank arrangement, e.g. before a new song's analysis seeds one. */
+export function resetArrangement() {
   arrangementStructureStatus.set('idle');
+  arrangement.set(blankArrangement());
+  cuts.set([]);
+  activeSectionIndex.set(0);
+  barInSection.set(0);
+}
+
+/**
+ * Stretch an untouched blank arrangement over the whole song once its length
+ * and tempo are known, so cuts can go anywhere in it and PLAY runs to the end.
+ * Anything the operator or structure analysis has shaped is left alone.
+ */
+export function fitBlankArrangementToSong(durationSeconds: number, bpm: number) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0 || !Number.isFinite(bpm) || bpm <= 0) return;
+  const sections = get(arrangement);
+  const only = sections[0];
+  if (sections.length !== 1 || only?.id !== 'section-0' || get(cuts).length > 0) return;
+  const bars = Math.max(1, Math.ceil((durationSeconds * bpm) / 60 / 4));
+  if (only.bars === bars) return;
+  arrangement.set([{ ...only, bars }]);
+}
+
+/** The built-in demo song layout with its cuts, for QA runs that need cuts. */
+export function loadDemoArrangement() {
   arrangement.set(cloneDefaultArrangement());
   cuts.set(unrollDefaultCuts(get(arrangement)));
   activeSectionIndex.set(0);
@@ -246,13 +294,9 @@ export const arrangementTotalSteps = derived(
 );
 
 /**
- * Unroll the section patterns across the whole song.
- *
- * This is what the pattern model was already doing on playback — a 16-bar verse
- * fired its four marks sixteen times over — it just had no way to show it. The
- * timeline starts from the same cuts you were already hearing rather than from
- * an empty grid, so nothing changes underfoot on the first load; the difference
- * is that every one of them is now an object you can move or delete.
+ * Unroll the section patterns across the whole song: a 16-bar verse fires its
+ * one-bar pattern sixteen times over, and every one of those becomes a cut you
+ * can move or delete. Only the demo arrangement has patterns to unroll.
  */
 function unrollDefaultCuts(sections: ArrangementSection[]): Cut[] {
   const cuts: Cut[] = [];
@@ -269,7 +313,7 @@ function unrollDefaultCuts(sections: ArrangementSection[]): Cut[] {
   return cuts;
 }
 
-export const cuts = writable<Cut[]>(unrollDefaultCuts(DEFAULT_ARRANGEMENT));
+export const cuts = writable<Cut[]>([]);
 
 /** Slot to cut to at an absolute step, or null to hold. */
 export function cutAtStep(list: readonly Cut[], step: number): number | null {

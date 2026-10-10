@@ -3,7 +3,7 @@
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
   import { canUndoTiming, canRedoTiming, undoTiming, redoTiming } from '$lib/stores/timing';
-  import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
+  import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen, playbackWorkspace } from '$lib/stores/rackUi';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
@@ -18,7 +18,9 @@
     setHostedAnalysisPreference,
     type HostedAnalysisPreference
   } from '$lib/audio/hostedAnalysisPreference';
-  import { arrangementStructureStatus } from '$lib/stores/arrangement';
+  import { arrangementStructureStatus, loadDemoArrangement } from '$lib/stores/arrangement';
+  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { arrangementMode } from '$lib/arrangement/transportMode';
   import {
     arrangementStatusBadge,
     rhythmStatusBadge,
@@ -65,6 +67,41 @@
   $effect(() => {
     analysisPreference = readHostedAnalysisPreference();
   });
+
+  // Ready-made setups for testing, next to VOL. The test media (song, clips,
+  // MIDI stems) is served from test_media by the dev server only, so the menu
+  // appears only where its manifest is reachable.
+  const WORKFLOWS = [
+    { id: 'song-clips', label: 'TEST SONG + CLIPS', title: 'Load the test song and fill every rack slot with test clips' },
+    { id: 'song-clips-midi', label: 'SONG + CLIPS + MIDI', title: 'Also attach the MIDI parts to the rack and the stems to the arranger lanes' },
+    { id: 'demo-arrangement', label: 'DEMO ARRANGEMENT', title: 'Replace the arrangement with the built-in demo sections and cuts' }
+  ] as const;
+  type WorkflowId = (typeof WORKFLOWS)[number]['id'];
+  let testMediaAvailable = $state(false);
+  let workflowBusy = $state<WorkflowId | null>(null);
+  let workflowError = $state<string | null>(null);
+
+  $effect(() => {
+    fetch('/qa-media/manifest.json', { method: 'HEAD' })
+      .then((res) => (testMediaAvailable = res.ok))
+      .catch(() => (testMediaAvailable = false));
+  });
+
+  async function runWorkflow(id: WorkflowId) {
+    if (workflowBusy) return;
+    workflowBusy = id;
+    workflowError = null;
+    openMenu = null;
+    try {
+      if (id === 'demo-arrangement') loadDemoArrangement();
+      else await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
+    } catch (err) {
+      workflowError = err instanceof Error ? err.message : String(err);
+      console.error('[workflow]', id, err);
+    } finally {
+      workflowBusy = null;
+    }
+  }
 
   $effect(() => {
     const td = $transportDisplay;
@@ -394,12 +431,47 @@
         }}
       />
     </div>
+
     </div>
 
     <div class="topbar-actions">
+    <!-- Beside VOL, but outside topbar-main, whose overflow would clip the panel. -->
+    {#if testMediaAvailable}
+      <TopMenu
+        id="workflow"
+        label={workflowBusy ? 'LOADING…' : 'WORKFLOW'}
+        openId={openMenu}
+        onOpen={(id) => (openMenu = id)}
+        active={workflowBusy !== null}
+        title={workflowError ?? 'Ready-made test setups: test song, clips, MIDI, demo arrangement'}
+      >
+        <div class="menu-section-label">LOAD</div>
+        {#each WORKFLOWS as workflow (workflow.id)}
+          <TopBtn
+            label={workflow.label}
+            title={workflow.title}
+            disabled={workflowBusy !== null}
+            onclick={() => runWorkflow(workflow.id)}
+          />
+        {/each}
+      </TopMenu>
+    {/if}
+    {#if $arrangementMode === 'rec'}
+      <button
+        type="button"
+        class="rec-badge"
+        onclick={() => viewMode.set('arrange')}
+        title="Recording into the arrangement — cuts you make anywhere are written to its lanes. Click to watch."
+      >● REC</button>
+    {/if}
     <div class="workspace-tabs" aria-label="Workspace">
       {#each ['perform','arrange','timing'] as mode (mode)}
-        <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={td.playing} title={td.playing ? 'Stop playback before changing workspace' : undefined} onclick={()=>{
+        {@const locked = td.playing && mode !== 'arrange' && mode !== $playbackWorkspace}
+        <!-- ARRANGE keeps the current renderer, so hopping between it and the
+             playing workspace is safe mid-song (record in one, watch the other).
+             Only PERFORM <-> TIMING swaps renderers and needs a stop. -->
+
+        <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={locked} title={locked ? 'Stop playback before switching between PERFORM and TIMING' : undefined} onclick={()=>{
           viewMode.set(mode as 'perform'|'arrange'|'timing');
           if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
         }}/>
@@ -1228,6 +1300,24 @@
     gap: 4px;
     padding-inline: 5px;
     box-sizing: border-box;
+  }
+
+  .rec-badge {
+    height: 22px;
+    padding: 0 8px;
+    border: 1px solid #ef444466;
+    border-radius: 3px;
+    background: #2a0e0e;
+    color: #f87171;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    cursor: pointer;
+    animation: rec-pulse 1.2s ease-in-out infinite;
+  }
+  @keyframes rec-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.55; }
   }
 
   .vol-block {

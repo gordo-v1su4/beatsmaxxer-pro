@@ -19,7 +19,8 @@ import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
 import {
   applyStructureToArrangement,
   arrangementStructureStatus,
-  resetArrangementToDefault,
+  resetArrangement,
+  fitBlankArrangementToSong,
 } from "$lib/stores/arrangement";
 import { get } from "svelte/store";
 import { queuedCutBeat } from "$lib/stores/pgm";
@@ -374,7 +375,7 @@ export class AudioEngine implements IAudioEngine {
     this.attachMediaElement(this.objectUrl, file.name);
     this.prepareUploadedTrack(file.name, options.hostedAnalysis === true);
     if (options.hostedAnalysis === true) {
-      resetArrangementToDefault();
+      resetArrangement();
     }
     this.uploadedTrackLoadGeneration += 1;
 
@@ -434,7 +435,7 @@ export class AudioEngine implements IAudioEngine {
     this._analysisConfidence = null;
     this._analysisDuration = 0;
     this._analysisError = null;
-    resetArrangementToDefault();
+    resetArrangement();
   }
 
   tapTempo() {
@@ -499,6 +500,7 @@ export class AudioEngine implements IAudioEngine {
         loop: audio.loop,
         positionSeconds: audioTimeline.getPositionSeconds(),
       });
+      fitBlankArrangementToSong(audio.duration, this._bpm);
     }, { once: true, signal: mediaTimelineAbort.signal });
     audio.load();
 
@@ -1225,6 +1227,8 @@ export class AudioEngine implements IAudioEngine {
     this._analysisDuration = analysis.duration;
     this._analysisError = null;
     this.syncSoundTouch();
+    const songDuration = this.mediaElement?.duration ?? NaN;
+    fitBlankArrangementToSong(Number.isFinite(songDuration) ? songDuration : analysis.duration, bpm);
   }
 
   private applyStructureForArrangement(

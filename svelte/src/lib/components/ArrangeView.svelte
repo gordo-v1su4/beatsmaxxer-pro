@@ -1,5 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import ArrangeMonitor from '$lib/components/ArrangeMonitor.svelte';
+  import { timingSettings } from '$lib/stores/timing';
+  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
+  import { timingEffectAccent } from '$lib/components/timing/presentation';
   import { selectedArrangementSections } from '$lib/stores/arrangement';
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
@@ -333,7 +337,17 @@
   function slotInfo(slotIndex: number) {
     const id = moduleForSlotIndex($rackTop, $rackBottom, slotIndex);
     const def = id ? getModuleDef(id) : undefined;
-    return def ? { name: def.shortName, color: def.accentColor } : null;
+    if (!def) return null;
+    // Opened from TIMING, a lane is a deck: S0-S9 and its ramp or stutter.
+    if ($playbackWorkspace === 'timing') {
+      const slotId = slotIndex < MAX_RACK_SLOTS_PER_ROW ? `top-${slotIndex}` : `bottom-${slotIndex - MAX_RACK_SLOTS_PER_ROW}`;
+      const effect = ($timingSettings.clips[slotId] ?? defaultClipTiming(slotId)).effect;
+      return {
+        name: `S${slotIndex} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
+        color: timingEffectAccent(effect)
+      };
+    }
+    return { name: def.shortName, color: def.accentColor };
   }
 
   function slotName(slotIndex: number) {
@@ -408,11 +422,17 @@
     })
   );
   /** Cuts grouped per slot lane. */
+  // Each cut puts its deck on air until the next cut (in any lane), so it is
+  // drawn as a bar over that span: you can read who is on air, and for how
+  // long, straight off the lanes.
   const cutsBySlot = $derived.by(() => {
-    const lanes: Array<Array<{ step: number }>> = Array.from({ length: slotCount }, () => []);
-    for (const cut of $cuts) {
-      if (cut.slotIndex >= 0 && cut.slotIndex < slotCount) lanes[cut.slotIndex].push(cut);
-    }
+    const lanes: Array<Array<{ step: number; endStep: number }>> = Array.from({ length: slotCount }, () => []);
+    const sorted = [...$cuts].sort((a, b) => a.step - b.step);
+    sorted.forEach((cut, i) => {
+      if (cut.slotIndex < 0 || cut.slotIndex >= slotCount) return;
+      const endStep = sorted[i + 1]?.step ?? totalSteps;
+      lanes[cut.slotIndex].push({ step: cut.step, endStep });
+    });
     return lanes;
   });
 
@@ -875,6 +895,8 @@
     />
   </header>
 
+  <ArrangeMonitor />
+
   {#if exportOpen || $exportState.status === 'recording'}
     <div class="arr-secbar arr-exportbar" role="group" aria-label="Export arrangement" style="--sec-hue:#9d7bff">
       <span class="arr-secbar-name">EXPORT VIDEO</span>
@@ -1131,9 +1153,11 @@
             ></span>
           {/if}
           {#each cutsBySlot[slotIndex] ?? [] as cut (cut.step)}
+            {@const startPct = timePct(stepSeconds(cut.step, $analysisBeatGrid, bpm))}
+            {@const endPct = timePct(stepSeconds(cut.endStep, $analysisBeatGrid, bpm))}
             <span
-              class="arr-cut"
-              style="left:{timePct(stepSeconds(cut.step, $analysisBeatGrid, bpm))}%;background:{info?.color ?? '#5f7378'}"
+              class="arr-cut-bar"
+              style="left:{startPct}%;width:{Math.max(0.15, endPct - startPct)}%;--c:{info?.color ?? '#5f7378'}"
             ></span>
           {/each}
         </div>
@@ -1970,6 +1994,17 @@
     opacity: 0.92;
     box-shadow: 0 0 4px color-mix(in srgb, var(--trigger-color) 70%, transparent);
   }
+  .arr-cut-bar {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    box-sizing: border-box;
+    border-left: 2px solid var(--c);
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--c) 32%, transparent);
+    z-index: 2;
+  }
+
   .arr-cut {
     position: absolute;
     top: 2px;
