@@ -20,7 +20,7 @@
   import { BOLT_LOGO } from './splashLogoPaths';
   import { splitWordmark } from './splashLogoParts';
 
-  const { beats, maxxer, swoosh, pro } = splitWordmark(BOLT_LOGO);
+  const { beats, maxxer, swoosh, tip, pro } = splitWordmark(BOLT_LOGO);
   const WORD = BOLT_LOGO.word;
 
   // Back to front, in the order they arrive.
@@ -28,7 +28,7 @@
     { cls: 'bolt', d: BOLT_LOGO.bolt, fill: 'url(#bmx-bolt-fill)' },
     { cls: 'beats', d: beats, fill: 'url(#bmx-face)' },
     { cls: 'maxxer', d: maxxer, fill: 'url(#bmx-face)' },
-    { cls: 'swoosh', d: swoosh, fill: 'url(#bmx-face)' },
+    { cls: 'swoosh', d: swoosh, fill: 'url(#bmx-face)', tip },
     { cls: 'pro', d: pro, fill: 'url(#bmx-pro-fill)' }
   ];
 
@@ -141,6 +141,10 @@
             <path class="edge" d={layer.d} fill-rule="evenodd" />
             <path d={layer.d} fill-rule="evenodd" fill={layer.fill} />
             <path d={layer.d} fill-rule="evenodd" fill="url(#bmx-scan)" />
+            {#if layer.tip}
+              <path class="edge" d={layer.tip} fill-rule="evenodd" />
+              <path d={layer.tip} fill-rule="evenodd" fill="url(#bmx-pro-fill)" />
+            {/if}
           </svg>
         {/each}
 
@@ -163,10 +167,8 @@
       </div>
 
       <div class="readout">
-        <div class="load">
-          <span class="lbl">LOADING</span>
-          <span class="pct">{String(percent).padStart(3, '0')}<small>%</small></span>
-        </div>
+        <span class="lbl">LOADING</span>
+        <span class="pct">{String(percent).padStart(3, '0')}<small>%</small></span>
         <div class="task">
           {#if armed}
             <span class="press">
@@ -249,16 +251,16 @@
   }
 
   /*
-    Intro, ~1.4s from first paint, everything on transform/opacity:
-      0      glow blooms, warp streaks burst out, the bolt drops from above
-      140    the bolt lands: white flash, flicker
-      180    BEATS slams in from the left edge
-      240    MAXXER slams in from the right edge
-      540    swoosh wipes out under the word
-      560    impact: cyan/magenta copies snap together into the chrome
-      680    PRO stamps down
-      920    one glint runs across the finished mark
-      1400+  the bolt crackles every 2.4s until the app is ready
+    Intro, ~1.5s from black, everything on transform/opacity:
+      60     BEATS slams in from the left edge
+      120    MAXXER slams in from the right edge
+      420    the bolt drops from above, behind the joined word
+      520    it lands: warp streaks burst out, the glow blooms
+      560    white flash on the bolt; cyan/magenta copies snap into the chrome
+      600    swoosh wipes out under the word
+      720    PRO stamps down
+      960    one glint runs across the finished mark
+      1600+  the bolt crackles every 2.4s until the app is ready
   */
   .mark {
     position: relative;
@@ -304,20 +306,20 @@
     inset: -30% -10%;
     background: radial-gradient(50% 45% at 50% 52%, oklch(0.55 0.12 var(--h) / 0.32), transparent 70%);
     will-change: transform, opacity;
-    animation: glow-in 500ms ease-out both;
+    animation: glow-in 500ms ease-out 400ms both;
   }
   @keyframes glow-in {
     from { opacity: 0; transform: scale(0.7); }
     to   { opacity: 1; transform: scale(1); }
   }
 
-  /* The bolt drops from above, lands with a white flash, flickers, then
-     crackles every few seconds while loading continues. */
+  /* Once the halves meet, the bolt drops from above behind them, lands with a
+     white flash, flickers, then crackles every few seconds while loading. */
   .bolt {
     transform-origin: 52% 40%;
     animation:
-      bolt-strike 320ms cubic-bezier(0.55, 0, 1, 0.45) both,
-      bolt-crackle 2.4s linear 1.4s infinite;
+      bolt-strike 320ms cubic-bezier(0.55, 0, 1, 0.45) 420ms both,
+      bolt-crackle 2.4s linear 1.6s infinite;
   }
   @keyframes bolt-strike {
     0%   { opacity: 0;    transform: translate(4%, -45%) scale(1.05); }
@@ -340,8 +342,8 @@
     filter: drop-shadow(0 0 18px oklch(0.95 0.08 var(--h))) drop-shadow(0 0 48px var(--c-glow));
     opacity: 0;
     animation:
-      flash 260ms ease-out 140ms both,
-      flash-crackle 2.4s linear 1.4s infinite;
+      flash 260ms ease-out 560ms both,
+      flash-crackle 2.4s linear 1.6s infinite;
   }
   @keyframes flash {
     0%   { opacity: 0; }
@@ -353,10 +355,10 @@
     2%           { opacity: 0.55; }
   }
 
-  /* BEATS and MAXXER come in from nearly off-screen on their own sides and
-     meet under the bolt. */
-  .beats { animation: slam-left 380ms cubic-bezier(0.16, 1, 0.3, 1) 180ms both; }
-  .maxxer { animation: slam-right 380ms cubic-bezier(0.16, 1, 0.3, 1) 240ms both; }
+  /* From black, BEATS and MAXXER come in from nearly off-screen on their own
+     sides and meet in the middle. */
+  .beats { animation: slam-left 380ms cubic-bezier(0.16, 1, 0.3, 1) 60ms both; }
+  .maxxer { animation: slam-right 380ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both; }
   @keyframes slam-left {
     from { opacity: 0; transform: translateX(-75%) skewX(-18deg); }
     25%  { opacity: 1; }
@@ -373,8 +375,8 @@
     mix-blend-mode: screen;
     opacity: 0;
   }
-  .ghost-c { fill: oklch(0.82 0.15 200); animation: ghost-c 260ms ease-out 560ms both; }
-  .ghost-m { fill: oklch(0.65 0.25 340); animation: ghost-m 260ms ease-out 560ms both; }
+  .ghost-c { fill: oklch(0.82 0.15 200); animation: ghost-c 260ms ease-out 560ms forwards; }
+  .ghost-m { fill: oklch(0.65 0.25 340); animation: ghost-m 260ms ease-out 560ms forwards; }
   @keyframes ghost-c {
     from { opacity: 0.9; transform: translate(-1.1%, 0.3%); }
     to   { opacity: 0;   transform: none; }
@@ -386,7 +388,7 @@
 
   .swoosh {
     transform-origin: 23.8% 72%;
-    animation: wipe 240ms cubic-bezier(0.3, 0.9, 0.3, 1) 540ms both;
+    animation: wipe 240ms cubic-bezier(0.3, 0.9, 0.3, 1) 600ms both;
   }
   @keyframes wipe {
     from { opacity: 0; transform: scaleX(0); }
@@ -396,7 +398,7 @@
 
   .pro {
     transform-origin: 72.5% 70%;
-    animation: stamp 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 680ms both;
+    animation: stamp 240ms cubic-bezier(0.34, 1.56, 0.64, 1) 720ms both;
   }
   @keyframes stamp {
     from { opacity: 0; transform: scale(1.6); }
@@ -420,7 +422,7 @@
     width: 16%;
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9) 50%, transparent);
     will-change: transform;
-    animation: glint 480ms cubic-bezier(0.45, 0, 0.25, 1) 920ms both;
+    animation: glint 480ms cubic-bezier(0.45, 0, 0.25, 1) 960ms both;
   }
   @keyframes glint {
     from { transform: translateX(-160%) skewX(-22deg); }
@@ -446,7 +448,7 @@
     transform-origin: 0 50%;
     opacity: 0;
     will-change: transform, opacity;
-    animation: streak 620ms cubic-bezier(0.5, 0, 0.75, 0.4) var(--d) both;
+    animation: streak 620ms cubic-bezier(0.5, 0, 0.75, 0.4) calc(var(--d) + 520ms) both;
   }
   @keyframes streak {
     from { opacity: 0;   transform: rotate(var(--a)) translateX(6vmax) scaleX(0.1); }
@@ -460,60 +462,54 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    margin-top: clamp(20px, 5vh, 56px);
-    font-family: var(--font-mono, ui-monospace, monospace);
+    margin-top: clamp(18px, 4vh, 48px);
+    font-family: 'Press Start 2P', var(--font-mono, ui-monospace, monospace);
     text-transform: uppercase;
-    animation: fade-in 200ms ease-out 300ms both;
+    -webkit-font-smoothing: none;
+    animation: fade-in 200ms ease-out 700ms both;
   }
   .leaving .readout {
     animation: fade-out 120ms ease-out both;
   }
 
-  .load {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    font-variant-numeric: tabular-nums;
-  }
+  /* Arcade readout, after the attract-mode references: one pixel face,
+     sized on its 8px grid so the glyphs stay crisp. */
   .lbl {
-    font-size: 11px;
-    letter-spacing: 0.3em;
-    color: oklch(0.7 0.06 var(--h));
+    font-size: 8px;
+    letter-spacing: 0.25em;
+    color: oklch(0.72 0.08 var(--h));
   }
   .pct {
     font-size: 24px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    line-height: 1;
     color: var(--c-chrome-top);
     text-shadow: 0 0 12px var(--c-glow);
   }
   .pct small {
-    font-size: 14px;
-    margin-left: 2px;
+    font-size: 8px;
+    margin-left: 4px;
     color: var(--c-accent-hi);
   }
 
   .task {
-    height: 16px;
-    max-width: min(560px, 90vw);
+    height: 10px;
+    max-width: min(640px, 92vw);
+    margin-top: 6px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-size: 11px;
-    letter-spacing: 0.22em;
-    color: oklch(0.68 0.05 var(--h));
+    font-size: 8px;
+    line-height: 10px;
+    letter-spacing: 0.18em;
+    color: oklch(0.62 0.05 var(--h));
   }
 
   .press {
     color: var(--c-ui);
-    font-family: var(--font-ui), system-ui, sans-serif;
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0.32em;
-    margin-right: -0.32em;
+    letter-spacing: 0.25em;
+    margin-right: -0.25em;
     animation: pulse 1.8s ease-in-out infinite;
-  }
-  .press .coarse { display: none; }
+  }  .press .coarse { display: none; }
   @media (pointer: coarse) {
     .press .fine { display: none; }
     .press .coarse { display: inline; }

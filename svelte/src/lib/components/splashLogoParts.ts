@@ -16,6 +16,8 @@ export interface SplashLogoParts {
   beats: string;
   maxxer: string;
   swoosh: string;
+  /** The underline's tip, still in PRO's colour but moving with the line. */
+  tip: string;
   pro: string;
 }
 
@@ -80,7 +82,7 @@ export function splitWordmark(logo: SplashLogo): SplashLogoParts {
     return root;
   });
 
-  const parts: Record<keyof SplashLogoParts, string[]> = { beats: [], maxxer: [], swoosh: [], pro: [] };
+  const parts: Record<keyof SplashLogoParts, string[]> = { beats: [], maxxer: [], swoosh: [], tip: [], pro: [] };
   const swooshShapes: Shape[] = [];
   shapes.forEach((shape, i) => {
     const root = rootOf[i];
@@ -94,18 +96,20 @@ export function splitWordmark(logo: SplashLogo): SplashLogoParts {
   });
 
   // The trace put the underline's last sliver, touching the P, into PRO. It
-  // belongs to the line: left in PRO it flies off with the stamp.
+  // moves with the line (left in PRO it flies off with the stamp) but keeps
+  // PRO's colour, as in the art.
   const touchesSwoosh = (s: Shape) =>
     swooshShapes.some((l) => s.x0 <= l.x1 + 4 && s.x1 >= l.x0 && s.y0 <= l.y1 && s.y1 >= l.y0);
   for (const shape of parseShapes(logo.pro)) {
     const area = (shape.x1 - shape.x0) * (shape.y1 - shape.y0);
-    parts[area < TIP_MAX_AREA && touchesSwoosh(shape) ? 'swoosh' : 'pro'].push(shape.d);
+    parts[area < TIP_MAX_AREA && touchesSwoosh(shape) ? 'tip' : 'pro'].push(shape.d);
   }
 
   return {
     beats: parts.beats.join(''),
     maxxer: parts.maxxer.join(''),
     swoosh: parts.swoosh.join(''),
+    tip: parts.tip.join(''),
     pro: parts.pro.join('')
   };
 }
