@@ -211,6 +211,8 @@ let trackedSectionId: string | null = null;
 let manualCutSerialSeen: number | null = null;
 /** A hand pick is queued and hasn't landed on PGM yet. */
 let manualCutPending = false;
+/** Steps this REC take wrote; replace-record must not sweep them away. */
+const takeSteps = new Set<number>();
 /** PGM as of last frame, to see a pending hand pick land. */
 let lastLandedPgm: string | null = null;
 
@@ -391,15 +393,21 @@ function runSequencer(frame: TimelineFrame) {
   const totalSteps = get(arrangementTotalSteps);
   const beatGrid = get(analysisBeatGrid);
 
-  // REC: write the hand cut into the timeline where it landed.
+  // REC: write each cut into the timeline where it landed. Replace-record
+  // takes every PGM change, hand cuts and RAND's alike: the timeline is not
+  // driving PGM during a replace take, so every change is the performance.
+  // Overdub keeps to hand cuts, since there the timeline's own cuts move PGM.
   const replacing = mode === 'rec' && !get(recordOverdub);
+  if (mode !== 'rec') takeSteps.clear();
   let writtenStep: number | null = null;
-  if (mode === 'rec' && manualLanded && totalSteps > 0) {
+  const performed = manualLanded || (replacing && pgmChanged);
+  if (mode === 'rec' && performed && totalSteps > 0) {
     const slot = currentRackSlotForModule(landedPgm);
     const slotIndex = slot ? rackSlotIndex(slot) : null;
     if (slotIndex != null) {
       writtenStep = secondsToCutStep(frame.positionSeconds, beatGrid, frame.bpm, totalSteps);
       const step = writtenStep;
+      takeSteps.add(step);
       cuts.update((list) =>
         [...list.filter((c) => c.step !== step), { step, slotIndex }].sort((a, b) => a.step - b.step),
       );
@@ -410,7 +418,11 @@ function runSequencer(frame: TimelineFrame) {
   // arrangement record. Overdub leaves existing cuts playing.
   if (replacing) {
     const passed = new Set(crossed.absoluteSteps.map((step) => wrapSongStep(step, totalSteps)));
-    if (writtenStep != null) passed.delete(writtenStep);
+    // Never wipe this take's own cuts. The cut is written at the step of the
+    // playhead's seconds, and the sweep runs on the beat position; the two can
+    // disagree by a step, so the sweep used to erase a cut a frame after
+    // writing it and REC ended with no cuts at all.
+    for (const step of takeSteps) passed.delete(step);
     if (passed.size > 0) cuts.update((list) => list.filter((c) => !passed.has(c.step)));
   }
 

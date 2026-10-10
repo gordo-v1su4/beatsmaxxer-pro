@@ -152,6 +152,8 @@ const SEEK_GAP_COVER_FRAMES = 2;
 /** Backward jump in currentTime that counts as a wrap rather than float jitter.
  * A backward seek trips this too, which is correct — same empty-texture window. */
 const LOOP_WRAP_DETECT_EPSILON_SECONDS = 0.01;
+/** Canvas id of a monitor that mirrors PGM's finished frame (ARRANGE). */
+export const PGM_MONITOR_ID = 'pgm-monitor';
 
 /** WKWebView can accept GPUExternalTexture imports yet present them as black.
  * Desktop therefore uses an explicit GPUTexture copy for every module; web
@@ -185,6 +187,8 @@ export class WebGpuEngine {
   private videoTextureCache = new VideoTextureCache();
   private pgmLiveModuleId = 'transition';
   private pgmLiveSourceId = 'top-0';
+  /** PGM's last finished frame, for the monitor. */
+  private pgmOutputView: GPUTextureView | null = null;
   private timingTextures: TimingTextureProvider | null = null;
   private timingVersion = 0;
   private paused = false;
@@ -281,6 +285,7 @@ export class WebGpuEngine {
     // destroy() on a resource of a lost device is a defined no-op, so the
     // normal teardown is safe here and keeps the cache's own bookkeeping right.
     this.videoTextureCache.dispose();
+    this.pgmOutputView = null;
     this.idleBindGroupCache.clear();
     this.blitBindGroupCache.clear();
     this.deviceGeneration += 1;
@@ -608,6 +613,8 @@ export class WebGpuEngine {
     const scheduled: Array<[string, CanvasBinding, string, string, string, string]> = [];
 
     for (const [id, binding] of this.bindings) {
+      // A monitor shows PGM's finished frame; it is drawn after PGM, below.
+      if (id === PGM_MONITOR_ID) continue;
       // Older injected test bindings predate bindingId; normalize them at the
       // map boundary so diagnostics remain keyed by the stable canvas slot.
       binding.bindingId ||= id;
@@ -646,6 +653,7 @@ export class WebGpuEngine {
         this.encodeBinding(encoder, binding, binding.color, moduleId, sourceId, stateChanged);
         this.recordRenderedBinding(id, moduleId, frame, changeKey, stateKey);
       }
+      this.encodePgmMonitor(encoder);
     } finally {
       // GPUExternalTexture objects are task-scoped and must never survive this call.
       this.taskExternalTextures = null;
@@ -781,7 +789,8 @@ export class WebGpuEngine {
     changeKey: string,
     stateKey: string
   ): WebGpuRenderDiagnostics['skipReason'] {
-    if (binding.active === false) return 'inactive';
+    // PGM's own canvas is hidden in ARRANGE; it still renders for the monitor.
+    if (binding.active === false && !(id === 'pgm' && this.pgmMonitorActive())) return 'inactive';
     if (id === 'pgm') return 'none';
     const state = this.bindingSchedule.get(id);
     if (!state) return 'none';
@@ -1138,6 +1147,30 @@ export class WebGpuEngine {
     canvasPass.setBindGroup(0, blitBindGroup);
     canvasPass.draw(3);
     canvasPass.end();
+    if (binding.bindingId === 'pgm') this.pgmOutputView = blitSource;
+  }
+
+  private pgmMonitorActive() {
+    return this.bindings.get(PGM_MONITOR_ID)?.active === true;
+  }
+
+  /** Blit PGM's finished frame into the monitor canvas (ARRANGE's program view). */
+  private encodePgmMonitor(encoder: GPUCommandEncoder) {
+    const monitor = this.bindings.get(PGM_MONITOR_ID);
+    const view = this.pgmOutputView;
+    if (!monitor || monitor.active === false || !view || !this.device || !this.sampler) return;
+    const group = this.blitBindGroupCache.get(view, () => this.device!.createBindGroup({
+      layout: monitor.blitBindGroupLayout,
+      entries: [{ binding: 0, resource: view }, { binding: 1, resource: this.sampler! }]
+    }));
+    const pass = encoder.beginRenderPass({ colorAttachments: [{
+      view: monitor.context.getCurrentTexture().createView(),
+      clearValue: { r: 0.02, g: 0.025, b: 0.03, a: 1 }, loadOp: 'clear', storeOp: 'store'
+    }] });
+    pass.setPipeline(monitor.blitPipeline);
+    pass.setBindGroup(0, group);
+    pass.draw(3);
+    pass.end();
   }
 
   /** A separate processing path, sharing canvases, cadence and the GPU device. */
@@ -1150,14 +1183,19 @@ export class WebGpuEngine {
 
   private encodeTimingBinding(encoder: GPUCommandEncoder, binding: CanvasBinding, sourceId: string) {
     const selected = this.timingTextures?.(sourceId) ?? null;
+    // Until a clip's frame bank has decoded (one clip at a time, seconds each),
+    // show its plain video frame rather than an empty tile.
+    const fallbackView = selected ? null : this.timingFallbackView(sourceId);
+    const view = selected?.view ?? fallbackView;
+    if (binding.bindingId === 'pgm') this.pgmOutputView = view;
     const pass = encoder.beginRenderPass({ colorAttachments: [{
       view: binding.context.getCurrentTexture().createView(),
       clearValue: { r: 0.02, g: 0.025, b: 0.03, a: 1 }, loadOp: 'clear', storeOp: 'store'
     }] });
-    if (selected && this.device && this.sampler) {
-      const group = this.blitBindGroupCache.get(selected.view, () => this.device!.createBindGroup({
+    if (view && this.device && this.sampler) {
+      const group = this.blitBindGroupCache.get(view, () => this.device!.createBindGroup({
         layout: binding.blitBindGroupLayout,
-        entries: [{ binding: 0, resource: selected.view }, { binding: 1, resource: this.sampler! }]
+        entries: [{ binding: 0, resource: view }, { binding: 1, resource: this.sampler! }]
       }));
       pass.setPipeline(binding.blitPipeline);
       pass.setBindGroup(0, group);
@@ -1169,10 +1207,10 @@ export class WebGpuEngine {
       bindingId: binding.bindingId, effectModuleId: selected?.effect ?? 'off', sourceId,
       canvas: `${binding.canvas.width}x${binding.canvas.height}`,
       cssSize: `${binding.canvas.clientWidth}x${binding.canvas.clientHeight}`,
-      effectMode: 0, hasVideo: selected ? 1 : 0,
+      effectMode: 0, hasVideo: view ? 1 : 0,
       externalTextureImported: false, externalTextureBound: false,
       cachedTextureUploaded: false, cachedTextureBound: false,
-      samplePath: selected ? 'resident-frame-bank' : 'unsupported', source: sourceId,
+      samplePath: selected ? 'resident-frame-bank' : fallbackView ? 'cached-video-texture' : 'unsupported', source: sourceId,
       dimensions: selected ? `${selected.width}x${selected.height}` : null,
       videoSize: selected ? `${selected.width}x${selected.height}` : null,
       frameId: frame?.frameId ?? null, feedback: 'none', mix: 1,
@@ -1182,6 +1220,17 @@ export class WebGpuEngine {
       targetFps: 0, frameIntervalMs: null, lastRenderContextTimeSeconds: frame?.contextTimeSeconds ?? 0,
       renderedThisFrame: true, skipReason: 'none'
     });
+  }
+
+  /** The clip's current video frame as a texture, or null when it has none yet. */
+  private timingFallbackView(sourceId: string): GPUTextureView | null {
+    const video = videoPool.get(sourceId);
+    if (!this.device || !video || !videoPool.hasReadyFrame(sourceId)) return null;
+    try {
+      return this.videoTextureCache.upload(this.device, sourceId, video);
+    } catch {
+      return this.videoTextureCache.cachedView(sourceId, video);
+    }
   }
 
   getDevice() {
@@ -1242,6 +1291,7 @@ export class WebGpuEngine {
     this.seekGapCover.clear();
     this.pgmCutCover.clear();
     this.videoTextureCache.dispose();
+    this.pgmOutputView = null;
   }
 }
 

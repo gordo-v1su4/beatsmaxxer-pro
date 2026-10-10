@@ -11,7 +11,7 @@
     PGM_INTERVALS,
     type PgmFeel
   } from '$lib/stores/pgm';
-  import { pgmRailOpen, viewMode } from '$lib/stores/rackUi';
+  import { pgmRailOpen, playbackWorkspace, viewMode } from '$lib/stores/rackUi';
   import { currentRackSlotForModule, rackBottom, rackTop, videoLayers, bypassed } from '$lib/stores/rack';
   import { timingStatus, timingSettings } from '$lib/stores/timing';
   import { timingEffectAccent } from './timing/presentation';
@@ -49,12 +49,12 @@
     return canSelectRackSource({
       slot,
       hasVideo: !!(slot && $videoLayers[slot]),
-      timing: $viewMode === 'timing',
+      timing: $playbackWorkspace === 'timing',
       bypassed: !!$bypassed[id],
     });
   }
   function keySelect(e:KeyboardEvent) {
-    if ($viewMode==='arrange') return;
+    // Digits cut PGM in ARRANGE too, so a REC take can be played from the keyboard.
     const editable=e.composedPath().some(n=>n instanceof HTMLElement && (n.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(n.tagName) || n.getAttribute('role')==='textbox'));
     const digit=pgmDigit(e,editable);if(digit===null)return;
     const id=digit<5?$rackTop[digit]:$rackBottom[digit-5];

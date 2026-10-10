@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { get } from 'svelte/store';
-import { cutAtStep, cuts } from '$lib/stores/arrangement';
+import { cutAtStep, cuts, loadDemoArrangement } from '$lib/stores/arrangement';
 import {
   CLOUD_QA_MANIFEST_FILE,
   REDLINE_QA_MANIFEST_FILE,
@@ -89,7 +89,8 @@ describe('QA sequencer ARM autoload', () => {
     expect(shouldAutoloadQaSequencerArm('?qa=1&qaSequencerArm=1')).toBe(true);
   });
 
-  test('ships unrolled demo cuts for ARMED playback QA', () => {
+  test('the demo arrangement ships unrolled cuts for ARMED playback QA', () => {
+    loadDemoArrangement();
     const list = get(cuts);
     expect(list.length).toBeGreaterThan(0);
     expect(cutAtStep(list, list[0]!.step)).toBe(list[0]!.slotIndex);

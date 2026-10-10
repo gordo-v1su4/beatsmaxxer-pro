@@ -53,7 +53,7 @@
     shouldAutoloadQaLoopRegion,
     qaLoopRegionForDuration,
   } from '$lib/qa/loadQaMedia';
-  import { arrangementLoopRegion } from '$lib/stores/arrangement';
+  import { arrangementLoopRegion, loadDemoArrangement } from '$lib/stores/arrangement';
   import { sequencerArmed } from '$lib/stores/sequencer';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
   import { addClipsToLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
@@ -259,6 +259,8 @@
       stepPlay.done();
     }
     if (shouldAutoloadQaSequencerArm(window.location.search)) {
+      // A session now starts with no cuts; the ARM gate needs some to play.
+      loadDemoArrangement();
       sequencerArmed.set(true);
     }
     if (shouldAutoloadQaLoopRegion(window.location.search)) {

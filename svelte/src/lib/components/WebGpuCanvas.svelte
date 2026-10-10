@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { getModuleDef } from '$lib/modules/catalog';
-  import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
+  import { PGM_MONITOR_ID, webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
   import { renderScale } from '$lib/runtime/renderBudget';
   import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 
@@ -58,7 +58,7 @@
   const PGM_MAX_WIDTH = 1280;
 
   function targetSize() {
-    if (id !== 'pgm') return PREVIEW_SIZE;
+    if (id !== 'pgm' && id !== PGM_MONITOR_ID) return PREVIEW_SIZE;
     const rect = canvas.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return PREVIEW_SIZE;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -92,6 +92,8 @@
     if (!canvas) return;
     applySize();
     const ok = await attach();
+    // Unmounted while attaching (a view switch, a hot reload): nothing to watch.
+    if (!canvas) return;
     // The engine drops every binding when the GPU device is lost — it cannot
     // rebuild them itself, because the canvas elements belong to components.
     // Without this the picture goes black on the first loss and stays black:
@@ -118,7 +120,7 @@
     // reconfigure the swapchain and reallocate both feedback textures — mid
     // performance, while the picture is live. Deferring to rAF means the run of
     // resizes costs one reallocation at the size the box actually settles on.
-    if (ok && id === 'pgm' && typeof ResizeObserver !== 'undefined') {
+    if (ok && (id === 'pgm' || id === PGM_MONITOR_ID) && typeof ResizeObserver !== 'undefined') {
       sizeObserver = new ResizeObserver(() => {
         if (resizeRaf !== 0) return;
         resizeRaf = requestAnimationFrame(() => {
@@ -139,7 +141,7 @@
   });
 
   $effect(() => {
-    if (!ready || id === 'pgm') return;
+    if (!ready || id === 'pgm' || id === PGM_MONITOR_ID) return;
     webGpuEngine.setCanvasModule(id, moduleId);
     webGpuEngine.setCanvasAccent(id, color);
   });

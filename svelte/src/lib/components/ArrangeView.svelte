@@ -1,5 +1,9 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import ArrangeMonitor from '$lib/components/ArrangeMonitor.svelte';
+  import { timingSettings } from '$lib/stores/timing';
+  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
+  import { timingEffectAccent } from '$lib/components/timing/presentation';
   import { selectedArrangementSections } from '$lib/stores/arrangement';
   import { resolveSectionBounds } from '$lib/arrangement/sectionBounds';
   import { Upload, X } from '@lucide/svelte';
@@ -333,7 +337,17 @@
   function slotInfo(slotIndex: number) {
     const id = moduleForSlotIndex($rackTop, $rackBottom, slotIndex);
     const def = id ? getModuleDef(id) : undefined;
-    return def ? { name: def.shortName, color: def.accentColor } : null;
+    if (!def) return null;
+    // Opened from TIMING, a lane is a deck: S0-S9 and its ramp or stutter.
+    if ($playbackWorkspace === 'timing') {
+      const slotId = slotIndex < MAX_RACK_SLOTS_PER_ROW ? `top-${slotIndex}` : `bottom-${slotIndex - MAX_RACK_SLOTS_PER_ROW}`;
+      const effect = ($timingSettings.clips[slotId] ?? defaultClipTiming(slotId)).effect;
+      return {
+        name: `S${slotIndex} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
+        color: timingEffectAccent(effect)
+      };
+    }
+    return { name: def.shortName, color: def.accentColor };
   }
 
   function slotName(slotIndex: number) {
@@ -874,6 +888,8 @@
       }}
     />
   </header>
+
+  <ArrangeMonitor />
 
   {#if exportOpen || $exportState.status === 'recording'}
     <div class="arr-secbar arr-exportbar" role="group" aria-label="Export arrangement" style="--sec-hue:#9d7bff">

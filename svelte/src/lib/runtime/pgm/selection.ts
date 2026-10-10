@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { currentRackSlotForModule, videoLayers, bypassed } from '$lib/stores/rack';
 import { pgmSource, queuedPgmSource, clearPgmQueue, cutImmediate, markManualCut, selectPgmSource } from '$lib/stores/pgm';
-import { viewMode } from '$lib/stores/rackUi';
+import { playbackWorkspace, viewMode } from '$lib/stores/rackUi';
 import { selectedTimingSlot, timingEditorCollapsed, timingStatus } from '$lib/stores/timing';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
@@ -16,19 +16,21 @@ export function canSelectRackSource(input: {
   return !!input.slot && input.hasVideo && (input.timing || !input.bypassed);
 }
 
+// Availability follows the renderer that is running (ARRANGE keeps the one it
+// was opened from), not the tab on screen.
 export function pgmSourceAvailable(id: string): boolean {
   const slot = currentRackSlotForModule(id);
-  return !!slot && !!get(videoLayers)[slot] && (get(viewMode) === 'timing'
+  return !!slot && !!get(videoLayers)[slot] && (get(playbackWorkspace) === 'timing'
     ? get(timingStatus)[slot]?.state === 'ready'
     : !get(bypassed)[id]);
 }
 
-/** Rail, viewport and digit keys share selection and beat-quantized routing. */
+/** Rail, viewport, ARRANGE pads and digit keys share selection and beat-quantized routing. */
 export function selectRackSource(id: string): void {
   const slot = currentRackSlotForModule(id);
   if (!slot) return;
-  const timing = get(viewMode) === 'timing';
-  if (timing) {
+  const timing = get(playbackWorkspace) === 'timing';
+  if (get(viewMode) === 'timing') {
     selectedTimingSlot.set(slot);
     timingEditorCollapsed.set(false);
   }
