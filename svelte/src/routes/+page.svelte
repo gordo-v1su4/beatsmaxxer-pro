@@ -66,7 +66,7 @@
   import { get } from 'svelte/store';
 
   /** Shortest the title card stays up, from navigation start (V1S-64). */
-  const SPLASH_MIN_MS = 5000;
+  const SPLASH_MIN_MS = 1500;
   let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
@@ -169,6 +169,8 @@
           setTimeout(done, 100);
         });
       }
+      splashDone = splashTotal;
+      if (splashTotal > 0) stepShaders.note(`${splashTotal} / ${splashTotal}`);
       stepShaders.done();
     }
     // ?splash=hold keeps the title card up so it can be designed against.
@@ -199,7 +201,7 @@
         window.removeEventListener('pointerdown', dismiss, true);
         clearTimeout(holdTimer);
         splashPhase = 'go';
-        setTimeout(() => { splashPhase = 'ready'; }, 900);
+        setTimeout(() => { splashPhase = 'ready'; }, 350);
       };
       let holdTimer: ReturnType<typeof setTimeout> | undefined;
       if (holdMs > 0) {
