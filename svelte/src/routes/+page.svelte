@@ -65,7 +65,13 @@
   import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
 
-  let splashPhase = $state<'gpu' | 'shaders' | 'go' | 'ready'>('gpu');
+  /** Shortest the title card stays up, from navigation start (V1S-64). */
+  const SPLASH_MIN_MS = 1500;
+  /** How long the splash intro takes to land, from when it mounts. */
+  const SPLASH_INTRO_MS = 1800;
+  /** False while the intro plays: the app is not mounted and the GPU is idle. */
+  let introDone = $state(false);
+  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
 
@@ -89,6 +95,10 @@
   );
 
   onMount(async () => {
+    // The splash and its intro mount with this component, so this is when the
+    // intro starts. Not navigation start: a reload while the GPU is still busy
+    // can hold the first frame back by seconds.
+    const introStartedAt = performance.now();
     const params = new URLSearchParams(window.location.search);
     // Decided before the engine starts: which shell mounts determines how many
     // canvases the engine is about to be asked for — eleven on the rack, one on
@@ -100,6 +110,19 @@
     const stepLayout = bootStep('Setting up the workspace');
     stopMobileEnv = initMobileEnv();
     stepLayout.done();
+
+    // Let the title intro play out alone. Mounting the app under the splash
+    // (rack, canvases, video elements), even unpainted, starved the
+    // compositor and froze the intro for 70-800ms at a time, somewhere
+    // different on every load; device bring-up and the shader compiles go
+    // through the same GPU process. So the app mounts, and the GPU wakes, only
+    // once the intro has landed, behind the settled logo. Automation skips it.
+    const automated = params.has('qa') || navigator.webdriver;
+    if (!automated) {
+      const remaining = SPLASH_INTRO_MS - (performance.now() - introStartedAt);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, remaining)));
+    }
+    introDone = true;
 
     const stepProbe = bootStep('Checking graphics support');
     const cap = await probeWebGpu();
@@ -167,16 +190,49 @@
           setTimeout(done, 100);
         });
       }
+      splashDone = splashTotal;
+      if (splashTotal > 0) stepShaders.note(`${splashTotal} / ${splashTotal}`);
       stepShaders.done();
     }
     // ?splash=hold keeps the title card up so it can be designed against.
     // A warm load dismisses it in well under a second, which is too fast to
     // iterate on and the reason it could not be reviewed when first built.
     if (params.get('splash') !== 'hold') {
+      // A warm load finishes in well under a second, which flashed the card
+      // and its intro away mid-animation (V1S-64). Hold it to a minimum
+      // measured from navigation start, so a cold load that already took that
+      // long is not held any further. Any key or tap skips the remainder.
+      // Automation skips the hold: CDP gates should not wait on a title card.
+      const automated = params.has('qa') || navigator.webdriver;
+      const holdMs = automated ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
       // 'go' plays the exit; unmount only once it has actually run, so the
       // card hands off instead of blinking out from under the user.
-      splashPhase = 'go';
-      setTimeout(() => { splashPhase = 'ready'; }, 900);
+      // The skip key is swallowed in the capture phase: it belongs to the
+      // splash, and would otherwise land in whatever the app focuses first
+      // (the access-code field types the space that dismissed the card).
+      let dismissed = false;
+      const dismiss = (e?: Event) => {
+        if (e?.type === 'keydown') {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        if (dismissed) return;
+        dismissed = true;
+        window.removeEventListener('keydown', dismiss, true);
+        window.removeEventListener('pointerdown', dismiss, true);
+        clearTimeout(holdTimer);
+        splashPhase = 'go';
+        setTimeout(() => { splashPhase = 'ready'; }, 350);
+      };
+      let holdTimer: ReturnType<typeof setTimeout> | undefined;
+      if (holdMs > 0) {
+        splashPhase = 'armed';
+        window.addEventListener('keydown', dismiss, true);
+        window.addEventListener('pointerdown', dismiss, true);
+        holdTimer = setTimeout(dismiss, holdMs);
+      } else {
+        dismiss();
+      }
     }
 
     if (params.has('qa')) {
@@ -288,7 +344,9 @@
   closes that gap. DragGhost stays on the desktop side — there is no drag-and-
   drop surface on the phone to ghost.
 -->
-{#if $isMobileShell}
+{#if !introDone}
+  <!-- Nothing mounts under the splash intro; see onMount. -->
+{:else if $isMobileShell}
   <MobileShell />
 {:else}
 <DragGhost />

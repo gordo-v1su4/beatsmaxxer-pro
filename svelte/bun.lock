@@ -15,6 +15,7 @@
         "@fontsource/archivo-black": "^5.3.0",
         "@fontsource/audiowide": "^5.3.0",
         "@fontsource/bungee": "^5.3.0",
+        "@fontsource/press-start-2p": "^5.3.0",
         "@fontsource/russo-one": "^5.3.0",
         "@sveltejs/adapter-static": "^3.0.10",
         "@sveltejs/kit": "^2.63.0",
@@ -102,6 +103,8 @@
     "@fontsource/audiowide": ["@fontsource/audiowide@5.3.0", "", {}, "sha512-ECBdWgQPaCSuwlFyeXzV0i2DAGq0SKID7jxD1oHhYTObx3wz26YKs3F9Ic/EO369Anzld9IqxflRukJm6nVxpw=="],
 
     "@fontsource/bungee": ["@fontsource/bungee@5.3.0", "", {}, "sha512-vKwbDE7yMrqfGxgFan+diPLwgWp9j4FGYaLm+OhUoqYO6Pr02QIi/p0KiTW0E/7uiXqfTd6cMj+/E4h2sc3Ocg=="],
+
+    "@fontsource/press-start-2p": ["@fontsource/press-start-2p@5.3.0", "", {}, "sha512-gxWFxdeDglPhEYSwEeooomcaFK8kSQYLQwVxfnOJeYRj2sPEHXjpVtFgEaYfqzOjuAJGrIcJOipu2KY5YkbyuQ=="],
 
     "@fontsource/russo-one": ["@fontsource/russo-one@5.3.0", "", {}, "sha512-loHnqTq6D+H2WQdOB2pnAeCHbbsGqobmxnxU79MNFKjPWV2TPXdc78dbbkOAcWuKWDEY+FNXZFZ1nhaQvCWNAw=="],
 

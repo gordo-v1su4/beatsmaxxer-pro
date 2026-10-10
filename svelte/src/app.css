@@ -56,6 +56,14 @@
 	font-style: normal;
 	font-display: block;
 }
+/* The splash readout (LOADING / percentage / boot step): arcade pixel face. */
+@font-face {
+	font-family: 'Press Start 2P';
+	src: url('/fonts/press-start-2p-400.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
 
 :root {
 	/* Hallmark · genre: atmospheric · macrostructure: Workbench
