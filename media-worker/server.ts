@@ -84,7 +84,6 @@ async function processJob(job:InterpolationJob){
   await uploadToMediaGateway(gateway,{folder,filename:'interpolation.json',contentType:'application/json',body:new TextEncoder().encode(JSON.stringify({source:job.source,profile:job.profile,artifact:completed})),preserveFilename:true});
   queue.complete(job.id,completed);
   console.info(JSON.stringify({event:'job-ready',job:job.id,fps:completed.fps,frames:completed.frames,engine:completed.engine}));
-  await rm(directory,{recursive:true,force:true});
 }
 
 async function pump(){
@@ -95,6 +94,10 @@ async function pump(){
     try{await processJob(job);}catch(error){
       queue.fail(job.id,error instanceof Error?error.message:'Media preparation failed');
       console.error(JSON.stringify({event:'job-failed',job:job.id,error:queue.get(job.id)?.error}));
+    }finally{
+      if(active){active.kill();await active.exited;active=undefined;}
+      // RustFS originals and SQLite provenance are durable; these are scratch files.
+      await rm(join(root,job.id),{recursive:true,force:true});
     }
   }
 }

@@ -98,14 +98,13 @@ export async function prepareSlowMotionFile(file:File,notify:(p:PreparationProgr
   files.set(file,prepare);
   try{return await prepare;}catch(error){files.delete(file);fileProgress.delete(file);throw error;}finally{state.listeners.delete(notify);}
 }
-export async function retrySlotPreparation(slot:string,entry:SlotPreparation){
-  if(entry.jobId){
-    const path=`/__api/media/jobs/${entry.jobId}`;
+export async function resumeInterpolationJob(jobId:string){
+    const path=`/__api/media/jobs/${jobId}`;
     const current=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)});
     if(current.status!==404){
       if(!current.ok)throw new Error('The GPU worker is unavailable. Retry shortly.');
       const job=await current.json();
-      if(job.id!==entry.jobId||!['queued','processing','ready','failed'].includes(job.state))throw new Error('The GPU job could not be verified');
+      if(job.id!==jobId||!['queued','processing','ready','failed'].includes(job.state))throw new Error('The GPU job could not be verified');
       // Network/download failures may leave an already completed server job.
       // Resume that job; only explicitly failed GPU executions need requeuing.
       if(job.state==='failed'){
@@ -113,7 +112,9 @@ export async function retrySlotPreparation(slot:string,entry:SlotPreparation){
         if(!response.ok)throw new Error('The GPU job could not be retried');
       }
     }
-  }
+}
+export async function retrySlotPreparation(slot:string,entry:SlotPreparation){
+  if(entry.jobId)await resumeInterpolationJob(entry.jobId);
   const {mediaRuntime}=await import('$lib/runtime/media/MediaRuntime');
   return mediaRuntime.registerModuleFileClip(slot,entry.original);
 }

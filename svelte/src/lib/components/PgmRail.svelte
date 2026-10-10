@@ -29,7 +29,11 @@
   const active = $derived(modules.find((m) => m.id === $pgmSource) ?? modules[0]);
   const queuedModule = $derived(modules.find((m) => m.id === $queuedPgmSource));
   const quantizeLabel = $derived(formatQuantizeLabel($intervalBeats, $feel));
-  const triggerDriven = $derived($playbackWorkspace==='timing' && timingPgmFollowsTriggers($timingSettings));
+  const playableTimingSlots = $derived(modules.flatMap(module => {
+    const slot = currentRackSlotForModule(module.id, $rackTop, $rackBottom);
+    return slot && $videoLayers[slot] && $timingStatus[slot]?.state === 'ready' ? [slot] : [];
+  }));
+  const triggerDriven = $derived($playbackWorkspace==='timing' && timingPgmFollowsTriggers($timingSettings,playableTimingSlots));
   function moduleColor(mod: ModuleDefinition | undefined) {
     if (!mod) return '#556070';
     const slot = currentRackSlotForModule(mod.id, $rackTop, $rackBottom);

@@ -22,12 +22,12 @@ import type { TimelineFrame } from '$lib/transport';
 import type { TimingTexture } from './contracts';
 import type { VideoLayer } from '$lib/engine/contracts';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile } from './preparation';
+import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile, resumeInterpolationJob } from './preparation';
 
 /** Owns resident banks; AppLoop owns time and WebGpuEngine owns presentation. */
 export class TimingRuntime {
   private assets=new Map<File|string,{bank:ResidentFrameBank;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null}>();
-  private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null}>();
+  private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null;jobId?:string}>();
   private stopSections:(()=>void)|null=null;
   private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank; clock: SpeedRampSourceState | null; factor: number | null }>();
   private normalized = new WeakMap<ClipTiming, ClipTiming>();
@@ -178,7 +178,9 @@ export class TimingRuntime {
           if(!entry){
             entry={source:null,loading:true,error:null};this.sceneVariants.set(file,entry);
             const current=entry,generation=this.generation;
-            void prepareSlowMotionFile(file,()=>{}).then(prepared=>{
+            void prepareSlowMotionFile(file,p=>{
+              if(generation===this.generation && this.sceneVariants.get(file)===current && p.jobId)current.jobId=p.jobId;
+            }).then(prepared=>{
               if(generation!==this.generation||this.sceneVariants.get(file)!==current)return;
               current.source={...source,file:prepared};current.loading=false;
               this.prewarmScenes();
@@ -219,6 +221,28 @@ export class TimingRuntime {
     for(const [key,asset] of this.assets)if(asset.bank===failed){asset.bank.dispose();this.assets.delete(key);}
     for(const [id,entry] of this.banks)if(entry.bank===failed){this.banks.delete(id);this.selected.delete(id);}
     this.reconcile();
+  }
+
+  async retryScenes() {
+    const generation=this.generation;
+    for(const [key,asset] of this.assets)if(asset.error){
+      asset.bank.dispose();this.assets.delete(key);
+      for(const [slot,entry] of this.banks)if(entry.bank===asset.bank){
+        this.banks.delete(slot);this.selected.delete(slot);this.plans.delete(slot);this.programDirty=true;
+      }
+    }
+    await Promise.all([...this.sceneVariants].filter(([,entry])=>entry.error).map(async([file,entry])=>{
+      entry.error=null;entry.loading=true;this.publishCapacity();
+      try {
+        if(entry.jobId)await resumeInterpolationJob(entry.jobId);
+        if(generation===this.generation && this.sceneVariants.get(file)===entry)this.sceneVariants.delete(file);
+      } catch(error) {
+        if(generation===this.generation && this.sceneVariants.get(file)===entry){
+          entry.error=error instanceof Error?error.message:String(error);entry.loading=false;
+        }
+      }
+    }));
+    if(generation===this.generation){this.reconcile();this.publishCapacity();}
   }
 
   private updatePgmSignals(frame: TimelineFrame) {
@@ -353,7 +377,8 @@ export class TimingRuntime {
       }));
       this.programDirty = false;
     }
-    if (frame.playing && get(arrangementMode)!=='play' && timingPgmFollowsTriggers(settings)
+    const timingOwnsPgm=timingPgmFollowsTriggers(settings,[...this.selected.keys()]);
+    if (frame.playing && get(arrangementMode)!=='play' && timingOwnsPgm
       && get(queuedPgmSource)===null) {
       let lo=0,hi=this.program.length;
       while(lo<hi){const mid=(lo+hi)>>>1;if(this.program[mid].at<=frame.positionSeconds)lo=mid+1;else hi=mid;}
@@ -367,7 +392,7 @@ export class TimingRuntime {
           if(module&&this.selected.has(slot))commitPgmCut(module);
         }
       }
-    } else if(!frame.playing||get(arrangementMode)==='play'||!timingPgmFollowsTriggers(settings))this.programSelection='';
+    } else if(!frame.playing||get(arrangementMode)==='play'||!timingOwnsPgm)this.programSelection='';
     this.lastOutput = output; this.lastSettings = settings; this.lastTransportGeneration = frame.generation;
   }
 

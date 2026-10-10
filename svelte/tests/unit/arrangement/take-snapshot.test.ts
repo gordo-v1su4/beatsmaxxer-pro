@@ -1,15 +1,17 @@
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { arrangement, resetArrangement } from '$lib/stores/arrangement';
+import { arrangement, activeSectionIndex, resetArrangement } from '$lib/stores/arrangement';
 import { timingSettings, setTimingTrigger, effectiveTimingTrigger } from '$lib/stores/timing';
 import { setArrangementMode } from '$lib/arrangement/transportMode';
-import { captureTakeSection, applyTakeSection } from '$lib/arrangement/takeSnapshot';
+import { captureTakeSection, captureRecalledTakeSection, applyTakeSection } from '$lib/arrangement/takeSnapshot';
+import { beginArrangementRecording, endArrangementRecording } from '$lib/arrangement/recorder';
+import * as scenes from '$lib/arrangement/sectionScenes';
 import { viewMode, playbackWorkspace } from '$lib/stores/rackUi';
 import { buildTimingSchedule, sampleTimingSchedule, defaultTimingTrigger } from '$lib/runtime/timing/triggers';
 import { defaultClipTiming } from '$lib/runtime/timing/envelope';
 import { videoLayers } from '$lib/stores/rack';
 
-afterEach(()=>{setArrangementMode('live',0);viewMode.set('perform');resetArrangement();});
+afterEach(()=>{setArrangementMode('live',0);viewMode.set('perform');resetArrangement();vi.restoreAllMocks();});
 describe('section take reproduction',()=>{
   test('records the actual rack when a planned section clip is unavailable',()=>{
     const previous=get(videoLayers);
@@ -52,6 +54,33 @@ describe('section take reproduction',()=>{
     viewMode.set('timing');expect(get(timingSettings).trigger.seed).toBe(22);
     expect(live.trigger.seed).toBe(11);
   });
+});
+
+test.each(['landed','section changed','take changed','stopped'])('async section capture: %s',async(change)=>{
+  const previous=get(videoLayers);
+  resetArrangement();
+  const base=get(arrangement)[0];
+  const chorus={...base,id:'chorus',clipGroupId:'chorus-group',timeStartS:4,timeEndS:8,
+    scene:{slots:{'top-0':{name:'chorus.mp4',url:'blob:chorus'}}}};
+  arrangement.set([{...base,id:'verse',timeStartS:0,timeEndS:4},chorus]);
+  videoLayers.set({'top-0':{name:'verse.mp4',url:'blob:verse'}} as never);
+  let finish!:()=>void;
+  vi.spyOn(scenes,'recallScene').mockImplementation(async()=>{
+    await new Promise<void>(resolve=>finish=resolve);
+    videoLayers.set({'top-0':{name:'chorus.mp4',url:'blob:chorus'}} as never);
+    return {loaded:1,failed:[]};
+  });
+  beginArrangementRecording(4);activeSectionIndex.set(1);
+  try{
+    const capture=captureRecalledTakeSection(chorus,4.5,120);
+    expect(get(arrangement)[1].deckSnapshot).toBeUndefined();
+    if(change==='section changed')activeSectionIndex.set(0);
+    if(change==='take changed')beginArrangementRecording(4);
+    if(change==='stopped')endArrangementRecording(4.5);
+    finish();await capture;
+    if(change==='landed')expect(get(arrangement)[1].deckSnapshot?.scene.slots['top-0']?.name).toBe('chorus.mp4');
+    else expect(get(arrangement)[1].deckSnapshot).toBeUndefined();
+  }finally{endArrangementRecording(5);videoLayers.set(previous);}
 });
 
 test('replays musical settings without increasing the current GPU cache budget or changing output FPS',()=>{

@@ -21,7 +21,7 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
   try {
     const value = JSON.parse(raw || 'null');
     if (value?.version !== 1) return result;
-    result.scope=value.scope==='deck'?'deck':'global';
+    result.scope=value.scope==='global'?'global':'deck';
     if(value.master)result.master=parseTimingSettings(JSON.stringify({version:1,clips:{'top-0':value.master}})).clips['top-0'];
     result.deckTriggers={};
     for(const [slot,trigger] of Object.entries(value.deckTriggers??{}))if(slotPattern.test(slot))result.deckTriggers[slot]=parseTimingSettings(JSON.stringify({version:1,trigger})).trigger;
@@ -144,9 +144,9 @@ export function effectiveTimingTrigger(settings: TimingSettings, slot: string) {
   return settings.scope==='deck'?settings.deckTriggers?.[slot]??settings.trigger:settings.trigger;
 }
 /** Musical triggers own PGM; its independent interval controls are inactive. */
-export function timingPgmFollowsTriggers(settings: TimingSettings) {
-  return Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`)
-    .some(slot=>!['pgm','beat','continuous'].includes(effectiveTimingTrigger(settings,slot).source));
+export function timingPgmFollowsTriggers(settings: TimingSettings, usableSlots: readonly string[]) {
+  return usableSlots.some(slot=>effectiveClipTiming(settings,slot).effect!=='off'
+    && !['pgm','beat','continuous'].includes(effectiveTimingTrigger(settings,slot).source));
 }
 export function clipTiming(slot: string) { return effectiveClipTiming(get(timingSettings),slot); }
 export function setClipTiming(slot: string, config: ClipTiming) {

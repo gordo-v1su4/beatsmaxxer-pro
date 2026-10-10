@@ -414,7 +414,8 @@ export function applySectionBank(section: ArrangementSection) {
  */
 export function enterSection(section: ArrangementSection) {
   if (get(autoBank)) applySectionBank(section);
-  if ((get(autoClips) || section.clipGroupId) && section.scene) void recallScene(section.scene).catch(() => {});
+  if ((get(autoClips) || section.clipGroupId) && section.scene) return recallScene(section.scene);
+  return Promise.resolve({loaded:0,failed:[] as string[]});
 }
 
 /** Jump to a section, recalling its bank and clips when those are on. */

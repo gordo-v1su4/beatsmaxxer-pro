@@ -92,12 +92,16 @@ class PgmDirector {
     const sources = this.playableSources();
     const active = get(pgmSource);
     const queued = get(queuedPgmSource);
+    const timingOwnsPgm = get(playbackWorkspace) === 'timing'
+      && timingPgmFollowsTriggers(get(timingSettings), sources.flatMap(source => {
+        const slot = currentRackSlotForModule(source); return slot ? [slot] : [];
+      }));
     audioEngine.configurePgmSchedule({
       active,
       sources,
       queued: queued && sources.includes(queued) ? queued : null,
-      autoRandom: get(arrangementMode)!=='play' && get(autoRandom) && !(get(playbackWorkspace) === 'timing' && timingPgmFollowsTriggers(get(timingSettings))),
-      linear: get(arrangementMode)!=='play' && get(linearOrder) && !(get(playbackWorkspace) === 'timing' && timingPgmFollowsTriggers(get(timingSettings))),
+      autoRandom: get(arrangementMode)!=='play' && get(autoRandom) && !timingOwnsPgm,
+      linear: get(arrangementMode)!=='play' && get(linearOrder) && !timingOwnsPgm,
       intervalBeats: get(intervalBeats),
       queueIntervalBeats: PGM_LAUNCH_QUANTIZE_BEATS,
       feel: get(feel)

@@ -79,7 +79,7 @@ import { midiUiOpen } from '$lib/stores/rackUi';
 import { recordFrame, startRenderBudget, stopRenderBudget } from '$lib/runtime/renderBudget';
 import { tickArrangementRecorder, recordingTakeSerial } from '$lib/arrangement/recorder';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
-import { captureTakeSection, applyTakeSection } from '$lib/arrangement/takeSnapshot';
+import { captureRecalledTakeSection, applyTakeSection } from '$lib/arrangement/takeSnapshot';
 
 let running = false;
 let takeSerialSeen = -1;
@@ -348,7 +348,7 @@ function runArrangement(frame: TimelineFrame) {
   if (id === trackedSectionId && index === get(activeSectionIndex)) return;
   trackedSectionId = id;
   activeSectionIndex.set(index);
-  if (get(arrangementMode)==='rec') {enterSection(sections[index]!);captureTakeSection(frame.positionSeconds,frame.bpm);}
+  if (get(arrangementMode)==='rec') void captureRecalledTakeSection(sections[index]!,frame.positionSeconds,frame.bpm).catch(() => {});
   else if (get(arrangementMode)==='play') applyTakeSection(sections[index]!);
   else enterSection(sections[index]!);
 }

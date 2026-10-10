@@ -1,8 +1,8 @@
 import { derived, get, writable } from 'svelte/store';
 import { sequencerArmed } from '$lib/stores/sequencer';
-import { arrangementRecording } from '$lib/stores/arrangement';
+import { arrangement, activeSectionIndex, arrangementRecording } from '$lib/stores/arrangement';
 import { beginArrangementRecording, endArrangementRecording } from './recorder';
-import { rememberLiveWorkspace, restoreLiveWorkspace, captureTakeSection, applyTakeAt } from './takeSnapshot';
+import { rememberLiveWorkspace, restoreLiveWorkspace, captureTakeSection, captureRecalledTakeSection, applyTakeAt } from './takeSnapshot';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { viewMode } from '$lib/stores/rackUi';
 import { timingPreparationBlocked } from '$lib/runtime/timing/readiness';
@@ -55,8 +55,13 @@ export function setArrangementMode(mode: ArrangementMode, playheadSeconds: numbe
   // Each REC pass is its own take on the lanes; overdub only changes what
   // happens to the cuts underneath.
   if (mode === 'rec') {
-    captureTakeSection(playheadSeconds,get(transportDisplay).bpm||120);
+    const bpm=get(transportDisplay).bpm||120;
+    const section=captureTakeSection(playheadSeconds,bpm);
     beginArrangementRecording(playheadSeconds, true);
+    if(section){
+      activeSectionIndex.set(get(arrangement).findIndex(s=>s.id===section.id));
+      void captureRecalledTakeSection(section,playheadSeconds,bpm).catch(() => {});
+    }
   }
   if(mode==='play')return applyTakeAt(playheadSeconds,get(transportDisplay).bpm||120);
 }

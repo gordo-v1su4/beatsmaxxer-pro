@@ -72,5 +72,27 @@ out-of-range and non-finite inputs.
 Review findings: Standards 2 addressed; Spec 1 addressed. The separately found
 96 FPS roundoff regression is fixed and has client lifecycle coverage.
 
+## Automated review corrections
+
+Greptile's initial review identified five valid issues. Section recording now
+waits for clip recall and checks both the current section and recording pass
+before capturing; REC entry uses the same correction path. Legacy version-1
+Timing settings retain per-deck curves. PGM ownership uses only usable decks
+with active effects, so empty or OFF MIDI decks do not suppress RAND/Linear.
+The Timing footer retries failed future-section preparations and frame banks;
+failed worker jobs are explicitly requeued, while ready jobs are resumed.
+Worker scratch cleanup runs after both successful and failed processing and
+stops any unfinished child first; RustFS originals and queue provenance remain.
+
+Eight added regressions pass in the 34-test focused server check. Both changed
+Svelte components pass the autofixer, Svelte checks report zero errors/warnings,
+and all five durable queue tests pass. Standards found no remaining issue;
+Spec's additional OFF-deck ownership finding is also addressed.
+
+The complete corrected server suite passes 913 assertions with zero failures
+and eight skips in the existing media-capable validation image, using the
+read-only real-media bundle. The dependency-only image lacked ffprobe for one
+fixture check; that tooling limitation was resolved before final validation.
+
 Exact-main deployment, mandatory GitHub reviews and final canonical-domain
 migration remain release gates; candidate browser evidence does not claim them.
