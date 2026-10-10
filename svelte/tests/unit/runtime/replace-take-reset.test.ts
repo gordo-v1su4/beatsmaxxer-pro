@@ -48,7 +48,7 @@ describe('replace recording take lifecycle', () => {
   test('recorded PLAY advances the sequencer marker with the shared timeline',()=>{
     vi.stubGlobal('requestAnimationFrame',()=>1);playbackWorkspace.set('timing');
     setArrangementMode('live',0);
-    arrangement.set([{id:'marker',name:'Marker',bars:4}]);
+    arrangement.set([{id:'marker',name:'Marker',bars:4,hue:'#2dd4bf',bank:{top:[],bottom:[]},pattern:Array(16).fill(null)}]);
     cuts.set([{step:0,slotIndex:0,timeSeconds:0}]);pgmSource.set(get(rackTop)[0]);
     setArrangementMode('play',0);startAppLoop();
     publish(0);expect(get(sequencerLastStep)).toBe(0);

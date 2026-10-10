@@ -69,6 +69,23 @@ as with Review Room's media worker.
 Deployment locations are read from mode600 `/opt/beatsmaxxer-pro/deploy.env`:
 `DOCKHAND_URL`, `DOCKHAND_ENV_ID` and `APP_RELEASE_ROOT`. Application secrets
 remain on the server; GitHub receives no application credential copies.
+These files use literal, unquoted `KEY=value` entries. Required keys are checked
+before building. Hosted analysis defaults to enabled and requires its base URL
+and key; set `ESSENTIA_ANALYSIS_ENABLED=false` to use local browser analysis.
+The existing Dockhand API relies on Tailscale access controls rather than an
+additional HTTP credential. The deployer requires its literal private Tailnet
+IPv4 address; never expose this API on public ingress.
+
+Container recreation may briefly remove its name. Verification waits up to
+180 seconds for the exact image to become healthy and also verifies the old
+image's health after rollback. Cleanup runs only after successful verification:
+it retains the seven newest marked app release caches, the current and previous
+releases, and every app revision referenced by a container. It removes only
+this app's corresponding unused images and marked source caches. Unmarked
+directories, worker images, queue volumes and RustFS data remain operator-owned.
+The dependency image pins Node by digest and validates both Bun lockfiles.
+The runtime uses Bun/Node built-ins and ships without dependency modules; its
+managed startup health check catches missing runtime imports.
 The runner service is
 `actions.runner.gordo-v1su4-beatsmaxxer-pro.beatsmaxxer-app-vm.service`.
 

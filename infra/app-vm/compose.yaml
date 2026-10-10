@@ -7,6 +7,7 @@ services:
       dockerfile: infra/app-vm/Dockerfile
       args:
         APP_REVISION: ${APP_REVISION:-development}
+        ESSENTIA_ANALYSIS_ENABLED: ${ESSENTIA_ANALYSIS_ENABLED:-true}
         ESSENTIA_API_BASE_URL: ${ESSENTIA_API_BASE_URL:-}
     container_name: beatsmaxxer-pro-web
     restart: unless-stopped
