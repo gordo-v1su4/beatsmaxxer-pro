@@ -67,6 +67,10 @@
 
   /** Shortest the title card stays up, from navigation start (V1S-64). */
   const SPLASH_MIN_MS = 1500;
+  /** How long the splash intro takes to land, from when it mounts. */
+  const SPLASH_INTRO_MS = 1450;
+  /** False while the intro plays: the app is not mounted and the GPU is idle. */
+  let introDone = $state(false);
   let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>('gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
@@ -91,6 +95,10 @@
   );
 
   onMount(async () => {
+    // The splash and its intro mount with this component, so this is when the
+    // intro starts. Not navigation start: a reload while the GPU is still busy
+    // can hold the first frame back by seconds.
+    const introStartedAt = performance.now();
     const params = new URLSearchParams(window.location.search);
     // Decided before the engine starts: which shell mounts determines how many
     // canvases the engine is about to be asked for — eleven on the rack, one on
@@ -102,6 +110,19 @@
     const stepLayout = bootStep('Setting up the workspace');
     stopMobileEnv = initMobileEnv();
     stepLayout.done();
+
+    // Let the title intro play out alone. Mounting the app under the splash
+    // (rack, canvases, video elements), even unpainted, starved the
+    // compositor and froze the intro for 70-800ms at a time, somewhere
+    // different on every load; device bring-up and the shader compiles go
+    // through the same GPU process. So the app mounts, and the GPU wakes, only
+    // once the intro has landed, behind the settled logo. Automation skips it.
+    const automated = params.has('qa') || navigator.webdriver;
+    if (!automated) {
+      const remaining = SPLASH_INTRO_MS - (performance.now() - introStartedAt);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, remaining)));
+    }
+    introDone = true;
 
     const stepProbe = bootStep('Checking graphics support');
     const cap = await probeWebGpu();
@@ -323,7 +344,9 @@
   closes that gap. DragGhost stays on the desktop side — there is no drag-and-
   drop surface on the phone to ghost.
 -->
-{#if $isMobileShell}
+{#if !introDone}
+  <!-- Nothing mounts under the splash intro; see onMount. -->
+{:else if $isMobileShell}
   <MobileShell />
 {:else}
 <DragGhost />

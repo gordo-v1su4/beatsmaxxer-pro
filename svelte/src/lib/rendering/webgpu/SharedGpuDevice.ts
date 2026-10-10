@@ -34,6 +34,13 @@ export async function getSharedWebGpuDevice(): Promise<GPUDevice | null> {
     const adapter = await gpu.requestAdapter();
     if (!adapter) return null;
     const device = await adapter.requestDevice();
+    // Release the device when the page goes away for good. A reload during
+    // the boot shader compiles otherwise leaves them queued in the GPU
+    // process, and the next page's splash intro stutters behind them.
+    // A page kept for back/forward (persisted) keeps its device.
+    globalThis.addEventListener?.('pagehide', (event) => {
+      if (!(event as PageTransitionEvent).persisted) device.destroy();
+    });
     void device.lost?.then((info) => {
       // Drop the memo first: whoever handles this will ask for a device, and
       // handing back the lost one would loop.
