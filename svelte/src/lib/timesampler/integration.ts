@@ -216,6 +216,7 @@ export class LiveScheduleRuntime<T = string> {
   private lastTriggerGeneration: number | null = null;
   private pgmGeneration: number | null = null;
   private pgmNextBoundary: number | null = null;
+  private pgmCadenceOrigin = 0;
   /** Where the current queued source lands, and which source it was set for. */
   private pgmQueueBoundary: number | null = null;
   private pgmQueuedFor: T | null = null;
@@ -414,6 +415,7 @@ export class LiveScheduleRuntime<T = string> {
       discontinuity ||
       configurationChanged
     ) {
+      this.pgmCadenceOrigin = 0;
       this.pgmNextBoundary = nextQuantizedBeat(
         transport.beatPosition,
         input.intervalBeats,
@@ -438,6 +440,8 @@ export class LiveScheduleRuntime<T = string> {
       if (transport.beatPosition + 1e-9 >= this.pgmQueueBoundary) {
         selected = input.queued;
         consumedQueued = true;
+        this.pgmCadenceOrigin = this.pgmQueueBoundary;
+        this.pgmNextBoundary = this.pgmCadenceOrigin + nextQuantizedBeat(0,input.intervalBeats,input.feel);
         this.pgmInput = { ...input, queued: null };
         this.pgmQueueBoundary = null;
         this.pgmQueuedFor = null;
@@ -474,8 +478,8 @@ export class LiveScheduleRuntime<T = string> {
         }
       }
 
-      this.pgmNextBoundary = nextQuantizedBeat(
-        this.pgmNextBoundary + 1e-4,
+      this.pgmNextBoundary = this.pgmCadenceOrigin + nextQuantizedBeat(
+        this.pgmNextBoundary - this.pgmCadenceOrigin + 1e-4,
         input.intervalBeats,
         input.feel,
       );

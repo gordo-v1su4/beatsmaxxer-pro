@@ -30,23 +30,43 @@ vi.mock('mediabunny', () => ({
 import { ResidentFrameBank, ResidentMemoryBudget, residentFrameIndex } from '$lib/runtime/timing/ResidentFrameBank';
 
 function device() {
+  const copy=vi.fn((_source:unknown,_destination:unknown,_size:unknown)=>{});
   const textures: { destroy: ReturnType<typeof vi.fn>; createView: ReturnType<typeof vi.fn> }[] = [];
   const gpu = {
     limits: { maxTextureDimension2D: 4096 }, pushErrorScope: vi.fn(), popErrorScope: vi.fn(async () => null),
-    queue: { onSubmittedWorkDone: vi.fn(async () => {}), copyExternalImageToTexture: vi.fn() },
-    createTexture: vi.fn(() => {
-      const texture = { destroy: vi.fn(), createView: vi.fn(() => ({})) }; textures.push(texture); return texture;
+    queue: { onSubmittedWorkDone: vi.fn(async () => {}), submit:vi.fn(),copyExternalImageToTexture: vi.fn((_source:unknown,_destination:unknown,_size:unknown) => {}) },
+    createCommandEncoder:vi.fn(()=>({copyTextureToTexture:copy,finish:vi.fn(()=>({}))})),
+    createTexture: vi.fn((_descriptor:GPUTextureDescriptor) => {
+      const texture = { destroy: vi.fn(), createView: vi.fn((_descriptor?:GPUTextureViewDescriptor) => ({})) }; textures.push(texture); return texture;
     })
   };
-  return { gpu: gpu as unknown as GPUDevice, textures, raw: gpu };
+  return { gpu: gpu as unknown as GPUDevice, textures, raw: gpu,copy };
 }
 
 beforeEach(() => {
   vi.clearAllMocks(); media.count = 3; media.failAfter = -1; media.onSample = null;
-  vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 4, COPY_DST: 2, RENDER_ATTACHMENT: 16 });
+  vi.stubGlobal('GPUTextureUsage', { COPY_SRC:1,TEXTURE_BINDING: 4, COPY_DST: 2, RENDER_ATTACHMENT: 16 });
 });
 
 describe('resident production bank', () => {
+  it('packs frames into atlases and selects separate regions for shared clip consumers', async () => {
+    media.count = 130;
+    const d = device(), budget = new ResidentMemoryBudget(100000), bank = new ResidentFrameBank(d.gpu, budget);
+    await bank.load('https://example.test/long.mp4');
+    expect(d.raw.createTexture.mock.calls.map(call => (call[0] as GPUTextureDescriptor).size).slice(-3)).toEqual([[128,72],[128,72],[32,9]]);
+    expect(bank.stats.frames).toBe(130);
+    const left=bank.frameAt(129 / 96,'top-0'),right=bank.frameAt(0,'bottom-0');
+    expect(left?.pts).toBe(129 / 96);expect(right?.pts).toBe(0);
+    expect(left?.view).not.toBe(right?.view);
+    expect(d.raw.queue.copyExternalImageToTexture.mock.calls[129][1]).toMatchObject({origin:[16,0,0]});
+    expect(d.copy.mock.calls[0][0]).toMatchObject({origin:[16,0,0]});
+    expect(d.copy.mock.calls[1][0]).toMatchObject({origin:[0,0,0]});
+    expect(d.copy.mock.calls[0][1]).not.toEqual(d.copy.mock.calls[1][1]);
+    bank.frameAt(129 / 96,'top-0');expect(d.copy).toHaveBeenCalledTimes(2);
+    bank.dispose();
+    expect(d.textures.every(texture => texture.destroy.mock.calls.length === 1)).toBe(true);
+    expect(budget.used).toBe(0);
+  });
   it('retains 96fps samples, disposes the decoder before use and selects without uploads', async () => {
     const d = device(), budget = new ResidentMemoryBudget(10000), bank = new ResidentFrameBank(d.gpu, budget);
     expect(bank.frameAt(0)).toBeNull();
@@ -66,12 +86,12 @@ describe('resident production bank', () => {
   });
 
   it('preflights aggregate budget before creating any textures for an additional clip', async () => {
-    const d = device(), budget = new ResidentMemoryBudget(2000);
+    const d = device(), budget = new ResidentMemoryBudget(10000);
     const first = new ResidentFrameBank(d.gpu, budget), second = new ResidentFrameBank(d.gpu, budget);
     await first.load('https://example.test/one.mp4');
     const used = budget.used;
     await expect(second.load('https://example.test/two.mp4')).rejects.toThrow('available');
-    expect(d.textures).toHaveLength(3);
+    expect(d.textures).toHaveLength(11);
     expect(budget.used).toBe(used);
     first.dispose(); expect(budget.used).toBe(0);
   });
@@ -88,7 +108,7 @@ describe('resident production bank', () => {
 
   it('cancels in-flight decode and never publishes partial frames', async () => {
     const d = device(), budget = new ResidentMemoryBudget(10000), bank = new ResidentFrameBank(d.gpu, budget);
-    media.onSample = () => { if (d.textures.length === 1) bank.dispose(); };
+    media.onSample = () => { if (d.raw.queue.copyExternalImageToTexture.mock.calls.length === 1) bank.dispose(); };
     await expect(bank.load('https://example.test/clip.mp4')).rejects.toThrow('cancelled');
     expect(budget.used).toBe(0); expect(bank.frameAt(0)).toBeNull();
     expect(d.textures[0].destroy).toHaveBeenCalledOnce();

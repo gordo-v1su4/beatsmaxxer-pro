@@ -1,0 +1,20 @@
+name: Deploy to App VM
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: beatsmaxxer-production-app-vm
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, beatsmaxxer-production]
+    environment: production-app-vm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build, verify, and activate the exact main commit through Dockhand
+        run: node scripts/deploy-app-vm.mjs "$GITHUB_SHA"

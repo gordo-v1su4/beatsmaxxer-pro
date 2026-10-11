@@ -1,0 +1,36 @@
+name: beatsmaxxer-pro
+services:
+  app:
+    image: beatsmaxxer-pro-web:acceptance-20261010
+    pull_policy: never
+    container_name: beatsmaxxer-pro-web
+    restart: unless-stopped
+    network_mode: host
+    cpus: 1.0
+    mem_limit: 512m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN required}
+      APP_ACCESS_PIN: ${APP_ACCESS_PIN:?APP_ACCESS_PIN required}
+      INTERPOLATION_WORKER_URL: ${INTERPOLATION_WORKER_URL:?INTERPOLATION_WORKER_URL required}
+      MEDIA_GATEWAY_URL: ${MEDIA_GATEWAY_URL:?MEDIA_GATEWAY_URL required}
+      MEDIA_GATEWAY_TOKEN: ${MEDIA_GATEWAY_TOKEN:?MEDIA_GATEWAY_TOKEN required}
+      MEDIA_GATEWAY_BUCKET: ${MEDIA_GATEWAY_BUCKET:?MEDIA_GATEWAY_BUCKET required}
+      MEDIA_GATEWAY_USER_ID: ${MEDIA_GATEWAY_USER_ID:?MEDIA_GATEWAY_USER_ID required}
+      MEDIA_GATEWAY_UPLOAD_PREFIX: ${MEDIA_GATEWAY_UPLOAD_PREFIX:?MEDIA_GATEWAY_UPLOAD_PREFIX required}
+      ESSENTIA_API_BASE_URL: ${ESSENTIA_API_BASE_URL:-}
+      ESSENTIA_API_KEY: ${ESSENTIA_API_KEY:-}
+      ESSENTIA_ANALYSIS_ENABLED: ${ESSENTIA_ANALYSIS_ENABLED:-true}
+      NODE_ENV: production
+      HOST: 127.0.0.1
+      PORT: "18074"
+    labels:
+      dockhand.update: "false"
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3

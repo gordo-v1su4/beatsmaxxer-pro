@@ -1,0 +1,37 @@
+services:
+  interpolation-worker:
+    build:
+      context: ..
+      dockerfile: media-worker/Dockerfile
+    image: beatsmaxxer-interpolation-worker:local
+    container_name: beatsmaxxer-interpolation-worker
+    restart: unless-stopped
+    cpus: 1.0
+    network_mode: host
+    env_file: .env
+    environment:
+      PORT: 18096
+      WORKER_BIND: 127.0.0.1
+      GPU_LOCK_PATH: /gpu-lock/stack-structure-gpu.lock
+    volumes:
+      - interpolation-work:/work
+      - /var/lock/stack-structure-gpu:/gpu-lock
+    devices:
+      - /dev/nvidia0:/dev/nvidia0
+      - /dev/nvidiactl:/dev/nvidiactl
+      - /dev/nvidia-uvm:/dev/nvidia-uvm
+      - /dev/nvidia-uvm-tools:/dev/nvidia-uvm-tools
+      - /dev/nvidia-modeset:/dev/nvidia-modeset
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: [CMD, curl, -fsS, http://127.0.0.1:18096/health]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+volumes:
+  interpolation-work:

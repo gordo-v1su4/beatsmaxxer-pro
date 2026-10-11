@@ -1,6 +1,7 @@
 import type { ArrangementSection } from '$lib/stores/arrangement';
 import { ARRANGEMENT_STEPS } from '$lib/stores/arrangement';
 import { beatGridSongOffset,stepSeconds,barNumberAtTime } from './timelineScale';
+import { displaySectionHue } from './sectionKinds';
 export function resolveSectionBounds(
     sections: readonly ArrangementSection[],
     starts: readonly number[],
@@ -25,7 +26,7 @@ export function resolveSectionBounds(
       return {
         id: section.id,
         name: section.name,
-        hue: section.hue,
+        hue: displaySectionHue(section),
         startBar: barNumberAtTime(startSeconds, grid, tempo),
         startSeconds,
         endSeconds,

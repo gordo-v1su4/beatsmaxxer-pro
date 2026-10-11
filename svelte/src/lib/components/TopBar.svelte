@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
@@ -9,6 +10,8 @@
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
   import TopMenu from '$lib/components/rack/TopMenu.svelte';
   import DesktopUpdater from '$lib/components/DesktopUpdater.svelte';
+  import WorkflowHelp from '$lib/components/WorkflowHelp.svelte';
+  import { workflowHelpOpen, openWorkflowHelp } from '$lib/stores/workflowHelp';
   import { autoRandom, linearOrder, setClipOrder, type ClipOrder } from '$lib/stores/pgm';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
@@ -20,6 +23,7 @@
   } from '$lib/audio/hostedAnalysisPreference';
   import { arrangementStructureStatus, loadDemoArrangement } from '$lib/stores/arrangement';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
+  import { loadSavedRedlinePreset } from '$lib/runtime/workflowPresets';
   import { arrangementMode } from '$lib/arrangement/transportMode';
   import {
     arrangementStatusBadge,
@@ -72,6 +76,8 @@
   // MIDI stems) is served from test_media by the dev server only, so the menu
   // appears only where its manifest is reachable.
   const WORKFLOWS = [
+    { id: 'redline-timing', label: 'SAVED REDLINE · TIMING', title: 'Prepared 540p clip banks, matching song, MIDI, analysis and musical Timing settings' },
+    { id: 'redline-originals', label: 'SAVED REDLINE · ORIGINAL CLIPS', title: 'Original test clips with the saved matching song, MIDI and analysis' },
     { id: 'song-clips', label: 'TEST SONG + CLIPS', title: 'Load the test song and fill every rack slot with test clips' },
     { id: 'song-clips-midi', label: 'SONG + CLIPS + MIDI', title: 'Also attach the MIDI parts to the rack and the stems to the arranger lanes' },
     { id: 'demo-arrangement', label: 'DEMO ARRANGEMENT', title: 'Replace the arrangement with the built-in demo sections and cuts' }
@@ -82,6 +88,7 @@
   let workflowError = $state<string | null>(null);
 
   $effect(() => {
+    if (!import.meta.env.DEV) return;
     fetch('/qa-media/manifest.json', { method: 'HEAD' })
       .then((res) => (testMediaAvailable = res.ok))
       .catch(() => (testMediaAvailable = false));
@@ -94,6 +101,7 @@
     openMenu = null;
     try {
       if (id === 'demo-arrangement') loadDemoArrangement();
+      else if (id === 'redline-timing' || id === 'redline-originals') await loadSavedRedlinePreset(id === 'redline-timing');
       else await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
     } catch (err) {
       workflowError = err instanceof Error ? err.message : String(err);
@@ -252,16 +260,14 @@
     <div class="topbar-brand">
       <div
         class="status-dot"
-        style="background:{td.playing ? '#22c55e' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #22c55e88' : 'none'}"
+        style="background:{td.playing ? '#14b8a6' : '#333a42'};box-shadow:{td.playing ? '0 0 6px #14b8a688' : 'none'}"
       ></div>
       <span class="brand-text">BEATSMAXXER PRO</span>
-      <span class="brand-x">×</span>
-      <span class="brand-sub">CHE</span>
     </div>
 
     <div class="divider"></div>
 
-    <button type="button" onclick={togglePlay} class="transport-btn" data-playing={td.playing}>
+    <button type="button" onclick={togglePlay} class="transport-btn" data-playing={td.playing} disabled={!td.playing&&$timingPreparationBlocked} title={$timingPreparationBlocked?"Finish preparing the timing clips before playback":undefined}>
       {#if td.playing}<Square size={9} />{:else}<Play size={9} />{/if}
       {td.playing ? 'STOP' : 'PLAY'}
     </button>
@@ -365,7 +371,7 @@
 
       <div class="phase-bar">
         <div
-          style="width:{td.beatPhase * 100}%;border-right:{td.playing ? '1px solid #22c55e' : 'none'};transition:{td.beatPhase < 0.05 ? 'none' : 'width 0.02s linear'}"
+          style="width:{td.beatPhase * 100}%;border-right:{td.playing ? '1px solid #14b8a6' : 'none'};transition:{td.beatPhase < 0.05 ? 'none' : 'width 0.02s linear'}"
         ></div>
         <span>{td.beatPhase.toFixed(2)}</span>
       </div>
@@ -465,7 +471,7 @@
       >● REC</button>
     {/if}
     <div class="workspace-tabs" aria-label="Workspace">
-      {#each ['perform','arrange','timing'] as mode (mode)}
+      {#each ['perform','timing','arrange'] as mode (mode)}
         {@const locked = td.playing && mode !== 'arrange' && mode !== $playbackWorkspace}
         <!-- ARRANGE keeps the current renderer, so hopping between it and the
              playing workspace is safe mid-song (record in one, watch the other).
@@ -589,7 +595,9 @@
       </button>
     </TopMenu>
 
+    <TopBtn label="HELP" title="Quick workflow diagrams, Timing controls, beats and bars" onclick={() => openWorkflowHelp()} />
     <DesktopUpdater />
+    {#if $workflowHelpOpen}<WorkflowHelp />{/if}
 
     <div class="divider"></div>
 
@@ -605,7 +613,7 @@
         {#each Array.from({ length: 16 }) as _, i (i)}
           {@const threshold = i / 16}
           {@const lit = td.playing && td.amplitude * 3.4 > threshold}
-          {@const c = i > 13 ? '#ef4444' : i > 10 ? '#eab308' : '#22c55e'}
+          {@const c = i > 13 ? '#ef4444' : i > 10 ? '#eab308' : '#14b8a6'}
           <div
             style="height:{4 + (i < 8 ? i : 15 - i)}px;background:{lit ? c : '#1a1e24'};box-shadow:{lit ? `0 0 3px ${c}66` : 'none'}"
           ></div>
@@ -922,18 +930,7 @@
     color: #7a8090;
   }
 
-  .brand-x {
-    color: #2a3040;
-    font-size: 11px;
-  }
 
-  .brand-sub {
-    font-family: var(--font-brand);
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.14em;
-    color: #556070;
-  }
 
   .transport-btn {
     height: 26px;
@@ -974,8 +971,8 @@
 
   .transport-btn[data-playing='true'] {
     background: linear-gradient(180deg, #1a2a1a, #121c12);
-    border-color: #22c55e44;
-    color: #22c55e;
+    border-color: #14b8a644;
+    color: #14b8a6;
     box-shadow: 0 0 8px rgba(34, 197, 94, 0.2);
   }
 
@@ -1169,7 +1166,7 @@
     left: 0;
     top: 0;
     bottom: 0;
-    background: linear-gradient(90deg, #22c55e22, #22c55e55);
+    background: linear-gradient(90deg, #14b8a622, #14b8a655);
   }
 
   .phase-bar span {
@@ -1338,7 +1335,7 @@
     width: 56px;
     min-width: 56px;
     height: 4px;
-    accent-color: #22c55e;
+    accent-color: #14b8a6;
   }
 
   .hold-btn {
@@ -1401,7 +1398,7 @@
 
 .workspace-tabs{display:flex;gap:2px}
 .workspace-tabs :global(.top-btn){border-color:#1e2226!important;border-radius:2px!important;box-shadow:none!important}
-.workspace-tabs :global(.top-btn[aria-pressed="true"]){background:linear-gradient(180deg,color-mix(in srgb,#22c55e 16%,#1e2124),color-mix(in srgb,#22c55e 8%,#141618))!important}
+.workspace-tabs :global(.top-btn[aria-pressed="true"]){background:linear-gradient(180deg,color-mix(in srgb,#14b8a6 16%,#1e2124),color-mix(in srgb,#14b8a6 8%,#141618))!important}
 .clip-order{display:flex;align-items:center;gap:4px;color:#586a71;font:7px var(--font-ui)}.clip-order select{background:#13191a;border:1px solid #283234;color:#78b9ae;font:8px var(--font-ui);padding:5px 4px;border-radius:2px}
 
 </style>

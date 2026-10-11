@@ -4,6 +4,8 @@ import { parseMidi } from '$lib/audio/MidiParser';
 import { analysisBeatGrid, analysisOnsets } from './triggerLane';
 import { midiChannels } from './midiChannels';
 import type { TimingChannel, TimingEvent, TimingSignal, TimingTriggerConfig } from '$lib/runtime/timing/triggers';
+import { normalizeStructureAnalysis } from '$lib/audio/structureNormalize';
+import { applyStructureToArrangement, arrangementStructureStatus } from '$lib/stores/arrangement';
 
 type Feature = 'onsets'|'activity'|'loudness';
 export interface TimingInput {
@@ -16,6 +18,15 @@ export const timingSignalGrid=writable<{beats:readonly number[];bpm:number}>({be
 const events=(raw:unknown):TimingEvent[]=>Array.isArray(raw)?raw.filter(e=>e&&Number.isFinite(e.time)&&e.time>=0&&Number.isFinite(e.strength)).map(e=>({time:e.time,strength:Math.max(0,Math.min(1,e.strength))})).sort((a,b)=>a.time-b.time):[];
 const hash=async(bytes:ArrayBuffer)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 
+export function midiEnvelopeEnergy(envelope: { intervalSeconds: number; values: number[] } | undefined, time: number) {
+  if (!envelope || !(envelope.intervalSeconds > 0) || !Array.isArray(envelope.values)) return 1;
+  let peak = 0;
+  const first = Math.max(0, Math.floor(time / envelope.intervalSeconds));
+  const last = Math.min(envelope.values.length - 1, Math.ceil((time + .1) / envelope.intervalSeconds));
+  for (let i = first; i <= last; i++) if (Number.isFinite(envelope.values[i])) peak = Math.max(peak, envelope.values[i]);
+  return .25 + .75 * Math.min(1, peak);
+}
+
 /** Import the existing R&D file format with its actual companion song, never by filename guess. */
 export async function loadTimingBundle(analysis:unknown,midi:unknown,song:File){
   const a=analysis as Record<string,any>,m=midi as Record<string,any>|null;
@@ -27,16 +38,30 @@ export async function loadTimingBundle(analysis:unknown,midi:unknown,song:File){
     const f=raw as Record<string,unknown>;
     features[name]={onsets:events(f.onsets),activity:events(f.activity),loudness:events(f.loudness)};
   }
-  const channels:TimingChannel[]=(m?.stems??[]).map((s:any)=>({name:String(s.name),events:events(s.notes?.map((n:any)=>({time:n.time,strength:n.velocity/127})))}));
+  const channels:TimingChannel[]=(m?.stems??[]).map((s:any)=>({name:String(s.name),events:events(s.notes?.map((n:any)=>({time:n.time,strength:n.velocity/127 * midiEnvelopeEnergy(a.features?.[s.name]?.envelope,n.time)})))}));
   await audioEngine.loadAudioFile(song,{hostedAnalysis:false});
   audioEngine.applyPreparedRhythm({bpm:a.bpm,beats:a.beats,duration:a.duration,onsets:features.mix?.onsets.map(e=>e.time)??[]});
+  if(a.structure){
+    const structure=normalizeStructureAnalysis(a.structure);
+    applyStructureToArrangement(structure.sections,a.beats,a.bpm);
+  } else arrangementStructureStatus.set('idle');
   timingInput.set({generation:audioEngine.getUploadedTrackLoadGeneration(),name:song.name,sourceSha256:sha,bpm:a.bpm,beats:a.beats,duration:a.duration,midi:channels,features});
 }
 export async function loadRedlineTimingReference(){
   const base='/benchmark-fixtures/benchmark/';
   const responses=await Promise.all(['redline-analysis.json','redline-midi.json','redline.mp3'].map(n=>fetch(base+n)));
   if(responses.some(r=>!r.ok))throw new Error('Saved Redline files are unavailable on this server. Import the matching data and song.');
-  await loadTimingBundle(await responses[0].json(),await responses[1].json(),new File([await responses[2].blob()],'Redline · saved R&D song.mp3',{type:'audio/mpeg'}));
+  const analysis=await responses[0].json();
+  const cachedResponse=await fetch('/presets/redline-studio.json');
+  if(cachedResponse.ok){
+    const cached=await cachedResponse.json();
+    if(cached.sourceSha256===analysis.sourceSha256){
+      // Sections use API wall-clock timestamps. Keep the saved MIDI bundle's
+      // own beat grid, which Frame Lab used to benchmark its repeats.
+      analysis.structure=cached.result.structure;
+    }
+  }
+  await loadTimingBundle(analysis,await responses[1].json(),new File([await responses[2].blob()],'Redline · saved R&D song.mp3',{type:'audio/mpeg'}));
 }
 export async function importTimingFiles(files:File[]){
   const json=files.filter(f=>/\.json$/i.test(f.name));
@@ -63,6 +88,7 @@ export function resolveTimingSignal(trigger:TimingTriggerConfig,sourceBpm:number
   const valid=input?.generation===audioEngine.getUploadedTrackLoadGeneration()&&state.usingUploadedTrack;
   const data=valid?input:null;
   const signal:TimingSignal={channels:[],beats:data?.beats??get(analysisBeatGrid),bpm:data?.bpm??sourceBpm,duration:Math.max(state.duration||horizon,1),label:data?.name??state.trackName??'BEAT GRID'};
+  if(trigger.source==='pgm'){signal.label='PGM SOURCE · EFFECTS START WHEN A DECK TAKES PGM';return signal;}
   if(trigger.source==='continuous'||trigger.source==='beat')return signal;
   if(trigger.source==='midi'){
     signal.channels=data?.midi.length?data.midi:get(midiChannels).map(c=>({name:c.name,events:c.notes?c.notes.map(n=>({time:n.time,strength:n.velocity/127})):c.onsets.map(time=>({time,strength:1}))}));

@@ -741,10 +741,11 @@ input[type='range']::-moz-range-thumb {
 	}
 	.timing-workspace .rack-main {
 		display: grid;
+		align-content: start;
 		grid-template-rows: auto auto auto auto auto;
 		min-height: 0;
 	}
-	.timing-workspace .timing-panel { flex: none; }
+	.timing-workspace .timing-panel { flex: none; margin-top:0; }
 	.timing-workspace .timing-panel > * { flex-shrink: 0; }
 	.timing-workspace .rack-row { min-height: 0; height: auto !important; }
 	.timing-workspace .timing-card {

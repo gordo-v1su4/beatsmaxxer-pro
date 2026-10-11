@@ -6,7 +6,14 @@ const rife4Hashes = new Set([
   '1f85f8115037722fdbb21c2a1c5fe6a7dcc0191f637177225f7561625835a28b',
   'c52b971a6e716a82e3894ead1d00aa088258038abd6393f513a8c5c11db091c9'
 ]);
-export const verifiedInterpolationFactor = (sha256: string) => rife4Hashes.has(sha256.toLowerCase()) ? 4 : 1;
+const generatedHashes=new Map<string,number>();
+/** Packet timestamp division can report nominal 96 FPS as 95.99999999999997. */
+export const meetsSlowMotionFrameRate = (fps:number) => Number.isFinite(fps) && fps >= 96 - 1e-6;
+export function rememberGeneratedInterpolation(sha256:string,factor:number){
+  if(!/^[a-f0-9]{64}$/.test(sha256)||!Number.isInteger(factor)||factor<4||factor>16)throw new Error('Invalid verified interpolation metadata');
+  generatedHashes.set(sha256,factor);
+}
+export const verifiedInterpolationFactor = (sha256: string) => generatedHashes.get(sha256.toLowerCase()) ?? (rife4Hashes.has(sha256.toLowerCase()) ? 4 : 1);
 
 async function verifySource(source: Blob | string): Promise<number> {
 
@@ -22,18 +29,19 @@ const blobChecks = new WeakMap<Blob, Promise<number>>();
 const urlChecks = new Map<string, Promise<number>>();
 /** Share in-flight and completed verification across library and runtime mounts. */
 export function identifyInterpolation(source: Blob | string, fps: number): Promise<number> {
-  if (fps < 90) return Promise.resolve(1);
   if (typeof source !== 'string') {
     let check = blobChecks.get(source);
     if (!check) {
-      check = verifySource(source).catch(error => { blobChecks.delete(source); throw error; });
+      // A resident bank has already decoded and measured this exact Blob.
+      // Keep its low-FPS classification so recall need not hash it on a cut.
+      check = !meetsSlowMotionFrameRate(fps) ? Promise.resolve(1) : verifySource(source).catch(error => { blobChecks.delete(source); throw error; });
       blobChecks.set(source, check);
     }
     return check;
   }
   let check = urlChecks.get(source);
   if (!check) {
-    check = verifySource(source).catch(error => {
+    check = !meetsSlowMotionFrameRate(fps) ? Promise.resolve(1) : verifySource(source).catch(error => {
       if (urlChecks.get(source) === check) urlChecks.delete(source);
       throw error;
     });

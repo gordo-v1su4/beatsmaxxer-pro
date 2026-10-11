@@ -11,6 +11,7 @@ export async function handleStorageUpload(
   req: IncomingMessage,
   res: ServerResponse,
   gatewayConfig = storageGatewayConfigFromEnv(process.env),
+  mediaKind: 'audio'|'video' = 'audio',
 ) {
   const clientAbort = new AbortController();
   const onAborted = () => clientAbort.abort();
@@ -36,7 +37,7 @@ export async function handleStorageUpload(
         signal: clientAbort.signal,
       },
       gatewayConfig,
-      {},
+      { mediaKind },
       undefined,
       process.env.NODE_ENV === "development" ? "development" : "production",
     );

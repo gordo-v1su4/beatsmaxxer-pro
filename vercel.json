@@ -16,6 +16,10 @@
   },
   "rewrites": [
     {
+      "source": "/__api/media/:path*",
+      "destination": "/api/media?path=:path*"
+    },
+    {
       "source": "/favicon.ico",
       "destination": "/favicon.svg"
     },

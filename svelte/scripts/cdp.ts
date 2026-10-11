@@ -302,7 +302,7 @@ export async function waitForQaSongAndRhythm(session: CdpSession, timeoutMs = 90
 export async function navigateAndReady(
   session: CdpSession,
   url: string,
-  readyExpr = 'document.documentElement.dataset.bmxQa === "1"',
+  readyExpr = 'document.documentElement?.dataset.bmxQa === "1"',
   timeoutMs = 30_000
 ) {
   const startedAt = Date.now();

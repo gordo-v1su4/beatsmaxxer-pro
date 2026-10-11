@@ -45,13 +45,13 @@ export function isMediaGatewayConfigured(config: MediaGatewayConfig): boolean {
   }
 }
 
-export function studioChunkFolder(uploadPrefix: string, uploadId: string): string {
-  return `${uploadPrefix}/source-audio/chunks/${uploadId}`;
+export function studioChunkFolder(uploadPrefix: string, uploadId: string, kind: 'audio'|'video' = 'audio'): string {
+  return `${uploadPrefix}/source-${kind}/chunks/${uploadId}`;
 }
 
-export function studioChunkObjectKey(uploadPrefix: string, uploadId: string, chunkIndex: number): string {
+export function studioChunkObjectKey(uploadPrefix: string, uploadId: string, chunkIndex: number, kind: 'audio'|'video' = 'audio'): string {
   const partName = `${String(chunkIndex).padStart(5, "0")}.part`;
-  return `${studioChunkFolder(uploadPrefix, uploadId)}/${partName}`;
+  return `${studioChunkFolder(uploadPrefix, uploadId, kind)}/${partName}`;
 }
 
 export function rustfsPublicObjectUrl(bucket: string, objectKey: string): string {

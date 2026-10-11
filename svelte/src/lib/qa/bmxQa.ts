@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { qaTimelineFrame } from '$lib/qa/timelineFrame';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { audioEngine } from '$lib/audio';
@@ -10,7 +11,7 @@ import { listCatalog } from '$lib/modules/catalog';
 import { MODULE_PRESETS } from '$lib/modules/presets';
 import { SHADER_EFFECT_MODE } from '$lib/rendering/webgpu/shaders/moduleFx.wgsl';
 import { fetchManifestClipFiles, loadRackClipsFromFiles } from '$lib/media/loadRackClips';
-import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
+import { mediaRuntime, mediaPublicationHistory } from '$lib/runtime/media/MediaRuntime';
 import { audioTimeline } from '$lib/transport';
 import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
@@ -39,6 +40,8 @@ import {
 import { loopSeekTargetSeconds } from '$lib/arrangement/loopTransport';
 import { analysisBeatGrid } from '$lib/stores/triggerLane';
 import { sequencerArmed, sequencerLastStep } from '$lib/stores/sequencer';
+import { arrangement, activeSectionIndex } from '$lib/stores/arrangement';
+import { arrangementMode } from '$lib/arrangement/transportMode';
 
 export interface BmxQaSnapshot {
   webgpu: boolean;
@@ -254,6 +257,12 @@ export function installBmxQaHook() {
   document.body.appendChild(proofOverlay);
 
   const api = {
+    mediaHistory(){return mediaPublicationHistory.slice();},
+    arrangementSnapshot() {
+      return {mode:get(arrangementMode),time:audioTimeline.getPositionSeconds(),pgm:get(pgmSource),
+        cuts:get(cuts),sections:get(arrangement),activeSectionIndex:get(activeSectionIndex),
+        loop:get(arrangementLoopRegion),timing:get(timingSettings)};
+    },
     /** Read-only production Timing diagnostics; does not run the benchmark harness. */
     timingSnapshot() {
       return { workspace:get(playbackWorkspace), ...timingRuntime.diagnostics,
@@ -1019,17 +1028,7 @@ export function installBmxQaHook() {
       const liveModule = get(pgmSource);
       const frameAt = (positionSeconds: number, playing = true) => {
         const bpm = buildSnapshot().bpm || 120;
-        return {
-          positionSeconds,
-          playing,
-          beatPosition: positionSeconds * (bpm / 60),
-          generation: 1,
-          bpm,
-          frameId: Math.floor(positionSeconds * 60),
-          contextTimeSeconds: positionSeconds,
-          transportSeconds: positionSeconds,
-          reason: 'qa-rec' as const,
-        };
+        return qaTimelineFrame(positionSeconds, bpm, playing);
       };
       beginArrangementRecording(1, true);
       tickArrangementRecorder(frameAt(1.25), modules, {});

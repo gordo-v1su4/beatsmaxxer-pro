@@ -7,7 +7,8 @@ import {
 import { handleAccessGate } from '../../api/gate/handler';
 import { accessGateConfigFromEnv, type AccessGateConfig } from '../../api/gate/policy';
 import { handleStorageUpload } from '../../api/storage/handler';
-import { mediaGatewayConfigFromEnv, type MediaGatewayConfig } from '../../api/lib/mediaGateway';
+import { mediaGatewayConfigFromEnv, type MediaGatewayConfig } from '../../api/_lib/mediaGateway';
+import { handleMediaProxy } from '../../api/media';
 
 async function readJsonBody(req: NodeJS.ReadableStream): Promise<unknown> {
 	const chunks: Buffer[] = [];
@@ -28,6 +29,10 @@ export function essentiaDevProxyPlugin(
 	return {
 		name: 'essentia-dev-proxy',
 		configureServer(server) {
+      server.middlewares.use('/__api/media', async(req,res)=>{
+        const url=new URL(req.url||'/', 'http://127.0.0.1');
+        await handleMediaProxy(req,res,url.pathname.replace(/^\/+/,''));
+      });
 			// The gate runs in dev too, so a locally configured PIN behaves exactly
 			// as it will in production rather than only being exercised after deploy.
 			server.middlewares.use('/__api/gate', async (req, res) => {

@@ -16,8 +16,7 @@
   import { getModuleDef } from '$lib/modules/catalog';
   import { MAX_RACK_SLOTS_PER_ROW, bypassed, rackBottom, rackTop, videoLayers } from '$lib/stores/rack';
   import { playbackWorkspace } from '$lib/stores/rackUi';
-  import { timingSettings, timingStatus } from '$lib/stores/timing';
-  import { defaultClipTiming } from '$lib/runtime/timing/envelope';
+  import { timingSettings, timingStatus, effectiveClipTiming } from '$lib/stores/timing';
   import { timingEffectAccent } from '$lib/components/timing/presentation';
   import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
   import { moduleForSlotIndex } from '$lib/stores/arrangement';
@@ -31,11 +30,12 @@
       const def = moduleId ? getModuleDef(moduleId) : undefined;
       // From TIMING, a slot is a deck: S0-S9 and its ramp or stutter.
       if ($playbackWorkspace === 'timing') {
-        const effect = ($timingSettings.clips[slotId] ?? defaultClipTiming(slotId)).effect;
+        const effect = effectiveClipTiming($timingSettings,slotId).effect;
         return {
           index,
           moduleId,
           name: `S${index} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
+          effectName: effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF',
           accent: timingEffectAccent(effect),
           ready: !!moduleId && $timingStatus[slotId]?.state === 'ready'
         };
@@ -43,7 +43,8 @@
       return {
         index,
         moduleId,
-        name: def?.shortName ?? '—',
+        name: `S${index} ${def?.shortName ?? '—'}`,
+        effectName: def?.shortName ?? '—',
         accent: def?.accentColor ?? '#64748b',
         ready: !!moduleId && !!$videoLayers[slotId] && !$bypassed[moduleId]
       };
@@ -58,8 +59,8 @@
       : $arrangementMode === 'play'
         ? $arrangementOverridden
           ? 'You have the program — BACK TO ARRANGEMENT hands it to the timeline'
-          : 'PLAY — the timeline cuts PGM; a pad takes over'
-        : 'LIVE — cut by hand; nothing is recorded. Hit REC to write a take.'
+          : 'PLAY — recorded cuts and section settings drive PGM'
+        : 'Cut by hand; hit REC to write a take, or PLAY to replay it.'
   );
 </script>
 
@@ -82,8 +83,8 @@
           onclick={() => slot.moduleId && selectRackSource(slot.moduleId)}
           title={slot.ready ? `Cut PGM to ${slot.name} (key ${slot.index})` : `${slot.name}: no clip loaded`}
         >
-          <span class="am-key">{slot.index}</span>
-          <span class="am-name">{slot.name}</span>
+          <span class="am-key">S{slot.index}</span>
+          <span class="am-name">{slot.effectName}</span>
         </button>
       {/each}
     </div>
@@ -161,11 +162,10 @@
     gap: 6px;
     height: 34px;
     padding: 0 8px;
-    border: 1px solid #22262c;
-    border-left: 3px solid var(--c);
+    border: 0;
     border-radius: 3px;
-    background: #111316;
-    color: #aab3bd;
+    background: linear-gradient(180deg,#1e2124,#181a1c 55%,#141618);
+    color: var(--c);
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -173,15 +173,14 @@
   }
   .am-pad:hover:not(:disabled) {
     background: #171a1e;
-    color: #e2e8f0;
+    color: var(--c);
   }
-  .am-pad[data-live='true'] {
-    background: color-mix(in srgb, var(--c) 22%, #111316);
-    border-color: var(--c);
-    color: #fff;
+  .am-pad[data-live='true'],.am-pad[data-live='true']:hover:not(:disabled) {
+    background: linear-gradient(180deg,color-mix(in srgb,var(--c) 16%,#1e2124),color-mix(in srgb,var(--c) 8%,#141618));
+    color: var(--c);
   }
   .am-pad[data-queued='true'] {
-    border-color: var(--c);
+    background: color-mix(in srgb,var(--c) 18%,#111316);
     animation: am-pulse 0.6s ease-in-out infinite;
   }
   .am-pad:disabled {
@@ -191,7 +190,7 @@
   .am-key {
     display: inline-grid;
     place-items: center;
-    width: 15px;
+    width: 21px;
     height: 15px;
     border-radius: 2px;
     background: #1d2126;

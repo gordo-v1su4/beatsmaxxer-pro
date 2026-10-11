@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Beatsmaxxer Pro is a **SvelteKit 5 + WebGPU** browser app (no backend). See [`README.md`](./README.md) and [`svelte/docs/ARCHITECTURE.md`](./svelte/docs/ARCHITECTURE.md).
+Beatsmaxxer Pro is a **SvelteKit 5 + WebGPU** browser app. Realtime rendering, timing and export run in the browser; the optional self-hosted API handles authenticated analysis and GPU clip preparation. See [`README.md`](./README.md) and [`svelte/docs/ARCHITECTURE.md`](./svelte/docs/ARCHITECTURE.md).
+
+Before changing hosting or deployment, read [`docs/deploy-app-vm.md`](./docs/deploy-app-vm.md). Docker runs on VM100 `app-vm`; Hostinger Dockhand manages it through Hawser. Preserve the worker queue volume and keep media preparation separate from browser playback.
 
 Backend and hosting URLs come from environment variables / `.env.local` and must never be hardcoded or committed.
 
@@ -27,7 +29,7 @@ WebGPU output needs Chrome or Edge on a machine with a GPU (local desktop or the
 
 Long runs on a self-hosted worker: **`HEADLESS=1 bun run test:local:detached`** (tmux + log at `/tmp/bmx-test-local-latest.log`), summarize with **`bun run test:local:log`**. Headless runs **skip** `verify:visual-proof` and `verify:eight-video-proof` unless `REQUIRE_PHYSICAL_PROOF=1`; capture those on the GPU desktop with `bun run capture:visual-proof` and `bun run capture:eight-video-proof`.
 
-### Essentia env (optional, dev only)
+### Essentia env (optional analysis)
 
 | Variable | Notes |
 |----------|-------|
@@ -35,7 +37,7 @@ Long runs on a self-hosted worker: **`HEADLESS=1 bun run test:local:detached`** 
 | `ESSENTIA_API_BASE_URL` | Set in `.env.local` (git-ignored); base URL for your hosted analysis API |
 | `ESSENTIA_API_KEY` | Server-side only; injected by the dev proxy |
 
-Production relay is blocked. Without Essentia, local Web Audio rhythm analysis is the fallback.
+Production proxies require an access session and accepted request origin. Without Essentia, local Web Audio rhythm analysis is the fallback. Keep API keys server-side.
 
 ### QA media
 

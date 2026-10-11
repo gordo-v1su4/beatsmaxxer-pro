@@ -60,6 +60,15 @@ export class ClipRegistry {
 		return { clip, previous };
 	}
 
+	/** Restore an early resident commit only while it still owns the slot. */
+	restoreCurrent(clip:RegisteredClip,previous:RegisteredClip|null){
+		if(this.clips.get(clip.id)!==clip)return false;
+		if(previous&&(!this.retired.has(previous)||!this.references.has(previous)))return false;
+		if(previous){this.retired.delete(previous);this.clips.set(clip.id,previous);}
+		else this.clips.delete(clip.id);
+		this.retire(clip);this.report();return true;
+	}
+
 	rollback(clip: RegisteredClip) {
 		if (!this.staged.delete(clip)) return false;
 		this.retire(clip);

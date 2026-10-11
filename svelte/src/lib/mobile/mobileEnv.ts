@@ -1,4 +1,4 @@
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived } from 'svelte/store';
 
 /**
  * Is the phone shell up?
@@ -78,13 +78,17 @@ function evaluate(): boolean {
 export function initMobileEnv(): () => void {
   if (typeof window === 'undefined') return () => {};
 
+  // Pick the session's component tree at startup. Resizing a desktop window
+  // (or capturing a cropped preview) must not mount the phone session, whose
+  // one-slot setup releases the rest of the rack. Rotation still updates the
+  // phone posture below without discarding the loaded media session.
+  isMobileShell.set(evaluate());
+
   const sync = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
     viewportSize.set({ width: w, height: h });
     orientation.set(w >= h ? 'landscape' : 'portrait');
-    const next = evaluate();
-    if (get(isMobileShell) !== next) isMobileShell.set(next);
   };
 
   sync();

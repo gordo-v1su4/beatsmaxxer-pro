@@ -1,7 +1,7 @@
 # Beatsmaxxer Pro — GPU sandbox image for the app-vm deployment.
 #
 # A permanent Docker sandbox on the Tailnet GPU VM:
-#   - Bun pinned (see FROM)
+#   - Bun pinned, plus Node 24 for Vitest worker processes
 #   - Google Chrome + Xvfb so the browser gates (`bun run test:local`,
 #     `bun run verify:browser`) render WebGPU on the host NVIDIA GPU
 #     (headed-under-Xvfb path; the HEADLESS=1 path forces SwiftShader)
@@ -9,11 +9,14 @@
 # The compose file mounts the repo worktree at /app, so installs and edits
 # behave like a normal dev checkout.
 
-FROM oven/bun:1.3.10-debian
+FROM oven/bun:1.3.14 AS bun
+FROM node:24-bookworm-slim
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg unzip coreutils util-linux xvfb \
+      ca-certificates curl gnupg unzip coreutils util-linux xvfb xauth ffmpeg \
       fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
       libcups2 libdbus-1-3 libdrm2 libgbm1 libgtk-3-0 libnspr4 libnss3 \
       libvulkan1 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \

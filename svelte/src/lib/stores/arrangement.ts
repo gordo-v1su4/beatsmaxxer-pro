@@ -11,6 +11,7 @@ import {
 } from '$lib/arrangement/sectionKinds';
 import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop, videoLayers } from '$lib/stores/rack';
 import { captureScene, recallScene } from '$lib/arrangement/sectionScenes';
+import { sequencerArmed } from '$lib/stores/sequencer';
 
 export type ArrangementStructureStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -27,6 +28,8 @@ export const arrangementStructureStatus = writable<ArrangementStructureStatus>('
  */
 export interface ArrangementSection {
   id: string;
+  /** Reusable clip group assigned to this song section. */
+  clipGroupId?: string;
   name: string;
   /** Operator-facing part type (verse, hook, outro, …). Drives default hue + label. */
   kind?: SectionKind;
@@ -60,6 +63,7 @@ export interface ArrangementSection {
    * Absent until the operator captures one.
    */
   scene?: SectionScene;
+  deckSnapshot?: import('$lib/arrangement/takeSnapshot').DeckSnapshot;
 }
 
 /** One rack slot's clip in a scene — enough to re-register it. */
@@ -208,9 +212,13 @@ function blankArrangement(): ArrangementSection[] {
 }
 
 export const arrangement = writable<ArrangementSection[]>(blankArrangement());
+let restoredArrangement = false;
+/** A restored take owns its sections; background analysis must not replace it. */
+export function protectRestoredArrangement() { restoredArrangement = true; }
 
 /** Back to a blank arrangement, e.g. before a new song's analysis seeds one. */
 export function resetArrangement() {
+  restoredArrangement = false;
   arrangementStructureStatus.set('idle');
   arrangement.set(blankArrangement());
   cuts.set([]);
@@ -250,13 +258,15 @@ export function applyStructureToArrangement(
   beats: readonly number[],
   bpm: number,
 ) {
+  if (restoredArrangement) { arrangementStructureStatus.set('ready'); return; }
   const seeded = arrangementFromStructureSections(sections, beats, bpm);
   if (seeded.length === 0) {
     arrangementStructureStatus.set('error');
     return;
   }
   arrangement.set(seeded);
-  cuts.set(unrollDefaultCuts(seeded));
+  // Detection describes the song; only an explicit demo or REC supplies cuts.
+  cuts.set([]);
   activeSectionIndex.set(0);
   barInSection.set(0);
   arrangementStructureStatus.set('ready');
@@ -273,6 +283,8 @@ export function applyStructureToArrangement(
  */
 export interface Cut {
   step: number;
+  /** Actual landing time for a recorded cut; authored cuts use their grid step. */
+  timeSeconds?: number;
   /** Rack slot 0-9. */
   slotIndex: number;
 }
@@ -402,7 +414,8 @@ export function applySectionBank(section: ArrangementSection) {
  */
 export function enterSection(section: ArrangementSection) {
   if (get(autoBank)) applySectionBank(section);
-  if (get(autoClips) && section.scene) void recallScene(section.scene).catch(() => {});
+  if ((get(autoClips) || section.clipGroupId) && section.scene) return recallScene(section.scene);
+  return Promise.resolve({loaded:0,failed:[] as string[]});
 }
 
 /** Jump to a section, recalling its bank and clips when those are on. */
@@ -416,13 +429,15 @@ export function selectSection(index: number, recallRack = true) {
 
 /** Snapshot the rack's current clips as this section's scene. */
 export function captureSectionScene(index: number) {
+  if (get(sequencerArmed) || get(arrangementRecording)) return;
   const scene = captureScene(get(videoLayers));
   arrangement.update((sections) =>
-    sections.map((section, i) => (i === index ? { ...section, scene } : section)),
+    sections.map((section, i) => (i === index ? { ...section, scene, deckSnapshot:section.deckSnapshot?{...section.deckSnapshot,scene}:undefined } : section)),
   );
 }
 
 export function clearSectionScene(index: number) {
+  if (get(sequencerArmed) || get(arrangementRecording)) return;
   arrangement.update((sections) =>
     sections.map((section, i) => {
       if (i !== index) return section;

@@ -27,17 +27,22 @@ export const SECTION_KIND_OPTIONS: ReadonlyArray<{ value: SectionKind; label: st
 ];
 
 export const SECTION_KIND_HUE: Record<SectionKind, string> = {
-  intro: '#4fd6e8',
-  verse: '#35e08a',
-  'pre-chorus': '#5ce0c0',
-  chorus: '#ff6bb0',
-  hook: '#ff9f43',
-  bridge: '#ffb454',
-  solo: '#c084fc',
-  breakdown: '#94a3b8',
-  outro: '#9d7bff',
-  section: '#7d9196',
+  intro: '#79a4a8',
+  verse: '#7fab94',
+  'pre-chorus': '#75a8a0',
+  chorus: '#7c9cb5',
+  hook: '#b1ab80',
+  bridge: '#b9a677',
+  solo: '#8296b1',
+  breakdown: '#91a0ab',
+  outro: '#879aab',
+  section: '#7f9297',
 };
+const LEGACY_HUE:Record<SectionKind,string>={intro:'#4fd6e8',verse:'#35e08a','pre-chorus':'#5ce0c0',chorus:'#ff6bb0',hook:'#ff9f43',bridge:'#ffb454',solo:'#c084fc',breakdown:'#94a3b8',outro:'#9d7bff',section:'#7d9196'};
+export function displaySectionHue(section:ArrangementSection){
+  const kind=sectionKindOf(section);
+  return section.hue===LEGACY_HUE[kind]?SECTION_KIND_HUE[kind]:section.hue;
+}
 
 const KIND_ALIASES: Record<string, SectionKind> = {
   intro: 'intro',

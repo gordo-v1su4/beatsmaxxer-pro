@@ -12,6 +12,7 @@ import {
 } from "$lib/audio/structureNormalize";
 import { isTauriRuntime } from "$lib/platform/runtime";
 import { isDesktopEssentiaConfigured, tauriInvoke } from "$lib/platform/tauriInvoke";
+import { songAnalysisHash, cachedSongAnalysis, saveSongAnalysis } from './analysisCache';
 
 export type { EssentiaStructureSection, EssentiaStructureAnalysis };
 export { normalizeStructureAnalysis };
@@ -47,7 +48,11 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
   if (!isHostedAnalysisEnabled()) {
     throw new Error("Hosted analysis is disabled. Local playback and realtime analysis remain available.");
   }
-  return fetchEssentiaStudioAnalysis(file);
+  const hash=typeof window==='undefined'?null:await songAnalysisHash(file);
+  if(hash){const cached=await cachedSongAnalysis(hash);if(cached)return cached;}
+  const result=await fetchEssentiaStudioAnalysis(file);
+  if(hash)saveSongAnalysis(hash,result);
+  return result;
 }
 
 async function fetchEssentiaViaTauri(analysisFile: File): Promise<EssentiaRhythmAnalysis> {

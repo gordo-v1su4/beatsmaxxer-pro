@@ -16,6 +16,7 @@ import type {
   TransportSample,
 } from "$lib/engine/contracts";
 import { fetchEssentiaRhythmAnalysis } from "$lib/audio/essentia";
+import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
 import {
   applyStructureToArrangement,
   arrangementStructureStatus,
@@ -87,7 +88,7 @@ export interface AudioFileLoadOptions {
 
 export type MediaTimelineEvent =
   | 'playing' | 'pause' | 'waiting' | 'stalled'
-  | 'seeking' | 'seeked' | 'timeupdate';
+  | 'seeking' | 'seeked' | 'timeupdate' | 'ended';
 
 export type AudioStopReason =
   | 'operator'
@@ -103,7 +104,7 @@ export function mediaTimelineResyncAction(
   previousTime: number
 ) {
   if (event === 'playing') return { action: 'play', positionSeconds: currentTime } as const;
-  if (event === 'pause' || event === 'waiting' || event === 'stalled') {
+  if (event === 'pause' || event === 'waiting' || event === 'stalled' || event === 'ended') {
     return { action: 'pause', positionSeconds: currentTime } as const;
   }
   if (event === 'seeking' || event === 'seeked') {
@@ -122,6 +123,8 @@ const ACCENT_MODE_INDEX = {
 } as const;
 
 export class AudioEngine implements IAudioEngine {
+  private disposed=false;
+  private unsubscribeTimeline:()=>void;
   private ctx: AudioContext | null = null;
   private analyserFull: AnalyserNode | null = null;
   private analyserBass: AnalyserNode | null = null;
@@ -193,7 +196,22 @@ export class AudioEngine implements IAudioEngine {
   private transportClock = new TransportClock({ bpm: DEFAULT_BPM });
 
   constructor() {
-    audioTimeline.subscribe(this.tick, 0);
+    this.unsubscribeTimeline=audioTimeline.subscribe(this.tick, 0);
+  }
+
+  /** Release the old singleton during development reloads, including detached audio. */
+  async dispose() {
+    if(this.disposed)return;
+    this.disposed=true;
+    this.analysisRequestId++;
+    this.stop();
+    this.unsubscribeTimeline();
+    this.disposeMediaElement();
+    this.pgmSelectionListeners.clear();
+    this.soundTouchNode?.disconnect();this.soundTouchNode=null;this.soundTouchReady=false;
+    this.gainNode?.disconnect();this.gainNode=null;
+    const context=this.ctx;this.ctx=null;
+    if(context&&context.state!=='closed')await context.close().catch(()=>{});
   }
 
   /**
@@ -229,6 +247,7 @@ export class AudioEngine implements IAudioEngine {
   }
 
   async start() {
+    if(get(timingPreparationBlocked))return;
     if (this.activePlaybackStartGeneration !== null) return;
 
     // A decoded upload is the only playable source. Never let a missing or
@@ -322,6 +341,19 @@ export class AudioEngine implements IAudioEngine {
     }
   }
 
+  /** Exports play one range; restore normal song looping when their owner exits. */
+  suspendTrackLooping() {
+    const media=this.mediaElement;
+    if(!media)return ()=>{};
+    const previous=media.loop;let restored=false;
+    media.loop=false;audioTimeline.setLooping(false);
+    return ()=>{
+      if(restored)return;restored=true;
+      if(this.mediaElement!==media)return;
+      media.loop=previous;audioTimeline.setLooping(previous);
+    };
+  }
+
   stop(reason: AudioStopReason = 'operator') {
     this.invalidatePlaybackStart();
     // Flush any coalesced tempo change rather than letting it land on a
@@ -374,9 +406,7 @@ export class AudioEngine implements IAudioEngine {
     this.objectUrl = URL.createObjectURL(file);
     this.attachMediaElement(this.objectUrl, file.name);
     this.prepareUploadedTrack(file.name, options.hostedAnalysis === true);
-    if (options.hostedAnalysis === true) {
-      resetArrangement();
-    }
+    resetArrangement();
     this.uploadedTrackLoadGeneration += 1;
 
     if (options.hostedAnalysis !== true) {
@@ -488,7 +518,7 @@ export class AudioEngine implements IAudioEngine {
       }
     };
     for (const event of [
-      'playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked', 'timeupdate'
+      'playing', 'pause', 'waiting', 'stalled', 'seeking', 'seeked', 'timeupdate', 'ended'
     ] as const) {
       audio.addEventListener(event, resync, { signal: mediaTimelineAbort.signal });
     }
@@ -976,6 +1006,7 @@ export class AudioEngine implements IAudioEngine {
   }
 
   private async ensureContext() {
+    if(this.disposed)return;
     if (this.ctx) return;
 
     /**
@@ -1018,7 +1049,9 @@ export class AudioEngine implements IAudioEngine {
     this.gainNode = this.ctx.createGain();
     this.gainNode.gain.value = this._volume;
 
-    this.soundTouchNode = await createSoundTouchNode(this.ctx);
+    const soundTouchNode = await createSoundTouchNode(this.ctx);
+    if(this.disposed){soundTouchNode?.disconnect();return;}
+    this.soundTouchNode = soundTouchNode;
     this.soundTouchReady = this.soundTouchNode !== null;
     if (this.soundTouchNode) {
       this.soundTouchNode.connect(this.gainNode);
@@ -1275,3 +1308,4 @@ export class AudioEngine implements IAudioEngine {
 }
 
 export const audioEngine = new AudioEngine();
+if(import.meta.hot)import.meta.hot.dispose(()=>{void audioEngine.dispose();});

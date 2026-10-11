@@ -6,14 +6,14 @@ import {
   parseCookie,
   type AccessGateConfig,
 } from "../gate/policy.js";
-import { deleteGatewayObjects, mediaGatewayConfigFromEnv } from "../lib/mediaGateway.js";
+import { deleteGatewayObjects, mediaGatewayConfigFromEnv } from "../_lib/mediaGateway.js";
 import {
   buildStudioMultipartBody,
   parseStudioChunkManifest,
   reassembleStudioChunks,
   STUDIO_MANIFEST_MAX_BYTES,
   validateStudioChunkManifest,
-} from "../lib/studioChunkManifest.js";
+} from "../_lib/studioChunkManifest.js";
 
 export const ANALYSIS_PROXY_ENABLE_ENV = "ESSENTIA_ANALYSIS_ENABLED";
 /** Full MP3 uploads (~7 MiB typical). Vercel may require Pro for bodies above ~4.5 MiB. */
@@ -170,10 +170,6 @@ export function isTrustedSameOriginRequest(request: Pick<
 
   const protocol = requestProtocol(request.forwardedProto);
 
-  // Same-origin GET polls (studio job status) often omit Origin; browsers still
-  // send Sec-Fetch-Site: same-origin.
-  if (request.fetchSite === "same-origin") return true;
-
   if (request.origin) {
     try {
       const origin = new URL(request.origin);
@@ -182,6 +178,10 @@ export function isTrustedSameOriginRequest(request: Pick<
       return false;
     }
   }
+
+  // Same-origin GET polls often omit Origin. When Origin is present, validate
+  // it above rather than allowing fetch metadata to override a mismatch.
+  if (request.fetchSite === "same-origin") return true;
 
   if (request.referer) {
     try {

@@ -104,6 +104,13 @@ export class AudioTimeline {
     this.mutate("source-change", from, to, true);
   }
 
+  /** Change song wrapping without resetting its position, grid or generation. */
+  setLooping(loop:boolean) {
+    const now=this.readContextTime(),position=this.positionAt(now);
+    this.loop=loop;
+    this.reanchor(position,now);
+  }
+
   play(positionSeconds?: number) {
     const now = this.readContextTime();
     const from = this.positionAt(now);

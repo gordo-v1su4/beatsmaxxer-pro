@@ -1,6 +1,7 @@
 import { resolveSectionBounds, sectionIndexAtSeconds } from '$lib/arrangement/sectionBounds';
 import { cutStepAllowedInLoop } from '$lib/arrangement/sequencerLoopGate';
 import { secondsToCutStep, stepSeconds } from '$lib/arrangement/timelineScale';
+import { activeTakeCutAt } from '$lib/arrangement/playbackCut';
 import { arrangementMode, arrangementOverridden, recordOverdub } from '$lib/arrangement/transportMode';
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
@@ -25,7 +26,7 @@ import {
   midiLayers,
   bypassed
 } from '$lib/stores/rack';
-import { manualCutRequests, pgmSource, queuedPgmSource, selectPgmSource } from '$lib/stores/pgm';
+import { manualCutRequests, pgmSource, queuedPgmSource, selectPgmSource, cutImmediate } from '$lib/stores/pgm';
 import {
   crossedSequencerSteps,
   sequencerArmed,
@@ -76,10 +77,12 @@ import {
 } from '$lib/runtime/stutterTrigger';
 import { midiUiOpen } from '$lib/stores/rackUi';
 import { recordFrame, startRenderBudget, stopRenderBudget } from '$lib/runtime/renderBudget';
-import { tickArrangementRecorder } from '$lib/arrangement/recorder';
+import { tickArrangementRecorder, recordingTakeSerial } from '$lib/arrangement/recorder';
 import { audioTimeline, type TimelineFrame } from '$lib/transport';
+import { captureRecalledTakeSection, applyTakeSection } from '$lib/arrangement/takeSnapshot';
 
 let running = false;
+let takeSerialSeen = -1;
 let rafId = 0;
 let unsubscribeTimeline: (() => void) | null = null;
 let unsubscribeTimeSamplerConfig: (() => void) | null = null;
@@ -345,7 +348,9 @@ function runArrangement(frame: TimelineFrame) {
   if (id === trackedSectionId && index === get(activeSectionIndex)) return;
   trackedSectionId = id;
   activeSectionIndex.set(index);
-  if (get(playbackWorkspace) !== 'timing') enterSection(sections[index]!);
+  if (get(arrangementMode)==='rec') void captureRecalledTakeSection(sections[index]!,frame.positionSeconds,frame.bpm).catch(() => {});
+  else if (get(arrangementMode)==='play') applyTakeSection(sections[index]!);
+  else enterSection(sections[index]!);
 }
 
 function runSequencer(frame: TimelineFrame) {
@@ -401,17 +406,23 @@ function runSequencer(frame: TimelineFrame) {
   // driving PGM during a replace take, so every change is the performance.
   // Overdub keeps to hand cuts, since there the timeline's own cuts move PGM.
   const replacing = mode === 'rec' && !get(recordOverdub);
+  const takeChanged=mode==='rec'&&takeSerialSeen!==recordingTakeSerial;
+  takeSerialSeen=recordingTakeSerial;
+  // A loop wrap begins another destructive pass; only this pass's newly
+  // written cuts are protected from the sweep.
+  if (replacing && (generationChanged||takeChanged)) takeSteps.clear();
   let writtenStep: number | null = null;
-  const performed = manualLanded || (replacing && pgmChanged);
+  const performed = manualLanded || (replacing && (pgmChanged || generationChanged || takeChanged));
   if (mode === 'rec' && performed && totalSteps > 0) {
     const slot = currentRackSlotForModule(landedPgm);
     const slotIndex = slot ? rackSlotIndex(slot) : null;
     if (slotIndex != null) {
       writtenStep = secondsToCutStep(frame.positionSeconds, beatGrid, frame.bpm, totalSteps);
       const step = writtenStep;
+      const writtenInPass=takeSteps.has(step);
       takeSteps.add(step);
       cuts.update((list) =>
-        [...list.filter((c) => c.step !== step), { step, slotIndex }].sort((a, b) => a.step - b.step),
+        [...list.filter((c) => c.step !== step || (writtenInPass && c.timeSeconds != null && c.timeSeconds !== frame.positionSeconds)), { step, slotIndex, timeSeconds: frame.positionSeconds }].sort((a, b) => a.step - b.step || (a.timeSeconds??0)-(b.timeSeconds??0)),
       );
     }
   }
@@ -437,6 +448,12 @@ function runSequencer(frame: TimelineFrame) {
   const loop = get(arrangementLoopRegion);
   const top = get(rackTop);
   const bottom = get(rackBottom);
+  if(mode==='play'){
+    sequencerLastStep.set(crossed.currentAbsoluteStep % ARRANGEMENT_STEPS);
+    const current=activeTakeCutAt(cutList,frame.positionSeconds,step=>stepSeconds(step,beatGrid,frame.bpm));
+    if(current){const target=moduleForSlotIndex(top,bottom,current.slotIndex);if(target&&target!==landedPgm)cutImmediate(target);}
+    return;
+  }
   let selected = get(queuedPgmSource) ?? landedPgm;
   for (const step of crossed.absoluteSteps) {
     sequencerLastStep.set(step % ARRANGEMENT_STEPS);
@@ -618,8 +635,12 @@ export function startAppLoop() {
       // Source videos stay registered for Perform, but do not decode or seek
       // during resident Timing playback. The bank owns source-time selection.
       getVideoSourcePort().tick(false);
+      if(frame.playing)runArrangement(frame);
       timingRuntime.tick(frame);
       runSequencer(frame);
+      // Timing has the same PGM occupancy recorder as Perform. Its effects
+      // come from compiled bursts, so it has no shader triggerAge marks.
+      tickArrangementRecorder(frame, [], {});
       webGpuEngine.renderAll(frame);
       return;
     }
