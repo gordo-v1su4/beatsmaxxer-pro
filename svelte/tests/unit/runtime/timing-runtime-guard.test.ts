@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { TimingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { ResidentFrameBank } from '$lib/runtime/timing/ResidentFrameBank';
+import { StreamingFrameSource } from '$lib/runtime/timing/StreamingFrameSource';
 import * as interpolation from '$lib/runtime/timing/interpolation';
 import { videoLayers } from '$lib/stores/rack';
 import { parseTimingSettings, timingSettings, timingStatus, toggleTimingBypass } from '$lib/stores/timing';
@@ -22,9 +23,9 @@ it('keeps a landed manual cut on air through its reset interval during dense MID
   settings.trigger={...settings.trigger,source:'midi',threshold:0,density:100,gapSeconds:.12};
   timingSettings.set(settings);intervalBeats.set(4);
   vi.spyOn(timingSignals,'resolveTimingSignal').mockReturnValue({label:'dense notes',bpm:120,beats:[],duration:10,channels:[{name:'drums',events:Array.from({length:80},(_,i)=>({time:i/8,strength:1}))}]});
-  vi.spyOn(ResidentFrameBank.prototype,'load').mockImplementation(async function(this:ResidentFrameBank){this.duration=10;});
-  vi.spyOn(ResidentFrameBank.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:24,duration:10,decoderDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
-  vi.spyOn(ResidentFrameBank.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
+  vi.spyOn(StreamingFrameSource.prototype,'load').mockImplementation(async function(this:StreamingFrameSource){this.duration=10;});
+  vi.spyOn(StreamingFrameSource.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:24,duration:10,decoderDisposed:false,metadataDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
+  vi.spyOn(StreamingFrameSource.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
   vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
   videoLayers.set({'top-0':{url:'blob:manual0',name:'zero'},'top-1':{url:'blob:manual1',name:'one'}} as never);
   runtime.setActive(true,{} as GPUDevice);
@@ -43,9 +44,9 @@ it('PGM SOURCE starts a deck effect on its actual PGM cut rather than a beat int
   const settings=parseTimingSettings(null);
   settings.scope='global';settings.trigger={...settings.trigger,source:'pgm',threshold:0,rampChance:100};
   timingSettings.set(settings);
-  vi.spyOn(ResidentFrameBank.prototype,'load').mockImplementation(async function(this: ResidentFrameBank){this.duration=10;});
-  vi.spyOn(ResidentFrameBank.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:24,duration:10,decoderDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
-  vi.spyOn(ResidentFrameBank.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
+  vi.spyOn(StreamingFrameSource.prototype,'load').mockImplementation(async function(this: ResidentFrameBank){this.duration=10;});
+  vi.spyOn(StreamingFrameSource.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:24,duration:10,decoderDisposed:false,metadataDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
+  vi.spyOn(StreamingFrameSource.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
   vi.spyOn(interpolation,'identifyInterpolation').mockResolvedValue(1);
   videoLayers.set({'top-0':{url:'blob:pgm0',name:'zero'},'top-1':{url:'blob:pgm1',name:'one'}} as never);
   runtime.setActive(true,{} as GPUDevice);
@@ -75,9 +76,9 @@ it('recovers a failed verification through the explicit clip retry action', asyn
 
 it('blocks a clip whose RIFE identity arrives after loading, and recovers on OFF', async () => {
   timingSettings.set({...parseTimingSettings(null),scope:'deck'});
-  vi.spyOn(ResidentFrameBank.prototype,'load').mockResolvedValue();
-  vi.spyOn(ResidentFrameBank.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:96,duration:10,decoderDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
-  const select = vi.spyOn(ResidentFrameBank.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
+  vi.spyOn(StreamingFrameSource.prototype,'load').mockResolvedValue();
+  vi.spyOn(StreamingFrameSource.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:1,width:10,height:10,fps:96,duration:10,decoderDisposed:false,metadataDisposed:true,decodedFrames:1,uploadedFrames:1,loadMs:0});
+  const select = vi.spyOn(StreamingFrameSource.prototype,'frameAt').mockReturnValue({view:{} as GPUTextureView,pts:0} as never);
   let resolve!: (factor:number)=>void;
   vi.spyOn(interpolation,'identifyInterpolation').mockImplementation(()=>new Promise<number>(r=>resolve=r));
   videoLayers.set({'top-1':{url:'blob:late-rife',name:'clip'} as never});
@@ -95,4 +96,8 @@ it('blocks a clip whose RIFE identity arrives after loading, and recovers on OFF
   runtime.tick(frame);
   expect(get(timingStatus)['top-1'].state).toBe('ready');
   expect(runtime.textureFor('top-1')?.effect).toBe('off');
+  const samples=select.mock.calls.length;
+  runtime.tick({...frame,playing:false});
+  runtime.tick({...frame,playing:false});
+  expect(select.mock.calls.length).toBe(samples+2);
 });

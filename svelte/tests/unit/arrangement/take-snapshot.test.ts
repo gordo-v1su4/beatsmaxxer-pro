@@ -9,10 +9,26 @@ import * as scenes from '$lib/arrangement/sectionScenes';
 import { viewMode, playbackWorkspace } from '$lib/stores/rackUi';
 import { buildTimingSchedule, sampleTimingSchedule, defaultTimingTrigger } from '$lib/runtime/timing/triggers';
 import { defaultClipTiming } from '$lib/runtime/timing/envelope';
-import { videoLayers } from '$lib/stores/rack';
+import { videoLayers,moduleParams } from '$lib/stores/rack';
+import { moduleTriggerSource } from '$lib/stores/midiTrigger';
 
 afterEach(()=>{setArrangementMode('live',0);viewMode.set('perform');resetArrangement();vi.restoreAllMocks();});
 describe('section take reproduction',()=>{
+  test('Perform replays recorded effect settings and sources without inventing a FIRE, then restores the live settings',()=>{
+    const previousParams=get(moduleParams),previousSources=get(moduleTriggerSource);
+    try{
+      resetArrangement();playbackWorkspace.set('perform');
+      moduleParams.set({punch:{mix:15,trig:1}});moduleTriggerSource.set({punch:'audio'});
+      captureTakeSection(0,120);
+      moduleParams.set({punch:{mix:97,trig:4}});moduleTriggerSource.set({punch:'midi'});
+      setArrangementMode('play',0);
+      expect(get(moduleParams).punch).toEqual({mix:15,trig:4});
+      expect(get(moduleTriggerSource).punch).toBe('audio');
+      setArrangementMode('live',0);
+      expect(get(moduleParams).punch).toEqual({mix:97,trig:4});
+      expect(get(moduleTriggerSource).punch).toBe('midi');
+    }finally{moduleParams.set(previousParams);moduleTriggerSource.set(previousSources);}
+  });
   test('records the actual rack when a planned section clip is unavailable',()=>{
     const previous=get(videoLayers);
     try{

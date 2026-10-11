@@ -28,7 +28,7 @@ export function advanceClipTiming(previous: SpeedRampSourceState | null, frame: 
   const partial = travel(fixedBeat,frame.beatPosition);
   let source = reset ? frame.positionSeconds-partial : previous.sourceAtFixedStepSeconds;
   if (!reset) source += travel(fixedBeat-(frame.fixedStepIndex-previous.fixedStepIndex)*frame.fixedStepSeconds/interval,fixedBeat);
-  const rate = rateAt(frame.beatPosition);
+  let rate = rateAt(frame.beatPosition);
   const state = { generation: frame.generation, fixedStepIndex: frame.fixedStepIndex, sourceAtFixedStepSeconds: source };
   let target = source+partial;
   let effectPhase = phase;
@@ -42,7 +42,7 @@ export function advanceClipTiming(previous: SpeedRampSourceState | null, frame: 
     const start=boundaries.slice(0,-1).findLast(b=>b<=beatInCycle+1e-9)??0;
     const repeated = (beatInCycle-start)*interval;
     effectPhase = beatInCycle/cycleBeats;
-    if (config.stutter.mode === 'hold') target = anchor;
+    if (config.stutter.mode === 'hold') { target = anchor; rate = 0; }
     else if (config.stutter.mode === 'jump') {
       // Seeded slices: revisiting a song position does not re-randomize the jump.
       // Avalanche the cycle index: a single LCG step leaves adjacent cycles in

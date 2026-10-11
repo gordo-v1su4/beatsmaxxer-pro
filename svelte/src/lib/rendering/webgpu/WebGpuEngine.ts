@@ -1210,7 +1210,7 @@ export class WebGpuEngine {
       effectMode: 0, hasVideo: view ? 1 : 0,
       externalTextureImported: false, externalTextureBound: false,
       cachedTextureUploaded: false, cachedTextureBound: false,
-      samplePath: selected ? 'resident-frame-bank' : fallbackView ? 'cached-video-texture' : 'unsupported', source: sourceId,
+      samplePath: selected ? selected.samplePath ?? 'resident-frame-bank' : fallbackView ? 'cached-video-texture' : 'unsupported', source: sourceId,
       dimensions: selected ? `${selected.width}x${selected.height}` : null,
       videoSize: selected ? `${selected.width}x${selected.height}` : null,
       frameId: frame?.frameId ?? null, feedback: 'none', mix: 1,
@@ -1225,13 +1225,18 @@ export class WebGpuEngine {
   /** The clip's current video frame as a texture, or null when it has none yet. */
   private timingFallbackView(sourceId: string): GPUTextureView | null {
     const video = videoPool.get(sourceId);
-    if (!this.device || !video || !videoPool.hasReadyFrame(sourceId)) return null;
+    if (!this.device || !video) return null;
+    // A seek temporarily has no new decoded frame; hold this video's last
+    // uploaded texture instead of clearing the picture to black.
+    if (!videoPool.hasReadyFrame(sourceId)) return this.videoTextureCache.cachedView(sourceId, video);
     try {
       return this.videoTextureCache.upload(this.device, sourceId, video);
     } catch {
       return this.videoTextureCache.cachedView(sourceId, video);
     }
   }
+
+  timingVideoFrame(sourceId: string) { return this.timingFallbackView(sourceId); }
 
   getDevice() {
     return this.device;

@@ -12,6 +12,8 @@ import { buildTimingSchedule, sampleTimingSchedule, programTimeline, type Timing
 import type { ClipTiming } from './envelope';
 import { defaultClipTiming } from './envelope';
 import { ResidentFrameBank, ResidentMemoryBudget, ResidentCapacityError } from './ResidentFrameBank';
+import { StreamingFrameSource } from './StreamingFrameSource';
+import { videoPool } from '$lib/media/VideoPool';
 import { advanceClipTiming, timingOutputFrame } from './clock';
 import { identifyInterpolation, meetsSlowMotionFrameRate } from './interpolation';
 import { allowTimingClip, RIFE_RAMP_ONLY } from '$lib/stores/timing';
@@ -25,11 +27,13 @@ import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile, resumeInterpolationJob } from './preparation';
 
 /** Owns resident banks; AppLoop owns time and WebGpuEngine owns presentation. */
+type TimingAsset={bank:ResidentFrameBank|StreamingFrameSource;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null};
 export class TimingRuntime {
-  private assets=new Map<File|string,{bank:ResidentFrameBank;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null}>();
+  private assets=new Map<File|string,TimingAsset>();
+  private originalAssets=new Map<File|string,TimingAsset>();
   private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null;jobId?:string}>();
   private stopSections:(()=>void)|null=null;
-  private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank; clock: SpeedRampSourceState | null; factor: number | null }>();
+  private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank|StreamingFrameSource; clock: SpeedRampSourceState | null; factor: number | null }>();
   private normalized = new WeakMap<ClipTiming, ClipTiming>();
   private selected = new Map<string, TimingTexture>();
   private budget = new ResidentMemoryBudget(DEFAULT_TIMING_BUDGET_GIB * 2 ** 30);
@@ -66,7 +70,9 @@ export class TimingRuntime {
   readonly textureFor = (slot: string) => this.selected.get(slot) ?? null;
   private readonly sourceResidentFactor=(source:File|string)=>{
     const asset=this.assets.get(source);
-    return this.active&&asset?.bank.stats.ready?asset.factor:null;
+    // Only resident sources may land before the new HTML decoder is attached.
+    // Streaming originals retain the existing staged first-frame commit.
+    return this.active&&asset?.bank instanceof ResidentFrameBank&&asset.bank.stats.ready?asset.factor:null;
   };
 
   setActive(active: boolean, device: GPUDevice | null) {
@@ -109,13 +115,20 @@ export class TimingRuntime {
     if (!this.active) return;
     for (const [slot, source] of Object.entries(sources)) {
       if (!source) continue;
-      const current=this.banks.get(slot);
-      if(source.file&&effectiveClipTiming(get(timingSettings),slot).effect==='ramp'&&current?.bank.stats.fps&&!meetsSlowMotionFrameRate(current.bank.stats.fps)){
+      let current=this.banks.get(slot);
+      const original=effectiveClipTiming(get(timingSettings),slot).effect!=='ramp';
+      const sourceFps=current?.bank.stats.fps;
+      if(current&&(current.bank instanceof StreamingFrameSource)!==original){
+        videoPool.get(slot)?.pause();
+        this.banks.delete(slot);this.selected.delete(slot);current=undefined;
+      }
+      if(!original&&get(slotPreparation)[slot]){videoPool.get(slot)?.pause();continue;}
+      if(source.file&&!original&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
         if(!get(slotPreparation)[slot])void mediaRuntime.registerModuleFileClip(slot,source.file);
         continue;
       }
       if(current)continue;
-      const asset=this.assetFor(source);
+      const asset=this.assetFor(source,original);
       const entry = { source, bank: asset.bank, clock: null, factor: asset.factor };
       this.banks.set(slot,entry);
       const stats=asset.bank.stats;
@@ -125,23 +138,26 @@ export class TimingRuntime {
   }
 
   /** Cache by the actual file identity: section swaps reuse decoded GPU frames. */
-  private assetFor(source:VideoLayer|SceneClip){
+  private assetFor(source:VideoLayer|SceneClip,original=false){
     const key=source.file??source.url;
-    const existing=this.assets.get(key);if(existing)return existing;
-    const asset={source,bank:new ResidentFrameBank(this.device!,this.budget),factor:null as number|null,requiredBytes:0,loading:true,error:null as string|null};
-    this.assets.set(key,asset);
+    const cache=original?this.originalAssets:this.assets;
+    const existing=cache.get(key);if(existing)return existing;
+    const asset={source,bank:original?new StreamingFrameSource():new ResidentFrameBank(this.device!,this.budget),factor:null as number|null,requiredBytes:0,loading:true,error:null as string|null};
+    cache.set(key,asset);
     this.publishCapacity();
     const generation=this.generation,height=this.preloadHeight;
     timingSceneStatus.update(s=>({...s,[source.name]:{state:'loading'}}));
-    this.queue=this.queue.catch(()=>{}).then(async()=>{
-      if(generation!==this.generation||this.assets.get(key)!==asset)return;
+    const load=async()=>{
+      if(generation!==this.generation||cache.get(key)!==asset)return;
       try{
-        await asset.bank.load(key,p=>{
+        const progress=(p:import('./ResidentFrameBank').BankProgress)=>{
           if(generation!==this.generation)return;
           for(const [slot,entry] of this.banks)if(entry.bank===asset.bank)timingStatus.update(s=>({...s,[slot]:{state:'loading',...p}}));
           this.publishCapacity();
-        },height);
-        if(generation!==this.generation||this.assets.get(key)!==asset)return;
+        };
+        if(asset.bank instanceof StreamingFrameSource)await asset.bank.load(key);
+        else await asset.bank.load(key,progress,height);
+        if(generation!==this.generation||cache.get(key)!==asset)return;
         const stats=asset.bank.stats;
         asset.factor=await identifyInterpolation(key,stats.fps);
         if(generation!==this.generation)return;
@@ -156,14 +172,20 @@ export class TimingRuntime {
         timingSceneStatus.update(s=>({...s,[source.name]:{state:'error',message}}));
         for(const [slot,entry] of this.banks)if(entry.bank===asset.bank)timingStatus.update(s=>({...s,[slot]:{state:'error',frames:0,total:0,bytes:0,requiredBytes:error instanceof ResidentCapacityError?error.requiredBytes:undefined,message}}));
       }finally{
-        if(generation===this.generation && this.assets.get(key)===asset){asset.loading=false;this.publishCapacity();}
+        if(generation===this.generation && cache.get(key)===asset){asset.loading=false;this.publishCapacity();}
       }
-    });
+    };
+    // Original metadata reads never wait for a ramp's whole-frame GPU upload.
+    // Only resident loading uses GPU error scopes and must remain serial.
+    if(original)void load();else this.queue=this.queue.catch(()=>{}).then(load);
     return asset;
   }
   private prewarmScenes(){
     if(!this.active||!this.device)return;
-    const wanted=new Set<File|string>(Object.values(get(videoLayers)).flatMap(s=>s?[s.file??s.url]:[]));
+    const wanted=new Set<File|string>(),originalWanted=new Set<File|string>();
+    for(const [slot,source] of Object.entries(get(videoLayers)))if(source){
+      (effectiveClipTiming(get(timingSettings),slot).effect==='ramp'?wanted:originalWanted).add(source.file??source.url);
+    }
     const originals=new Set<File>();
     for(const section of get(arrangement)){
       // PLAY recalls the recorded snapshot when present; warm that same scene
@@ -197,16 +219,18 @@ export class TimingRuntime {
           }
           variant=entry.source;
         }
-        wanted.add(variant.file??variant.url);this.assetFor(variant);
+        const original=effectiveClipTiming(settings,slot).effect!=='ramp';
+        (original?originalWanted:wanted).add(variant.file??variant.url);this.assetFor(variant,original);
       }
     }
     for(const file of this.sceneVariants.keys())if(!originals.has(file))this.sceneVariants.delete(file);
     for(const [key,asset] of this.assets)if(!wanted.has(key)){asset.bank.dispose();this.assets.delete(key);}
+    for(const [key,asset] of this.originalAssets)if(!originalWanted.has(key)){asset.bank.dispose();this.originalAssets.delete(key);}
     this.publishCapacity();
   }
 
   private publishCapacity(){
-    const assets=[...this.assets.values()];
+    const assets=[...this.assets.values(),...this.originalAssets.values()];
     timingCacheCapacity.set({usedBytes:this.budget.used,
       requiredBytes:this.budget.used+assets.reduce((total,asset)=>total+asset.requiredBytes,0),
       pending:assets.filter(asset=>asset.loading).length+[...this.sceneVariants.values()].filter(variant=>variant.loading).length});
@@ -218,15 +242,15 @@ export class TimingRuntime {
 
   retry(slot: string) {
     const failed=this.banks.get(slot)?.bank;
-    for(const [key,asset] of this.assets)if(asset.bank===failed){asset.bank.dispose();this.assets.delete(key);}
+    for(const cache of [this.assets,this.originalAssets])for(const [key,asset] of cache)if(asset.bank===failed){asset.bank.dispose();cache.delete(key);}
     for(const [id,entry] of this.banks)if(entry.bank===failed){this.banks.delete(id);this.selected.delete(id);}
     this.reconcile();
   }
 
   async retryScenes() {
     const generation=this.generation;
-    for(const [key,asset] of this.assets)if(asset.error){
-      asset.bank.dispose();this.assets.delete(key);
+    for(const cache of [this.assets,this.originalAssets])for(const [key,asset] of cache)if(asset.error){
+      asset.bank.dispose();cache.delete(key);
       for(const [slot,entry] of this.banks)if(entry.bank===asset.bank){
         this.banks.delete(slot);this.selected.delete(slot);this.plans.delete(slot);this.programDirty=true;
       }
@@ -311,6 +335,7 @@ export class TimingRuntime {
     if(Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`).some(slot=>effectiveTimingTrigger(settings,slot).source==='pgm'))this.updatePgmSignals(frame);
     const live: Record<string,TimingLive> = {};
     for (const [slot, entry] of this.banks) {
+      if(entry.bank instanceof ResidentFrameBank)videoPool.get(slot)?.pause();
       if (!entry.bank.stats.ready || entry.factor === null) continue;
       if(!this.defaults.has(slot))this.defaults.set(slot,defaultClipTiming(slot));
       const stored = effectiveClipTiming(settings,slot);
@@ -361,9 +386,12 @@ export class TimingRuntime {
       const oldClock=continuous?advanceClipTiming(entry.clock,frame,config,entry.bank.duration,seed):null;
       if(oldClock)entry.clock=oldClock.state;else entry.clock=null;
       const clock=oldClock??sampleTimingSchedule(plan.schedule,frame.positionSeconds);
-      if (updateOutput || !this.selected.has(slot)) {
-        const resident = entry.bank.frameAt(clock.sourceSeconds,slot);
-        if (resident) this.selected.set(slot,{view:resident.view,pts:resident.pts,requestedSeconds:clock.sourceSeconds,width:entry.bank.width,height:entry.bank.height,effect:config.effect});
+      if (updateOutput || !this.selected.has(slot) || entry.bank instanceof StreamingFrameSource) {
+        const resident = entry.bank instanceof StreamingFrameSource
+          ? entry.bank.frameAt(clock.sourceSeconds,slot,frame,clock.rate)
+          : entry.bank.frameAt(clock.sourceSeconds,slot);
+        if (resident) this.selected.set(slot,{view:resident.view,pts:resident.pts,requestedSeconds:clock.sourceSeconds,width:entry.bank.width,height:entry.bank.height,effect:config.effect,
+          samplePath:entry.bank instanceof StreamingFrameSource?'cached-video-texture':'resident-frame-bank'});
       }
       const musical=continuous?{state:'continuous' as const}:sampleTimingSchedule(plan.schedule,frame.positionSeconds);
       live[slot] = { sourceTimelineSeconds:clock.sourceTimelineSeconds, phase:clock.phase,rate:clock.rate,sourceSeconds:clock.sourceSeconds,pts:this.selected.get(slot)?.pts??0,
@@ -398,7 +426,7 @@ export class TimingRuntime {
 
   get diagnostics() { return { active:this.active,usedBytes:this.budget.used,budgetBytes:this.budget.limit,capacity:get(timingCacheCapacity),
     preloadHeight:this.preloadHeight,
-    assets:[...this.assets.values()].map(asset=>({name:asset.source.name,loading:asset.loading,requiredBytes:asset.requiredBytes,...asset.bank.stats,
+    assets:[...this.assets.values(),...this.originalAssets.values()].map(asset=>({name:asset.source.name,loading:asset.loading,requiredBytes:asset.requiredBytes,...asset.bank.stats,
       slots:[...this.banks].filter(([,entry])=>entry.bank===asset.bank).map(([slot])=>slot)})),
     signal:this.signal?{label:this.signal.label,missing:this.signal.missing,channels:this.signal.channels.map(c=>({name:c.name,events:c.events.length}))}:null,
     schedules:Object.fromEntries([...this.plans].map(([slot,p])=>[slot,{bursts:p.schedule.bursts.length,first:p.schedule.bursts.slice(0,4)}])),
@@ -408,7 +436,8 @@ export class TimingRuntime {
   private clearBanks() {
     this.generation++;
     for (const asset of this.assets.values()) asset.bank.dispose();
-    this.assets.clear();this.sceneVariants.clear();timingSceneStatus.set({});this.publishCapacity();
+    for (const asset of this.originalAssets.values()) asset.bank.dispose();
+    this.assets.clear();this.originalAssets.clear();this.sceneVariants.clear();timingSceneStatus.set({});this.publishCapacity();
     this.banks.clear(); this.selected.clear(); timingStatus.set({}); timingLive.set({}); this.lastOutput=-1;
     this.plans.clear();
     this.program=[];this.programDirty=true;this.programSelection='';this.triggerSignals.clear();

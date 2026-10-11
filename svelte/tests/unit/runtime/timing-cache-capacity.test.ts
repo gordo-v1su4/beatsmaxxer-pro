@@ -6,8 +6,9 @@ import * as interpolation from '$lib/runtime/timing/interpolation';
 import { arrangement } from '$lib/stores/arrangement';
 import { videoLayers } from '$lib/stores/rack';
 import { parseTimingSettings, timingSettings, timingStatus, timingCacheCapacity } from '$lib/stores/timing';
+import { defaultClipTiming } from '$lib/runtime/timing/envelope';
 
-test('counts cached sections and a shared failed asset once when suggesting capacity', async () => {
+test('counts cached ramp sections and a shared failed asset once when suggesting capacity', async () => {
   const runtime = new TimingRuntime();
   const allocations = new Map<ResidentFrameBank, number>();
   vi.spyOn(ResidentFrameBank.prototype, 'load').mockImplementation(async function (this:ResidentFrameBank, source) {
@@ -27,7 +28,10 @@ test('counts cached sections and a shared failed asset once when suggesting capa
     allocations.delete(this);
   });
   vi.spyOn(interpolation, 'identifyInterpolation').mockResolvedValue(4);
-  timingSettings.set({...parseTimingSettings(null),budgetGiB:120 / 2**30});
+  const settings={...parseTimingSettings(null),budgetGiB:120 / 2**30};
+  // Capacity applies to resident ramps; original streaming clips allocate no bank.
+  settings.clips['top-1']={...defaultClipTiming('top-1'),effect:'ramp'};
+  timingSettings.set(settings);
   arrangement.set([{id:'cache',name:'Cache',bars:1,scene:{slots:{
     'top-0':{url:'blob:old',name:'old'},'top-1':{url:'blob:future',name:'future'},
   }}}] as never);

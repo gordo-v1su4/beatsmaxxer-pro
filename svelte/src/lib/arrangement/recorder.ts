@@ -4,6 +4,7 @@ import {
   arrangementClips,
   arrangementRecording,
   arrangementTriggers,
+  arrangementLoopRegion,
   type ArrangementClip,
 } from '$lib/stores/arrangement';
 import { currentRackSlotForModule, rackSlotIndex } from '$lib/stores/rack';
@@ -20,9 +21,11 @@ let lastTriggerSecondBySlot = new Map<number, number>();
 const prevTriggerActive = new Map<string, boolean>();
 let clipSerial = 0;
 let triggerSerial = 0;
+let lastRecordingTime: number | null = null;
 export let recordingTakeSerial = 0;
 
 export function resetArrangementRecorderState() {
+  lastRecordingTime = null;
   openClipId = null;
   lastPgmSlotIndex = null;
   lastTriggerSecondBySlot.clear();
@@ -108,6 +111,13 @@ export function tickArrangementRecorder(
   const time = frame.positionSeconds;
 
   if (frame.playing) {
+    if (lastRecordingTime !== null && time < lastRecordingTime) {
+      const wrapped = frame.events?.some(event => event.reason === 'loop-wrap') || frame.reason === 'loop-wrap';
+      closeOpenClip(wrapped ? get(arrangementLoopRegion)?.endSeconds ?? lastRecordingTime : lastRecordingTime);
+      lastTriggerSecondBySlot.clear();
+      prevTriggerActive.clear();
+    }
+    lastRecordingTime = time;
     const live = get(pgmSource);
     const slot = currentRackSlotForModule(live);
     const slotIndex = slot ? rackSlotIndex(slot) : null;
