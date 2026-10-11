@@ -60,6 +60,12 @@ export function parseArrangementFile(raw:string) {
     ids.add(s.id);
     if(s.clipGroupId!==undefined&&!groupIds.has(s.clipGroupId))throw new Error('Invalid assigned clip group');
     if(s.deckSnapshot&&(!validBank(s.deckSnapshot.bank)||s.deckSnapshot.timing?.version!==1))throw new Error('Invalid deck snapshot');
+    const params=s.deckSnapshot?.params,sources=s.deckSnapshot?.triggerSources;
+    if(params!==undefined&&(!params||typeof params!=='object'||Array.isArray(params)||Object.keys(params).length>100
+      ||Object.values(params).some(values=>!values||typeof values!=='object'||Array.isArray(values)||Object.keys(values).length>100
+        ||Object.values(values).some(value=>typeof value!=='number'||!Number.isFinite(value)))))throw new Error('Invalid take effect parameters');
+    if(sources!==undefined&&(!sources||typeof sources!=='object'||Array.isArray(sources)||Object.keys(sources).length>100
+      ||Object.values(sources).some(source=>source!=='audio'&&source!=='midi')))throw new Error('Invalid take trigger sources');
     // Analysis timestamps are rounded independently of the decoded audio length.
     for(const t of [s.timeStartS,s.timeEndS])if(t!==undefined&&(!Number.isFinite(t)||t<0||t>doc.song.duration+.05))throw new Error('Invalid section time');
     if(s.timeStartS!==undefined&&s.timeEndS!==undefined&&s.timeEndS<=s.timeStartS)throw new Error('Invalid section time');

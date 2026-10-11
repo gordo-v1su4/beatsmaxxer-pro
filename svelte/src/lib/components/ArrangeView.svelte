@@ -1,6 +1,6 @@
 <script lang="ts">
   import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import ArrangeMonitor from '$lib/components/ArrangeMonitor.svelte';
   import { downloadArrangement, loadArrangementFile, arrangementSaveStatus } from '$lib/arrangement/persistence';
@@ -523,6 +523,34 @@
   let exportOpen = $state(false);
   let exportRange = $state<ExportRange>('song');
   let exportFps = $state<24 | 30 | 60>(24);
+  let exportStartSeconds = $state(0);
+  $effect(() => {
+    if ($exportState.status === 'preparing') {
+      // Capture the requested range before export suspends the loop region.
+      exportStartSeconds = untrack(() => exportRange === 'loop' ? $arrangementLoopRegion?.startSeconds ?? 0 : 0);
+    }
+  });
+  const writingRanges = $derived.by(() => {
+    if ($exportState.status === 'recording') {
+      return [{ start: exportStartSeconds, end: exportStartSeconds + $exportState.elapsedSeconds,
+        targetEnd: exportStartSeconds + $exportState.totalSeconds, exporting: true }];
+    }
+    if ($arrangementMode === 'rec' && $arrangementClips.length) {
+      // Union the actual occupancy intervals so a loop wrap does not erase
+      // already recorded time or paint gaps between separate intervals.
+      const spans = $arrangementClips.map(clip => ({start: clip.startSeconds,
+        end: Math.max(clip.startSeconds, clip.endSeconds ?? $transportDisplay.time), targetEnd: null, exporting: false}))
+        .sort((a, b) => a.start - b.start);
+      const merged: typeof spans = [];
+      for (const span of spans) {
+        const previous = merged.at(-1);
+        if (previous && previous.end >= span.start) previous.end = Math.max(previous.end, span.end);
+        else merged.push(span);
+      }
+      return merged;
+    }
+    return [];
+  });
 
   function formatClock(seconds: number) {
     const s = Math.max(0, Math.floor(seconds));
@@ -1107,6 +1135,14 @@
           {@render sectionOverlay()}
           {@render loopRegionOverlay()}
           {@render beatGridOverlay()}
+          {#each writingRanges as writingRange}
+            {#if writingRange.targetEnd !== null}
+              <span class="arr-writing-target" aria-hidden="true"
+                style="left:{timePct(writingRange.start)}%;width:{Math.max(0, timePct(writingRange.targetEnd) - timePct(writingRange.start))}%"></span>
+            {/if}
+            <span class="arr-writing-fill" class:is-exporting={writingRange.exporting} aria-hidden="true"
+              style="left:{timePct(writingRange.start)}%;width:{Math.max(0, timePct(writingRange.end) - timePct(writingRange.start))}%"></span>
+          {/each}
           {#if showRecordedLanes}
             {#each clipsBySlot[slotIndex] ?? [] as clip (clip.id)}
               <span
@@ -1197,6 +1233,10 @@
 </section>
 
 <style>
+  .arr-writing-target,.arr-writing-fill{position:absolute;top:0;bottom:0;pointer-events:none}
+  .arr-writing-target{background:#c4b5fd0b;border-top:1px solid #c4b5fd55;border-bottom:1px solid #c4b5fd55}
+  .arr-writing-fill{background:repeating-linear-gradient(135deg,#ec929d20 0 5px,#ec929d0d 5px 10px);border-right:2px solid #ec929d}
+  .arr-writing-fill.is-exporting{background:repeating-linear-gradient(135deg,#7fe3d429 0 5px,#7fe3d40d 5px 10px);border-right-color:#7fe3d4}
   .arr-save-status{font:7px var(--font-ui);color:#839399;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 
 

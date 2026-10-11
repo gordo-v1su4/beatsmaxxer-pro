@@ -632,9 +632,8 @@ export function startAppLoop() {
     timingRuntime.setActive(timing, webGpuEngine.getDevice());
     webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);
     if (timing) {
-      // Source videos stay registered for Perform, but do not decode or seek
-      // during resident Timing playback. The bank owns source-time selection.
-      getVideoSourcePort().tick(false);
+      // Timing owns each source: ramps use resident frames, while originals
+      // keep normal browser decoding and one reusable video texture.
       if(frame.playing)runArrangement(frame);
       timingRuntime.tick(frame);
       runSequencer(frame);

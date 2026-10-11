@@ -47,10 +47,11 @@
         {#if preparation.state==='failed'}<small>{preparation.error}</small><button onclick={retry}>RETRY GPU PROCESSING</button>
         {:else if preparation.total>0}<progress value={preparation.completed} max={preparation.total} aria-label="GPU preparation progress"></progress><small>{preparation.completed} / {preparation.total}</small>{/if}
       </div>
-    {:else if $videoLayers[slot] && status?.state!=='ready' && status?.state!=='error' && !$timingClipRestrictions[slot]}
+    {:else if config.effect==='ramp' && $videoLayers[slot] && status?.state!=='ready' && status?.state!=='error' && !$timingClipRestrictions[slot]}
       <div class="clip-preparation" aria-label={`Preparing source ${number} frames`}>
         <span class="preparation-spinner" aria-hidden="true"></span>
-        <span role="status">{status?.state==='loading'?'PREPARING FRAMES':'WAITING TO PREPARE'}</span>
+        <span role="status">{status?.state==='loading'?(config.effect==='ramp'?'LOADING 96 FPS FRAMES':'LOADING ORIGINAL FRAMES'):'WAITING FOR LOCAL FRAME CACHE'}</span>
+        <small>{config.effect==='ramp'?'Prepared Speedramp source → browser GPU':'Original frames → browser GPU · no interpolation'}</small>
         {#if status?.total>0}
           <progress value={status.frames} max={status.total} aria-label={`Source ${number} preparation progress`}></progress>
           <small>{Math.min(100,Math.round(status.frames/status.total*100))}% · {status.frames} / {status.total} FRAMES</small>
@@ -66,6 +67,10 @@
 
 <style>
   .clip-preparation.worker-preparation{z-index:4;pointer-events:auto;padding:10px;text-align:center}.worker-preparation button{background:#253331;color:#a6c9bf;border:0;padding:7px;font:8px var(--font-ui)}
+  .clip-preparation progress{appearance:none;-webkit-appearance:none;border:0;outline:0;border-radius:0;background:#17332f;overflow:hidden}
+  .clip-preparation progress::-webkit-progress-bar{background:#17332f;border:0;border-radius:0}
+  .clip-preparation progress::-webkit-progress-value{background:#14b8a6;border:0;border-radius:0}
+  .clip-preparation progress::-moz-progress-bar{background:#14b8a6;border:0;border-radius:0}
   .clip-preparation{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#0b0e11c9;color:#b5c8cc;font:9px var(--font-ui);letter-spacing:.09em;pointer-events:none}.clip-preparation small{font:8px var(--font-mono);color:#8b9ba4}.clip-preparation progress{width:45%;height:3px;accent-color:#14b8a6}.preparation-spinner{width:14px;height:14px;border:1px solid #46565d;border-top-color:#14b8a6;border-radius:50%;animation:preparation-spin 1s linear infinite}@keyframes preparation-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.preparation-spinner{animation:none}}
   .timing-card.is-on-air{box-shadow:inset 0 0 0 1px var(--timing-accent)}
   .clip-restriction{position:absolute;inset:0;z-index:2;display:grid;place-content:center;padding:10px;background:#101214e8;color:#e4bca3;font:10px/1.5 var(--font-ui);pointer-events:none}

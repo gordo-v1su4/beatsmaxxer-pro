@@ -51,7 +51,8 @@ describe('production Timing source mapping',()=>{
     const config=defaultClipTiming();config.effect='stutter';
     expect(advanceClipTiming(null,frame(.1),config,10).sourceSeconds).toBeCloseTo(.1);
     expect(advanceClipTiming(null,frame(.35),config,10).sourceSeconds).toBeCloseTo(.1);
-    config.stutter.mode='hold';expect(advanceClipTiming(null,frame(.35),config,10).sourceSeconds).toBe(0);
+    config.stutter.mode='hold';const held=advanceClipTiming(null,frame(.35),config,10);
+    expect(held.sourceSeconds).toBe(0);expect(held.rate).toBe(0);
     config.stutter.mode='jump';expect(advanceClipTiming(null,frame(3.35,4),config,10,7).sourceSeconds).toBe(advanceClipTiming(null,frame(3.35,12),config,10,7).sourceSeconds);
     const slices=new Set(Array.from({length:8},(_,i)=>Math.floor(advanceClipTiming(null,frame(i+.01),config,10,7).sourceSeconds/10*8)));
     expect(slices.size).toBeGreaterThan(3);

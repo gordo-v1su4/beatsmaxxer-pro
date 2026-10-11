@@ -23,6 +23,7 @@
   const path = $derived(Array.from({length:2001},(_,i) => `${i?'L':'M'}${x(i/2000).toFixed(2)},${y(rateToY(evaluateRamp(ramp,i/2000))).toFixed(2)}`).join(' '));
   const gridStep=$derived(snap==='64th'?.0625:.125);
   const ticks = $derived(Array.from({length:Math.round(ramp.cycleBeats/gridStep)+1},(_,i)=>i*gridStep));
+  const labelStep = $derived([.5,1,2,4,8,16,32].find(step=>ramp.cycleBeats/step<=Math.max(1,Math.floor(W/40)))??32);
   const anchor = $derived(ramp.points.find(p=>p.id===selected));
   const canRemove=$derived(!!anchor && anchor.id!==ramp.points[0]?.id && anchor.id!==ramp.points.at(-1)?.id);
   function position(e:PointerEvent) {
@@ -89,7 +90,7 @@
   </svg>
   <div class="curve-x-labels" aria-hidden="true">
     {#each ticks as beat (beat)}
-      {@const isLabel=beat>0 && Math.abs(beat*2-Math.round(beat*2))<1e-6}
+      {@const isLabel=beat>0 && (beat===ramp.cycleBeats || Math.abs(beat/labelStep-Math.round(beat/labelStep))<1e-6)}
       {#if isLabel}<span style={`left:${beat/ramp.cycleBeats*100}%;transform:translateX(${beat===ramp.cycleBeats?'-100%':'-50%'})`}>{beat.toFixed(beat%1===0?0:1)}</span>{/if}
     {/each}
   </div>
