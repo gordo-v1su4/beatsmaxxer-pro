@@ -13,6 +13,18 @@ import type { TimelineFrame } from '$lib/transport';
 
 afterEach(()=>{vi.restoreAllMocks();videoLayers.set({});arrangement.set([]);});
 
+test('captures the staged first frame before its first seek invalidates readiness',()=>{
+  const source=new StreamingFrameSource();
+  Object.assign(source,{ready:true,duration:12,width:1280,height:720});
+  const view={} as GPUTextureView;
+  const texture=vi.spyOn(webGpuEngine,'timingVideoFrame').mockReturnValueOnce(view).mockReturnValue(null);
+  const sync=vi.spyOn(videoPool,'syncControlledModule').mockImplementation(()=>{});
+  vi.spyOn(videoPool,'get').mockReturnValue({currentTime:2} as HTMLVideoElement);
+  expect(source.frameAt(2,'top-1',{positionSeconds:0,playing:false,playbackRate:1} as TimelineFrame,1)?.view).toBe(view);
+  expect(texture.mock.invocationCallOrder[0]).toBeLessThan(sync.mock.invocationCallOrder[0]);
+  source.dispose();
+});
+
 test('an original becomes ready without waiting for a resident ramp upload',async()=>{
   const runtime=new TimingRuntime();
   vi.spyOn(ResidentFrameBank.prototype,'load').mockImplementation(()=>new Promise<void>(()=>{}));

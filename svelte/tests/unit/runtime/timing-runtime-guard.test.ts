@@ -96,4 +96,8 @@ it('blocks a clip whose RIFE identity arrives after loading, and recovers on OFF
   runtime.tick(frame);
   expect(get(timingStatus)['top-1'].state).toBe('ready');
   expect(runtime.textureFor('top-1')?.effect).toBe('off');
+  const samples=select.mock.calls.length;
+  runtime.tick({...frame,playing:false});
+  runtime.tick({...frame,playing:false});
+  expect(select.mock.calls.length).toBe(samples+2);
 });

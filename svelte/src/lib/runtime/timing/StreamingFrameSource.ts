@@ -48,9 +48,12 @@ export class StreamingFrameSource {
     const generation = (previous?.generation ?? 0) + (discontinuity ? 1 : 0);
     // Repeat/jump boundaries seek once; ordinary decoding runs continuously.
     // Holding a slice pauses its video instead of advancing at a minimum rate.
+    // Prime the existing texture before the first control seek makes the
+    // freshly attached video's decoded frame temporarily unavailable.
+    const beforeSeek = webGpuEngine.timingVideoFrame(slot);
     videoPool.syncControlledModule(slot, seconds, rate * frame.playbackRate, rate === 0 ? { ...frame, playing: false } : frame, generation);
     this.clocks.set(slot, { time: frame.positionSeconds, target: seconds, rate, generation });
-    const view = webGpuEngine.timingVideoFrame(slot);
+    const view = webGpuEngine.timingVideoFrame(slot) ?? beforeSeek;
     const video = videoPool.get(slot);
     return view && video ? { view, pts: video.currentTime } : null;
   }

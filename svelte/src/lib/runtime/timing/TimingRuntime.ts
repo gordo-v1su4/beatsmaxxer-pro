@@ -119,9 +119,10 @@ export class TimingRuntime {
       const original=effectiveClipTiming(get(timingSettings),slot).effect!=='ramp';
       const sourceFps=current?.bank.stats.fps;
       if(current&&(current.bank instanceof StreamingFrameSource)!==original){
+        videoPool.get(slot)?.pause();
         this.banks.delete(slot);this.selected.delete(slot);current=undefined;
       }
-      if(!original&&get(slotPreparation)[slot])continue;
+      if(!original&&get(slotPreparation)[slot]){videoPool.get(slot)?.pause();continue;}
       if(source.file&&!original&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
         if(!get(slotPreparation)[slot])void mediaRuntime.registerModuleFileClip(slot,source.file);
         continue;
@@ -385,7 +386,7 @@ export class TimingRuntime {
       const oldClock=continuous?advanceClipTiming(entry.clock,frame,config,entry.bank.duration,seed):null;
       if(oldClock)entry.clock=oldClock.state;else entry.clock=null;
       const clock=oldClock??sampleTimingSchedule(plan.schedule,frame.positionSeconds);
-      if (updateOutput || !this.selected.has(slot)) {
+      if (updateOutput || !this.selected.has(slot) || entry.bank instanceof StreamingFrameSource) {
         const resident = entry.bank instanceof StreamingFrameSource
           ? entry.bank.frameAt(clock.sourceSeconds,slot,frame,clock.rate)
           : entry.bank.frameAt(clock.sourceSeconds,slot);
