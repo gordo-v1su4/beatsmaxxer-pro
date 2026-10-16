@@ -36,10 +36,11 @@ test('normalizes stalled capture audio and produces constant-rate video on the s
     expect(config.audio.process).toBeTypeOf('function');
     const audio={timestamp:.92,duration:.06,setTimestamp(value:number){this.timestamp=value;}};
     config.audio.process(audio);config.audio.process(audio);config.audio.process(audio);expect(audio.timestamp).toBeCloseTo(.12);
-    const frame=(timestamp:number):any=>({timestamp,duration:1/24,clone(){return frame(this.timestamp);},setTimestamp(value:number){this.timestamp=value;},setDuration(value:number){this.duration=value;}});
+    const frame=(timestamp:number,content=timestamp):any=>({timestamp,content,duration:1/24,close:vi.fn(),clone(){return frame(this.timestamp,this.content);},setTimestamp(value:number){this.timestamp=value;},setDuration(value:number){this.duration=value;}});
     const output=[0,.5,1,1.5,23/12].flatMap(time=>config.video.process(frame(time))??[]);
     expect(output.map((sample:any)=>sample.timestamp)).toEqual([0,1/24,2/24,3/24,4/24,5/24]);
     expect(output.every((sample:any)=>sample.duration===1/24)).toBe(true);
+    expect(output.slice(0,3).every((sample:any)=>sample.content===0)).toBe(true);
     expect(fixture.audioSamples.every(sample=>sample.close.mock.calls.length===1)).toBe(true);
   }finally{fixture.videoDuration=0;fixture.audioSample=null;fixture.audioSamples=[];}
 });

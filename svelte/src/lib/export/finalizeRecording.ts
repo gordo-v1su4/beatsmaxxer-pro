@@ -8,6 +8,7 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
   const input=new Input({formats:ALL_FORMATS,source:new BlobSource(recording)});
   const output=new Output({format:mp4?new Mp4OutputFormat():new WebMOutputFormat(),target:new BufferTarget()});
   let conversion:Conversion|undefined;
+  let previousFrame:VideoSample|undefined;
   let cancellation:Promise<void>|undefined;
   const abort=()=>{cancellation??=conversion?.cancel();void cancellation?.catch(()=>{});};
   options.signal.addEventListener('abort',abort,{once:true});
@@ -57,11 +58,15 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
       // audio device stalls. Keep video on the captured PCM clock, including
       // real silent audio, and snap the result back to explicit CFR frames.
       const atEnd=sample.timestamp+1/fps>=videoEnd-1e-6;
-      const end=atEnd?Math.ceil(mediaEnd*fps)-1:Math.min(Math.floor(clock.map(sample.timestamp)*fps),Math.ceil(mediaEnd*fps)-1);
       const frames:VideoSample[]=[];
-      while(nextFrame<=end){
-        const frame=sample.clone();frame.setTimestamp(nextFrame++/fps);frame.setDuration(1/fps);frames.push(frame);
-      }
+      const emitUntil=(end:number,source:VideoSample)=>{
+        while(nextFrame/fps<end-1e-6){
+          const frame=source.clone();frame.setTimestamp(nextFrame++/fps);frame.setDuration(1/fps);frames.push(frame);
+        }
+      };
+      emitUntil(Math.min(clock.map(sample.timestamp),mediaEnd),previousFrame??sample);
+      previousFrame?.close();previousFrame=sample.clone();
+      if(atEnd)emitUntil(mediaEnd,previousFrame);
       return frames;
     }:mediaEnd>videoEnd+1e-6?(sample:VideoSample)=>{
       if(padded||sample.timestamp+1/fps<videoEnd-1e-6)return sample;
@@ -86,6 +91,7 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
     if(!buffer?.byteLength)throw new Error('Video finalization returned an empty file.');
     return new Blob([buffer],{type:mp4?'video/mp4':'video/webm'});
   }finally{
+    previousFrame?.close();
     options.signal.removeEventListener('abort',abort);
     try{
       if(cancellation)await cancellation;
