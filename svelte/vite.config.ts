@@ -67,6 +67,9 @@ export default defineConfig(({ mode, command }) => {
 		server: {
 			port: 5174,
 			strictPort: true,
+			// Captures and demo media are generated outside the module graph.
+			// Watching a screenshot while Windows has it locked can kill Vite.
+			watch: { ignored: ['**/.artifacts/**'] },
 			// Tailscale cloud: DEV_HOST=0.0.0.0. Local/Tauri: bind IPv4 explicitly
 			// (default Vite can listen on ::1 only → ERR_CONNECTION_REFUSED on 127.0.0.1).
 			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1',
