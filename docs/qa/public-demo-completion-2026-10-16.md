@@ -41,7 +41,7 @@ The finalizer now compares raw packet timestamps with independently decoded PCM 
 
 ## Automated validation
 
-- Full Linux unit suite after PR review fixes: 962 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
+- Full Linux unit suite after PR review fixes: 966 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
 - Windows unit suite excludes the five pre-existing Linux symlink deployment tests; the full Linux run includes them.
 - Read-only standards/spec reviews completed; all material workflow and export findings were fixed and re-reviewed.
 - `HEADLESS=1 SKIP_UNIT=1 SKIP_BUILD=1 bun run test:local` passed all UI, playback, interaction, stutter, audio, beat and six negative-fixture gates, using a separate loopback QA server. Unit/build results above apply to the same app code. Physical desktop-proof artifacts were explicitly skipped by this headless suite; the custom demo acceptance above used headed server Chrome on the RTX GPU.
