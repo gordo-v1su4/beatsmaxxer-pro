@@ -21,15 +21,18 @@ export function requireEnvKeys(values, keys, source) {
  * @param {string} content @param {string} demoRoot */
 export function withPublicDemoMount(content, demoRoot) {
   assert(/^\/[A-Za-z0-9/_-]+$/.test(demoRoot), 'Invalid public demo directory');
-  const lines = content.split('\n');
+  const lines = content.replace(/\r\n/g, '\n').split('\n');
   const start = lines.findIndex(line => /^  app:\s*$/.test(line));
   assert(start >= 0, 'Managed app service not found');
   let end = start + 1;
   while (end < lines.length && (!lines[end].trim() || lines[end].startsWith('    '))) end++;
   const app = lines.slice(start, end);
   const mount = `      - ${demoRoot}:/app/demo-media:ro`;
-  const existing = app.find(line => line.includes(':/app/demo-media'));
-  assert(!existing || existing === mount, 'Unexpected existing demo mount');
+  const mounts = app.filter(line => line.includes(':/app/demo-media'));
+  const existing = mounts[0];
+  const template = '      - ${DEMO_MEDIA_DIR:-/opt/beatsmaxxer-pro/demo-media}:/app/demo-media:ro';
+  assert(mounts.length <= 1 && (!existing || existing === mount || existing === template), 'Unexpected existing demo mount');
+  if (existing) app[app.indexOf(existing)] = mount;
   if (!existing) {
     const volumes = app.findIndex(line => /^    volumes:\s*$/.test(line));
     if (volumes >= 0) app.splice(volumes + 1, 0, mount);

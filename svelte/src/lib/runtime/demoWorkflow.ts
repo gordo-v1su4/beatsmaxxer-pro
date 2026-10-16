@@ -6,7 +6,8 @@ import { viewMode } from '$lib/stores/rackUi';
 import { timingSettings, parseTimingSettings } from '$lib/stores/timing';
 import { loadTimingBundle } from '$lib/stores/timingSignals';
 import { normalizeStructureAnalysis } from '$lib/audio/structureNormalize';
-import { arrangement, cuts, applySectionBank, applyStructureToArrangement, autoClips, activeSectionIndex, DEFAULT_ARRANGEMENT, protectRestoredArrangement, type SectionScene } from '$lib/stores/arrangement';
+import { arrangement, cuts, applySectionBank, applyStructureToArrangement, autoClips, activeSectionIndex, DEFAULT_ARRANGEMENT, protectRestoredArrangement, resetArrangement, type SectionScene } from '$lib/stores/arrangement';
+import { waitForArrangementRestore } from '$lib/arrangement/persistence';
 import { clipGroups } from '$lib/arrangement/clipGroups';
 import { recallScene } from '$lib/arrangement/sectionScenes';
 import { arrangementMode } from '$lib/arrangement/transportMode';
@@ -77,9 +78,12 @@ export async function loadCompleteDemo(workspace: 'perform' | 'timing' = 'perfor
     timing.trigger = { ...timing.trigger, source: 'midi', channel: 'all', threshold: 0, density: 65, rampChance: 40, repeatStyle: 'energy', gapSeconds: .18, seed: 42 };
     timingSettings.set(timing);
     await loadTimingBundle(analysis, midi, song);
-    // Explicitly rebuild after the song's autosave restore has run.
-    applyStructureToArrangement(normalizeStructureAnalysis(analysis.structure).sections, analysis.beats, analysis.bpm);
     await addClipsToLibrary(clips);
+    await waitForArrangementRestore(audioEngine.getUploadedTrackLoadGeneration(),song.name);
+    // Posters and song metadata may yield to autosave. The explicit demo owns
+    // its layout after that restore; clear its protection before reseeding.
+    resetArrangement();
+    applyStructureToArrangement(normalizeStructureAnalysis(analysis.structure).sections, analysis.beats, analysis.bpm);
     const slots = [...get(rackTop).map((_, i) => `top-${i}`), ...get(rackBottom).map((_, i) => `bottom-${i}`)];
     const scene = (offset: number): SectionScene => ({ slots: Object.fromEntries(slots.map((slot, i) => {
       const file = clips[offset + i % 5]; return [slot, { name: file.name, url: '', file }];

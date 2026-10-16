@@ -845,6 +845,11 @@ export class AudioEngine implements IAudioEngine {
     return this.beatGrid;
   }
 
+  /** Exact source tempo, before the user tempo multiplier and display rounding. */
+  getAnalysisBpm(): number {
+    return this._analysisBpm;
+  }
+
   getUploadedTrackLoadGeneration() {
     return this.uploadedTrackLoadGeneration;
   }
@@ -1227,9 +1232,10 @@ export class AudioEngine implements IAudioEngine {
   }
 
   /** Apply locally supplied rhythm only after the caller verifies its matching song. */
-  applyPreparedRhythm(analysis: {bpm:number;beats:number[];onsets:number[];duration:number}) {
+  applyPreparedRhythm(analysis: {bpm:number;beats:number[];onsets:number[];duration:number;keyIndex?:number}) {
     if(!Number.isFinite(analysis.bpm)||analysis.bpm<=0||!Number.isFinite(analysis.duration)||analysis.duration<=0||analysis.beats.length<2||analysis.beats.some((b,i)=>!Number.isFinite(b)||b<0||(i>0&&b<=analysis.beats[i-1])))throw new Error('Invalid prepared song grid');
-    this.applyRhythmAnalysis({...analysis,keyIndex:0,confidence:0});
+    if(analysis.keyIndex!==undefined&&(!Number.isInteger(analysis.keyIndex)||analysis.keyIndex<0||analysis.keyIndex>11))throw new Error('Invalid prepared song key');
+    this.applyRhythmAnalysis({...analysis,keyIndex:analysis.keyIndex??0,confidence:0});
   }
 
   private applyRhythmAnalysis(

@@ -2,9 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, utimes, access, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { RELEASE_MARKER, RELEASE_OWNER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache, withPublicDemoMount } from '../../../../scripts/deploySupport.mjs';
 
 describe('deployment safety', () => {
+  it('normalizes the committed demo mount template to the directory actually verified by deployment', () => {
+    const template = readFileSync(new URL('../../../../infra/app-vm/dockhand-compose.yaml', import.meta.url), 'utf8');
+    for (const root of ['/opt/beatsmaxxer-pro/demo-media', '/srv/reviewed-demo']) {
+      const result = withPublicDemoMount(template, root);
+      expect(result).toContain(`      - ${root}:/app/demo-media:ro`);
+      expect(result).not.toContain('${DEMO_MEDIA_DIR:-');
+      expect(withPublicDemoMount(result, root)).toBe(result);
+      expect(() => withPublicDemoMount(result.replace(':/app/demo-media:ro', ':/app/demo-media:rw'), root)).toThrow('Unexpected existing demo mount');
+      expect(() => withPublicDemoMount(result.replace('    volumes:', `    volumes:\n      - ${root}:/app/demo-media:ro`), root)).toThrow('Unexpected existing demo mount');
+      expect(() => withPublicDemoMount(template.replace('${DEMO_MEDIA_DIR:-', '${UNREVIEWED:-'), root)).toThrow('Unexpected existing demo mount');
+    }
+  });
   it('adds one read-only demo mount without changing worker services or existing app volumes', () => {
     const original = 'name: beatsmaxxer-pro\nservices:\n  app:\n    image: app:old\n    volumes:\n      - old-data:/work\n    environment:\n      APP_ORIGIN: ${APP_ORIGIN}\n  worker:\n    volumes:\n      - queue:/work\n';
     const next = withPublicDemoMount(original, '/opt/beatsmaxxer-pro/demo-media');

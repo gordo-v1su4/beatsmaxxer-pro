@@ -10,6 +10,18 @@ import { clipGroups,type ClipGroup } from './clipGroups';
 
 export const arrangementSaveStatus=writable('');
 export const arrangementMissingClips=writable<string[]>([]);
+const restoredSong=writable<{generation:number;name:string}|null>(null);
+
+/** Explicit workflow replacement waits until this song's autosave decision is complete. */
+export function waitForArrangementRestore(generation:number,name:string,timeoutMs=15000):Promise<void> {
+  const ready=()=>{const song=get(restoredSong);return song?.generation===generation&&song.name===name;};
+  if(ready())return Promise.resolve();
+  return new Promise((resolve,reject)=>{
+    let unsubscribe=()=>{};
+    const timer=setTimeout(()=>{unsubscribe();reject(new Error('Song metadata or arrangement restore did not finish. Try loading the workflow again.'));},timeoutMs);
+    unsubscribe=restoredSong.subscribe(()=>{if(ready()){clearTimeout(timer);unsubscribe();resolve();}});
+  });
+}
 const statusWithMissing=(message:string)=>get(arrangementMissingClips).length?`${message} · Missing clips: ${get(arrangementMissingClips).join(', ')}`:message;
 export interface SavedArrangement { version: 1; song: { name: string; duration: number }; sections: unknown[]; cuts: Cut[]; clipGroups?:unknown[] }
 const songKey=(name:string,duration:number)=>`beatsmaxxer.arrangement.v1:${name}:${duration.toFixed(3)}`;
@@ -98,6 +110,7 @@ export function downloadArrangement() {
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 export function installArrangementPersistence() {
+  restoredSong.set(null);
   let key='',generation=-1,loading=false,timer:ReturnType<typeof setTimeout>|undefined;
   const save=()=>{
     if(loading||!key)return;
@@ -115,11 +128,12 @@ export function installArrangementPersistence() {
     if(next===key&&generation===nextGeneration)return;
     clearTimeout(timer);key=next;generation=nextGeneration;
     arrangementMissingClips.set([]);
-    if(!key){arrangementSaveStatus.set('');return;}
+    if(!key){restoredSong.set(null);arrangementSaveStatus.set('');return;}
     loading=true;clipGroups.set([]);
     try{const saved=localStorage.getItem(key);if(saved)loadArrangementFile(saved);}
     catch(e){arrangementSaveStatus.set(e instanceof Error?e.message:String(e));}
     loading=false;
+    restoredSong.set({generation:nextGeneration,name:song.trackName});
   }),arrangement.subscribe(save),cuts.subscribe(save),clipGroups.subscribe(save),videoLayers.subscribe(reconnect),clipLibrary.subscribe(reconnect)];
   function reconnect(){
     if(!get(arrangementMissingClips).length||get(arrangementMode)!=='live')return;

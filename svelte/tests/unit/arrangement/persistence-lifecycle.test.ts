@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { get } from 'svelte/store';
 import { arrangement, cuts, resetArrangement, applyStructureToArrangement } from '$lib/stores/arrangement';
-import { arrangementMissingClips, arrangementSaveStatus, installArrangementPersistence, loadArrangementFile, parseArrangementFile, serializeArrangement } from '$lib/arrangement/persistence';
+import { arrangementMissingClips, arrangementSaveStatus, installArrangementPersistence, loadArrangementFile, parseArrangementFile, serializeArrangement, waitForArrangementRestore } from '$lib/arrangement/persistence';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { clipLibrary } from '$lib/stores/clipLibrary';
 import { videoLayers } from '$lib/stores/rack';
@@ -28,6 +28,25 @@ afterEach(()=>{
 });
 
 describe('arrangement persistence lifecycle',()=>{
+  test('explicit workflow replacement waits for delayed metadata and supersedes a protected autosave',async()=>{
+    arrangement.update(list=>list.map(section=>({...section,name:'Old saved verse'})));
+    storage.set(key(),serializeArrangement('song.mp3',30));resetArrangement();
+    setSong('',0);stop=installArrangementPersistence();
+    let ready=false;
+    const restored=waitForArrangementRestore(generation,'song.mp3').then(()=>{ready=true;});
+    await Promise.resolve();expect(ready).toBe(false);
+    setSong();await restored;
+    expect(get(arrangement)[0].name).toBe('Old saved verse');
+    resetArrangement();
+    applyStructureToArrangement([{start:0,end:15,label:'verse',duration:15,energy:1},{start:15,end:30,label:'chorus',duration:15,energy:1}],[],120);
+    expect(get(arrangement).some(section=>section.kind==='chorus')).toBe(true);
+    await expect(waitForArrangementRestore(generation,'song.mp3')).resolves.toBeUndefined();
+  });
+  test('an unready song restore times out rather than silently replacing unknown state',async()=>{
+    setSong('',0);stop=installArrangementPersistence();
+    const pending=expect(waitForArrangementRestore(generation,'song.mp3',100)).rejects.toThrow('Song metadata');
+    await vi.advanceTimersByTimeAsync(100);await pending;
+  });
   test('restores original library media instead of a same-name interpolated live ramp',()=>{
     const original=new File(['original 24 FPS media'],'clip.mp4');
     const interpolated=new File(['derived 96 FPS media'],'clip.mp4');

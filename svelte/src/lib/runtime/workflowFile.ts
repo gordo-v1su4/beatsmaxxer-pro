@@ -12,6 +12,7 @@ import { playbackWorkspace, viewMode } from '$lib/stores/rackUi';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { loadedDemo, loadCompleteDemo, fetchDemoCatalog, workflowLoadStatus } from './demoWorkflow';
 import { canPlaceInRow, getModuleDef } from '$lib/modules/catalog';
+import { captureWorkflowSignals, parseWorkflowSignals, restoreWorkflowSignals } from './workflowSignals';
 
 function validateModuleBank(bank: { top: string[]; bottom: string[] }) {
   const ids = [...bank.top, ...bank.bottom];
@@ -28,7 +29,7 @@ export function serializeWorkflow() {
   const doc = JSON.parse(serializeArrangement(song.trackName, song.duration));
   const scene = captureScene(get(videoLayers));
   doc.workflow = {
-    version: 1, workspace: get(playbackWorkspace),
+    version: 1, workspace: get(playbackWorkspace), signals: captureWorkflowSignals(),
     perform: { clipOrder: get(autoRandom) ? 'random' : get(linearOrder) ? 'linear' : 'hold', intervalBeats: get(intervalBeats), feel: get(feel), autoClips: get(autoClips) },
     demoId: loadedDemo?.generation === audioEngine.getUploadedTrackLoadGeneration() ? loadedDemo.id : undefined,
     live: { bank: { top: get(rackTop), bottom: get(rackBottom) }, timing: get(timingSettings),
@@ -44,6 +45,7 @@ export function parseWorkflow(raw: string) {
   if (!settings || settings.version !== 1 || !['perform', 'timing'].includes(settings.workspace)
     || (settings.demoId !== undefined && settings.demoId !== 'redline-complete-v1')
     || settings.live?.timing?.version !== 1) throw new Error('Unsupported workflow file. Use Load Arrangement for an arrangement-only file.');
+  const signals=parseWorkflowSignals(settings.signals);
   const perform = settings.perform;
   if (perform !== undefined && (!perform || !['hold', 'linear', 'random'].includes(perform.clipOrder)
     || ![1, 2, 4, 8, 16, 32].includes(perform.intervalBeats) || ![0, 1, 2].includes(perform.feel)
@@ -58,7 +60,7 @@ export function parseWorkflow(raw: string) {
     validateModuleBank(section.bank);
     if (section.deckSnapshot) validateModuleBank(section.deckSnapshot.bank);
   }
-  return { ...parsed, settings, live: live.sections[0], raw };
+  return { ...parsed, settings, signals, live: live.sections[0], raw };
 }
 
 export async function loadWorkflowFile(raw: string) {
@@ -74,6 +76,7 @@ export async function loadWorkflowFile(raw: string) {
   }
   // Resolve names again after the public demo has populated the clip library.
   const resolved = parseWorkflow(raw), snapshot = resolved.live.deckSnapshot!;
+  if(resolved.signals)restoreWorkflowSignals(resolved.signals);
   loadArrangementFile(raw);
   timingSettings.set(snapshot.timing);
   if (snapshot.params) moduleParams.set(snapshot.params);
@@ -91,8 +94,10 @@ export async function loadWorkflowFile(raw: string) {
     await Promise.all(emptySlots.map(slot => mediaRuntime.removeModuleClip(slot)));
   }
   const recalled = await recallScene(snapshot.scene);
-  if (recalled.failed.length) arrangementSaveStatus.set(`Workflow loaded · relink missing clips: ${recalled.failed.join(', ')}`);
-  workflowLoadStatus.set(recalled.failed.length ? 'Workflow loaded · add missing originals to CLIPS, then load this workflow again' : 'Workflow loaded · sections, banks, cuts and settings restored');
+  const missing=[...new Set([...resolved.missing,...recalled.failed])];
+  if (missing.length) arrangementSaveStatus.set(`Workflow loaded · relink missing clips: ${missing.join(', ')}`);
+  const legacySignalsMissing=!resolved.signals&&!resolved.settings.demoId&&(resolved.settings.workspace==='timing'&&!['pgm','beat','continuous'].includes(snapshot.timing.trigger.source)||Object.values(snapshot.triggerSources??{}).includes('midi'));
+  workflowLoadStatus.set(missing.length ? 'Workflow loaded · add missing originals to CLIPS, then load this workflow again' : legacySignalsMissing ? 'Workflow loaded · import matching MIDI or analysis; this older file has no trigger events' : 'Workflow loaded · sections, banks, cuts and settings restored');
   return resolved;
 }
 
