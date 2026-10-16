@@ -1,4 +1,5 @@
-import { ALL_FORMATS, AudioSampleSink, BlobSource, BufferTarget, Conversion, Input, Mp4OutputFormat, Output, VideoSample, WebMOutputFormat } from 'mediabunny';
+import { ALL_FORMATS, AudioSampleSink, BlobSource, BufferTarget, Conversion, EncodedPacketSink, Input, Mp4OutputFormat, Output, VideoSample, WebMOutputFormat } from 'mediabunny';
+import { CaptureClock } from './captureClock';
 
 /** Canvas capture is variable-rate even when captureStream receives an FPS. */
 export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{signal:AbortSignal;onProgress:(progress:number)=>void}):Promise<Blob>{
@@ -19,8 +20,43 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
       if(last){try{mediaEnd=Math.max(mediaEnd,last.timestamp+last.duration);}finally{last.close();}}
     }
     options.signal.throwIfAborted();
+    const clock=new CaptureClock();
+    const audioDurations:number[]=[];
+    let audioStart=0;
+    if(audioTrack){
+      for await(const sample of new AudioSampleSink(audioTrack).samples()){
+        try{
+          options.signal.throwIfAborted();
+          if(!audioDurations.length)audioStart=sample.timestamp;
+          audioDurations.push(sample.duration);
+        }finally{sample.close();}
+      }
+      // The decoder has already made PCM continuous; the demuxer's packet
+      // durations may include capture gaps. Pair raw PTS with decoded durations.
+      let index=0;
+      for await(const packet of new EncodedPacketSink(audioTrack).packets(undefined,undefined,{metadataOnly:true})){
+        options.signal.throwIfAborted();
+        if(index>=audioDurations.length)throw new Error('Audio capture packets could not be synchronized. Try exporting again.');
+        clock.add(packet.timestamp,audioDurations[index++]);
+      }
+      if(index!==audioDurations.length)throw new Error('Audio capture samples could not be synchronized. Try exporting again.');
+    }
+    options.signal.throwIfAborted();
+    if(clock.drifted)mediaEnd=clock.end;
     let padded=false;
-    const process=mediaEnd>videoEnd+1e-6?(sample:VideoSample)=>{
+    let nextFrame=0;
+    const process=clock.drifted?(sample:VideoSample)=>{
+      // MediaRecorder can timestamp audio by wall time while an overloaded
+      // audio device stalls. Keep video on the captured PCM clock, including
+      // real silent audio, and snap the result back to explicit CFR frames.
+      const atEnd=sample.timestamp+1/fps>=videoEnd-1e-6;
+      const end=atEnd?Math.ceil(mediaEnd*fps)-1:Math.min(Math.floor(clock.map(sample.timestamp)*fps),Math.ceil(mediaEnd*fps)-1);
+      const frames:VideoSample[]=[];
+      while(nextFrame<=end){
+        const frame=sample.clone();frame.setTimestamp(nextFrame++/fps);frame.setDuration(1/fps);frames.push(frame);
+      }
+      return frames;
+    }:mediaEnd>videoEnd+1e-6?(sample:VideoSample)=>{
       if(padded||sample.timestamp+1/fps<videoEnd-1e-6)return sample;
       padded=true;sample.setDuration(1/fps);
       const frames=[sample];
@@ -31,7 +67,9 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
       }
       return frames;
     }:undefined;
-    conversion=await Conversion.init({input,output,video:{frameRate:fps,bitrate:fps===60?16000000:10000000,process}});
+    let audioTime=audioStart;
+    conversion=await Conversion.init({input,output,video:{frameRate:fps,bitrate:fps===60?16000000:10000000,process},
+      audio:clock.drifted?{process:sample=>{sample.setTimestamp(audioTime);audioTime+=sample.duration;return sample;}}:undefined});
     options.signal.throwIfAborted();
     if(!conversion.isValid||conversion.discardedTracks.length)throw new Error('This browser cannot finalize all recorded audio/video tracks. No incomplete export was saved.');
     conversion.onProgress=progress=>options.onProgress(Math.max(0,Math.min(1,progress)));

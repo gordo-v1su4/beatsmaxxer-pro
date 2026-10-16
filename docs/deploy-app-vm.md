@@ -55,6 +55,9 @@ the private user-upload and GPU job APIs. Package the existing verified song,
 cached analysis/MIDI and ten original clips with
 `bun scripts/prepare-demo-media.ts <benchmark-directory> <test-media-directory> <output-directory>`.
 This copies files and verifies the song hash; it performs no interpolation.
+The reviewed metadata lives in `svelte/src/lib/runtime/publicDemo.json`.
+Packaging, browser loading and deployment reject a different catalog; update
+that source file deliberately when reviewing a replacement demo bundle.
 
 Publish the resulting directory on VM100 at `/opt/beatsmaxxer-pro/demo-media`
 (or set `DEMO_MEDIA_DIR` in the private deploy configuration). The managed app

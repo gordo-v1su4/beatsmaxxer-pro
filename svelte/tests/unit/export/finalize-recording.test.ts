@@ -1,14 +1,34 @@
 import {expect,test,vi} from 'vitest';
 
-const fixture=vi.hoisted(()=>({dispose:vi.fn(),init:vi.fn(),cancelOutput:vi.fn(),videoDuration:0,audioSample:null as any}));
+const fixture=vi.hoisted(()=>({dispose:vi.fn(),init:vi.fn(),cancelOutput:vi.fn(),videoDuration:0,audioSample:null as any,audioSamples:[] as any[]}));
 vi.mock('mediabunny',()=>({
   ALL_FORMATS:[],BlobSource:class{},BufferTarget:class{buffer=new ArrayBuffer(8);},
   Input:class{dispose=fixture.dispose;async getPrimaryVideoTrack(){return {computeDuration:async()=>fixture.videoDuration};}async getPrimaryAudioTrack(){return {computeDuration:async()=>fixture.audioSample?.timestamp??0};}},
-  AudioSampleSink:class{async getSample(){return fixture.audioSample;}},
+  AudioSampleSink:class{async getSample(){return fixture.audioSample;}async *samples(){yield* fixture.audioSamples;}},
+  EncodedPacketSink:class{async *packets(){yield* fixture.audioSamples;}},
   Output:class{target={buffer:new ArrayBuffer(8)};cancel=fixture.cancelOutput;},
   Mp4OutputFormat:class{},WebMOutputFormat:class{},Conversion:{init:fixture.init},
 }));
 import {finalizeRecording} from '$lib/export/finalizeRecording';
+
+test('normalizes stalled capture audio and produces constant-rate video on the same clock',async()=>{
+  vi.clearAllMocks();fixture.videoDuration=2;
+  fixture.audioSamples=[0,.06,.92,.98].map(timestamp=>({timestamp,duration:.06,close:vi.fn()}));
+  fixture.audioSample={timestamp:.98,duration:.06,close:vi.fn()};
+  fixture.init.mockResolvedValue({state:'done',isValid:true,discardedTracks:[],execute:vi.fn(async()=>{}),cancel:vi.fn()});
+  try{
+    await finalizeRecording(new Blob(['recording']),24,{signal:new AbortController().signal,onProgress:()=>{}});
+    const config=fixture.init.mock.calls[0][0];
+    expect(config.audio.process).toBeTypeOf('function');
+    const audio={timestamp:.92,duration:.06,setTimestamp(value:number){this.timestamp=value;}};
+    config.audio.process(audio);config.audio.process(audio);config.audio.process(audio);expect(audio.timestamp).toBeCloseTo(.12);
+    const frame=(timestamp:number):any=>({timestamp,duration:1/24,clone(){return frame(this.timestamp);},setTimestamp(value:number){this.timestamp=value;},setDuration(value:number){this.duration=value;}});
+    const output=[0,.5,1,1.5,23/12].flatMap(time=>config.video.process(frame(time))??[]);
+    expect(output.map((sample:any)=>sample.timestamp)).toEqual([0,1/24,2/24,3/24,4/24,5/24]);
+    expect(output.every((sample:any)=>sample.duration===1/24)).toBe(true);
+    expect(fixture.audioSamples.every(sample=>sample.close.mock.calls.length===1)).toBe(true);
+  }finally{fixture.videoDuration=0;fixture.audioSample=null;fixture.audioSamples=[];}
+});
 
 test('keeps constant-rate video frames through the final decoded audio sample',async()=>{
   vi.clearAllMocks();fixture.videoDuration=1;
