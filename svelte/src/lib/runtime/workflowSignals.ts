@@ -64,6 +64,7 @@ export function parseWorkflowSignals(raw: unknown): WorkflowSignals | undefined 
 }
 
 export function restoreWorkflowSignals(data: WorkflowSignals) {
+  audioEngine.cancelPendingAnalysis();
   if (data.rhythm) audioEngine.applyPreparedRhythm(data.rhythm);
   timingInput.set(data.timing ? { ...structuredClone(data.timing), generation: audioEngine.getUploadedTrackLoadGeneration() } : null);
   restoreMidiChannels(structuredClone(data.channels), data.activeChannel);

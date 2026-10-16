@@ -1231,6 +1231,17 @@ export class AudioEngine implements IAudioEngine {
     );
   }
 
+  /** Saved workflows take ownership of controls before an older analysis settles. */
+  cancelPendingAnalysis() {
+    // Keep the loaded media/generation, but discard both success and failure
+    // callbacks from analysis that preceded an explicit workflow restoration.
+    this.analysisRequestId += 1;
+    if (this._analysisStatus === 'analyzing') {
+      this._analysisStatus = 'fallback';
+      arrangementStructureStatus.set('idle');
+    }
+  }
+
   /** Apply locally supplied rhythm only after the caller verifies its matching song. */
   applyPreparedRhythm(analysis: {bpm:number;beats:number[];onsets:number[];duration:number;keyIndex?:number}) {
     if(!Number.isFinite(analysis.bpm)||analysis.bpm<=0||!Number.isFinite(analysis.duration)||analysis.duration<=0||analysis.beats.length<2||analysis.beats.some((b,i)=>!Number.isFinite(b)||b<0||(i>0&&b<=analysis.beats[i-1])))throw new Error('Invalid prepared song grid');

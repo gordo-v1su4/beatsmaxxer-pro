@@ -158,6 +158,7 @@ test('workflow preserves exact source rhythm and audio controls despite display 
   const raw=serializeWorkflow(),doc=parseWorkflow(raw);
   expect(doc.signals?.rhythm?.bpm).toBe(125.39);
   const rhythm=vi.spyOn(audioEngine,'applyPreparedRhythm').mockImplementation(()=>{});
+  const cancelAnalysis=vi.spyOn(audioEngine,'cancelPendingAnalysis');
   const tempo=vi.spyOn(audioEngine,'setTempo').mockImplementation(()=>{});
   const pitch=vi.spyOn(audioEngine,'setPitch').mockImplementation(()=>{});
   const volume=vi.spyOn(audioEngine,'setVolume').mockImplementation(()=>{});
@@ -165,6 +166,8 @@ test('workflow preserves exact source rhythm and audio controls despite display 
   vi.mocked(audioEngine.getSoundTouchState).mockReturnValue({...sound,keySemitones:0});
   vi.spyOn(mediaRuntime,'removeModuleClip').mockResolvedValue();
   await loadWorkflowFile(raw);
+  expect(cancelAnalysis).toHaveBeenCalledOnce();
+  expect(cancelAnalysis.mock.invocationCallOrder[0]).toBeLessThan(rhythm.mock.invocationCallOrder[0]);
   expect(rhythm).toHaveBeenCalledWith({bpm:125.39,beats:[0,.4785,.957],onsets:[1,2],duration:30,keyIndex:7});
   expect(tempo).toHaveBeenCalledWith(1.35);expect(pitch).toHaveBeenCalledWith(2);expect(volume).toHaveBeenCalledWith(.42);expect(key).toHaveBeenCalledWith(-3);
 });
