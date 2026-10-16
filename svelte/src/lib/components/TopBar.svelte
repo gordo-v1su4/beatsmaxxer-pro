@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { serviceUnlockRequested, hostedServicesUnlocked, requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
@@ -227,6 +228,7 @@
     const file = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
+    if (!await requireHostedAccess()) return;
 
     // Shared with the phone drawer, so both shells answer this identically. It
     // also closes a gap here: a build with hosted analysis switched off used to
@@ -290,7 +292,7 @@
       {td.playing ? 'STOP' : 'PLAY'}
     </button>
 
-    <button bind:this={songButton} type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
+    <button bind:this={songButton} type="button" onclick={() => openProtectedFilePicker(audioInput)} class="transport-btn" data-active={td.usingUploadedTrack}>
       <Upload size={10} /> SONG
     </button>
 
@@ -310,7 +312,7 @@
     {#if onLoadClips}
       <button
         type="button"
-        onclick={() => clipsInput?.click()}
+        onclick={() => openProtectedFilePicker(clipsInput)}
         title="Load video clips into rack slots ({loadedClipCount}/{clipSlotCount} filled)"
         class="transport-btn"
         data-clips={loadedClipCount > 0}
@@ -485,6 +487,9 @@
         <TopBtn label="SAVE WORKFLOW…" title="Save sections, cuts, clip banks and settings; media files are referenced" disabled={workflowLocked || !td.trackName} onclick={() => { try { downloadWorkflow(); openMenu = null; } catch (error) { workflowError = String(error); } }} />
         <TopBtn label="LOAD WORKFLOW…" title="Restore a workflow file; public demo media loads automatically" disabled={workflowLocked} onclick={() => workflowInput.click()} />
         <p class="workflow-menu-note">Save your originals alongside the workflow file.</p>
+        {#if !$hostedServicesUnlocked}
+          <TopBtn label="UNLOCK HOSTED SERVICES…" title="Enter an access code for hosted uploads, analysis and GPU preparation" onclick={() => { openMenu = null; serviceUnlockRequested.set(true); }} />
+        {/if}
       </TopMenu>
     {#if workflowError || $workflowLoadStatus}
       <div class="workflow-feedback" role="status" aria-live="polite">

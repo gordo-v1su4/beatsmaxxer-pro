@@ -4,6 +4,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { handleMediaProxy } from '../../../../api/media/index';
 import { ACCESS_COOKIE_NAME, mintSessionToken } from '../../../../api/gate/policy';
 import { workerToken } from '../../../../media-worker/auth';
+import { createHash } from 'node:crypto';
+import catalog from '../../../src/lib/runtime/publicDemo.json';
+import { INTERPOLATION_PROFILE } from '../../../../api/_lib/interpolationContract';
 
 const env={NODE_ENV:'production',APP_ACCESS_PIN:'test-pin',INTERPOLATION_WORKER_URL:'https://worker.invalid/',MEDIA_GATEWAY_URL:'https://media.invalid',MEDIA_GATEWAY_TOKEN:'fixture-gateway-token',MEDIA_GATEWAY_BUCKET:'beatsmaxxer-pro',MEDIA_GATEWAY_USER_ID:'beatsmaxxer-pro'};
 const id='a'.repeat(64);
@@ -15,6 +18,34 @@ function response(){
  return res;
 }
 afterEach(()=>vi.unstubAllGlobals());
+const demoClip = catalog.clips[0];
+const demoId = createHash('sha256').update(`${INTERPOLATION_PROFILE}:${demoClip.sha256}`).digest('hex');
+const demoJob = () => ({ id: demoId, state: 'ready', profile: INTERPOLATION_PROFILE,
+ source: {sha256: demoClip.sha256, uploadId:'private-upload-id'},
+ artifact:{fps:96,factor:4,duration:1,model:'rife-v4.6',engine:'rife-cuda-nvcodec-2.2.3',frames:96,sourceFps:24,width:320,height:180,objectKey:'demo-render.mp4',url:'https://media.invalid/demo.mp4',sha256:'b'.repeat(64)} });
+it('allows only an approved ready demo render without a session, stripping upload metadata',async()=>{
+ const fetcher=vi.fn(async()=>Response.json(demoJob()));vi.stubGlobal('fetch',fetcher);const res=response();
+ await handleMediaProxy(request('','GET',{cookie:''}),res as unknown as ServerResponse,'demo/jobs/'+demoId,env);
+ expect(res.statusCode).toBe(200);expect(JSON.parse(res.body).source).toEqual({sha256:demoClip.sha256,name:demoClip.name,size:demoClip.size});
+ expect(res.body).not.toContain('private-upload-id');expect(fetcher.mock.calls).toHaveLength(1);
+});
+it.each(['demo/jobs/'+id,'demo/jobs/'+demoId+'/retry','demo/jobs'])('denies anonymous access outside the curated read route: %s',async path=>{
+ const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);const res=response();
+ await handleMediaProxy(request('','GET',{cookie:''}),res as unknown as ServerResponse,path,env);
+ expect(res.statusCode).toBe(401);expect(fetcher).not.toHaveBeenCalled();
+});
+it('never submits demo jobs through the public route',async()=>{
+ const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);const res=response();
+ await handleMediaProxy(request('{}','POST',{cookie:''}),res as unknown as ServerResponse,'demo/jobs/'+demoId,env);
+ expect(res.statusCode).toBe(401);expect(fetcher).not.toHaveBeenCalled();
+});
+it.each(['wrong-source','not-ready','wrong-profile','invalid-artifact'])('rejects an unverified cached demo result: %s',async kind=>{
+ const job=demoJob();if(kind==='wrong-source')job.source.sha256='a'.repeat(64);if(kind==='not-ready')job.state='processing';
+ if(kind==='wrong-profile')job.profile='old';if(kind==='invalid-artifact')job.artifact.fps=24;
+ vi.stubGlobal('fetch',vi.fn(async()=>Response.json(job)));const res=response();
+ await handleMediaProxy(request('','GET',{cookie:''}),res as unknown as ServerResponse,'demo/jobs/'+demoId,env);
+ expect(res.statusCode).toBe(503);expect(res.body).not.toContain('private-upload-id');
+});
 it('denies cross-origin requests before contacting the worker',async()=>{
  const fetcher=vi.fn();vi.stubGlobal('fetch',fetcher);const res=response();
  await handleMediaProxy(request('', 'GET',{origin:'https://elsewhere.test'}),res as unknown as ServerResponse,'jobs/'+id,env);

@@ -65,7 +65,11 @@ mounts that folder read-only at `/app/demo-media`; `DEMO_MEDIA_ROOT` selects the
 container path. Only the manifest and SHA-256-named MP4/MP3/JSON files are served
 under `/demo-media/`, with byte-range support. Keep arbitrary QA trees and private
 uploads outside this directory. Publishing this curated demo is intentional;
-the existing access gate still protects hosted analysis and GPU media jobs.
+the access gate still protects hosted analysis, private uploads and GPU media jobs.
+The browser demo itself is open. Importing new songs/clips or Timing data opens
+the code window on demand. Only GET of verified ready jobs for the ten reviewed
+demo hashes is available through `/__api/media/demo/jobs/<id>`; this lane cannot
+create or retry jobs and excludes source upload metadata.
 
 Deployment requires the bundle manifest, retains the mount across image
 updates and verifies the public manifest after activation. The previous complete

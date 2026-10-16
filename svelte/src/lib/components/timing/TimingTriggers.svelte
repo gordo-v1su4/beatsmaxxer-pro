@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { timingSettings, selectedTimingSlot, effectiveTimingTrigger, setTimingTrigger } from '$lib/stores/timing';
   import { timingInput, timingSignalGrid, resolveTimingSignal, importTimingFiles, loadRedlineTimingReference } from '$lib/stores/timingSignals';
   import { midiChannels } from '$lib/stores/midiChannels';
@@ -62,8 +63,8 @@
     <label title="Minimum normal-playback time after a completed effect, plus Density's extra spacing. At 120 BPM, 65% Density adds 350 ms. Intervening triggers are ignored.">GAP ms <input aria-label="Timing minimum gap milliseconds" type="number" min="0" max="30000" step="20" value={Math.round(trigger.gapSeconds*1000)} onchange={e=>change({gapSeconds:value(e,0,30000)/1000})}/></label>
     <label title="Repeatable choices, with a separate sequence for each slot.">SEED <input aria-label="Timing trigger seed" type="number" min="0" max="4294967295" value={trigger.seed} onchange={e=>change({seed:Math.round(value(e,0,4294967295))})}/></label>
   {/if}
-  <button disabled={busy} onclick={()=>files.click()}>IMPORT MIDI / DATA</button>
-  <input class="file" bind:this={files} type="file" multiple accept=".mid,.midi,.json,.mp3,.wav,.m4a,.ogg,.flac" aria-label="Import Timing MIDI or analysis and matching song" onchange={e=>{const chosen=Array.from(e.currentTarget.files??[]);if(chosen.length)void load(()=>importTimingFiles(chosen));e.currentTarget.value='';}}/>
+  <button disabled={busy} onclick={()=>openProtectedFilePicker(files)}>IMPORT MIDI / DATA</button>
+  <input class="file" bind:this={files} type="file" multiple accept=".mid,.midi,.json,.mp3,.wav,.m4a,.ogg,.flac" aria-label="Import Timing MIDI or analysis and matching song" onchange={async e=>{const chosen=Array.from(e.currentTarget.files??[]);e.currentTarget.value='';if(chosen.length && await requireHostedAccess())void load(()=>importTimingFiles(chosen));}}/>
   {#if import.meta.env.DEV}<button disabled={busy} title="Load the saved matching song, MIDI and stem analysis from ZigSwap; preserve your Timing parameters." onclick={()=>load(async()=>{await loadRedlineTimingReference();timingSettings.update(s=>({...s,trigger:{...s.trigger,source:'midi',channel:s.trigger.source==='midi'?s.trigger.channel:'all'}}));})}>LOAD REDLINE SONG + TRIGGERS</button>{/if}
   <div class="signal" role="status">{signal.missing??signal.label} {message?` · ${message}`:''}</div>
 </div>

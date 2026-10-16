@@ -17,6 +17,7 @@ Complete the current Linear scope with working production behavior and evidence.
 ## Product acceptance
 
 - **Public workflows:** keep WORKFLOW publicly available for the current demo period. Its media must resolve in production; removing a DEV condition alone is insufficient because the existing saved presets depend on dev-only media routes.
+- **Anonymous demo:** the owner approved trying curated workflows without a code. New song/clip/Timing imports request the existing code on demand; cancel preserves the demo. Keep private upload/analysis/job APIs protected. Only allowlisted verified ready demo results may use the public read lane. The owner waived Kimi for PR #45 only; do not generalize that waiver to future PRs.
 - **Finished demo:** one action loads matching audio, clips, timing/MIDI, settings, sections and recorded cuts. At least two distinct reusable clip banks repeat across verse/chorus assignments and visibly swap during PLAY. Explain deck slots such as A1 separately from banks.
 - **Save/load:** build on arrangement persistence. Round-trip sections, cuts, settings, banks and assignments; make media references and relinking clear. Invalid imports preserve the current work.
 - **Entry:** real visitors stay at READY / 100% until activating a blinking semantic ENTER button. Verify cached and cold navigation, keyboard/touch, reduced motion and no click-through. Preserve explicit QA bypass and developer HMR behavior.

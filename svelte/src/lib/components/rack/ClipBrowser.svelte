@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { get } from 'svelte/store';
   import ClipGroupSets from './ClipGroupSets.svelte';
   import { FolderOpen, X } from '@lucide/svelte';
@@ -83,6 +84,7 @@
   }
 
   export async function importFiles(files: File[]) {
+    if (!await requireHostedAccess()) return;
     if (files.length === 0) return;
     importing = true;
     try {
@@ -134,7 +136,7 @@
   <button
     type="button"
     class="cb-import"
-    onclick={() => fileInput?.click()}
+    onclick={() => openProtectedFilePicker(fileInput)}
     disabled={importing}
     title="Import video files into the bank"
   >

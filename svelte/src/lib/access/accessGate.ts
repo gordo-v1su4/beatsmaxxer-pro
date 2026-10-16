@@ -3,7 +3,42 @@
  * and the session cookie — so this only asks whether the lock screen should be
  * shown and forwards an attempt. Nothing here can unlock anything on its own.
  */
+import { get, writable } from 'svelte/store';
 const CACHE_KEY = 'bmx.access.state';
+export const serviceUnlockRequested = writable(false);
+export const hostedServicesUnlocked = writable(false);
+export const accessGateState = writable<AccessState>('checking');
+export const pendingFilePicker = writable<HTMLInputElement | null>(null);
+let pendingUnlock: Promise<boolean> | null = null;
+let resolveUnlock: ((accepted: boolean) => void) | null = null;
+
+/** UI consent only; every protected server route independently checks its cookie. */
+export async function requireHostedAccess(): Promise<boolean> {
+  const current = await fetchAccessState();
+  accessGateState.set(current); hostedServicesUnlocked.set(current === 'open');
+  if (current === 'open') { hostedServicesUnlocked.set(true); return true; }
+  if (!pendingUnlock) {
+    pendingUnlock = new Promise(resolve => { resolveUnlock = resolve; });
+    serviceUnlockRequested.set(true);
+  }
+  return pendingUnlock;
+}
+export function finishServiceUnlock(accepted: boolean) {
+  if (accepted) hostedServicesUnlocked.set(true);
+  if (!accepted) pendingFilePicker.set(null);
+  if (!accepted || !get(pendingFilePicker)) serviceUnlockRequested.set(false);
+  resolveUnlock?.(accepted); resolveUnlock = null; pendingUnlock = null;
+}
+export function openProtectedFilePicker(input: HTMLInputElement | undefined) {
+  if (!input) return;
+  if (get(hostedServicesUnlocked)) { input.click(); return; }
+  pendingFilePicker.set(input); serviceUnlockRequested.set(true);
+}
+/** A fresh user click preserves native picker activation, even after a slow PIN request. */
+export function chooseProtectedFile() {
+  const input = get(pendingFilePicker);
+  pendingFilePicker.set(null); finishServiceUnlock(true); input?.click();
+}
 
 export type AccessState = 'checking' | 'open' | 'locked';
 

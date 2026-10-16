@@ -7,7 +7,7 @@ This report covers V1S-258 and its public demo, workflow persistence, entry, doc
 - Linux Chrome with a physical RTX 4070 Ti (12 GiB), headed under the server's display session. QA container: four vCPU, 20 GiB system memory. No local desktop GPU testing or changes to source-video resolution/frame rate.
 - Ten clean original clips, the Redline song and its matching analysis, MIDI and structure files. The reviewed metadata is `svelte/src/lib/runtime/publicDemo.json`; no large media is embedded in Git or workflow JSON.
 - Public bundle verification fetched all 14 files anonymously, checked SHA-256 and byte ranges: 93,389,163 bytes. The production-build preview passed the same verifier.
-- The existing access-code policy remains. Public curated files are separate from authenticated private uploads, analysis and GPU jobs.
+- The owner approved anonymous curated demos. ENTER opens the app without a code; song/clip/Timing imports request access on demand. Cancel preserves the demo. Prepared demo clips use an allowlisted, verified ready-only GET lane; private uploads, analysis, arbitrary job metadata, submissions and retries still require a session.
 
 ## Completed browser evidence
 
@@ -64,6 +64,6 @@ The exact deployed merge revision and public verification belong in PR #45's pos
 
 ## Required review checkpoint
 
-Kimi/OpenCodeReview run 38858218681 reviewed 15 of 26 selected files, then its provider returned the account's five-hour quota error. The manifest is `partial` with 11 failed items, and the workflow correctly rejected it. This is not a completed mandatory review or a release waiver. Production deployment and final Brag capture remain gated.
+Kimi/OpenCodeReview run 38858218681 reviewed 15 of 26 selected files, then its provider returned the account's five-hour quota error. The manifest is `partial` with 11 failed items, and the workflow correctly rejected it. The owner subsequently explicitly waived Kimi for PR #45 only. The partial run is not represented as a completed review. Latest-head CI, Greptile and the new anonymous-demo acceptance still apply before release.
 
 Sixteen partial findings were addressed: full staged-asset hash verification and public HEAD checks; exact-commit catalog lookup; early demo-root validation; Compose constants/comment handling/map-form validation; packaging shape and case handling; controlled async media failures in both servers; a module-anchored default root; early friendly structure validation; approved demo-ID reuse; clearer legacy/status branches and bank indexing; unknown-based JSON guards; and import placement. Three low suggestions are retained as deliberate boundaries: the MIME tables belong to different public/QA format surfaces; `/demo-media/` is the fixed public route contract; unsupported multi-range requests retain the tested single-range policy. No additional functional defect was established by those suggestions.

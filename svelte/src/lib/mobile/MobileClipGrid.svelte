@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { Play, Plus, Film } from '@lucide/svelte';
   import { addClipsToLibrary, clipLibrary, type LibraryClip } from '$lib/stores/clipLibrary';
   import { formatClipDuration } from '$lib/media/clipThumbnail';
@@ -45,10 +46,11 @@
   }
 
   function pickFiles() {
-    fileInput?.click();
+    void openProtectedFilePicker(fileInput);
   }
 
   async function onFilesChosen(input: HTMLInputElement) {
+    if (!await requireHostedAccess()) { input.value = ''; return; }
     const files = Array.from(input.files ?? []);
     if (files.length === 0) return;
     importing = true;

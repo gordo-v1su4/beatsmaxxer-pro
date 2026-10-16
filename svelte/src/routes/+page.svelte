@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, serviceUnlockRequested } from '$lib/access/accessGate';
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
@@ -256,6 +257,7 @@
   });
 
   async function setSlotVideo(slotId: string, file: File) {
+    if (!await requireHostedAccess()) return;
     await loadRackClipsFromFiles([file], slotId);
   }
 
@@ -286,6 +288,7 @@
   }
 
   async function loadClips(files: File[]) {
+    if (!await requireHostedAccess()) return;
     // The picker fills the rack as it always has; the bank keeps the same files
     // so a clip can be re-assigned later without reopening the picker.
     await loadRackClipsFromFiles(files);
@@ -300,6 +303,7 @@
   }
 
   async function loadClipsFromModule(startId: string, files: File[]) {
+    if (!await requireHostedAccess()) return;
     await loadRackClipsFromFiles(files, startId);
   }
 </script>
@@ -314,6 +318,7 @@
   development keeps its fail-open behavior without a route-specific bypass.
 -->
 <AccessGate />
+<div inert={$serviceUnlockRequested} style="display:contents">
 <CapabilityGate state={$capabilities} />
 
 <!--
@@ -423,5 +428,6 @@
   {/if}
 </div>
 {/if}
+</div>
 </div>
 </div>
