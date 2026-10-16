@@ -33,13 +33,20 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
       }
       // The decoder has already made PCM continuous; the demuxer's packet
       // durations may include capture gaps. Pair raw PTS with decoded durations.
-      let index=0;
+      const packetTimes:number[]=[];
       for await(const packet of new EncodedPacketSink(audioTrack).packets(undefined,undefined,{metadataOnly:true})){
         options.signal.throwIfAborted();
-        if(index>=audioDurations.length)throw new Error('Audio capture packets could not be synchronized. Try exporting again.');
-        clock.add(packet.timestamp,audioDurations[index++]);
+        packetTimes.push(packet.timestamp);
       }
-      if(index!==audioDurations.length)throw new Error('Audio capture samples could not be synchronized. Try exporting again.');
+      if(packetTimes.length===audioDurations.length){
+        packetTimes.forEach((timestamp,index)=>clock.add(timestamp,audioDurations[index]));
+      }else{
+        // Some decoders discard empty packets. Healthy recordings do not need
+        // a one-to-one mapping; only reject when drift needs an unsafe repair.
+        const decodedEnd=audioStart+audioDurations.reduce((sum,duration)=>sum+duration,0);
+        const encodedEnd=(packetTimes.at(-1)??0)+(audioDurations.at(-1)??0);
+        if(Math.abs(encodedEnd-decodedEnd)>0.1)throw new Error('Audio capture samples could not be synchronized. Try exporting again.');
+      }
     }
     options.signal.throwIfAborted();
     if(clock.drifted)mediaEnd=clock.end;

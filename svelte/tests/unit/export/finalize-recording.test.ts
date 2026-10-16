@@ -1,15 +1,29 @@
 import {expect,test,vi} from 'vitest';
 
-const fixture=vi.hoisted(()=>({dispose:vi.fn(),init:vi.fn(),cancelOutput:vi.fn(),videoDuration:0,audioSample:null as any,audioSamples:[] as any[]}));
+const fixture=vi.hoisted(()=>({dispose:vi.fn(),init:vi.fn(),cancelOutput:vi.fn(),videoDuration:0,audioSample:null as any,audioSamples:[] as any[],packetTimes:null as number[]|null}));
 vi.mock('mediabunny',()=>({
   ALL_FORMATS:[],BlobSource:class{},BufferTarget:class{buffer=new ArrayBuffer(8);},
   Input:class{dispose=fixture.dispose;async getPrimaryVideoTrack(){return {computeDuration:async()=>fixture.videoDuration};}async getPrimaryAudioTrack(){return {computeDuration:async()=>fixture.audioSample?.timestamp??0};}},
   AudioSampleSink:class{async getSample(){return fixture.audioSample;}async *samples(){yield* fixture.audioSamples;}},
-  EncodedPacketSink:class{async *packets(){yield* fixture.audioSamples;}},
+  EncodedPacketSink:class{async *packets(){yield* fixture.packetTimes?.map(timestamp=>({timestamp}))??fixture.audioSamples;}},
   Output:class{target={buffer:new ArrayBuffer(8)};cancel=fixture.cancelOutput;},
   Mp4OutputFormat:class{},WebMOutputFormat:class{},Conversion:{init:fixture.init},
 }));
 import {finalizeRecording} from '$lib/export/finalizeRecording';
+
+test('permits discarded empty packets on a healthy clock but refuses an ambiguous drift repair',async()=>{
+  vi.clearAllMocks();fixture.videoDuration=.12;
+  fixture.audioSamples=[0,.06].map(timestamp=>({timestamp,duration:.06,close:vi.fn()}));
+  fixture.packetTimes=[0,0,.06];fixture.audioSample={timestamp:.06,duration:.06,close:vi.fn()};
+  fixture.init.mockResolvedValue({state:'done',isValid:true,discardedTracks:[],execute:vi.fn(async()=>{}),cancel:vi.fn()});
+  try{
+    await finalizeRecording(new Blob(['recording']),24,{signal:new AbortController().signal,onProgress:()=>{}});
+    expect(fixture.init.mock.calls[0][0].audio).toBeUndefined();
+    fixture.packetTimes=[0,0,1.06];fixture.init.mockClear();
+    await expect(finalizeRecording(new Blob(['recording']),24,{signal:new AbortController().signal,onProgress:()=>{}})).rejects.toThrow('could not be synchronized');
+    expect(fixture.init).not.toHaveBeenCalled();
+  }finally{fixture.videoDuration=0;fixture.audioSample=null;fixture.audioSamples=[];fixture.packetTimes=null;}
+});
 
 test('normalizes stalled capture audio and produces constant-rate video on the same clock',async()=>{
   vi.clearAllMocks();fixture.videoDuration=2;
