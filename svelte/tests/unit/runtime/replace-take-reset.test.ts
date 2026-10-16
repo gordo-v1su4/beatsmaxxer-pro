@@ -18,7 +18,7 @@ vi.mock('$lib/audio', () => ({ audioEngine: {
 } }));
 vi.mock('$lib/rendering/webgpu/WebGpuEngine', () => ({ webGpuEngine: {
   setFrameContext: vi.fn(), getDevice: () => null,
-  setTimingTextures: vi.fn(), renderAll: vi.fn(),
+  setTimingTextures: vi.fn(), renderAll: vi.fn(), primeVideoFrames: vi.fn(),
 } }));
 vi.mock('$lib/runtime/timing/TimingRuntime', () => ({ timingRuntime: {
   setActive: vi.fn(), tick: vi.fn(), dispose: vi.fn(), textureFor: vi.fn(),

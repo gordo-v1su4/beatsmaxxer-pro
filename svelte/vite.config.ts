@@ -8,6 +8,7 @@ import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
 import { accessGateConfigFromEnv } from '../api/gate/policy';
 import { mediaGatewayConfigFromEnv } from '../api/_lib/mediaGateway';
 import { playbackBenchmarkPlugin } from './vite/playbackBenchmark';
+import { serveDemoMedia } from '../runtime/demoMedia';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -41,6 +42,16 @@ export default defineConfig(({ mode, command }) => {
 		// ours. Relative asset paths (what Tauri needs) come from kit.paths.relative,
 		// which is on by default.
 		plugins: [
+			{ name: 'public-demo-media', configureServer(server) {
+				server.middlewares.use((req, res, next) => {
+					const pathname = (req.url ?? '').split('?')[0];
+					if (!pathname.startsWith('/demo-media/')) return next();
+					void serveDemoMedia(req, res, env.DEMO_MEDIA_ROOT || path.resolve(__dirname, '.artifacts/demo-media'), pathname.slice('/demo-media/'.length)).catch(error => {
+						console.error('[demo-media] request failed', error instanceof Error ? error.name : 'Error');
+						res.destroy();
+					});
+				});
+			} },
 			playbackBenchmarkPlugin(),
 			tailwindcss(),
 			// Options live in svelte.config.js — passing any here makes SvelteKit
@@ -59,6 +70,9 @@ export default defineConfig(({ mode, command }) => {
 		server: {
 			port: 5174,
 			strictPort: true,
+			// Captures and demo media are generated outside the module graph.
+			// Watching a screenshot while Windows has it locked can kill Vite.
+			watch: { ignored: ['**/.artifacts/**'] },
 			// Tailscale cloud: DEV_HOST=0.0.0.0. Local/Tauri: bind IPv4 explicitly
 			// (default Vite can listen on ::1 only → ERR_CONNECTION_REFUSED on 127.0.0.1).
 			host: env.DEV_HOST === '0.0.0.0' ? '0.0.0.0' : '127.0.0.1',

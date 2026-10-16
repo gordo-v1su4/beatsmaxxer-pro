@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, serviceUnlockRequested } from '$lib/access/accessGate';
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
@@ -69,8 +70,6 @@
   import { skipDevSplashReplay } from '$lib/runtime/devBoot';
   const skipSplash=skipDevSplashReplay();
 
-  /** Shortest the title card stays up, from navigation start (V1S-64). */
-  const SPLASH_MIN_MS = 1500;
   /** How long the splash intro takes to land, from when it mounts. */
   const SPLASH_INTRO_MS = 1800;
   /** False while the intro plays: the app is not mounted and the GPU is idle. */
@@ -78,6 +77,13 @@
   let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>(skipSplash?'ready':'gpu');
   let splashDone = $state(0);
   let splashTotal = $state(0);
+  let splashExitTimer: ReturnType<typeof setTimeout> | undefined;
+  function enterApp() {
+    if (splashPhase !== 'armed') return;
+    splashPhase = 'go';
+    splashExitTimer = setTimeout(() => { splashPhase = 'ready'; }, 350);
+  }
+  onDestroy(() => clearTimeout(splashExitTimer));
 
   const ALL_MODULES = listCatalog();
   const rackModules = $derived(
@@ -198,45 +204,11 @@
       if (splashTotal > 0) stepShaders.note(`${splashTotal} / ${splashTotal}`);
       stepShaders.done();
     }
-    // ?splash=hold keeps the title card up so it can be designed against.
-    // A warm load dismisses it in well under a second, which is too fast to
-    // iterate on and the reason it could not be reviewed when first built.
+    // Real visitors stay at 100% until they choose ENTER. Only explicit QA
+    // URLs bypass the title card; an automated browser can still test entry.
     if (!skipSplash && params.get('splash') !== 'hold') {
-      // A warm load finishes in well under a second, which flashed the card
-      // and its intro away mid-animation (V1S-64). Hold it to a minimum
-      // measured from navigation start, so a cold load that already took that
-      // long is not held any further. Any key or tap skips the remainder.
-      // Automation skips the hold: CDP gates should not wait on a title card.
-      const automated = params.has('qa') || navigator.webdriver;
-      const holdMs = automated ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
-      // 'go' plays the exit; unmount only once it has actually run, so the
-      // card hands off instead of blinking out from under the user.
-      // The skip key is swallowed in the capture phase: it belongs to the
-      // splash, and would otherwise land in whatever the app focuses first
-      // (the access-code field types the space that dismissed the card).
-      let dismissed = false;
-      const dismiss = (e?: Event) => {
-        if (e?.type === 'keydown') {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        if (dismissed) return;
-        dismissed = true;
-        window.removeEventListener('keydown', dismiss, true);
-        window.removeEventListener('pointerdown', dismiss, true);
-        clearTimeout(holdTimer);
-        splashPhase = 'go';
-        setTimeout(() => { splashPhase = 'ready'; }, 350);
-      };
-      let holdTimer: ReturnType<typeof setTimeout> | undefined;
-      if (holdMs > 0) {
-        splashPhase = 'armed';
-        window.addEventListener('keydown', dismiss, true);
-        window.addEventListener('pointerdown', dismiss, true);
-        holdTimer = setTimeout(dismiss, holdMs);
-      } else {
-        dismiss();
-      }
+      splashPhase = 'armed';
+      if (params.has('qa')) enterApp();
     }
 
     if (params.has('qa')) {
@@ -285,6 +257,7 @@
   });
 
   async function setSlotVideo(slotId: string, file: File) {
+    if (!await requireHostedAccess()) return;
     await loadRackClipsFromFiles([file], slotId);
   }
 
@@ -315,6 +288,7 @@
   }
 
   async function loadClips(files: File[]) {
+    if (!await requireHostedAccess()) return;
     // The picker fills the rack as it always has; the bank keeps the same files
     // so a clip can be re-assigned later without reopening the picker.
     await loadRackClipsFromFiles(files);
@@ -329,12 +303,14 @@
   }
 
   async function loadClipsFromModule(startId: string, files: File[]) {
+    if (!await requireHostedAccess()) return;
     await loadRackClipsFromFiles(files, startId);
   }
 </script>
 
 <div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
-<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} />
+<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} onEnter={enterApp} />
+<div inert={splashPhase !== 'ready'} style="display:contents">
 <!--
   One deployment gate for both shells. Mobile can request hosted analysis, and
   the protected proxy requires the same signed cookie as desktop. AccessGate
@@ -342,6 +318,7 @@
   development keeps its fail-open behavior without a route-specific bypass.
 -->
 <AccessGate />
+<div inert={$serviceUnlockRequested} style="display:contents">
 <CapabilityGate state={$capabilities} />
 
 <!--
@@ -451,4 +428,6 @@
   {/if}
 </div>
 {/if}
+</div>
+</div>
 </div>

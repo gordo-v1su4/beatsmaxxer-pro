@@ -5,6 +5,7 @@ vi.mock('mediabunny',()=>({ALL_FORMATS:[],BlobSource:class{constructor(public fi
 const registration=vi.hoisted(()=>vi.fn(async()=>({status:'success'})));
 vi.mock('$lib/runtime/media/MediaRuntime',()=>({mediaRuntime:{registerModuleFileClip:registration}}));
 import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, retrySlotPreparation } from '$lib/runtime/timing/preparation';
+import demoCatalog from '../../../src/lib/runtime/publicDemo.json';
 import { timingActive, timingStatus,timingCacheCapacity,timingSceneErrors } from '$lib/stores/timing';
 import { timingPreparationBlocked } from '$lib/runtime/timing/readiness';
 const hash=async(s:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s))),b=>b.toString(16).padStart(2,'0')).join('');
@@ -57,6 +58,13 @@ it('resumes a completed job after a download failure instead of requeuing it',as
  const fetcher=vi.fn(async(_url:string)=>new Response(JSON.stringify({id:jobId,state:'ready'})));vi.stubGlobal('fetch',fetcher);registration.mockClear();
  await retrySlotPreparation('top-0',{state:'failed',name:file.name,original:file,stage:'downloading-render',completed:0,total:1,jobId});
  expect(fetcher).toHaveBeenCalledTimes(1);expect(fetcher.mock.calls[0][0]).toBe('/__api/media/jobs/'+jobId);expect(registration).toHaveBeenCalledWith('top-0',file);
+});
+it('retries a curated demo download through its read-only public job route',async()=>{
+ const jobId=await hash(`${INTERPOLATION_PROFILE}:${demoCatalog.clips[0].sha256}`),file=new File(['original'],'demo.mp4');
+ const fetcher=vi.fn(async(_url:string)=>Response.json({id:jobId,state:'ready'}));vi.stubGlobal('fetch',fetcher);registration.mockClear();
+ await retrySlotPreparation('top-0',{state:'failed',name:file.name,original:file,stage:'downloading-render',completed:0,total:1,jobId});
+ expect(fetcher).toHaveBeenCalledOnce();expect(fetcher.mock.calls[0][0]).toBe('/__api/media/demo/jobs/'+jobId);
+ expect(registration).toHaveBeenCalledWith('top-0',file);
 });
 it('requeues an explicitly failed GPU job before registering the clip again',async()=>{
  const jobId='b'.repeat(64),file=new File(['original'],'clip.mp4');

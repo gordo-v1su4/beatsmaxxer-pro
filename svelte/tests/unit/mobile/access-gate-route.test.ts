@@ -9,7 +9,7 @@ describe('desktop and mobile access-gate route contract', () => {
     );
 
     expect(pageSource.match(/^\s*<AccessGate \/>$/gm)).toHaveLength(1);
-    expect(pageSource).toMatch(/<AccessGate \/>\r?\n<CapabilityGate/);
+    expect(pageSource).toMatch(/<AccessGate \/>\r?\n<div inert=\{\$serviceUnlockRequested\} style="display:contents">\r?\n<CapabilityGate/);
     expect(pageSource).not.toMatch(/{#if !\$isMobileShell}\r?\n  <AccessGate \/>/);
   });
 

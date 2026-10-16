@@ -89,6 +89,15 @@ export const activeChannel = derived(
 
 let channelSeq = 0;
 
+/** Restore parsed events while reserving generated IDs for later imports. */
+export function restoreMidiChannels(channels: MidiChannel[], activeId: string | null) {
+  for(const channel of channels){
+    const match=/^midi-(\d+)$/.exec(channel.id);
+    if(match&&Number.isSafeInteger(Number(match[1])+1))channelSeq=Math.max(channelSeq,Number(match[1])+1);
+  }
+  midiChannels.set(channels); activeChannelId.set(activeId);
+}
+
 export async function addMidiChannels(files: File[]): Promise<MidiChannel[]> {
   const added: MidiChannel[] = [];
   for (const file of files) {

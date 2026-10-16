@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { serviceUnlockRequested, hostedServicesUnlocked, requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { timingPreparationBlocked } from "$lib/runtime/timing/readiness";
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
@@ -23,7 +24,9 @@
   } from '$lib/audio/hostedAnalysisPreference';
   import { arrangementStructureStatus, loadDemoArrangement } from '$lib/stores/arrangement';
   import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
-  import { loadSavedRedlinePreset } from '$lib/runtime/workflowPresets';
+  import { fetchDemoCatalog, loadCompleteDemo, workflowLoadStatus } from '$lib/runtime/demoWorkflow';
+  import { downloadWorkflow, loadWorkflowFile } from '$lib/runtime/workflowFile';
+  import { cuts } from '$lib/stores/arrangement';
   import { arrangementMode } from '$lib/arrangement/transportMode';
   import {
     arrangementStatusBadge,
@@ -72,36 +75,40 @@
     analysisPreference = readHostedAnalysisPreference();
   });
 
-  // Ready-made setups for testing, next to VOL. The test media (song, clips,
-  // MIDI stems) is served from test_media by the dev server only, so the menu
-  // appears only where its manifest is reachable.
+  // Public ready-made demos use the curated bundle, never dev-only QA paths.
   const WORKFLOWS = [
-    { id: 'redline-timing', label: 'SAVED REDLINE · TIMING', title: 'Prepared 540p clip banks, matching song, MIDI, analysis and musical Timing settings' },
-    { id: 'redline-originals', label: 'SAVED REDLINE · ORIGINAL CLIPS', title: 'Original test clips with the saved matching song, MIDI and analysis' },
+    { id: 'redline-originals', label: 'REDLINE · COMPLETE PERFORM DEMO', title: 'Song, ten clips, finished arrangement and two reusable clip banks' },
+    { id: 'redline-timing', label: 'REDLINE · COMPLETE TIMING DEMO', title: 'The complete arrangement with musical Timing settings; Ramp clips prepare automatically' },
     { id: 'song-clips', label: 'TEST SONG + CLIPS', title: 'Load the test song and fill every rack slot with test clips' },
     { id: 'song-clips-midi', label: 'SONG + CLIPS + MIDI', title: 'Also attach the MIDI parts to the rack and the stems to the arranger lanes' },
     { id: 'demo-arrangement', label: 'DEMO ARRANGEMENT', title: 'Replace the arrangement with the built-in demo sections and cuts' }
   ] as const;
   type WorkflowId = (typeof WORKFLOWS)[number]['id'];
   let testMediaAvailable = $state(false);
-  let workflowBusy = $state<WorkflowId | null>(null);
+  let workflowBusy = $state<WorkflowId | 'load-file' | null>(null);
   let workflowError = $state<string | null>(null);
+  let demoAvailable = $state(false);
+  let workflowInput: HTMLInputElement;
 
   $effect(() => {
-    if (!import.meta.env.DEV) return;
-    fetch('/qa-media/manifest.json', { method: 'HEAD' })
-      .then((res) => (testMediaAvailable = res.ok))
-      .catch(() => (testMediaAvailable = false));
+    void fetchDemoCatalog().then(() => demoAvailable = true).catch(() => demoAvailable = false);
+    if (import.meta.env.DEV) fetch('/qa-media/manifest.json', { method: 'HEAD' })
+      .then((res) => (testMediaAvailable = res.ok)).catch(() => (testMediaAvailable = false));
   });
 
+  const workflowLocked = $derived(workflowBusy !== null || $transportDisplay.playing || $arrangementMode !== 'live');
+  function confirmWorkflowReplacement() {
+    return !$cuts.length || window.confirm('Replace the current arrangement with this workflow? Save your workflow first if you want to keep it.');
+  }
+
   async function runWorkflow(id: WorkflowId) {
-    if (workflowBusy) return;
+    if (workflowLocked || !confirmWorkflowReplacement()) return;
     workflowBusy = id;
     workflowError = null;
     openMenu = null;
     try {
       if (id === 'demo-arrangement') loadDemoArrangement();
-      else if (id === 'redline-timing' || id === 'redline-originals') await loadSavedRedlinePreset(id === 'redline-timing');
+      else if (id === 'redline-timing' || id === 'redline-originals') await loadCompleteDemo(id === 'redline-timing' ? 'timing' : 'perform');
       else await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
     } catch (err) {
       workflowError = err instanceof Error ? err.message : String(err);
@@ -109,6 +116,18 @@
     } finally {
       workflowBusy = null;
     }
+  }
+
+  async function importWorkflow(event: Event) {
+    const input = event.currentTarget as HTMLInputElement, file = input.files?.[0];
+    input.value = '';
+    if (!file || workflowLocked || !confirmWorkflowReplacement()) return;
+    workflowBusy = 'load-file'; workflowError = null; openMenu = null;
+    try {
+      if (file.size > 20 * 1024 * 1024) throw new Error('Workflow file is too large.');
+      await loadWorkflowFile(await file.text());
+    } catch (error) { workflowError = error instanceof Error ? error.message : String(error); }
+    finally { workflowBusy = null; }
   }
 
   $effect(() => {
@@ -209,6 +228,7 @@
     const file = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = '';
     if (!file) return;
+    if (!await requireHostedAccess()) return;
 
     // Shared with the phone drawer, so both shells answer this identically. It
     // also closes a gap here: a build with hosted analysis switched off used to
@@ -272,7 +292,7 @@
       {td.playing ? 'STOP' : 'PLAY'}
     </button>
 
-    <button bind:this={songButton} type="button" onclick={() => audioInput?.click()} class="transport-btn" data-active={td.usingUploadedTrack}>
+    <button bind:this={songButton} type="button" onclick={() => openProtectedFilePicker(audioInput)} class="transport-btn" data-active={td.usingUploadedTrack}>
       <Upload size={10} /> SONG
     </button>
 
@@ -292,7 +312,7 @@
     {#if onLoadClips}
       <button
         type="button"
-        onclick={() => clipsInput?.click()}
+        onclick={() => openProtectedFilePicker(clipsInput)}
         title="Load video clips into rack slots ({loadedClipCount}/{clipSlotCount} filled)"
         class="transport-btn"
         data-clips={loadedClipCount > 0}
@@ -442,25 +462,40 @@
 
     <div class="topbar-actions">
     <!-- Beside VOL, but outside topbar-main, whose overflow would clip the panel. -->
-    {#if testMediaAvailable}
+    <input bind:this={workflowInput} type="file" accept=".json,application/json" onchange={importWorkflow} hidden />
       <TopMenu
         id="workflow"
         label={workflowBusy ? 'LOADING…' : 'WORKFLOW'}
         openId={openMenu}
         onOpen={(id) => (openMenu = id)}
         active={workflowBusy !== null}
-        title={workflowError ?? 'Ready-made test setups: test song, clips, MIDI, demo arrangement'}
+        title={workflowError ?? ($workflowLoadStatus || 'Load a demo, save your workflow, or restore a saved workflow')}
       >
         <div class="menu-section-label">LOAD</div>
         {#each WORKFLOWS as workflow (workflow.id)}
+          {#if workflow.id.startsWith('redline-') || testMediaAvailable}
           <TopBtn
             label={workflow.label}
             title={workflow.title}
-            disabled={workflowBusy !== null}
+            disabled={workflowLocked || (workflow.id.startsWith('redline-') && !demoAvailable)}
             onclick={() => runWorkflow(workflow.id)}
           />
+          {/if}
         {/each}
+        {#if !demoAvailable}<p class="workflow-menu-note">Demo files are unavailable. <button type="button" onclick={() => { void fetchDemoCatalog().then(() => demoAvailable = true).catch(() => demoAvailable = false); }}>Retry</button></p>{/if}
+        <div class="menu-section-label">YOUR WORKFLOW</div>
+        <TopBtn label="SAVE WORKFLOW…" title="Save sections, cuts, clip banks and settings; media files are referenced" disabled={workflowLocked || !td.trackName} onclick={() => { try { downloadWorkflow(); openMenu = null; } catch (error) { workflowError = String(error); } }} />
+        <TopBtn label="LOAD WORKFLOW…" title="Restore a workflow file; public demo media loads automatically" disabled={workflowLocked} onclick={() => workflowInput.click()} />
+        <p class="workflow-menu-note">Save your originals alongside the workflow file.</p>
+        {#if !$hostedServicesUnlocked}
+          <TopBtn label="UNLOCK HOSTED SERVICES…" title="Enter an access code for hosted uploads, analysis and GPU preparation" onclick={() => { openMenu = null; serviceUnlockRequested.set(true); }} />
+        {/if}
       </TopMenu>
+    {#if workflowError || $workflowLoadStatus}
+      <div class="workflow-feedback" role="status" aria-live="polite">
+        <span>{workflowError ?? $workflowLoadStatus}</span>
+        {#if !workflowBusy}<button type="button" aria-label="Dismiss workflow message" onclick={() => { workflowError = null; workflowLoadStatus.set(''); }}>×</button>{/if}
+      </div>
     {/if}
     {#if $arrangementMode === 'rec'}
       <button
@@ -684,6 +719,10 @@
 {/if}
 
 <style>
+  .workflow-menu-note{max-width:300px;padding:8px 12px;margin:0;color:#b2bcc3;font:12px/1.5 system-ui,sans-serif}
+  .workflow-menu-note button{border:0;background:#244b46;color:#d2fff0;padding:6px 10px;cursor:pointer}
+  .workflow-feedback{position:fixed;bottom:20px;left:20px;z-index:4100;display:flex;align-items:center;gap:16px;max-width:min(480px,calc(100vw - 40px));padding:14px 18px;background:#183c37;color:#def8ef;font:13px/1.5 system-ui,sans-serif}
+  .workflow-feedback button{border:0;background:transparent;color:inherit;font-size:22px;cursor:pointer;min-width:32px;min-height:32px}
   .hidden {
     display: none;
   }

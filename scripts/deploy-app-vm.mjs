@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, lstatSync, existsSync } from 'n
 import { realpathSync, statfsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isIP } from 'node:net';
-import { RELEASE_OWNER, RELEASE_MARKER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache } from './deploySupport.mjs';
+import { RELEASE_OWNER, RELEASE_MARKER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache, withPublicDemoMount, DEFAULT_PUBLIC_DEMO_ROOT, validatePublicDemoDirectory, verifyStagedDemoBundle, verifyPublishedDemoAssets } from './deploySupport.mjs';
 
 // This runner deliberately deploys one app on VM100; identity checks are allowlists.
 const identity = { home: '/home/gordo/', stack: 'beatsmaxxer-pro', container: 'beatsmaxxer-pro-web', dependencies: 'beatsmaxxer-deploy-dependencies' };
@@ -29,6 +29,12 @@ const base = control.origin;
 const environment = Number(target.DOCKHAND_ENV_ID);
 assert(Number.isInteger(environment) && environment > 0, 'Invalid Dockhand environment');
 const publicOrigin = new URL(privateEnv.APP_ORIGIN).origin;
+const demoRoot = validatePublicDemoDirectory(target.DEMO_MEDIA_DIR || DEFAULT_PUBLIC_DEMO_ROOT);
+assert(existsSync(resolve(demoRoot, 'manifest.json')), 'Publish the curated demo bundle before deploying the public workflows');
+const reviewedCatalog = spawnSync('git', ['show', `${revision}:svelte/src/lib/runtime/publicDemo.json`], { encoding: 'utf8' });
+assert(reviewedCatalog.status === 0, 'Cannot read the deployed revision demo catalog');
+const approvedDemo = JSON.parse(reviewedCatalog.stdout);
+await verifyStagedDemoBundle(demoRoot, approvedDemo);
 assert(publicOrigin.startsWith('https://'), 'Production needs HTTPS');
 const releaseRoot = resolve(target.APP_RELEASE_ROOT);
 assert(releaseRoot.startsWith(identity.home), 'Unexpected release directory');
@@ -102,13 +108,17 @@ async function activate(content) {
   assert((await request(stackPath)).content === content, 'Managed Compose did not retain the image');
 }
 try {
-  await activate(original.replace(/image: beatsmaxxer-pro-web:[a-z0-9-]+/, 'image: ' + image));
+  await activate(withPublicDemoMount(original, demoRoot).replace(/image: beatsmaxxer-pro-web:[a-z0-9-]+/, 'image: ' + image));
   await waitForHealthy(image, () => capture('docker', ['inspect', identity.container, '--format', '{{.Config.Image}} {{.State.Health.Status}}']), pause);
   const originHealth = JSON.parse(capture('docker', ['exec', 'beatsmaxxer-pro-web', 'bun', '-e',
     "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>r.text()).then(console.log)"]));
   assert(originHealth.revision === revision, 'Running revision differs');
   const publicHealth = await fetch(publicOrigin + '/health', { cache: 'no-store', signal: AbortSignal.timeout(30000) });
   assert(publicHealth.ok && (await publicHealth.json()).revision === revision, 'Public revision differs');
+  const demo = await fetch(publicOrigin + '/demo-media/manifest.json', { cache: 'no-store', signal: AbortSignal.timeout(30000) });
+  assert(demo.ok, 'Public demo bundle is unavailable');
+  assert.deepEqual(await demo.json(), approvedDemo, 'Public demo bundle differs from the reviewed catalog');
+  await verifyPublishedDemoAssets(publicOrigin, approvedDemo);
   const gate = await fetch(publicOrigin + '/__api/gate', { signal: AbortSignal.timeout(30000) });
   assert(gate.ok, 'Public access gate unavailable');
   const session = await gate.json();

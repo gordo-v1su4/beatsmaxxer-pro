@@ -17,6 +17,7 @@ import {
 } from '$lib/runtime/speedramp';
 import {
   currentRackAssignments,
+  RACK_SLOT_IDS,
   currentRackSlotForModule,
   rackSlotIndex,
   moduleParams,
@@ -628,6 +629,9 @@ export function startAppLoop() {
       timeline: frame
     });
 
+    // A bank replacement arrives decoded. Preserve that first image before
+    // free-running or effect-controlled synchronization starts its first seek.
+    webGpuEngine.primeVideoFrames(RACK_SLOT_IDS);
     const timing = get(playbackWorkspace) === 'timing';
     timingRuntime.setActive(timing, webGpuEngine.getDevice());
     webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);

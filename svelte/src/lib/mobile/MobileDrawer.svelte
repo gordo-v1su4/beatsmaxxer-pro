@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
   import { X, Upload } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
@@ -94,6 +95,7 @@
     const file = input.files?.[0];
     input.value = '';
     if (!file) return;
+    if (!await requireHostedAccess()) return;
 
     // The hosted path uploads the file, so it needs a disclosure. The phone used
     // to have nowhere to show one and so never took that path at all -- every
@@ -293,7 +295,7 @@
         <button
           type="button"
           class="song-load"
-          onclick={() => audioInput?.click()}
+          onclick={() => openProtectedFilePicker(audioInput)}
           disabled={loadingTrack}
         >
           <Upload size={18} />

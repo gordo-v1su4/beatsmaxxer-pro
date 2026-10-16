@@ -1,27 +1,50 @@
 <script lang="ts">
   import {
     cacheState,
-    cachedState,
     fetchAccessState,
     submitPin,
-    type AccessState
+    serviceUnlockRequested,
+    hostedServicesUnlocked,
+    finishServiceUnlock,
+    pendingFilePicker,
+    chooseProtectedFile,
+    accessGateState
   } from '$lib/access/accessGate';
 
   // Not named `state`: Svelte reads `$state` as a store subscription to a
   // variable of that name, which shadows the rune and fails svelte-check.
-  let access = $state<AccessState>(cachedState());
+  const access = $derived($accessGateState);
   let pin = $state('');
   let error = $state<string | null>(null);
   let busy = $state(false);
   let pinInput = $state<HTMLInputElement>();
+  let chooseButton = $state<HTMLButtonElement>();
 
   $effect(() => {
     void (async () => {
       const next = await fetchAccessState();
-      access = next;
+      accessGateState.set(next);
       cacheState(next);
-      if (next === 'locked') setTimeout(() => pinInput?.focus(), 0);
+      hostedServicesUnlocked.set(next === 'open');
     })();
+  });
+
+  function closeGate() {
+    finishServiceUnlock(false); pin = ''; error = null;
+  }
+  function gateKeys(event: KeyboardEvent) {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeGate(); }
+    if (event.key === 'Tab') {
+      const controls = (event.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement | HTMLButtonElement>('input:not(:disabled), button:not(:disabled)');
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  }
+
+  $effect(() => {
+    if ($serviceUnlockRequested && access === 'locked') pinInput?.focus();
+    else if ($serviceUnlockRequested && access === 'open') chooseButton?.focus();
   });
 
   async function unlock(event: SubmitEvent) {
@@ -34,8 +57,9 @@
 
     if (result === 'accepted') {
       pin = '';
-      access = 'open';
+      accessGateState.set('open');
       cacheState('open');
+      finishServiceUnlock(true);
       return;
     }
     pin = '';
@@ -49,11 +73,17 @@
   }
 </script>
 
-{#if access === 'locked'}
-  <div class="gate-backdrop">
+{#if $serviceUnlockRequested}
+  <div class="gate-backdrop" role="dialog" aria-modal="true" aria-label="Unlock hosted services" tabindex="-1" onkeydown={gateKeys}>
     <form class="gate-panel" onsubmit={unlock}>
       <h1>BEATSMAXXER PRO</h1>
-      <p>This deployment is private. Enter the access code to continue.</p>
+      {#if access === 'checking'}
+      <p>Checking access…</p>
+      {:else if access === 'open'}
+      <p>Hosted services are unlocked.</p>
+      {#if $pendingFilePicker}<button bind:this={chooseButton} type="button" onclick={chooseProtectedFile}>CHOOSE FILE</button>{/if}
+      {:else}
+      <p>The demo is free to try. Enter an access code for hosted uploads, analysis and GPU preparation.</p>
       <input
         bind:this={pinInput}
         bind:value={pin}
@@ -68,6 +98,8 @@
       <button type="submit" disabled={busy || pin.length === 0}>
         {busy ? 'CHECKING…' : 'UNLOCK'}
       </button>
+      {/if}
+      <button type="button" onclick={closeGate}>BACK TO DEMO</button>
     </form>
   </div>
 {/if}

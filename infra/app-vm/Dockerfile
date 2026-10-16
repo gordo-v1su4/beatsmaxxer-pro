@@ -22,6 +22,7 @@ ARG APP_REVISION=development
 ENV NODE_ENV=production HOST=127.0.0.1 PORT=18074 APP_REVISION=$APP_REVISION
 WORKDIR /app
 COPY --from=build --chown=bun:bun /app/svelte/build ./svelte/build
+COPY --from=build --chown=bun:bun /app/svelte/src/lib/runtime/publicDemo.json ./svelte/src/lib/runtime/publicDemo.json
 COPY --from=build --chown=bun:bun /app/api ./api
 COPY --from=build --chown=bun:bun /app/media-worker/auth.ts ./media-worker/auth.ts
 COPY --from=build --chown=bun:bun /app/runtime ./runtime
