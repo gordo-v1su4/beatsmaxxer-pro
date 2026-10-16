@@ -13,15 +13,19 @@ let pendingUnlock: Promise<boolean> | null = null;
 let resolveUnlock: ((accepted: boolean) => void) | null = null;
 
 /** UI consent only; every protected server route independently checks its cookie. */
-export async function requireHostedAccess(): Promise<boolean> {
-  const current = await fetchAccessState();
-  accessGateState.set(current); hostedServicesUnlocked.set(current === 'open');
-  if (current === 'open') { hostedServicesUnlocked.set(true); return true; }
-  if (!pendingUnlock) {
-    pendingUnlock = new Promise(resolve => { resolveUnlock = resolve; });
-    serviceUnlockRequested.set(true);
-  }
-  return pendingUnlock;
+export function requireHostedAccess(): Promise<boolean> {
+  if (pendingUnlock) return pendingUnlock;
+  // Register the shared attempt before its status request can yield. Cancel
+  // retires this identity, so a late response cannot reopen the dialog.
+  const attempt = new Promise<boolean>(resolve => { resolveUnlock = resolve; });
+  pendingUnlock = attempt;
+  void fetchAccessState().then(current => {
+    if (pendingUnlock !== attempt) return;
+    accessGateState.set(current); hostedServicesUnlocked.set(current === 'open');
+    if (current === 'open') finishServiceUnlock(true);
+    else serviceUnlockRequested.set(true);
+  });
+  return attempt;
 }
 export function finishServiceUnlock(accepted: boolean) {
   if (accepted) hostedServicesUnlocked.set(true);

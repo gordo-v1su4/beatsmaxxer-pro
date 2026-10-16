@@ -41,7 +41,7 @@ The finalizer now compares raw packet timestamps with independently decoded PCM 
 
 ## Automated validation
 
-- Full Linux unit suite after PR review and anonymous-demo changes: 979 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
+- Full Linux unit suite after PR review and anonymous-demo changes: 981 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
 - Windows unit suite excludes the five pre-existing Linux symlink deployment tests; the full Linux run includes them.
 - Read-only standards/spec reviews completed; all material workflow and export findings were fixed and re-reviewed.
 - `HEADLESS=1 SKIP_UNIT=1 SKIP_BUILD=1 bun run test:local` passed all UI, playback, interaction, stutter, audio, beat and six negative-fixture gates, using a separate loopback QA server. Unit/build results above apply to the same app code. Physical desktop-proof artifacts were explicitly skipped by this headless suite; the custom demo acceptance above used headed server Chrome on the RTX GPU.
@@ -69,6 +69,8 @@ Kimi/OpenCodeReview run 38858218681 reviewed 15 of 26 selected files, then its p
 Sixteen partial findings were addressed: full staged-asset hash verification and public HEAD checks; exact-commit catalog lookup; early demo-root validation; Compose constants/comment handling/map-form validation; packaging shape and case handling; controlled async media failures in both servers; a module-anchored default root; early friendly structure validation; approved demo-ID reuse; clearer legacy/status branches and bank indexing; unknown-based JSON guards; and import placement. Three low suggestions are retained as deliberate boundaries: the MIME tables belong to different public/QA format surfaces; `/demo-media/` is the fixed public route contract; unsupported multi-range requests retain the tested single-range policy. No additional functional defect was established by those suggestions.
 
 ## Anonymous-demo preview acceptance
+
+Greptile's final non-blocking cancellation race is fixed: concurrent imports share one access-status attempt, and a canceled attempt ignores late status responses. Both regression cases pass. The owner authorized merging this fix without another Greptile run.
 
 Fresh headed Chrome with cookies cleared entered through the normal production-build URL without a code. Perform loaded 10 clips, 13 sections and 143 cuts, played real output, and opened all four HELP topics. SONG, CLIPS and Timing import opened the access dialog; Cancel/Escape preserved the take and Shift+Tab stayed in the modal. Private audio/video uploads, hosted analysis, arbitrary job reads and job submission all returned 401 without a session.
 
