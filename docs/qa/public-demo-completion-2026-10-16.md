@@ -41,7 +41,7 @@ The finalizer now compares raw packet timestamps with independently decoded PCM 
 
 ## Automated validation
 
-- Full Linux unit suite after PR review fixes: 959 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
+- Full Linux unit suite after PR review fixes: 961 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
 - Windows unit suite excludes the five pre-existing Linux symlink deployment tests; the full Linux run includes them.
 - Read-only standards/spec reviews completed; all material workflow and export findings were fixed and re-reviewed.
 - `HEADLESS=1 SKIP_UNIT=1 SKIP_BUILD=1 bun run test:local` passed all UI, playback, interaction, stutter, audio, beat and six negative-fixture gates, using a separate loopback QA server. Unit/build results above apply to the same app code. Physical desktop-proof artifacts were explicitly skipped by this headless suite; the custom demo acceptance above used headed server Chrome on the RTX GPU.
@@ -55,5 +55,7 @@ PR #45 review found four defects, all corrected in the same PR. Demo initializat
 Workflow files now embed musical event data and routing while continuing to reference original audio/video. A fresh navigation started with no imported signals. After loading only the matching song and the custom workflow, 2,367 Timing events, Perform MIDI notes, channel selection, routing, tempo 1.15, pitch +2, key -3 and volume 0.42 restored with exact signal-data equality. Source rhythm uses the exact analysis BPM rather than reconstructing it from a rounded tempo display. Invalid event data is rejected before mutation; legacy files explicitly request missing imports.
 
 Missing originals used only by later sections or banks now trigger the CLIPS/reload instruction. Deployment accepts the exact supplied Compose variable template by replacing it with the directory that deployment verified; duplicate destinations, unexpected templates and writable mounts remain rejected. Regression tests exercise the committed template with default and custom directories.
+
+A follow-up review found that an already-running hosted analysis could overwrite restored controls. Workflow restoration now invalidates that request before applying saved signals. Delayed success and failure regression tests use the real audio-load path and prove source BPM, beat grid, tempo, pitch and key remain restored without changing the song generation.
 
 The exact deployed merge revision and public verification belong in PR #45's post-merge release record. Final Brag capture follows accepted production behavior and remains separate from performance evidence.
