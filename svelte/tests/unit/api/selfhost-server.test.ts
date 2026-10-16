@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppHandler } from '../../../../runtime/server';
+import * as demoMedia from '../../../../runtime/demoMedia';
 
 let server:Server, directory:string, origin:string;
 beforeEach(async()=>{
@@ -17,7 +18,14 @@ beforeEach(async()=>{
   const address=server.address();if(!address||typeof address==='string')throw new Error('No test listener');
   origin=`http://127.0.0.1:${address.port}`;handler=createAppHandler(directory,origin,'test-revision');
 });
-afterEach(async()=>{vi.unstubAllEnvs();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await rm(directory,{recursive:true,force:true});});
+afterEach(async()=>{vi.restoreAllMocks();vi.unstubAllEnvs();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));await rm(directory,{recursive:true,force:true});});
+
+test('an unexpected asynchronous demo failure becomes a controlled server response',async()=>{
+  vi.spyOn(console,'error').mockImplementation(()=>{});
+  vi.spyOn(demoMedia,'serveDemoMedia').mockRejectedValue(new Error('unexpected media failure'));
+  const response=await fetch(origin+'/demo-media/manifest.json');
+  expect(response.status).toBe(500);expect(await response.json()).toEqual({detail:'The request could not be completed.'});
+});
 
 test('serves the portable browser build with correct assets and SPA fallback, without exposing filesystem paths',async()=>{
   expect(await (await fetch(origin+'/')).text()).toContain('Browser app');

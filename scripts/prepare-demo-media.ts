@@ -15,7 +15,7 @@ async function asset(source: string, name: string): Promise<DemoAsset> {
   const destination = resolve(output, filename);
   if (!(await stat(destination).catch(() => null)) || createHash('sha256').update(await readFile(destination)).digest('hex') !== sha256) await copyFile(source, destination);
   return { name, path: `/demo-media/${filename}`, sha256, size: bytes.length,
-    type: ({ '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.json': 'application/json' } as Record<string, string>)[extname(source)]! };
+    type: ({ '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.json': 'application/json' } as Record<string, string>)[extname(source).toLowerCase()]! };
 }
 const [song, analysis, midi, structure] = await Promise.all(['redline.mp3', 'redline-analysis.json', 'redline-midi.json', 'redline-studio.json'].map(name => asset(resolve(benchmark, name), name)));
 for (const filename of ['redline-analysis.json', 'redline-midi.json']) {
@@ -24,6 +24,7 @@ for (const filename of ['redline-analysis.json', 'redline-midi.json']) {
 }
 const clips: DemoAsset[] = [];
 const qaManifest = JSON.parse(await readFile('svelte/tests/fixtures/media/manifest.json', 'utf8'));
+if (!Array.isArray(qaManifest.clips) || qaManifest.clips.length < 10 || qaManifest.clips.some((clip: unknown) => typeof clip !== 'string')) throw new Error('QA media manifest must list at least ten clip paths');
 for (let i = 0; i < 10; i++) {
   const source = resolve(qa, String(qaManifest.clips[i]).replace(/^redline\//, ''));
   const suffix = relative(qa, source);

@@ -61,7 +61,8 @@ export async function loadCompleteDemo(workspace: 'perform' | 'timing' = 'perfor
       const decoded = await new OfflineAudioContext(1, 1, 48000).decodeAudioData(await song.arrayBuffer());
       if (song.name !== expectedSong.name || Math.abs(decoded.duration - expectedSong.duration) > .001) throw new Error('Workflow demo song does not match the published bundle.');
     }
-    analysis.structure = structure.result.structure;
+    analysis.structure = structure.result?.structure;
+    const publishedSections = normalizeStructureAnalysis(analysis.structure).sections;
     // All bytes are verified before replacing the current song/take.
     workflowLoadStatus.set('Building demo arrangement…');
     const bank = structuredClone(DEFAULT_ARRANGEMENT[0].bank);
@@ -89,10 +90,10 @@ export async function loadCompleteDemo(workspace: 'perform' | 'timing' = 'perfor
     // Posters and song metadata may yield to autosave. The explicit demo owns
     // its layout after that restore; clear its protection before reseeding.
     resetArrangement();
-    applyStructureToArrangement(normalizeStructureAnalysis(analysis.structure).sections, analysis.beats, analysis.bpm);
+    applyStructureToArrangement(publishedSections, analysis.beats, analysis.bpm);
     const slots = [...get(rackTop).map((_, i) => `top-${i}`), ...get(rackBottom).map((_, i) => `bottom-${i}`)];
     const scene = (offset: number): SectionScene => ({ slots: Object.fromEntries(slots.map((slot, i) => {
-      const file = clips[offset + i % 5]; return [slot, { name: file.name, url: '', file }];
+      const file = clips[offset + (i % 5)]; return [slot, { name: file.name, url: '', file }];
     })) });
     const groups = [{ id: 'demo-verse', name: 'Verse · Bank A', scene: scene(0) }, { id: 'demo-chorus', name: 'Chorus · Bank B', scene: scene(5) }];
     clipGroups.set(groups);

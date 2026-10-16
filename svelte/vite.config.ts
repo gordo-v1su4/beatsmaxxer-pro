@@ -46,7 +46,10 @@ export default defineConfig(({ mode, command }) => {
 				server.middlewares.use((req, res, next) => {
 					const pathname = (req.url ?? '').split('?')[0];
 					if (!pathname.startsWith('/demo-media/')) return next();
-					void serveDemoMedia(req, res, env.DEMO_MEDIA_ROOT || path.resolve(__dirname, '.artifacts/demo-media'), pathname.slice('/demo-media/'.length));
+					void serveDemoMedia(req, res, env.DEMO_MEDIA_ROOT || path.resolve(__dirname, '.artifacts/demo-media'), pathname.slice('/demo-media/'.length)).catch(error => {
+						console.error('[demo-media] request failed', error instanceof Error ? error.name : 'Error');
+						res.destroy();
+					});
 				});
 			} },
 			playbackBenchmarkPlugin(),

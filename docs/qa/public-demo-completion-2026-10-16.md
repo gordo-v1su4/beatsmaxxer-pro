@@ -41,7 +41,7 @@ The finalizer now compares raw packet timestamps with independently decoded PCM 
 
 ## Automated validation
 
-- Full Linux unit suite after PR review fixes: 961 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
+- Full Linux unit suite after PR review fixes: 962 passed, eight skipped. Svelte check: zero errors, zero warnings. Production build passed. Secret scan passed with values redacted.
 - Windows unit suite excludes the five pre-existing Linux symlink deployment tests; the full Linux run includes them.
 - Read-only standards/spec reviews completed; all material workflow and export findings were fixed and re-reviewed.
 - `HEADLESS=1 SKIP_UNIT=1 SKIP_BUILD=1 bun run test:local` passed all UI, playback, interaction, stutter, audio, beat and six negative-fixture gates, using a separate loopback QA server. Unit/build results above apply to the same app code. Physical desktop-proof artifacts were explicitly skipped by this headless suite; the custom demo acceptance above used headed server Chrome on the RTX GPU.
@@ -58,4 +58,12 @@ Missing originals used only by later sections or banks now trigger the CLIPS/rel
 
 A follow-up review found that an already-running hosted analysis could overwrite restored controls. Workflow restoration now invalidates that request before applying saved signals. Delayed success and failure regression tests use the real audio-load path and prove source BPM, beat grid, tempo, pitch and key remain restored without changing the song generation.
 
+The browser also held a real Studio analysis request until after workflow restoration; releasing the delayed failure left signals, tempo 1.15, pitch +2, key -3, volume 0.42 and ready status unchanged. A final transition check starts with custom MIDI routing and loads the complete Perform demo: old channels, card layers and global routing are cleared, while all 2,367 freshly imported Redline Timing events remain and PGM renders real video.
+
 The exact deployed merge revision and public verification belong in PR #45's post-merge release record. Final Brag capture follows accepted production behavior and remains separate from performance evidence.
+
+## Required review checkpoint
+
+Kimi/OpenCodeReview run 38858218681 reviewed 15 of 26 selected files, then its provider returned the account's five-hour quota error. The manifest is `partial` with 11 failed items, and the workflow correctly rejected it. This is not a completed mandatory review or a release waiver. Production deployment and final Brag capture remain gated.
+
+Sixteen partial findings were addressed: full staged-asset hash verification and public HEAD checks; exact-commit catalog lookup; early demo-root validation; Compose constants/comment handling/map-form validation; packaging shape and case handling; controlled async media failures in both servers; a module-anchored default root; early friendly structure validation; approved demo-ID reuse; clearer legacy/status branches and bank indexing; unknown-based JSON guards; and import placement. Three low suggestions are retained as deliberate boundaries: the MIME tables belong to different public/QA format surfaces; `/demo-media/` is the fixed public route contract; unsupported multi-range requests retain the tested single-range policy. No additional functional defect was established by those suggestions.

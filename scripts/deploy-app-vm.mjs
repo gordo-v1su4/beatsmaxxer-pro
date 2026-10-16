@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, lstatSync, existsSync } from 'n
 import { realpathSync, statfsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { isIP } from 'node:net';
-import { RELEASE_OWNER, RELEASE_MARKER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache, withPublicDemoMount } from './deploySupport.mjs';
+import { RELEASE_OWNER, RELEASE_MARKER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache, withPublicDemoMount, DEFAULT_PUBLIC_DEMO_ROOT, validatePublicDemoDirectory, verifyStagedDemoBundle, verifyPublishedDemoAssets } from './deploySupport.mjs';
 
 // This runner deliberately deploys one app on VM100; identity checks are allowlists.
 const identity = { home: '/home/gordo/', stack: 'beatsmaxxer-pro', container: 'beatsmaxxer-pro-web', dependencies: 'beatsmaxxer-deploy-dependencies' };
@@ -29,10 +29,12 @@ const base = control.origin;
 const environment = Number(target.DOCKHAND_ENV_ID);
 assert(Number.isInteger(environment) && environment > 0, 'Invalid Dockhand environment');
 const publicOrigin = new URL(privateEnv.APP_ORIGIN).origin;
-const demoRoot = target.DEMO_MEDIA_DIR || '/opt/beatsmaxxer-pro/demo-media';
+const demoRoot = validatePublicDemoDirectory(target.DEMO_MEDIA_DIR || DEFAULT_PUBLIC_DEMO_ROOT);
 assert(existsSync(resolve(demoRoot, 'manifest.json')), 'Publish the curated demo bundle before deploying the public workflows');
-const approvedDemo = JSON.parse(readFileSync(new URL('../svelte/src/lib/runtime/publicDemo.json', import.meta.url), 'utf8'));
-assert.deepEqual(JSON.parse(readFileSync(resolve(demoRoot, 'manifest.json'), 'utf8')), approvedDemo, 'Staged demo bundle differs from the reviewed catalog');
+const reviewedCatalog = spawnSync('git', ['show', `${revision}:svelte/src/lib/runtime/publicDemo.json`], { encoding: 'utf8' });
+assert(reviewedCatalog.status === 0, 'Cannot read the deployed revision demo catalog');
+const approvedDemo = JSON.parse(reviewedCatalog.stdout);
+await verifyStagedDemoBundle(demoRoot, approvedDemo);
 assert(publicOrigin.startsWith('https://'), 'Production needs HTTPS');
 const releaseRoot = resolve(target.APP_RELEASE_ROOT);
 assert(releaseRoot.startsWith(identity.home), 'Unexpected release directory');
@@ -116,6 +118,7 @@ try {
   const demo = await fetch(publicOrigin + '/demo-media/manifest.json', { cache: 'no-store', signal: AbortSignal.timeout(30000) });
   assert(demo.ok, 'Public demo bundle is unavailable');
   assert.deepEqual(await demo.json(), approvedDemo, 'Public demo bundle differs from the reviewed catalog');
+  await verifyPublishedDemoAssets(publicOrigin, approvedDemo);
   const gate = await fetch(publicOrigin + '/__api/gate', { signal: AbortSignal.timeout(30000) });
   assert(gate.ok, 'Public access gate unavailable');
   const session = await gate.json();

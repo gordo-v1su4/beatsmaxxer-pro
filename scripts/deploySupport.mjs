@@ -1,10 +1,44 @@
 import assert from 'node:assert/strict';
 import { readdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { join, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 
 export const RELEASE_OWNER = 'gordo-v1su4/beatsmaxxer-pro';
 export const RELEASE_MARKER = '.beatsmaxxer-release.json';
 const committed = /^[a-f0-9]{40}$/;
+export const DEFAULT_PUBLIC_DEMO_ROOT = '/opt/beatsmaxxer-pro/demo-media';
+const DEMO_CONTAINER_ROOT = '/app/demo-media';
+/** @typedef {{name:string,path:string,size:number,sha256:string,type:string}} DemoAsset */
+/** @typedef {{song:DemoAsset,analysis:DemoAsset,midi:DemoAsset,structure:DemoAsset,clips:DemoAsset[]}} DemoCatalog */
+
+/** @param {string} root */
+export function validatePublicDemoDirectory(root) {
+  assert(/^\/[A-Za-z0-9/_-]+$/.test(root), 'Invalid public demo directory');
+  return root;
+}
+
+/** Verify every staged byte before activation, against the deployed commit's catalog.
+ * @param {string} root @param {DemoCatalog} catalog */
+export async function verifyStagedDemoBundle(root, catalog) {
+  const base = await realpath(root);
+  assert.deepEqual(JSON.parse(await readFile(join(base, 'manifest.json'), 'utf8')), catalog, 'Staged demo bundle differs from the reviewed catalog');
+  await Promise.all([catalog.song, catalog.analysis, catalog.midi, catalog.structure, ...catalog.clips].map(async asset => {
+    assert(/^\/demo-media\/[a-f0-9]{64}\.(mp4|mp3|json)$/.test(asset.path), 'Invalid reviewed demo asset path');
+    const file = await realpath(join(base, asset.path.slice('/demo-media/'.length)));
+    assert(file.startsWith(base + sep), 'Staged demo asset escapes its directory');
+    const bytes = await readFile(file);
+    assert(bytes.length === asset.size && createHash('sha256').update(bytes).digest('hex') === asset.sha256, `Staged demo asset failed verification: ${asset.name}`);
+  }));
+}
+
+/** @param {string} origin @param {DemoCatalog} catalog @param {typeof fetch} request */
+export async function verifyPublishedDemoAssets(origin, catalog, request = fetch) {
+  await Promise.all([catalog.song, catalog.analysis, catalog.midi, catalog.structure, ...catalog.clips].map(async asset => {
+    const response = await request(origin + asset.path, { method: 'HEAD', headers: { 'Accept-Encoding': 'identity' }, cache: 'no-store', signal: AbortSignal.timeout(30000) });
+    assert(response.status === 200 && response.headers.get('content-length') === String(asset.size)
+      && response.headers.get('content-type')?.split(';')[0] === asset.type, `Public demo asset unavailable or changed: ${asset.name}`);
+  }));
+}
 
 /** Same literal, unquoted KEY=value format as the private Compose raw env file.
  * @param {string} text */
@@ -20,17 +54,17 @@ export function requireEnvKeys(values, keys, source) {
 /** Add the curated read-only demo mount to this app's managed Compose only.
  * @param {string} content @param {string} demoRoot */
 export function withPublicDemoMount(content, demoRoot) {
-  assert(/^\/[A-Za-z0-9/_-]+$/.test(demoRoot), 'Invalid public demo directory');
+  validatePublicDemoDirectory(demoRoot);
   const lines = content.replace(/\r\n/g, '\n').split('\n');
   const start = lines.findIndex(line => /^  app:\s*$/.test(line));
   assert(start >= 0, 'Managed app service not found');
   let end = start + 1;
   while (end < lines.length && (!lines[end].trim() || lines[end].startsWith('    '))) end++;
   const app = lines.slice(start, end);
-  const mount = `      - ${demoRoot}:/app/demo-media:ro`;
-  const mounts = app.filter(line => line.includes(':/app/demo-media'));
+  const mount = `      - ${demoRoot}:${DEMO_CONTAINER_ROOT}:ro`;
+  const mounts = app.filter(line => !line.trimStart().startsWith('#') && line.includes(`:${DEMO_CONTAINER_ROOT}`));
   const existing = mounts[0];
-  const template = '      - ${DEMO_MEDIA_DIR:-/opt/beatsmaxxer-pro/demo-media}:/app/demo-media:ro';
+  const template = '      - ${DEMO_MEDIA_DIR:-' + DEFAULT_PUBLIC_DEMO_ROOT + '}:' + DEMO_CONTAINER_ROOT + ':ro';
   assert(mounts.length <= 1 && (!existing || existing === mount || existing === template), 'Unexpected existing demo mount');
   if (existing) app[app.indexOf(existing)] = mount;
   if (!existing) {
@@ -40,9 +74,11 @@ export function withPublicDemoMount(content, demoRoot) {
   }
   const env = app.findIndex(line => /^    environment:\s*$/.test(line));
   assert(env >= 0, 'Managed app environment not found');
+  const firstEnvEntry = app.slice(env + 1).find(line => line.trim() && !line.trimStart().startsWith('#'));
+  assert(!firstEnvEntry || !/^      -/.test(firstEnvEntry), 'Managed app environment must use map form');
   const configured = app.find(line => /^      DEMO_MEDIA_ROOT:/.test(line));
-  assert(!configured || configured.trim() === 'DEMO_MEDIA_ROOT: /app/demo-media', 'Unexpected demo container directory');
-  if (!configured) app.splice(env + 1, 0, '      DEMO_MEDIA_ROOT: /app/demo-media');
+  assert(!configured || configured.trim() === `DEMO_MEDIA_ROOT: ${DEMO_CONTAINER_ROOT}`, 'Unexpected demo container directory');
+  if (!configured) app.splice(env + 1, 0, `      DEMO_MEDIA_ROOT: ${DEMO_CONTAINER_ROOT}`);
   return [...lines.slice(0, start), ...app, ...lines.slice(end)].join('\n');
 }
 

@@ -1,3 +1,6 @@
+import publishedDemo from './publicDemo.json';
+
+export const PUBLISHED_DEMO_ID = publishedDemo.id;
 export interface DemoAsset { name: string; path: string; sha256: string; size: number; type: string }
 export interface DemoManifest {
   version: 1; id: string; title: string;
@@ -16,9 +19,6 @@ export function parseDemoManifest(raw: unknown): DemoManifest {
   if (new Set(doc.clips.map(c => c.name)).size !== doc.clips.length) throw new Error('Duplicate demo clip names');
   return doc;
 }
-import publishedDemo from './publicDemo.json';
-
-
 /** The mounted bundle must be the media reviewed with this app revision. */
 export function parsePublishedDemoManifest(raw: unknown): DemoManifest {
   const doc = parseDemoManifest(raw), approved = parseDemoManifest(publishedDemo);

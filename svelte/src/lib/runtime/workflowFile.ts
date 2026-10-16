@@ -13,6 +13,7 @@ import { transportDisplay } from '$lib/stores/transportDisplay';
 import { loadedDemo, loadCompleteDemo, fetchDemoCatalog, workflowLoadStatus } from './demoWorkflow';
 import { canPlaceInRow, getModuleDef } from '$lib/modules/catalog';
 import { captureWorkflowSignals, parseWorkflowSignals, restoreWorkflowSignals } from './workflowSignals';
+import { PUBLISHED_DEMO_ID } from './demoManifest';
 
 function validateModuleBank(bank: { top: string[]; bottom: string[] }) {
   const ids = [...bank.top, ...bank.bottom];
@@ -28,9 +29,12 @@ export function serializeWorkflow() {
   if (!song.trackName || song.duration <= 0) throw new Error('Load a song before saving a workflow.');
   const doc = JSON.parse(serializeArrangement(song.trackName, song.duration));
   const scene = captureScene(get(videoLayers));
+  let clipOrder = 'hold';
+  if (get(autoRandom)) clipOrder = 'random';
+  else if (get(linearOrder)) clipOrder = 'linear';
   doc.workflow = {
     version: 1, workspace: get(playbackWorkspace), signals: captureWorkflowSignals(),
-    perform: { clipOrder: get(autoRandom) ? 'random' : get(linearOrder) ? 'linear' : 'hold', intervalBeats: get(intervalBeats), feel: get(feel), autoClips: get(autoClips) },
+    perform: { clipOrder, intervalBeats: get(intervalBeats), feel: get(feel), autoClips: get(autoClips) },
     demoId: loadedDemo?.generation === audioEngine.getUploadedTrackLoadGeneration() ? loadedDemo.id : undefined,
     live: { bank: { top: get(rackTop), bottom: get(rackBottom) }, timing: get(timingSettings),
       params: get(moduleParams), triggerSources: get(moduleTriggerSource), bypassed: get(bypassed),
@@ -43,7 +47,7 @@ export function parseWorkflow(raw: string) {
   if (raw.length > 20 * 1024 * 1024) throw new Error('Workflow file is too large.');
   const doc = JSON.parse(raw), settings = doc.workflow;
   if (!settings || settings.version !== 1 || !['perform', 'timing'].includes(settings.workspace)
-    || (settings.demoId !== undefined && settings.demoId !== 'redline-complete-v1')
+    || (settings.demoId !== undefined && settings.demoId !== PUBLISHED_DEMO_ID)
     || settings.live?.timing?.version !== 1) throw new Error('Unsupported workflow file. Use Load Arrangement for an arrangement-only file.');
   const signals=parseWorkflowSignals(settings.signals);
   const perform = settings.perform;
@@ -96,8 +100,13 @@ export async function loadWorkflowFile(raw: string) {
   const recalled = await recallScene(snapshot.scene);
   const missing=[...new Set([...resolved.missing,...recalled.failed])];
   if (missing.length) arrangementSaveStatus.set(`Workflow loaded · relink missing clips: ${missing.join(', ')}`);
-  const legacySignalsMissing=!resolved.signals&&!resolved.settings.demoId&&(resolved.settings.workspace==='timing'&&!['pgm','beat','continuous'].includes(snapshot.timing.trigger.source)||Object.values(snapshot.triggerSources??{}).includes('midi'));
-  workflowLoadStatus.set(missing.length ? 'Workflow loaded · add missing originals to CLIPS, then load this workflow again' : legacySignalsMissing ? 'Workflow loaded · import matching MIDI or analysis; this older file has no trigger events' : 'Workflow loaded · sections, banks, cuts and settings restored');
+  const timingNeedsEvents = resolved.settings.workspace === 'timing' && !['pgm', 'beat', 'continuous'].includes(snapshot.timing.trigger.source);
+  const performNeedsEvents = Object.values(snapshot.triggerSources ?? {}).includes('midi');
+  const legacySignalsMissing = !resolved.signals && !resolved.settings.demoId && (timingNeedsEvents || performNeedsEvents);
+  let message = 'Workflow loaded · sections, banks, cuts and settings restored';
+  if (missing.length) message = 'Workflow loaded · add missing originals to CLIPS, then load this workflow again';
+  else if (legacySignalsMissing) message = 'Workflow loaded · import matching MIDI or analysis; this older file has no trigger events';
+  workflowLoadStatus.set(message);
   return resolved;
 }
 

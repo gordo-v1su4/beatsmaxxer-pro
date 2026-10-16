@@ -37,13 +37,13 @@ export function captureWorkflowSignals(): WorkflowSignals {
 export function parseWorkflowSignals(raw: unknown): WorkflowSignals | undefined {
   if (raw === undefined) return undefined; // Existing workflow files remain readable.
   const fail = () => { throw new Error('Invalid workflow trigger data.'); };
-  const record = (value: any): value is Record<string, any> => !!value && typeof value === 'object' && !Array.isArray(value);
+  const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
   const text = (value: unknown) => typeof value === 'string' && value.length > 0 && value.length <= 1000;
   const number = (value: unknown, min = 0, max = Infinity): value is number => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
-  const times = (value: any) => Array.isArray(value) && value.length <= 200000 && value.every((time, i) => number(time) && (!i || time >= value[i - 1]));
-  const events = (value: any) => Array.isArray(value) && value.length <= 200000 && value.every((event, i) => record(event) && number(event.time) && number(event.strength, 0, 1) && (!i || event.time >= value[i - 1].time));
-  const notes = (value: any) => Array.isArray(value) && value.length <= 200000 && value.every(note => record(note) && number(note.time) && number(note.note, 0, 127) && Number.isInteger(note.note) && number(note.velocity, 0, 127) && (note.beat === undefined || number(note.beat)));
-  const layer = (value: any) => record(value) && text(value.name) && number(value.duration) && notes(value.notes) && (value.identity === undefined || text(value.identity));
+  const times = (value: unknown) => Array.isArray(value) && value.length <= 200000 && value.every((time, i) => number(time) && (!i || time >= value[i - 1]));
+  const events = (value: unknown) => Array.isArray(value) && value.length <= 200000 && value.every((event, i) => record(event) && number(event.time) && number(event.strength, 0, 1) && (!i || event.time >= value[i - 1].time));
+  const notes = (value: unknown) => Array.isArray(value) && value.length <= 200000 && value.every(note => record(note) && number(note.time) && number(note.note, 0, 127) && Number.isInteger(note.note) && number(note.velocity, 0, 127) && (note.beat === undefined || number(note.beat)));
+  const layer = (value: unknown) => record(value) && text(value.name) && number(value.duration) && notes(value.notes) && (value.identity === undefined || text(value.identity));
   const data = raw as WorkflowSignals;
   if (!record(data) || data.version !== 1 || typeof data.uiOpen !== 'boolean' || !['audio', 'midi'].includes(data.source)
     || (data.midiModule !== null && (!text(data.midiModule) || !getModuleDef(data.midiModule)))) fail();
