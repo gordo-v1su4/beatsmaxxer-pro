@@ -1,8 +1,10 @@
 import { get, writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import { addClipsToLibrary } from '$lib/stores/clipLibrary';
-import { rackTop, rackBottom, moduleParams, bypassed } from '$lib/stores/rack';
-import { viewMode } from '$lib/stores/rackUi';
+import { rackTop, rackBottom, moduleParams, bypassed, midiLayers } from '$lib/stores/rack';
+import { viewMode, midiUiOpen } from '$lib/stores/rackUi';
+import { restoreMidiChannels } from '$lib/stores/midiChannels';
+import { triggerSource, triggerMidiModule } from '$lib/stores/triggerLane';
 import { timingSettings, parseTimingSettings } from '$lib/stores/timing';
 import { loadTimingBundle } from '$lib/stores/timingSignals';
 import { normalizeStructureAnalysis } from '$lib/audio/structureNormalize';
@@ -67,6 +69,10 @@ export async function loadCompleteDemo(workspace: 'perform' | 'timing' = 'perfor
     moduleParams.set(Object.fromEntries(modules.map(def => [def.id, { ...def.params }])));
     const triggerSources = Object.fromEntries(modules.map(def => [def.id, 'audio' as const]));
     moduleTriggerSource.set(triggerSources);
+    // A demo replaces the previous song's MIDI routing too. Timing imports its
+    // matching Redline events below, independently of Perform's card channels.
+    restoreMidiChannels([], null); midiLayers.set({}); midiUiOpen.set(false);
+    triggerSource.set('audio'); triggerMidiModule.set(null);
     bypassed.set(Object.fromEntries(modules.map(def => [def.id, false])));
     setClipOrder('random'); intervalBeats.set(4); feel.set(0);
     applySectionBank({ ...DEFAULT_ARRANGEMENT[0], bank });
