@@ -10,6 +10,8 @@ import { timingSettings } from '$lib/stores/timing';
 import { autoRandom, linearOrder, intervalBeats, feel, setClipOrder } from '$lib/stores/pgm';
 import { autoClips } from '$lib/stores/arrangement';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
+import { listCatalog } from '$lib/modules/catalog';
+import { workflowLoadStatus } from '$lib/runtime/demoWorkflow';
 import { serializeWorkflow, parseWorkflow, loadWorkflowFile } from '$lib/runtime/workflowFile';
 
 const display = get(transportDisplay), params = get(moduleParams), timing = get(timingSettings);
@@ -79,4 +81,29 @@ test('rejects invalid performance controls before replacing the current take', a
   doc.workflow.perform.intervalBeats = -1;
   await expect(loadWorkflowFile(JSON.stringify(doc))).rejects.toThrow('Invalid workflow performance settings');
   expect(get(arrangement)).toBe(before);
+});
+
+test.each(['live', 'section', 'take'])('rejects unknown modules in the %s bank before replacing work', async target => {
+  const doc = JSON.parse(serializeWorkflow()), before = get(arrangement);
+  doc.sections[0].deckSnapshot = structuredClone(doc.workflow.live);
+  const bank = target === 'live' ? doc.workflow.live.bank : target === 'section' ? doc.sections[0].bank : doc.sections[0].deckSnapshot.bank;
+  bank.top[0] = 'nonexistent-module';
+  await expect(loadWorkflowFile(JSON.stringify(doc))).rejects.toThrow('Invalid workflow module bank');
+  expect(get(arrangement)).toBe(before);
+});
+
+test.each(['wrong-row', 'duplicate'])('rejects a %s module assignment without replacing work', async kind => {
+  const doc = JSON.parse(serializeWorkflow()), before = get(arrangement), bank = doc.workflow.live.bank;
+  bank.top[0] = kind === 'duplicate' ? bank.top[1] : listCatalog().find(module => module.row === 'bottom')!.id;
+  await expect(loadWorkflowFile(JSON.stringify(doc))).rejects.toThrow('Invalid workflow module bank');
+  expect(get(arrangement)).toBe(before);
+});
+
+test('missing live-only originals instruct users to reimport after adding media', async () => {
+  videoLayers.set({ 'top-0': { name: 'missing.mp4', url: 'blob:original' } } as never);
+  const raw = serializeWorkflow(); videoLayers.set({});
+  vi.spyOn(mediaRuntime, 'removeModuleClip').mockResolvedValue();
+  vi.spyOn(mediaRuntime, 'registerModuleClip').mockResolvedValue({ status: 'failed', error: 'missing', previous: null });
+  await loadWorkflowFile(raw);
+  expect(get(workflowLoadStatus)).toContain('add missing originals to CLIPS, then load this workflow again');
 });

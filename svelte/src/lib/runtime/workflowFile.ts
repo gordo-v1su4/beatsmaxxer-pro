@@ -11,6 +11,16 @@ import { timingSettings } from '$lib/stores/timing';
 import { playbackWorkspace, viewMode } from '$lib/stores/rackUi';
 import { transportDisplay } from '$lib/stores/transportDisplay';
 import { loadedDemo, loadCompleteDemo, fetchDemoCatalog, workflowLoadStatus } from './demoWorkflow';
+import { canPlaceInRow, getModuleDef } from '$lib/modules/catalog';
+
+function validateModuleBank(bank: { top: string[]; bottom: string[] }) {
+  const ids = [...bank.top, ...bank.bottom];
+  if (new Set(ids).size !== ids.length) throw new Error('Invalid workflow module bank.');
+  for (const row of ['top', 'bottom'] as const) for (const id of bank[row]) {
+    const module = getModuleDef(id);
+    if (!module || !canPlaceInRow(module, row)) throw new Error('Invalid workflow module bank.');
+  }
+}
 
 export function serializeWorkflow() {
   const song = get(transportDisplay);
@@ -44,6 +54,10 @@ export function parseWorkflow(raw: string) {
   const parsed = parseArrangementFile(raw);
   // Reuse the established scene, bank, parameter and Timing validators.
   const live = parseArrangementFile(JSON.stringify({ ...doc, cuts: [], sections: [{ ...doc.sections[0], scene: settings.live.scene, bank: settings.live.bank, deckSnapshot: settings.live }] }));
+  for (const section of [...parsed.sections, ...live.sections]) {
+    validateModuleBank(section.bank);
+    if (section.deckSnapshot) validateModuleBank(section.deckSnapshot.bank);
+  }
   return { ...parsed, settings, live: live.sections[0], raw };
 }
 
@@ -78,7 +92,7 @@ export async function loadWorkflowFile(raw: string) {
   }
   const recalled = await recallScene(snapshot.scene);
   if (recalled.failed.length) arrangementSaveStatus.set(`Workflow loaded · relink missing clips: ${recalled.failed.join(', ')}`);
-  workflowLoadStatus.set(recalled.failed.length ? 'Workflow loaded · add missing originals to CLIPS to relink them' : 'Workflow loaded · sections, banks, cuts and settings restored');
+  workflowLoadStatus.set(recalled.failed.length ? 'Workflow loaded · add missing originals to CLIPS, then load this workflow again' : 'Workflow loaded · sections, banks, cuts and settings restored');
   return resolved;
 }
 
