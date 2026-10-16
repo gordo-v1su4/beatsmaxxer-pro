@@ -31,6 +31,8 @@ assert(Number.isInteger(environment) && environment > 0, 'Invalid Dockhand envir
 const publicOrigin = new URL(privateEnv.APP_ORIGIN).origin;
 const demoRoot = target.DEMO_MEDIA_DIR || '/opt/beatsmaxxer-pro/demo-media';
 assert(existsSync(resolve(demoRoot, 'manifest.json')), 'Publish the curated demo bundle before deploying the public workflows');
+const approvedDemo = JSON.parse(readFileSync(new URL('../svelte/src/lib/runtime/publicDemo.json', import.meta.url), 'utf8'));
+assert.deepEqual(JSON.parse(readFileSync(resolve(demoRoot, 'manifest.json'), 'utf8')), approvedDemo, 'Staged demo bundle differs from the reviewed catalog');
 assert(publicOrigin.startsWith('https://'), 'Production needs HTTPS');
 const releaseRoot = resolve(target.APP_RELEASE_ROOT);
 assert(releaseRoot.startsWith(identity.home), 'Unexpected release directory');
@@ -112,7 +114,8 @@ try {
   const publicHealth = await fetch(publicOrigin + '/health', { cache: 'no-store', signal: AbortSignal.timeout(30000) });
   assert(publicHealth.ok && (await publicHealth.json()).revision === revision, 'Public revision differs');
   const demo = await fetch(publicOrigin + '/demo-media/manifest.json', { cache: 'no-store', signal: AbortSignal.timeout(30000) });
-  assert(demo.ok && (await demo.json()).clips?.length >= 10, 'Public demo bundle is unavailable');
+  assert(demo.ok, 'Public demo bundle is unavailable');
+  assert.deepEqual(await demo.json(), approvedDemo, 'Public demo bundle differs from the reviewed catalog');
   const gate = await fetch(publicOrigin + '/__api/gate', { signal: AbortSignal.timeout(30000) });
   assert(gate.ok, 'Public access gate unavailable');
   const session = await gate.json();

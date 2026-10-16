@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "id": "redline-complete-v1",
+  "title": "Redline · Complete Demo",
+  "song": {
+    "name": "redline.mp3",
+    "path": "/demo-media/dcdd62fa682862cfa2ec11015acd5eb7ac773cc499d6edad98f57d692e68943b.mp3",
+    "sha256": "dcdd62fa682862cfa2ec11015acd5eb7ac773cc499d6edad98f57d692e68943b",
+    "size": 3866458,
+    "type": "audio/mpeg"
+  },
+  "analysis": {
+    "name": "redline-analysis.json",
+    "path": "/demo-media/95fce0397be7ef1f3a23996c0b003f1defe5935b7a927a662b24b4a9b4fa6138.json",
+    "sha256": "95fce0397be7ef1f3a23996c0b003f1defe5935b7a927a662b24b4a9b4fa6138",
+    "size": 685338,
+    "type": "application/json"
+  },
+  "midi": {
+    "name": "redline-midi.json",
+    "path": "/demo-media/257e9f1fb61d9e50f45ca03a8612fb9c7b4a4041327f92b520aaa75a0ef21612.json",
+    "sha256": "257e9f1fb61d9e50f45ca03a8612fb9c7b4a4041327f92b520aaa75a0ef21612",
+    "size": 424116,
+    "type": "application/json"
+  },
+  "structure": {
+    "name": "redline-studio.json",
+    "path": "/demo-media/189c8da77a8d9085fc1a8558de670cc27ca4e064626ecb930195261197e87553.json",
+    "sha256": "189c8da77a8d9085fc1a8558de670cc27ca4e064626ecb930195261197e87553",
+    "size": 484733,
+    "type": "application/json"
+  },
+  "clips": [
+    {
+      "name": "Redline clip 01.mp4",
+      "path": "/demo-media/861c58844d2e8aeede08f582b44ecb53f9febc94f7ffbcb736425045b8e39c2d.mp4",
+      "sha256": "861c58844d2e8aeede08f582b44ecb53f9febc94f7ffbcb736425045b8e39c2d",
+      "size": 9085925,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 02.mp4",
+      "path": "/demo-media/0d23c116309f6c4c5c6199cb50acd936e86d8665ae74054f1eb91339b8bf5795.mp4",
+      "sha256": "0d23c116309f6c4c5c6199cb50acd936e86d8665ae74054f1eb91339b8bf5795",
+      "size": 8815270,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 03.mp4",
+      "path": "/demo-media/f6d9912b3e9b0827a9d04e0649a635a018be1fc9935df7829ca7b902d2d8e758.mp4",
+      "sha256": "f6d9912b3e9b0827a9d04e0649a635a018be1fc9935df7829ca7b902d2d8e758",
+      "size": 8140008,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 04.mp4",
+      "path": "/demo-media/5f5027fef25e282857fd31b13c051cced179e23ec5858f7eb95ed9b517e3948f.mp4",
+      "sha256": "5f5027fef25e282857fd31b13c051cced179e23ec5858f7eb95ed9b517e3948f",
+      "size": 8316248,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 05.mp4",
+      "path": "/demo-media/2d29a63deefe4d646b2f6873ff8e864daf10879b7350012f7118c1550c3adaf9.mp4",
+      "sha256": "2d29a63deefe4d646b2f6873ff8e864daf10879b7350012f7118c1550c3adaf9",
+      "size": 10774883,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 06.mp4",
+      "path": "/demo-media/2614238fe1ebe28549475b002cee2b18a7a124bd9e9e1f39d20080ad2e84c90e.mp4",
+      "sha256": "2614238fe1ebe28549475b002cee2b18a7a124bd9e9e1f39d20080ad2e84c90e",
+      "size": 8331367,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 07.mp4",
+      "path": "/demo-media/f83715342199c0dce40b482d87b8efae9ae945c79d6c57b18b7a1ac85925c824.mp4",
+      "sha256": "f83715342199c0dce40b482d87b8efae9ae945c79d6c57b18b7a1ac85925c824",
+      "size": 8991392,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 08.mp4",
+      "path": "/demo-media/a01a5666182490f3268e766bae11b8aded406c15fb96c59ed040acd9836c76bc.mp4",
+      "sha256": "a01a5666182490f3268e766bae11b8aded406c15fb96c59ed040acd9836c76bc",
+      "size": 8065375,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 09.mp4",
+      "path": "/demo-media/f881d48723823249314f740a880014530522eecff30995022658873c3bd2bffd.mp4",
+      "sha256": "f881d48723823249314f740a880014530522eecff30995022658873c3bd2bffd",
+      "size": 8781880,
+      "type": "video/mp4"
+    },
+    {
+      "name": "Redline clip 10.mp4",
+      "path": "/demo-media/209a183bc9d56c0529e86aebc3d6d45c177a1b63f1a018baf2586cdd179574e4.mp4",
+      "sha256": "209a183bc9d56c0529e86aebc3d6d45c177a1b63f1a018baf2586cdd179574e4",
+      "size": 8626170,
+      "type": "video/mp4"
+    }
+  ]
+}

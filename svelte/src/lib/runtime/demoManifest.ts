@@ -16,3 +16,16 @@ export function parseDemoManifest(raw: unknown): DemoManifest {
   if (new Set(doc.clips.map(c => c.name)).size !== doc.clips.length) throw new Error('Duplicate demo clip names');
   return doc;
 }
+import publishedDemo from './publicDemo.json';
+
+
+/** The mounted bundle must be the media reviewed with this app revision. */
+export function parsePublishedDemoManifest(raw: unknown): DemoManifest {
+  const doc = parseDemoManifest(raw), approved = parseDemoManifest(publishedDemo);
+  const assets = (manifest: DemoManifest) => [manifest.song, manifest.analysis, manifest.midi, manifest.structure, ...manifest.clips];
+  const actual = assets(doc), expected = assets(approved);
+  const fields: Array<keyof DemoAsset> = ['name', 'path', 'sha256', 'size', 'type'];
+  if (doc.id !== approved.id || doc.title !== approved.title || actual.length !== expected.length
+    || actual.some((asset, i) => fields.some(key => asset[key] !== expected[i][key]))) throw new Error('The demo media is out of date. Try again shortly.');
+  return doc;
+}

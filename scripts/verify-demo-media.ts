@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { parseDemoManifest } from '../svelte/src/lib/runtime/demoManifest';
+import { parsePublishedDemoManifest } from '../svelte/src/lib/runtime/demoManifest';
 
 /** Anonymous production smoke: verify every advertised byte and browser range support. */
 export async function verifyPublicDemo(origin: string) {
@@ -8,7 +8,7 @@ export async function verifyPublicDemo(origin: string) {
   const fetchPublic = (path: string, init: RequestInit = {}) => fetch(new URL(path, base.origin), { ...init, signal: AbortSignal.timeout(60000) });
   const response = await fetchPublic('/demo-media/manifest.json', { cache: 'no-store' });
   if (!response.ok) throw new Error(`Demo catalog returned ${response.status}`);
-  const manifest = parseDemoManifest(await response.json());
+  const manifest = parsePublishedDemoManifest(await response.json());
   const assets = [manifest.song, manifest.analysis, manifest.midi, manifest.structure, ...manifest.clips];
   let bytes = 0;
   for (let i = 0; i < assets.length; i += 3) {

@@ -2,6 +2,7 @@ import { mkdir, copyFile, readFile, writeFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve, extname, relative, sep } from 'node:path';
 import type { DemoAsset, DemoManifest } from '../svelte/src/lib/runtime/demoManifest';
+import { parsePublishedDemoManifest } from '../svelte/src/lib/runtime/demoManifest';
 
 // Packaging only: reuse original files and cached analysis; no media processing.
 const benchmark = resolve(process.argv[2] ?? 'svelte/.artifacts/benchmark-fixtures/benchmark');
@@ -30,6 +31,7 @@ for (let i = 0; i < 10; i++) {
   clips.push(await asset(source, `Redline clip ${String(i + 1).padStart(2, '0')}.mp4`));
 }
 const manifest: DemoManifest = { version: 1, id: 'redline-complete-v1', title: 'Redline · Complete Demo', song, analysis, midi, structure, clips };
+parsePublishedDemoManifest(manifest);
 // Commit the catalog last: incomplete packaging never advertises a ready bundle.
 await writeFile(resolve(output, 'manifest.json'), JSON.stringify(manifest, null, 2));
 console.info(`Demo bundle ready: ${clips.length} original clips, matching song/MIDI/analysis; ${output}`);

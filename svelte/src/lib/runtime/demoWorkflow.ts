@@ -13,7 +13,7 @@ import { arrangementMode } from '$lib/arrangement/transportMode';
 import { listCatalog } from '$lib/modules/catalog';
 import { setClipOrder, intervalBeats, feel, commitPgmCut } from '$lib/stores/pgm';
 import { moduleTriggerSource } from '$lib/stores/midiTrigger';
-import { parseDemoManifest, type DemoManifest, type DemoAsset } from './demoManifest';
+import { parsePublishedDemoManifest, type DemoManifest, type DemoAsset } from './demoManifest';
 
 export const workflowLoadStatus = writable('');
 export let loadedDemo: { id: string; generation: number } | undefined;
@@ -21,7 +21,7 @@ let catalog: DemoManifest | undefined;
 export async function fetchDemoCatalog() {
   const response = await fetch('/demo-media/manifest.json');
   if (!response.ok) throw new Error('The demo media is unavailable. Try again shortly.');
-  return catalog = parseDemoManifest(await response.json());
+  return catalog = parsePublishedDemoManifest(await response.json());
 }
 async function downloadAsset(asset: DemoAsset) {
   const response = await fetch(asset.path);

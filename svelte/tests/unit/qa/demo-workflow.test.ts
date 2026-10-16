@@ -5,9 +5,11 @@ import { loadCompleteDemo } from '$lib/runtime/demoWorkflow';
 import { audioEngine } from '$lib/audio';
 import { arrangement } from '$lib/stores/arrangement';
 import { moduleParams } from '$lib/stores/rack';
+import * as manifestParser from '$lib/runtime/demoManifest';
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 test('a demo workflow with the wrong decoded song duration preserves the current take', async () => {
+  vi.spyOn(manifestParser, 'parsePublishedDemoManifest').mockImplementation(manifestParser.parseDemoManifest);
   const files = new Map<string, string>();
   const asset = (name: string, bytes: string, ext: string) => {
     const sha256 = createHash('sha256').update(bytes).digest('hex'), path = `/demo-media/${sha256}.${ext}`;
