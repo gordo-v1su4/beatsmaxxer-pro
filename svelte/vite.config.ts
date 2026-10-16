@@ -8,6 +8,7 @@ import { isAnalysisUploadPathEnabled } from '../api/analyze/policy';
 import { accessGateConfigFromEnv } from '../api/gate/policy';
 import { mediaGatewayConfigFromEnv } from '../api/_lib/mediaGateway';
 import { playbackBenchmarkPlugin } from './vite/playbackBenchmark';
+import { serveDemoMedia } from '../runtime/demoMedia';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -41,6 +42,13 @@ export default defineConfig(({ mode, command }) => {
 		// ours. Relative asset paths (what Tauri needs) come from kit.paths.relative,
 		// which is on by default.
 		plugins: [
+			{ name: 'public-demo-media', configureServer(server) {
+				server.middlewares.use((req, res, next) => {
+					const pathname = (req.url ?? '').split('?')[0];
+					if (!pathname.startsWith('/demo-media/')) return next();
+					void serveDemoMedia(req, res, env.DEMO_MEDIA_ROOT || path.resolve(__dirname, '.artifacts/demo-media'), pathname.slice('/demo-media/'.length));
+				});
+			} },
 			playbackBenchmarkPlugin(),
 			tailwindcss(),
 			// Options live in svelte.config.js — passing any here makes SvelteKit

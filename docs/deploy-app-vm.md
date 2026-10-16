@@ -48,6 +48,31 @@ secrets must not be placed in browser code. Image builds need the non-secret
 
 ## Exact-main deployment
 
+### Public demo media
+
+The public WORKFLOW menu uses a curated content-addressed bundle, separate from
+the private user-upload and GPU job APIs. Package the existing verified song,
+cached analysis/MIDI and ten original clips with
+`bun scripts/prepare-demo-media.ts <benchmark-directory> <test-media-directory> <output-directory>`.
+This copies files and verifies the song hash; it performs no interpolation.
+
+Publish the resulting directory on VM100 at `/opt/beatsmaxxer-pro/demo-media`
+(or set `DEMO_MEDIA_DIR` in the private deploy configuration). The managed app
+mounts that folder read-only at `/app/demo-media`; `DEMO_MEDIA_ROOT` selects the
+container path. Only the manifest and SHA-256-named MP4/MP3/JSON files are served
+under `/demo-media/`, with byte-range support. Keep arbitrary QA trees and private
+uploads outside this directory. Publishing this curated demo is intentional;
+the existing access gate still protects hosted analysis and GPU media jobs.
+
+Deployment requires the bundle manifest, retains the mount across image
+updates and verifies the public manifest after activation. The previous complete
+Compose is still used for rollback. Development defaults to
+`svelte/.artifacts/demo-media`; clean source builds do not embed the large media.
+Run `bun scripts/verify-demo-media.ts <application-origin>` against a preview
+and the public release to verify all advertised hashes, file sizes and byte
+ranges without an access session. Follow with the loaded-app browser checks;
+valid downloads alone do not prove playback or export.
+
 The [deployment workflow](../.github/workflows/deploy-app-vm.yml) uses the
 repository-scoped `beatsmaxxer-app-vm` runner, label `beatsmaxxer-production`,
 under `/home/gordo/actions-runner-beatsmaxxer`. The GitHub environment
@@ -99,7 +124,6 @@ the external queue volume, RustFS originals and shared GPU lock. Do not use
 automatic image updates. Follow the owning Proxmox worker runbook for runtime
 paths, health checks and recovery.
 
-The October10 acceptance container uses an `acceptance-20261010` app image.
-Dockhand managed redeployment, authenticated public-browser cache attachment
-and 96 FPS artifact checks passed. The old public Vercel site remains separate
-until the reviewed release is merged and exact-main deployment is verified.
+Use `/health` to confirm the running revision after every release. A preview
+container or successful image build does not verify the public app; check the
+canonical origin and its authenticated preparation flow after managed deployment.

@@ -2,9 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, utimes, access, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RELEASE_MARKER, RELEASE_OWNER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache } from '../../../../scripts/deploySupport.mjs';
+import { RELEASE_MARKER, RELEASE_OWNER, parseRawEnv, requireEnvKeys, waitForHealthy, pruneReleaseCache, withPublicDemoMount } from '../../../../scripts/deploySupport.mjs';
 
 describe('deployment safety', () => {
+  it('adds one read-only demo mount without changing worker services or existing app volumes', () => {
+    const original = 'name: beatsmaxxer-pro\nservices:\n  app:\n    image: app:old\n    volumes:\n      - old-data:/work\n    environment:\n      APP_ORIGIN: ${APP_ORIGIN}\n  worker:\n    volumes:\n      - queue:/work\n';
+    const next = withPublicDemoMount(original, '/opt/beatsmaxxer-pro/demo-media');
+    expect(next).toContain('      - old-data:/work');
+    expect(next).toContain('      - /opt/beatsmaxxer-pro/demo-media:/app/demo-media:ro');
+    expect(next).toContain('      DEMO_MEDIA_ROOT: /app/demo-media');
+    expect(next.split('  worker:')[1]).toBe(original.split('  worker:')[1]);
+    expect(withPublicDemoMount(next, '/opt/beatsmaxxer-pro/demo-media')).toBe(next);
+    expect(() => withPublicDemoMount(original, '/tmp/media:rw')).toThrow();
+    expect(() => withPublicDemoMount(next, '/another-folder')).toThrow('Unexpected existing demo mount');
+  });
   it('normalizes raw env keys and reports missing names without values', () => {
     const env = parseRawEnv('# comment\n PIN = private=value\n EMPTY=\n');
     expect(env.PIN).toBe('private=value');

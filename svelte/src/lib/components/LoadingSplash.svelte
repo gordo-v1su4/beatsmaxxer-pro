@@ -55,8 +55,11 @@
     phase: 'gpu' | 'shaders' | 'armed' | 'go' | 'ready';
     done?: number;
     total?: number;
+    onEnter: () => void;
   }
-  let { phase, done = 0, total = 0 }: Props = $props();
+  let { phase, done = 0, total = 0, onEnter }: Props = $props();
+  let enterButton = $state<HTMLButtonElement>();
+  $effect(() => { if (phase === 'armed') enterButton?.focus({ preventScroll: true }); });
 
   // Device bring-up is the first tenth; shader compiles are the rest.
   const percent = $derived(
@@ -96,8 +99,7 @@
   <div
     class="splash"
     class:leaving
-    role="status"
-    aria-live="polite"
+    role="region"
     aria-label={armed ? 'Beatsmaxxer Pro, ready' : 'Beatsmaxxer Pro, loading'}
   >
     {#key take}
@@ -175,13 +177,11 @@
       </div>
 
       <div class="readout">
-        <span class="lbl">LOADING</span>
+        <span class="lbl">{armed ? 'READY' : 'LOADING'}</span>
         <span class="pct">{String(percent).padStart(3, '0')}<small>%</small></span>
         <div class="task">
           {#if armed}
-            <span class="press">
-              <span class="fine">PRESS ANY KEY</span><span class="coarse">TAP TO START</span>
-            </span>
+            <button bind:this={enterButton} class="press" type="button" onclick={onEnter} disabled={leaving}>ENTER <span aria-hidden="true">→</span></button>
           {:else if current}
             {current.label}{current.note ? ` ${current.note}` : ''}
           {/if}
@@ -512,7 +512,7 @@
   }
 
   .task {
-    height: 10px;
+    min-height: 48px;
     max-width: min(640px, 92vw);
     margin-top: 6px;
     overflow: hidden;
@@ -525,15 +525,22 @@
   }
 
   .press {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 44px;
+    padding: 12px 18px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
     color: var(--c-ui);
     letter-spacing: 0.25em;
     margin-right: -0.25em;
-    animation: pulse 1.8s ease-in-out infinite;
-  }  .press .coarse { display: none; }
-  @media (pointer: coarse) {
-    .press .fine { display: none; }
-    .press .coarse { display: inline; }
+    animation: pulse 1.2s steps(2, end) infinite;
   }
+  .press:focus-visible { outline: 2px solid var(--c-ui); outline-offset: 4px; animation: none; }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50%      { opacity: 0.35; }

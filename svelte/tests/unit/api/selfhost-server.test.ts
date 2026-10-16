@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { createServer, request, type Server } from 'node:http';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAppHandler } from '../../../../runtime/server';
@@ -37,4 +37,25 @@ test('exposes revision health and preserves access-session enforcement and routi
     req.on('error',reject);req.end();
   });expect(wrongHost).toBe(403);
   expect((await fetch(origin+'/__api/unrecognized')).status).toBe(404);
+});
+
+test('serves only curated public demo assets, including seek ranges, independently of the private media gate', async () => {
+  const root = join(directory, 'demo'); await mkdir(root);
+  vi.stubEnv('DEMO_MEDIA_ROOT', root);
+  const name = 'a'.repeat(64) + '.mp4';
+  await writeFile(join(root, name), '0123456789');
+  await writeFile(join(root, 'manifest.json'), '{"version":1}');
+  await writeFile(join(root, 'private.mp4'), 'private');
+  expect((await fetch(origin + '/demo-media/manifest.json')).headers.get('cache-control')).toBe('no-cache');
+  const head = await fetch(origin + '/demo-media/' + name, { method: 'HEAD' });
+  expect(head.status).toBe(200); expect(head.headers.get('content-length')).toBe('10');
+  expect(head.headers.get('content-type')).toBe('video/mp4'); expect(await head.text()).toBe('');
+  const range = await fetch(origin + '/demo-media/' + name, { headers: { Range: 'bytes=2-5' } });
+  expect(range.status).toBe(206); expect(range.headers.get('content-range')).toBe('bytes 2-5/10');
+  expect(await range.text()).toBe('2345');
+  expect(await (await fetch(origin + '/demo-media/' + name, { headers: { Range: 'bytes=-3' } })).text()).toBe('789');
+  expect((await fetch(origin + '/demo-media/' + name, { headers: { Range: 'bytes=20-' } })).status).toBe(416);
+  expect((await fetch(origin + '/demo-media/' + name, { headers: { Range: 'bytes=0-1,4-5' } })).status).toBe(416);
+  expect((await fetch(origin + '/demo-media/private.mp4')).status).toBe(404);
+  expect((await fetch(origin + '/demo-media/manifest.json', { method: 'POST' })).status).toBe(405);
 });

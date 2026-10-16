@@ -965,8 +965,9 @@ export class WebGpuEngine {
       (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView || pendingPgmTarget)
     ) {
       try {
+        const copied = this.videoTextureCache.diagnostics.copiedFrames;
         cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
-        cachedTextureUploaded = true;
+        cachedTextureUploaded = this.videoTextureCache.diagnostics.copiedFrames > copied;
       } catch {
         // A seek can invalidate the current external frame between readiness
         // inspection and upload. Preserve the last successfully cached frame.
@@ -1223,6 +1224,18 @@ export class WebGpuEngine {
   }
 
   /** The clip's current video frame as a texture, or null when it has none yet. */
+  /** Preserve newly committed decoded frames before transport can seek them. */
+  primeVideoFrames(sourceIds: readonly string[]) {
+    if (!this.device) return;
+    for (const sourceId of sourceIds) {
+      const video = videoPool.get(sourceId);
+      if (!video || this.videoTextureCache.cachedView(sourceId, video)) continue;
+      if (video.seeking || !videoPool.hasReadyFrame(sourceId)) continue;
+      try { this.videoTextureCache.upload(this.device, sourceId, video); }
+      catch { /* A decoder can invalidate readiness; retry on the next frame. */ }
+    }
+  }
+
   private timingFallbackView(sourceId: string): GPUTextureView | null {
     const video = videoPool.get(sourceId);
     if (!this.device || !video) return null;

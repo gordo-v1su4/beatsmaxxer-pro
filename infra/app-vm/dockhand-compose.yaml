@@ -11,7 +11,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    volumes:
+      - ${DEMO_MEDIA_DIR:-/opt/beatsmaxxer-pro/demo-media}:/app/demo-media:ro
     environment:
+      DEMO_MEDIA_ROOT: /app/demo-media
       APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN required}
       APP_ACCESS_PIN: ${APP_ACCESS_PIN:?APP_ACCESS_PIN required}
       INTERPOLATION_WORKER_URL: ${INTERPOLATION_WORKER_URL:?INTERPOLATION_WORKER_URL required}

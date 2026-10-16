@@ -6,6 +6,7 @@ import gate from '../api/gate/index';
 import { handleAnalysisProxy } from '../api/analyze/handler';
 import { handleStorageUpload } from '../api/storage/handler';
 import { handleMediaProxy } from '../api/media/index';
+import { serveDemoMedia } from './demoMedia';
 
 const contentTypes: Record<string, string> = {
   '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8',
@@ -25,6 +26,7 @@ export function createAppHandler(buildRoot: string, origin: string, revision: st
     try {
       const path=new URL(req.url??'/',origin).pathname;
       if(path==='/health')return json(res,200,{service:'beatsmaxxer-pro',revision});
+      if(path.startsWith('/demo-media/'))return serveDemoMedia(req,res,process.env.DEMO_MEDIA_ROOT||'svelte/.artifacts/demo-media',path.slice('/demo-media/'.length));
       if(path.startsWith('/__api/')) {
         if(req.headers.host?.toLowerCase()!==expected.host.toLowerCase())return json(res,403,{detail:'Unexpected application host.'});
         if(path==='/__api/gate')return await gate(req,res);
