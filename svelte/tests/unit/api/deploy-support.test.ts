@@ -88,7 +88,7 @@ describe('deployment safety', () => {
       }
       const foreign = 'f'.repeat(40), linked = 'e'.repeat(40);
       await mkdir(join(root, foreign));
-      await symlink(join(root, revisions[4]), join(root, linked), 'dir');
+      await symlink(join(root, revisions[4]), join(root, linked), process.platform === 'win32' ? 'junction' : 'dir');
       const retired: string[] = [];
       expect(await pruneReleaseCache(root, [revisions[0]], async (revision: string) => { retired.push(revision); return true; }, 2)).toBe(2);
       expect(retired.sort()).toEqual([revisions[1], revisions[2]].sort());

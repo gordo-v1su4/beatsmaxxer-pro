@@ -1,9 +1,18 @@
+#[cfg(debug_assertions)]
 use std::path::PathBuf;
 
 /// Load repo-root `.env`. Fills vars that are unset or blank in the process environment.
 /// `CARGO_MANIFEST_DIR` is `desktop/src-tauri`; repo root is two levels up.
 pub fn load_repo_dotenv() {
-    let env_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../.env");
+    #[cfg(debug_assertions)]
+    {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        load_dotenv_file(&root.join(".env.local"));
+        load_dotenv_file(&root.join(".env"));
+    }
+}
+
+pub fn load_dotenv_file(env_path: &std::path::Path) {
     if !env_path.is_file() {
         #[cfg(debug_assertions)]
         eprintln!(

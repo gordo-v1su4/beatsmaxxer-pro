@@ -4,6 +4,7 @@
  * shown and forwards an attempt. Nothing here can unlock anything on its own.
  */
 import { get, writable } from 'svelte/store';
+import { hostedApiFetch } from '$lib/platform/hostedApi';
 const CACHE_KEY = 'bmx.access.state';
 export const serviceUnlockRequested = writable(false);
 export const hostedServicesUnlocked = writable(false);
@@ -84,7 +85,7 @@ export function stateFromStatus(status: AccessStatus): AccessState {
   return !status.required || status.unlocked ? 'open' : 'locked';
 }
 
-export async function fetchAccessState(fetchImpl = globalThis.fetch): Promise<AccessState> {
+export async function fetchAccessState(fetchImpl = hostedApiFetch): Promise<AccessState> {
   try {
     const response = await fetchImpl(gateEndpoint().toString(), {
       method: 'GET',
@@ -102,7 +103,7 @@ export async function fetchAccessState(fetchImpl = globalThis.fetch): Promise<Ac
 
 export type SubmitResult = 'accepted' | 'rejected' | 'throttled' | 'error';
 
-export async function submitPin(pin: string, fetchImpl = globalThis.fetch): Promise<SubmitResult> {
+export async function submitPin(pin: string, fetchImpl = hostedApiFetch): Promise<SubmitResult> {
   try {
     const response = await fetchImpl(gateEndpoint().toString(), {
       method: 'POST',

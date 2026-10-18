@@ -76,6 +76,7 @@ Set before `bun run dev:desktop` (or in `.env`):
 |----------|----------|-------|
 | `ESSENTIA_API_BASE_URL` | For ANALYZE | Set in repo-root `.env` / `.env.local` (git-ignored); base URL for your hosted analysis API |
 | `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust `analyze_rhythm` command uses it |
+| `BMX_API_BASE_URL` | For Speedramp preparation | Canonical HTTPS origin of the hosted application, without a path; never the worker URL |
 
 `ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.
 
@@ -128,6 +129,33 @@ rendering path to keep in sync.
 |---------|---------|
 | `essentia_configured` | Report whether both Essentia env vars are set |
 | `analyze_rhythm` | Upload audio to the Essentia host from Rust (no CORS) |
+| `hosted_api_request` | Allowlisted gate/media requests through the configured application origin; session remains in Rust |
+| `hosted_demo_request` | Read-only, bounded binary downloads of the public demo manifest and content-addressed media |
+
+### Installed desktop media service
+
+Set `BMX_API_BASE_URL` in `%APPDATA%\dev.beatsmaxxer.pro.desktop\.env`
+(Tauri's application configuration directory), then restart the app. Debug builds
+also read repo-root `.env.local` and `.env`, in that order. Process environment
+values take precedence. Release builds do not read the build machine's repo path.
+No server address or credential is compiled into the installer.
+
+The top WORKFLOW menu downloads the complete published demo from that same
+application service, including its song, ten real clips, analysis/MIDI and
+arrangement. These public files need no code; the client verifies their hashes
+and sizes before replacing the current workflow. Prepared render downloads still
+come from RustFS and pass the existing provenance/content checks.
+
+Importing new media uses the existing access-code dialog. Enter the same code as
+the hosted application. The native bridge retains the HttpOnly session in memory
+for this app run; restart requires unlocking again. It supplies the configured
+application Origin, keeps server authentication/origin checks intact, refuses
+redirects, and allows only gate status/unlock, chunk upload, job lookup/create,
+and failed-job retry. Gateway/worker credentials stay on the server.
+
+Only low-frame-rate Speedramp sources use the remote preparation service. Original
+video loading, Stutter, HTMLVideo/WebGPU playback and export stay local. Downloaded
+renders retain the existing content-hash, provenance and measured >=96 FPS checks.
 
 ## Web vs desktop
 

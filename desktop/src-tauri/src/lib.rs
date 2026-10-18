@@ -2,6 +2,7 @@ use tauri::{LogicalSize, Manager, WebviewWindow};
 
 mod env;
 mod essentia;
+mod hosted_api;
 
 /// Open at a consistent share of whichever monitor owns the window. Monitor
 /// dimensions are converted to logical pixels first, so Windows DPI scaling
@@ -56,9 +57,13 @@ pub fn run() {
     env::log_essentia_startup();
 
     tauri::Builder::default()
+        .manage(hosted_api::HostedApiSession::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            if let Ok(directory) = app.path().app_config_dir() {
+                env::load_dotenv_file(&directory.join(".env"));
+            }
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -96,7 +101,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             essentia::essentia_configured,
-            essentia::analyze_rhythm
+            essentia::analyze_rhythm,
+            hosted_api::hosted_api_request,
+            hosted_api::hosted_demo_request
         ])
         .run(tauri::generate_context!())
         .expect("error while running Beatsmaxxer Pro desktop");

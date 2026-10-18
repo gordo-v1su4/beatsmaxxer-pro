@@ -17,17 +17,18 @@ import { listCatalog } from '$lib/modules/catalog';
 import { setClipOrder, intervalBeats, feel, commitPgmCut } from '$lib/stores/pgm';
 import { moduleTriggerSource } from '$lib/stores/midiTrigger';
 import { parsePublishedDemoManifest, type DemoManifest, type DemoAsset } from './demoManifest';
+import { hostedDemoFetch } from '$lib/platform/hostedApi';
 
 export const workflowLoadStatus = writable('');
 export let loadedDemo: { id: string; generation: number } | undefined;
 let catalog: DemoManifest | undefined;
 export async function fetchDemoCatalog() {
-  const response = await fetch('/demo-media/manifest.json');
+  const response = await hostedDemoFetch('/demo-media/manifest.json');
   if (!response.ok) throw new Error('The demo media is unavailable. Try again shortly.');
   return catalog = parsePublishedDemoManifest(await response.json());
 }
 async function downloadAsset(asset: DemoAsset) {
-  const response = await fetch(asset.path);
+  const response = await hostedDemoFetch(asset.path);
   if (!response.ok) throw new Error(`Could not load ${asset.name}. Retry the workflow.`);
   const bytes = await response.arrayBuffer();
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('');

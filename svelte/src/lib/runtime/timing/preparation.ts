@@ -5,6 +5,7 @@ import { timingPreparationBlocked } from './readiness';
 import { INTERPOLATION_PROFILE, validInterpolationArtifact, type InterpolationJob, type InterpolationArtifact } from '../../../../../api/_lib/interpolationContract';
 import { rememberGeneratedInterpolation, meetsSlowMotionFrameRate } from './interpolation';
 import demoCatalog from '../publicDemo.json';
+import { hostedApiFetch } from '$lib/platform/hostedApi';
 const demoHashes = new Set(demoCatalog.clips.map(clip => clip.sha256));
 
 export interface PreparationProgress { stage:string; completed:number; total:number; jobId?:string }
@@ -34,7 +35,7 @@ async function readJob(response:Response,expectedId:string,sourceHash:string){
 async function createRender(file:File,sha256:string,id:string,notify:(p:PreparationProgress)=>void):Promise<Render>{
   const publicDemo = demoHashes.has(sha256);
   const path=`/__api/media/${publicDemo ? 'demo/' : ''}jobs/${id}`;
-  let response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)});
+  let response=await hostedApiFetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)});
   let job:InterpolationJob;
   if(response.status===404 && !publicDemo){
     const uploadId=crypto.randomUUID(),chunkBytes=3*1024*1024,chunkCount=Math.ceil(file.size/chunkBytes);
@@ -42,10 +43,10 @@ async function createRender(file:File,sha256:string,id:string,notify:(p:Preparat
       notify({stage:'uploading',completed:i,total:chunkCount,jobId:id});
       const form=new FormData();form.set('file',file.slice(i*chunkBytes,(i+1)*chunkBytes),`${String(i).padStart(5,'0')}.part`);
       const url=new URL('/__api/media/upload',window.location.origin);url.searchParams.set('uploadId',uploadId);url.searchParams.set('chunkIndex',String(i));
-      const uploaded=await fetch(url,{method:'POST',body:form,signal:AbortSignal.timeout(120000)});
+      const uploaded=await hostedApiFetch(url,{method:'POST',body:form,signal:AbortSignal.timeout(120000)});
       if(!uploaded.ok){const error=await uploaded.json().catch(()=>null);throw new Error(error?.detail||'Clip upload failed');}
     }
-    response=await fetch('/__api/media/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha256,name:file.name,uploadId,chunkCount,size:file.size}),signal:AbortSignal.timeout(30000)});
+    response=await hostedApiFetch('/__api/media/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha256,name:file.name,uploadId,chunkCount,size:file.size}),signal:AbortSignal.timeout(30000)});
   }
   job=await readJob(response,id,sha256);
   const deadline=Date.now()+45*60000;
@@ -54,7 +55,7 @@ async function createRender(file:File,sha256:string,id:string,notify:(p:Preparat
     if(job.state==='failed')throw new Error(job.error||'GPU interpolation failed');
     if(Date.now()>deadline)throw new Error('GPU preparation timed out. Retry the clip.');
     await new Promise(resolve=>setTimeout(resolve,1000));
-    job=await readJob(await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)}),id,sha256);
+    job=await readJob(await hostedApiFetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)}),id,sha256);
   }
   const artifact=job.artifact;
   if(!validInterpolationArtifact(artifact))throw new Error('The render has no verified interpolation provenance');
@@ -105,7 +106,7 @@ export async function resumeInterpolationJob(jobId:string){
     const demoIds = await Promise.all(demoCatalog.clips.map(clip => digest(new TextEncoder().encode(`${INTERPOLATION_PROFILE}:${clip.sha256}`))));
     const publicDemo = demoIds.includes(jobId);
     const path=`/__api/media/${publicDemo ? 'demo/' : ''}jobs/${jobId}`;
-    const current=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)});
+    const current=await hostedApiFetch(path,{cache:'no-store',signal:AbortSignal.timeout(30000)});
     if(current.status!==404){
       if(!current.ok)throw new Error('The GPU worker is unavailable. Retry shortly.');
       const job=await current.json();
@@ -113,7 +114,7 @@ export async function resumeInterpolationJob(jobId:string){
       // Network/download failures may leave an already completed server job.
       // Resume that job; only explicitly failed GPU executions need requeuing.
       if(job.state==='failed' && !publicDemo){
-        const response=await fetch(`${path}/retry`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(30000)});
+        const response=await hostedApiFetch(`${path}/retry`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(30000)});
         if(!response.ok)throw new Error('The GPU job could not be retried');
       }
     }
