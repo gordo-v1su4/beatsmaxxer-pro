@@ -4,8 +4,9 @@
   <img src="docs/images/beatsmaxxer-workspace.png" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
 </p>
 
-Beatsmaxxer Pro is an audio-reactive video FX rack for live visuals: ten clip
-slots, a program monitor, and shader effects driven by rhythm analysis.
+Beatsmaxxer Pro is a music-driven video editor and live visual-effects instrument.
+Shape cuts and playback timing around a song, perform with ten clip slots and
+shader effects, then export a finished video or an editable DaVinci Resolve timeline.
 
 **Stack**
 
