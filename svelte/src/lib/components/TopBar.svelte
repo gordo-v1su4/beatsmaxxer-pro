@@ -90,6 +90,16 @@
   let demoAvailable = $state(false);
   let workflowInput: HTMLInputElement;
 
+  // Progress/errors remain actionable; completed notices leave the workspace clear.
+  $effect(() => {
+    const message = $workflowLoadStatus;
+    if (!message || workflowBusy || workflowError || /missing|unavailable|failed|import matching|add .*clips/i.test(message)) return;
+    const timeout = setTimeout(() => {
+      workflowLoadStatus.update(current => current === message ? '' : current);
+    }, 6500);
+    return () => clearTimeout(timeout);
+  });
+
   $effect(() => {
     void fetchDemoCatalog().then(() => demoAvailable = true).catch(() => demoAvailable = false);
     if (import.meta.env.DEV) fetch('/qa-media/manifest.json', { method: 'HEAD' })
@@ -721,8 +731,8 @@
 <style>
   .workflow-menu-note{max-width:300px;padding:8px 12px;margin:0;color:#b2bcc3;font:12px/1.5 system-ui,sans-serif}
   .workflow-menu-note button{border:0;background:#244b46;color:#d2fff0;padding:6px 10px;cursor:pointer}
-  .workflow-feedback{position:fixed;bottom:20px;left:20px;z-index:4100;display:flex;align-items:center;gap:16px;max-width:min(480px,calc(100vw - 40px));padding:14px 18px;background:#183c37;color:#def8ef;font:13px/1.5 system-ui,sans-serif}
-  .workflow-feedback button{border:0;background:transparent;color:inherit;font-size:22px;cursor:pointer;min-width:32px;min-height:32px}
+  .workflow-feedback{position:fixed;bottom:14px;left:14px;z-index:4100;display:flex;align-items:center;gap:10px;max-width:min(440px,calc(100vw - 28px));padding:7px 10px;background:rgb(24 60 55 / 70%);color:#def8ef;font:11px/1.45 var(--font-ui);border-radius:2px}
+  .workflow-feedback button{border:0;background:transparent;color:inherit;font:18px/1 var(--font-ui);cursor:pointer;min-width:24px;min-height:24px}
   .hidden {
     display: none;
   }

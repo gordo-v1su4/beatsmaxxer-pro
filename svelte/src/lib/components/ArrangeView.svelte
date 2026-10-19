@@ -927,7 +927,7 @@
         </span>
         <span class="arr-secbar-meta">FPS</span>
         {#if $playbackWorkspace==='timing'}
-          <label class="arr-secbar-hint"><input type="checkbox" bind:checked={exportResolveTimeline} aria-label="Include Resolve timeline prototype"/> RESOLVE TIMELINE · TEST</label>
+          <button type="button" class="arr-btn" aria-pressed={exportResolveTimeline} data-active={exportResolveTimeline} onclick={()=>exportResolveTimeline=!exportResolveTimeline} title="Include editable FCPXML, reference video and audio in a ZIP. See HELP → Export to Resolve.">RESOLVE TIMELINE · {exportResolveTimeline?'ON':'OFF'}</button>
         {/if}
         <span class="arr-mode" role="radiogroup" aria-label="Frame rate">
           <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 24} data-active={exportFps === 24} onclick={() => (exportFps = 24)}>24</button>
