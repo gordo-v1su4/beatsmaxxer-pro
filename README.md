@@ -1,12 +1,13 @@
 # Beatsmaxxer Pro
 
 <p align="center">
-  <img src="docs/images/beatsmaxxer-workspace.png" alt="Beatsmaxxer Pro — beat-synced PGM monitor, FX rack, and live clip previews" width="100%" />
+  <img src="docs/images/beatsmaxxer-workspace.png" alt="Beatsmaxxer Pro — music-driven video editing, timing and live visual effects" width="100%" />
 </p>
 
 Beatsmaxxer Pro is a music-driven video editor and live visual-effects instrument.
-Shape cuts and playback timing around a song, perform with ten clip slots and
-shader effects, then export a finished video or an editable DaVinci Resolve timeline.
+Create an automatic first-pass edit, shape cuts and playback timing around a song,
+and perform with live shader effects. Export a finished video or an editable
+DaVinci Resolve timeline.
 
 **Stack**
 
@@ -17,30 +18,18 @@ shader effects, then export a finished video or an editable DaVinci Resolve time
 - Essentia rhythm/structure analysis with Web Audio fallback; SoundTouchJS for
   key, pitch, and tempo
 
-**What it does**
-
-- **Perform** — 19 WGSL effect modules, live previews, beat-quantized PGM cuts
-- **Arrange and time** — song sections on a timeline; ramps, stutters, and jump
-  cuts on the beat grid
-- **Ship everywhere** — browser (Chrome/Edge), mobile performance shell, Windows
-  app; browser acceptance scripts in CI and local gates
-
-Not a generative-AI visualizer: effects are WGSL shaders on loaded video clips.
-
 **Live:** [beatsmaxxing.com](https://beatsmaxxing.com) ·
 **Windows app:** [latest release](https://github.com/gordo-v1su4/beatsmaxxer-pro/releases/latest)
 
 ## What it does
 
-- **Perform** — ten live clip slots, 19 WGSL effect modules, and a program
-  (PGM) monitor that cuts on the beat.
-- **Arrange** — song sections detected from the track, laid out as a timeline.
-- **Timing** — speed ramps, stutters and a triggered Time Sampler, recorded into a reviewable arrangement.
-- **MIDI** — load a `.mid` file to drive trigger modules note by note.
-- **Audio** — hosted Essentia rhythm/structure analysis with a Web Audio
-  fallback; independent KEY / PITCH / TEMPO via SoundTouchJS.
-- **Everywhere** — the same build runs in desktop Chrome/Edge, as a one-clip
-  performance shell on phones, and as a Windows desktop app (Tauri 2).
+- **First-pass editing** — use musical triggers to generate cuts, with Balanced or Random clip selection; record and review the take.
+- **Timing** — shape playback with speed ramps, stutters and Time Sampler.
+- **Arrange** — edit song sections, assign clip banks, loop sections and replay saved cuts and settings.
+- **Perform** — play ten clip slots through live shader effects and a beat-synced program monitor.
+- **Export** — render video from original-resolution sources or export a Timing timeline for further editing in **DaVinci Resolve**.
+- **Music controls** — rhythm/structure analysis, MIDI note triggers, and independent key, pitch and tempo.
+- **Web and desktop** — browser app, phone performance view and Windows desktop app with updates.
 
 ## Quick start
 
