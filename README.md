@@ -108,7 +108,7 @@ docs/                       Backlog, research, timing-workspace notes
 
 ## Roadmap
 
-![Beatsmaxxer roadmap: shipped work, next refinements and later platforms](docs/images/beatsmaxxer-roadmap.svg)
+![Beatsmaxxer roadmap: shipped work, next refinements and later platforms](docs/images/beatsmaxxer-roadmap-compact.svg)
 
 Updated October 18, 2026. Checked items are implemented; test scope is called out where it matters. The visual groups milestones; the checkboxes track the details. [Diagram source](docs/roadmap.html).
 
