@@ -29,7 +29,7 @@
 <div class="timing-card" class:is-on-air={onAir} style:--timing-accent={color} data-timing-slot={slot}>
   <div class="timing-card-header module-live-header" data-on-air={onAir} class:is-selected={onAir} style:--module-accent={color}>
     <ModuleGrip onHeaderPointerDown={select} title="Open timing controls"/>
-    <button class="module-title" onclick={select} aria-label="Edit timing for source {number}" aria-pressed={$selectedTimingSlot===slot}><small>S{number}</small> {config.effect==='ramp'?'SPEEDRAMP':config.effect==='stutter'?'STUTTER':'TIMING OFF'}</button>
+    <button class="module-title" onclick={select} aria-label="Edit timing for source {number}" aria-pressed={$selectedTimingSlot===slot}><small>S{number}</small> {config.effect==='ramp'?'SPEEDRAMP':config.effect==='stutter'?'STUTTER':config.effect==='timesampler'?'TIMESAMPLER':'TIMING OFF'}</button>
     <RampReadiness {status}/>
     {#if onAir}<OnAirBadge />{/if}
     <button class="caret" onclick={select} aria-label="Open source {number} timing controls"><svg width="7" height="4" viewBox="0 0 7 4"><path d="M0 4 L3.5 0 L7 4" fill="none" stroke={color} stroke-width="1.2"/></svg></button>
@@ -47,7 +47,7 @@
         {#if preparation.state==='failed'}<small>{preparation.error}</small><button onclick={retry}>RETRY GPU PROCESSING</button>
         {:else if preparation.total>0}<progress value={preparation.completed} max={preparation.total} aria-label="GPU preparation progress"></progress><small>{preparation.completed} / {preparation.total}</small>{/if}
       </div>
-    {:else if config.effect==='ramp' && $videoLayers[slot] && status?.state!=='ready' && status?.state!=='error' && !$timingClipRestrictions[slot]}
+    {:else if (config.effect==='ramp'||config.effect==='timesampler') && $videoLayers[slot] && status?.state!=='ready' && status?.state!=='error' && !$timingClipRestrictions[slot]}
       <div class="clip-preparation" aria-label={`Preparing source ${number} frames`}>
         <span class="preparation-spinner" aria-hidden="true"></span>
         <span role="status">{status?.state==='loading'?(config.effect==='ramp'?'LOADING 96 FPS FRAMES':'LOADING ORIGINAL FRAMES'):'WAITING FOR LOCAL FRAME CACHE'}</span>

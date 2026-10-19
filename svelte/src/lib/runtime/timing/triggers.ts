@@ -1,5 +1,8 @@
 import { BeatGrid } from '$lib/transport/BeatGrid';
 import { evaluateRamp, integratedRamp, type ClipTiming, type StutterConfig } from './envelope';
+import { timeSamplerParamsFromControls } from '$lib/timesampler/integration';
+import { nextGrooveBeat } from '$lib/runtime/groove';
+import { compileSamplerPhrase, compileSamplerHit, type SamplerPhrase } from './sampler';
 
 export const TRIGGER_SOURCES = [
   ['pgm','PGM SOURCE'], ['beat','BEAT GRID'], ['midi','MIDI NOTES'], ['mix-onsets','MIX ONSETS'],
@@ -18,7 +21,7 @@ export interface TimingChannel { name: string; events: TimingEvent[] }
 export interface TimingSignal { channels: TimingChannel[]; beats: readonly number[]; bpm: number; duration: number; label: string; missing?: string }
 export interface TimingBurst {
   at: number; end: number; blockedUntil: number; source: number; exitSource: number;
-  repeats: number[]; triggerIndex: number;
+  repeats: number[]; triggerIndex: number; triggerAt?: number; phrase?: SamplerPhrase;
 }
 export interface TimingSchedule { bursts: TimingBurst[]; initialSource: number; config: ClipTiming; duration: number }
 
@@ -53,18 +56,26 @@ export function burstShape(rank: number, step: number): number[] {
   return [0, step, step * 1.5, step * 2, step * 2.25, step * 2.5];
 }
 
-/** Only burst starts may take PGM; simultaneous decks rotate by airtime. */
-export function programTimeline(schedules: readonly TimingBurst[][]) {
+/** Only eligible burst starts may take PGM; seed makes random cuts replayable. */
+export function programTimeline(schedules: readonly TimingBurst[][], order:'balanced'|'random'='balanced', seed=42) {
   const bursts = schedules.flatMap((list, deck) => list.map(b => ({ at: b.at, end: b.end, deck })))
     .sort((a, b) => a.at - b.at || a.deck - b.deck);
   const shown = schedules.map(() => -Infinity), out: { at: number; deck: number }[] = [];
   let busyUntil = -Infinity;
+  let randomState=seed>>>0;
   for (let i = 0; i < bursts.length;) {
     let j = i + 1;
     while (j < bursts.length && bursts[j].at - bursts[i].at < 1e-3) j++;
-    const b = bursts.slice(i, j).reduce((best, c) => shown[c.deck] < shown[best.deck] ? c : best);
+    const candidates=bursts.slice(i,j);
     i = j;
-    if (b.at < busyUntil - 1e-9) continue;
+    if (candidates[0].at < busyUntil - 1e-9) continue;
+    let b=candidates.reduce((best,c)=>shown[c.deck]<shown[best.deck]?c:best);
+    if(order==='random'){
+      const different=candidates.filter(c=>c.deck!==out.at(-1)?.deck);
+      const eligible=different.length?different:candidates;
+      randomState=(Math.imul(randomState,1664525)+1013904223)>>>0;
+      b=eligible[Math.floor(randomState/4294967296*eligible.length)];
+    }
     out.push({ at: b.at, deck: b.deck }); shown[b.deck] = b.at; busyUntil = b.end;
   }
   return out;
@@ -76,6 +87,8 @@ export function buildTimingSchedule(config: ClipTiming, trigger: TimingTriggerCo
   const schedule:TimingSchedule={bursts:[],initialSource,config,duration};
   if(config.effect==='off'||signal.missing)return schedule;
   const grid=new BeatGrid(signal.beats,signal.bpm);
+  const timeAtBeat=(beat:number)=>beatTime(grid.beats,signal.bpm,beat);
+  if(config.effect==='timesampler' && trigger.source==='continuous')return schedule;
   const channel=trigger.channel==='all'?signal.channels[slot%Math.max(1,signal.channels.length)]:signal.channels.find(c=>c.name===trigger.channel);
   const events=trigger.source==='beat'
     ? Array.from({length:Math.min(200000,Math.ceil(grid.sample(signal.duration).beatPosition/trigger.everyBeats)+1)},(_,i)=>({time:beatTime(signal.beats,signal.bpm,i*trigger.everyBeats),strength:1}))
@@ -85,16 +98,43 @@ export function buildTimingSchedule(config: ClipTiming, trigger: TimingTriggerCo
   const density=Math.max(.1,Math.min(1,(trigger.density??100)/100));
   const sorted=events.map(e=>e.strength).sort((a,b)=>a-b);
   const floor=densityFloor(sorted,density);
-  const chance=config.effect==='ramp'?trigger.rampChance/100:1;
+  const chance=config.effect==='ramp'?trigger.rampChance/100:config.effect==='timesampler'?(config.sampler.controls.chance??60)/100:1;
   const rampArea=config.effect==='ramp'?integratedRamp(config.ramp,1):0;
   let last:TimingBurst|undefined;
+  const restart=config.effect==='timesampler'&&config.sampler.behavior!=='continuous'&&config.sampler.retrigger==='restart';
   for(const [index,event] of events.entries()){
-    if(event.time<0||event.time>signal.duration||event.strength<=0||event.strength<floor||event.strength<trigger.threshold||event.time<(last?.blockedUntil??0)-1e-8)continue;
+    if(event.time<0||event.time>signal.duration||event.strength<=0||event.strength<floor||event.strength<trigger.threshold)continue;
+    if(last&&event.time<last.blockedUntil-1e-8&&(!restart||event.time>=last.end-1e-8))continue;
     // Match the R&D LCG sequence for ramps; 100% stutter consumes its first draw for the slice.
     if(chance<=0 || (chance<1 && random()>chance))continue;
     const at=event.time;
     const source=last?last.exitSource+at-last.end:initialSource+at;
     const startBeat=grid.sample(at).beatPosition;
+    if(config.effect==='timesampler'){
+      if(config.sampler.behavior!=='continuous'){
+        const launch=Math.ceil((startBeat-1e-8)/config.sampler.launchBeats)*config.sampler.launchBeats;
+        const landing=grid.transportSecondsAtBeat(launch);
+        if(duration<=0)continue;
+        // Several notes waiting for the same boundary cause one launch, not stacked restarts.
+        if(last&&landing<=last.at+1e-8)continue;
+        const phrase=config.sampler.behavior==='hit'
+          ?compileSamplerHit(config.sampler,duration,landing,initialSource+landing,index,trigger.seed+slot*997)
+          :compileSamplerPhrase(config.sampler,duration,grid,launch);
+        if(restart&&last&&last.end>landing){
+          last.end=landing;last.blockedUntil=landing;
+          last.repeats=[...last.repeats.filter(t=>t<landing),landing];
+        }
+        last={at:phrase.at,triggerAt:at,end:phrase.end,blockedUntil:phrase.end+trigger.gapSeconds+(1-density)*2*60/signal.bpm,
+          source:phrase.segments[0].source,exitSource:initialSource+phrase.end,repeats:[...phrase.segments.map(s=>s.at),phrase.end],triggerIndex:index,phrase};
+        schedule.bursts.push(last);continue;
+      }
+      const params=timeSamplerParamsFromControls(config.sampler.controls,duration,config.sampler.groove==='swing'?1:config.sampler.groove==='dotted'?2:0);
+      const boundary=nextGrooveBeat(startBeat+1e-7,params.jumpSizeBeats,params.feel??0);
+      const landing=timeAtBeat(boundary),end=timeAtBeat(nextGrooveBeat(boundary+1e-7,params.jumpSizeBeats,params.feel??0));
+      last={at:landing,triggerAt:at,end,blockedUntil:end+trigger.gapSeconds,
+        source,exitSource:source+end-at,repeats:[landing,end],triggerIndex:index};
+      schedule.bursts.push(last);continue;
+    }
     const dynamic=trigger.repeatStyle==='energy';
     const offsets=dynamic?burstShape(energyRank(sorted,event.strength),config.stutter.division):stutterBoundaries(config.stutter);
     const repeats:number[]=[];
@@ -133,7 +173,7 @@ export function sampleTimingSchedule(schedule: TimingSchedule, time: number) {
       if(config.effect==='ramp'){
         rate=evaluateRamp(config.ramp,phase);
         target=burst.source+integratedRamp(config.ramp,phase)*(burst.end-burst.at);
-      }else{
+      }else if(config.effect==='stutter'){
         let r=0;while(r<burst.repeats.length-2&&burst.repeats[r+1]<=time+1e-9)r++;
         target=burst.source+(config.stutter.mode==='hold'?0:time-burst.repeats[r]);
         rate=config.stutter.mode==='hold'?0:1;

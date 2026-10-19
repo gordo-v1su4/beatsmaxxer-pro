@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { finalizeRecording } from './finalizeRecording';
+import { prepareNativeTimingTake } from './nativeTimingTake';
 import { timingPreparationBlocked } from '$lib/runtime/timing/readiness';
 import { timingStatus, timingCacheCapacity, timingSceneErrors } from '$lib/stores/timing';
 import { applyTakeAt } from '$lib/arrangement/takeSnapshot';
@@ -23,15 +24,15 @@ import {
  * Realtime: the range plays in PLAY mode while the PGM canvas and the audio
  * mix are recorded together, so a 3-minute song takes 3 minutes. That is the
  * honest version — every effect, cut, scene recall and time-stretch is
- * exactly what the app renders live, because it is what the app renders live.
- * Offline faster-than-realtime would need frame-stepped HTMLVideo decode,
- * which the media pipeline cannot do.
+ * Timing then decodes the original sources frame by frame against the saved
+ * take, replacing preview pixels while retaining the captured audio clock.
  */
 export type ExportRange = 'song' | 'loop';
 
 export interface ExportOptions {
   range: ExportRange;
   fps: 24 | 30 | 60;
+  resolveTimeline?:boolean;
 }
 
 export type ExportStatus =
@@ -42,6 +43,7 @@ export type ExportStatus =
   | { status: 'error'; message: string };
 
 export const exportState = writable<ExportStatus>({ status: 'idle' });
+export const exportDownload=writable<{url:string;name:string}|null>(null);
 
 /** Formats in preference order; the first the browser can record wins. */
 const MIME_CANDIDATES = [
@@ -113,6 +115,8 @@ export async function startArrangementExport(options: ExportOptions): Promise<vo
   let audio:ReturnType<typeof audioEngine.createCaptureStream>=null;
   let video:MediaStream|null=null,recorder:MediaRecorder|null=null;
   let restoreLoop:(()=>void)|null=null,ownsTransport=false;
+  let native:Awaited<ReturnType<typeof prepareNativeTimingTake>>=null;
+  let playbackRate=1;
   const total=range.endSeconds-range.startSeconds;
   cancelRequested=false;
   exportState.set({status:'preparing',totalSeconds:total});
@@ -163,6 +167,7 @@ export async function startArrangementExport(options: ExportOptions): Promise<vo
     recorder.onerror=()=>{recorderError='Video recording failed. Try a supported browser or a smaller output.';};
     recorder.start(1000);
     await audioEngine.start();
+    playbackRate=audioTimeline.getLastFrame?.()?.playbackRate??1;
     exportState.set({status:'recording',elapsedSeconds:0,totalSeconds:total});
     const done=await new Promise<'finished'|'cancelled'|'stalled'>((resolve)=>{
       let startedPlaying=false,settled=false;
@@ -188,15 +193,23 @@ export async function startArrangementExport(options: ExportOptions): Promise<vo
     if(!recording.size)throw new Error('The recorder returned an empty video.');
     finalizationController=new AbortController();
     exportState.set({status:'finalizing',progress:0,fps:options.fps});
+    native=await prepareNativeTimingTake(range.startSeconds,range.endSeconds,display.bpm||120,playbackRate,finalizationController.signal);
+    if(options.resolveTimeline&&!native)throw new Error('Resolve timeline export is available in Timing only.');
     const blob=await finalizeRecording(recording,options.fps,{signal:finalizationController.signal,
+      nativeVideo:native?.video,
       onProgress:progress=>exportState.set({status:'finalizing',progress,fps:options.fps})});
     if(cancelRequested){exportState.set({status:'idle'});return;}
-    const url=URL.createObjectURL(blob),link=document.createElement('a');
-    link.href=url;link.download=exportFileName(mime);document.body.appendChild(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),30000);
+    const downloadable=options.resolveTimeline&&native
+      ? await (await import('./resolveBundle')).resolveBundle(blob,native.video,options.fps,finalizationController.signal):blob;
+    const url=URL.createObjectURL(downloadable),link=document.createElement('a');
+    const name=options.resolveTimeline&&native?exportFileName(mime).replace(/\.[^.]+$/, '-resolve.zip'):exportFileName(mime);
+    const previousDownload=get(exportDownload);if(previousDownload)URL.revokeObjectURL(previousDownload.url);
+    exportDownload.set({url,name});
+    link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
     exportState.set({status:'idle'});
   }catch(error){if(cancelRequested)exportState.set({status:'idle'});else fail(error instanceof Error?error.message:'Arrangement export failed.');}
   finally{
+    native?.release();
     finalizationController=null;
     try{await stopRecorder();}catch{}
     video?.getTracks().forEach(track=>track.stop());

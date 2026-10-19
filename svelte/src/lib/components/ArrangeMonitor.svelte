@@ -28,14 +28,14 @@
       const moduleId = moduleForSlotIndex($rackTop, $rackBottom, index);
       const slotId = index < MAX_RACK_SLOTS_PER_ROW ? `top-${index}` : `bottom-${index - MAX_RACK_SLOTS_PER_ROW}`;
       const def = moduleId ? getModuleDef(moduleId) : undefined;
-      // From TIMING, a slot is a deck: S0-S9 and its ramp or stutter.
+      // From TIMING, a slot identifies its deck and assigned retiming effect.
       if ($playbackWorkspace === 'timing') {
         const effect = effectiveClipTiming($timingSettings,slotId).effect;
         return {
           index,
           moduleId,
-          name: `S${index} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
-          effectName: effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF',
+          name: `S${index} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : effect === 'timesampler' ? 'SMPLR' : 'OFF'}`,
+          effectName: effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : effect === 'timesampler' ? 'SMPLR' : 'OFF',
           accent: timingEffectAccent(effect),
           ready: !!moduleId && $timingStatus[slotId]?.state === 'ready'
         };

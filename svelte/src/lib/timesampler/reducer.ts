@@ -146,6 +146,8 @@ export function createTimeSamplerState(
     sample.beatIntervalSeconds,
   );
   const state: TimeSamplerState = {
+    patternStep: 0,
+    patternAnchor: initialSlice(params.mode, count),
     activeSlice: initialSlice(params.mode, count),
     pongDirection: 1,
     loopIteration: 1,
@@ -262,11 +264,21 @@ function applyQueuedParams(state: TimeSamplerState, boundaryBeat: number): void 
 
   if (modeChanged) {
     state.pongDirection = 1;
+    state.patternStep = 0;
+    state.patternAnchor = state.activeSlice;
   }
   state.nextBoundaryBeat = boundaryAfter(boundaryBeat, state.jumpSizeBeats, state.feel);
 }
 
 function sequenceAdvance(state: TimeSamplerState, sliceCount: number): number {
+  if (state.mode === 'STEP3' || state.mode === 'STEP5') {
+    // Alternate an anchor with successive interval steps. The supported slice
+    // counts are powers of two, so strides 3 and 5 visit every slice before repeating.
+    state.patternStep = (state.patternStep ?? 0) + 1;
+    const anchor = state.patternAnchor ?? 0;
+    return state.patternStep % 2 === 0 ? anchor % sliceCount :
+      (anchor + Math.ceil(state.patternStep / 2) * (state.mode === 'STEP3' ? 3 : 5)) % sliceCount;
+  }
   if (state.mode === "FWD") {
     return (state.activeSlice + 1) % sliceCount;
   }
@@ -310,6 +322,8 @@ function processBoundary(
     );
     state.forcedJumpState = random.state;
     state.activeSlice = random.slice;
+    state.patternAnchor = state.activeSlice;
+    state.patternStep = 0;
     state.pendingTrigger = null;
     state.loopIteration = 1;
     reason = "forced";
@@ -348,6 +362,8 @@ function resetForDiscontinuity(
     state.beatIntervalSeconds,
   );
   state.activeSlice = initialSlice(state.mode, count);
+  state.patternAnchor = state.activeSlice;
+  state.patternStep = 0;
   state.pongDirection = 1;
   state.loopIteration = 1;
   state.jumpGeneration += 1;

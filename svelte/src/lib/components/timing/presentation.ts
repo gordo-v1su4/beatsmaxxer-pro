@@ -3,4 +3,4 @@ import type { ClipTiming } from '$lib/runtime/timing/envelope';
 
 /** Timing colors identify the active effect, never the original Perform slot. */
 export const timingEffectAccent = (effect: ClipTiming['effect']) =>
-  effect === 'ramp' ? ACCENTS.speedramp : effect === 'stutter' ? ACCENTS.tapdelay : '#556070';
+  effect === 'ramp' ? ACCENTS.speedramp : effect === 'stutter' ? ACCENTS.tapdelay : effect === 'timesampler' ? ACCENTS.timesampler : '#556070';

@@ -23,6 +23,7 @@
   import {
     cancelArrangementExport,
     exportState,
+    exportDownload,
     startArrangementExport,
     type ExportRange,
   } from '$lib/export/arrangementExport';
@@ -342,12 +343,12 @@
     const id = moduleForSlotIndex($rackTop, $rackBottom, slotIndex);
     const def = id ? getModuleDef(id) : undefined;
     if (!def) return null;
-    // Opened from TIMING, a lane is a deck: S0-S9 and its ramp or stutter.
+    // Opened from TIMING, a lane identifies its deck and assigned retiming effect.
     if ($playbackWorkspace === 'timing') {
       const slotId = slotIndex < MAX_RACK_SLOTS_PER_ROW ? `top-${slotIndex}` : `bottom-${slotIndex - MAX_RACK_SLOTS_PER_ROW}`;
       const effect = effectiveClipTiming($timingSettings,slotId).effect;
       return {
-        name: `S${slotIndex} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : 'OFF'}`,
+        name: `S${slotIndex} ${effect === 'ramp' ? 'RAMP' : effect === 'stutter' ? 'STUT' : effect === 'timesampler' ? 'SMPLR' : 'OFF'}`,
         color: timingEffectAccent(effect)
       };
     }
@@ -523,6 +524,7 @@
   let exportOpen = $state(false);
   let exportRange = $state<ExportRange>('song');
   let exportFps = $state<24 | 30 | 60>(24);
+  let exportResolveTimeline=$state(false);
   let exportStartSeconds = $state(0);
   $effect(() => {
     if ($exportState.status === 'preparing') {
@@ -924,6 +926,9 @@
           <button type="button" class="arr-btn" role="radio" aria-checked={exportRange === 'loop'} data-active={exportRange === 'loop'} disabled={!$arrangementLoopRegion} onclick={() => (exportRange = 'loop')} title={$arrangementLoopRegion ? 'Export the loop range' : 'Set a LOOP first'}>LOOP</button>
         </span>
         <span class="arr-secbar-meta">FPS</span>
+        {#if $playbackWorkspace==='timing'}
+          <label class="arr-secbar-hint"><input type="checkbox" bind:checked={exportResolveTimeline} aria-label="Include Resolve timeline prototype"/> RESOLVE TIMELINE · TEST</label>
+        {/if}
         <span class="arr-mode" role="radiogroup" aria-label="Frame rate">
           <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 24} data-active={exportFps === 24} onclick={() => (exportFps = 24)}>24</button>
           <button type="button" class="arr-btn" role="radio" aria-checked={exportFps === 30} data-active={exportFps === 30} onclick={() => (exportFps = 30)}>30</button>
@@ -933,13 +938,14 @@
           type="button"
           class="arr-btn arr-btn-rec"
           disabled={$timingPreparationBlocked}
-          onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps })}
+          onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps,resolveTimeline:$playbackWorkspace==='timing'&&exportResolveTimeline })}
           title="Plays the range in PLAY mode and records it — takes as long as the range"
         >START EXPORT</button>
+        {#if $exportDownload}<a class="arr-btn" href={$exportDownload.url} download={$exportDownload.name}>{$exportDownload.name.endsWith('.zip')?'DOWNLOAD RESOLVE ZIP':'DOWNLOAD LAST VIDEO'}</a>{/if}
         {#if $exportState.status === 'error'}
           <span class="arr-export-error" role="alert">{$exportState.message}</span>
         {/if}
-        <span class="arr-secbar-hint">Realtime recording · finalizes at selected FPS · current monitor size · WebM</span>
+        <span class="arr-secbar-hint">{$playbackWorkspace==='timing'?'Original source resolution · saved take timing · captured song audio':'Realtime recording · current monitor size'} · {$exportState.status==='error'?'choose settings and retry':'finalizes at selected FPS'} · WebM</span>
       {/if}
     </div>
   {/if}
@@ -970,6 +976,13 @@
 
   <div class="arr-scroll" onwheel={onTimelineWheel}>
    <div class="arr-canvas" style="width:{isFramed ? Math.min(zoomFactor * 100, 6400) : 100}%">
+    <div class="arr-row arr-row-bounds" aria-label="Timeline boundaries">
+      <span class="arr-gutter"></span>
+      <div class="arr-track arr-bounds">
+        <span>{viewport.startSeconds<=.001?'START':'VIEW START'} · {formatClock(viewport.startSeconds)}</span>
+        <span>{viewport.endSeconds>=timeline.durationSeconds-.001?'END':'VIEW END'} · {formatClock(viewport.endSeconds)}</span>
+      </div>
+    </div>
     <!-- Sections. Width is share of song, so the strip is the song's shape. -->
     <div class="arr-row arr-row-sections">
       <span class="arr-gutter">SONG</span>
@@ -1355,6 +1368,11 @@
     display: flex;
     flex-direction: column;
   }
+  .arr-canvas::before,.arr-canvas::after{content:'';position:absolute;top:16px;bottom:0;pointer-events:none;z-index:3;border-left:1px solid #58706f}
+  .arr-canvas::before{left:calc(var(--arr-gutter-w) + 6px)}
+  .arr-canvas::after{right:0}
+  .arr-row-bounds{height:14px;margin-bottom:4px}
+  .arr-bounds{display:flex;justify-content:space-between;align-items:center;color:#a1b6b5;font:8px var(--font-mono);letter-spacing:.06em;white-space:nowrap}
 
   .arr-zoom {
     display: flex;
@@ -1391,9 +1409,9 @@
     max-height: 72px;
   }
 
-  /* The seam between the two rack rows. */
+  /* Both rack rows use the same lane spacing. */
   .arr-row-slot.is-rowbreak {
-    margin-top: 5px;
+    margin-top: 0;
   }
 
   .arr-gutter {
@@ -1633,13 +1651,20 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    min-width: 52px;
-    overflow: visible;
+    min-width: 0;
+    overflow: hidden;
+    container-type:inline-size;
     z-index: 2;
     border: 0;
     background: color-mix(in srgb, var(--sec-hue, #14b8a6) 22%, #101416);
     backdrop-filter: blur(14px) saturate(1.15);
     -webkit-backdrop-filter: blur(14px) saturate(1.15);
+  }
+  @container(max-width:80px){
+    .arr-section-abs .arr-section-scene,.arr-section-abs .arr-section-custom{display:none}
+  }
+  @container(max-width:48px){
+    .arr-section-abs .arr-section-kind,.arr-section-abs .arr-section-color-wrap{display:none}
   }
   .arr-section:hover {
     background: color-mix(in srgb, var(--sec-hue, #14b8a6) 18%, rgba(255, 255, 255, 0.08));
@@ -1863,8 +1888,8 @@
      hold 256 of them and they must not merge into a bar. */
   .arr-clip {
     position: absolute;
-    top: 3px;
-    bottom: 3px;
+    top: 0;
+    bottom: 0;
     border-radius: 2px;
     z-index: 1;
     pointer-events: none;
@@ -1879,8 +1904,8 @@
   }
   .arr-trigger {
     position: absolute;
-    top: 1px;
-    bottom: 1px;
+    top: 0;
+    bottom: 0;
     width: 8px;
     margin-left: -4px;
     z-index: 3;
@@ -1892,8 +1917,8 @@
   }
   .arr-cut-bar {
     position: absolute;
-    top: 3px;
-    bottom: 3px;
+    top: 0;
+    bottom: 0;
     box-sizing: border-box;
     border: 0;
     border-radius: 2px;
@@ -1903,8 +1928,8 @@
 
   .arr-cut {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
+    top: 0;
+    bottom: 0;
     width: 3px;
     margin-left: -1px;
     border-radius: 1px;

@@ -20,6 +20,7 @@ const fixture = vi.hoisted(() => ({
 
 vi.mock('$lib/audio', () => ({ audioEngine: fixture.audio }));
 vi.mock('$lib/export/finalizeRecording',()=>({finalizeRecording:fixture.finalize}));
+vi.mock('$lib/export/nativeTimingTake',()=>({prepareNativeTimingTake:vi.fn(async()=>null)}));
 vi.mock('$lib/rendering/webgpu/WebGpuEngine', () => ({
   PGM_MONITOR_ID: 'pgm-monitor',
   webGpuEngine: { getCanvas: fixture.getCanvas },
@@ -53,6 +54,7 @@ import { transportDisplay } from '$lib/stores/transportDisplay';
 import { arrangementMode, arrangementOverridden, setArrangementMode, type ArrangementMode } from '$lib/arrangement/transportMode';
 import { applyTakeAt } from '$lib/arrangement/takeSnapshot';
 import {timingCacheCapacity,timingSceneErrors} from '$lib/stores/timing';
+import {prepareNativeTimingTake} from '$lib/export/nativeTimingTake';
 import { startArrangementExport, cancelArrangementExport, exportState } from '$lib/export/arrangementExport';
 
 // The test double is writable; the production mode deliberately exposes only Readable.
@@ -79,6 +81,7 @@ beforeEach(() => {
   fixture.position = 0;
   fixture.constructorFails = false;
   fixture.finalize.mockResolvedValue(new Blob(['finalized video'],{type:'video/webm'}));
+  vi.mocked(prepareNativeTimingTake).mockResolvedValue(null);
   modeState.set('live');
   arrangementOverridden.set(false);
   arrangementLoopRegion.set({ startSeconds: 30, endSeconds: 60 });
@@ -223,6 +226,27 @@ describe('arrangement export lifecycle', () => {
     await running;
     expect(fixture.download).toHaveBeenCalledOnce();
     expect(hiddenCapture).not.toHaveBeenCalled();
+  });
+
+  test('passes the original-resolution frame provider to finalization and releases it on failure',async()=>{
+    const release=vi.fn(),video={width:1280,height:720,frame:vi.fn()} as any;
+    vi.mocked(prepareNativeTimingTake).mockResolvedValue({video,release});
+    fixture.finalize.mockRejectedValueOnce(new Error('native encoder failed'));
+    const running=startArrangementExport({range:'loop',fps:24});
+    await vi.advanceTimersByTimeAsync(50);fixture.position=60;await vi.advanceTimersByTimeAsync(50);await running;
+    expect(fixture.finalize.mock.calls[0][2].nativeVideo).toBe(video);
+    expect(release).toHaveBeenCalledOnce();
+    expect(fixture.download).not.toHaveBeenCalled();
+    expect(get(exportState)).toMatchObject({status:'error',message:'native encoder failed'});
+  });
+
+  test('does not silently export preview pixels when the original source cannot be decoded',async()=>{
+    vi.mocked(prepareNativeTimingTake).mockRejectedValueOnce(new Error('Original clip unavailable'));
+    const running=startArrangementExport({range:'loop',fps:24});
+    await vi.advanceTimersByTimeAsync(50);fixture.position=60;await vi.advanceTimersByTimeAsync(50);await running;
+    expect(fixture.finalize).not.toHaveBeenCalled();expect(fixture.download).not.toHaveBeenCalled();
+    expect(get(exportState)).toMatchObject({status:'error',message:'Original clip unavailable'});
+    expect(fixture.release).toHaveBeenCalledOnce();
   });
 
   test('exports at 24 FPS without song looping and restores the workspace loop', async () => {

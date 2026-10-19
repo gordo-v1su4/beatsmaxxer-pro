@@ -83,10 +83,12 @@ export interface LiveTimeSamplerAccent {
   presentationTimeSeconds: number;
 }
 
-const MODE_BY_INDEX = ["FWD", "REV", "PONG", "RND"] as const;
+const MODE_BY_INDEX = ["FWD", "REV", "PONG", "RND", "STEP3", "STEP5"] as const;
 const ACCENT_BY_INDEX = ["LUM", "RGB", "OFF"] as const;
 const DEFAULT_RANDOM_SEED = 0x12345678;
 const DEFAULT_PGM_SEED = 0x6d2b79f5;
+
+export const timeSamplerOnsetThreshold = (sensitivity = .5) => .08 + (1 - sensitivity) * 1.1;
 
 export function jumpSizeBeatsFromControl(size = 50) {
   if (size < 20) return 0.25;
@@ -101,7 +103,7 @@ export function timeSamplerParamsFromControls(
   sourceDurationSeconds: number,
   feel: PgmFeel = 0,
 ): TimeSamplerParams {
-  const modeIndex = Math.min(3, Math.max(0, Math.round(controls.mode ?? 0)));
+  const modeIndex = Math.min(MODE_BY_INDEX.length-1, Math.max(0, Math.round(controls.mode ?? 0)));
   const accentIndex = Math.min(
     2,
     Math.max(0, Math.round(controls.accent ?? 0)),
@@ -292,8 +294,7 @@ export class LiveScheduleRuntime<T = string> {
         : [{ type: "midi-trigger", transportSeconds: noteTime }];
     }
 
-    const threshold =
-      0.08 + (1 - (input.onsetSensitivity ?? 0.5)) * 1.1;
+    const threshold = timeSamplerOnsetThreshold(input.onsetSensitivity);
     return onsetStrength > threshold
       ? [
           {

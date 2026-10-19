@@ -93,7 +93,7 @@ export interface LiveScheduleFrame {
     activeSlice: number;
     effectiveSliceCount: number;
     jumpReason: 'initial' | 'scheduled' | 'forced' | 'discontinuity' | 'source-remap' | null;
-    mode: 'FWD' | 'REV' | 'PONG' | 'RND';
+    mode: 'FWD' | 'REV' | 'PONG' | 'RND' | 'STEP3' | 'STEP5';
     loopIteration: number;
     loopCount: number;
   };

@@ -88,6 +88,7 @@ const GPU_DIRECT: Record<string, Record<string, GpuUniformSlot>> = {
 
 /** GPU slots that are derived rather than copied 0–100. */
 const GPU_SCALED: Record<string, Record<string, GpuUniformSlot>> = {
+  timesampler: { warp: 'aux3' },
   leak: { freq: 'aux1', hold: 'aux2', blades: 'aux3', squeeze: 'aux4', audio: 'accent' }
 };
 
@@ -190,6 +191,7 @@ export function gpuUniformsForModule(
     out.accent = 0;
     out.aux1 = aux.timeSampler?.aux1 ?? 0;
     out.aux2 = aux.timeSampler?.aux2 ?? 2;
+    out.aux3 = Math.max(0,Math.min(1,(params.warp??0)/100));
   }
 
   if (out.mix == null) out.mix = params.mix ?? 0;

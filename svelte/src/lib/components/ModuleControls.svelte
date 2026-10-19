@@ -12,8 +12,10 @@
     params: Record<string, number>;
     onUpdate: (p: string, v: number) => void;
     color: string;
+    timingOnly?: boolean;
+    samplerTriggered?: boolean;
   }
-  let { moduleId, params, onUpdate, color }: Props = $props();
+  let { moduleId, params, onUpdate, color, timingOnly = false, samplerTriggered = false }: Props = $props();
 
   /** Which page of LIGHT LEAK's controls is showing. Local UI state, not a
       parameter: it must not travel with presets or the undo history. */
@@ -316,16 +318,17 @@
 {:else if moduleId === 'timesampler'}
   <div style="display:flex;flex-direction:column;flex:1">
     <Section label="MODE" {color}>
-      <div style="display:flex;gap:2px;align-items:center">
-        {#each [{ l: 'FWD', v: 0 }, { l: 'REV', v: 1 }, { l: 'PONG', v: 2 }, { l: 'RND', v: 3 }] as o (o.l)}
+      <div style="display:flex;gap:2px;align-items:center;flex-wrap:wrap">
+        {#each [{ l: 'FWD', v: 0 }, { l: 'REV', v: 1 }, { l: 'PONG', v: 2 }, { l: 'RND', v: 3 }, { l: '3 STEP', v: 4 }, { l: '5 STEP', v: 5 }] as o (o.l)}
           <RackBtn
             label={o.l}
             active={Math.round(params.mode ?? 0) === o.v}
             {color}
-            width={32}
+            width={o.v>3?42:32}
             onclick={() => onUpdate('mode', o.v)}
           />
         {/each}
+        {#if !timingOnly}
         <div style="width:4px"></div>
         {#each [{ l: 'LUM', v: 0 }, { l: 'RGB', v: 1 }, { l: 'OFF', v: 2 }] as o (o.l)}
           <RackBtn
@@ -336,10 +339,13 @@
             onclick={() => onUpdate('accent', o.v)}
           />
         {/each}
+        <RackBtn label="WARP" active={(params.warp??0)>0} {color} width={36} onclick={()=>onUpdate('warp',(params.warp??0)>0?0:100)}/>
+        {/if}
       </div>
     </Section>
     <Section label="CHOP" {color}>
       <div style="display:flex;flex-direction:column;gap:3px">
+        {#if !samplerTriggered}
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">JMP</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
@@ -354,6 +360,7 @@
             {/each}
           </div>
         </div>
+        {/if}
         <div style="display:flex;align-items:center;gap:4px">
           <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SLIC</span>
           <div style="display:flex;gap:2px;flex:1;align-items:center;min-width:0">
@@ -394,9 +401,9 @@
           <MiniDisplay value={`${rate.toFixed(2)}×`} width={40} />
         </div>
         <div style="display:flex;align-items:center;gap:4px">
-          <span style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">SENS</span>
+          <span title="Probability that an eligible trigger activates the sampler" style="width:32px;flex-shrink:0;font-size:7px;font-weight:500;color:#3a4050;font-family:var(--font-ui);letter-spacing:0.08em">{timingOnly?'CHANCE':'SENS'}</span>
           <div style="flex:1">
-            <HSlider value={params.chance ?? 60} onChange={(v) => onUpdate('chance', v)} {color} ariaLabel="SENSITIVITY" controlId="{moduleId}-chance" />
+            <HSlider value={params.chance ?? 60} onChange={(v) => onUpdate('chance', v)} {color} ariaLabel={timingOnly?'TRIGGER CHANCE':'SENSITIVITY'} controlId="{moduleId}-chance" />
           </div>
           <MiniDisplay value={`${Math.round(params.chance ?? 60)}%`} width={34} />
         </div>

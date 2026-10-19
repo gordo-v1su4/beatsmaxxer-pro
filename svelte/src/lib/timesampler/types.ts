@@ -1,4 +1,4 @@
-export type TimeSamplerMode = "FWD" | "REV" | "PONG" | "RND";
+export type TimeSamplerMode = "FWD" | "REV" | "PONG" | "RND" | "STEP3" | "STEP5";
 
 export type TimeSamplerAccentMode = "OFF" | "LUM" | "RGB";
 
@@ -78,6 +78,8 @@ export interface TimeSamplerOutput {
 }
 
 export interface TimeSamplerState {
+  patternStep?: number;
+  patternAnchor?: number;
   activeSlice: number;
   pongDirection: 1 | -1;
   loopIteration: number;

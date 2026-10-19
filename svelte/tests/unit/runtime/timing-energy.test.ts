@@ -66,4 +66,15 @@ describe('Timing musical density', () => {
     const sparse = buildTimingSchedule(config, { ...trigger, density: 40 }, signal, 0, 10);
     expect(programTimeline([sparse.bursts]).length).toBeLessThan(programTimeline([p.bursts]).length);
   });
+  test('random program cuts are seeded, eligible, non-cyclic and do not immediately repeat',()=>{
+    const template=buildTimingSchedule(config,trigger,signal,0,10).bursts[0];
+    const bursts=Array.from({length:24},(_,i)=>({...template,at:i*3,end:i*3+2}));
+    const schedules=Array.from({length:5},()=>bursts);
+    const random=programTimeline(schedules,'random',42);
+    expect(random).toEqual(programTimeline(schedules,'random',42));
+    expect(random).not.toEqual(programTimeline(schedules,'random',43));
+    expect(random).not.toEqual(programTimeline(schedules,'balanced',42));
+    expect(random.every((cut,i)=>cut.at===i*3&&cut.deck!==random[i-1]?.deck)).toBe(true);
+    expect(programTimeline([[],bursts], 'random',42).every(c=>c.deck===1)).toBe(true);
+  });
 });

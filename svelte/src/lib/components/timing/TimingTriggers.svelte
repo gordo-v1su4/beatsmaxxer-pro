@@ -1,6 +1,6 @@
 <script lang="ts">
   import { requireHostedAccess, openProtectedFilePicker } from '$lib/access/accessGate';
-  import { timingSettings, selectedTimingSlot, effectiveTimingTrigger, setTimingTrigger } from '$lib/stores/timing';
+  import { timingSettings, selectedTimingSlot, effectiveTimingTrigger, setTimingTrigger, setTimingCutOrder } from '$lib/stores/timing';
   import { timingInput, timingSignalGrid, resolveTimingSignal, importTimingFiles, loadRedlineTimingReference } from '$lib/stores/timingSignals';
   import { midiChannels } from '$lib/stores/midiChannels';
   import { analysisOnsets } from '$lib/stores/triggerLane';
@@ -46,6 +46,7 @@
     {#each TRIGGER_SOURCES as [id,label] (id)}<option value={id} title={sourceHelp[id]}>{label}</option>{/each}
   </select></label>
   {#if !['pgm','beat','continuous'].includes(trigger.source)}
+    <label title="Choose which eligible deck takes the program output. Random uses Seed and avoids an immediate repeat when another deck is eligible. Balanced favors the least recently shown deck. Applies to all decks.">CUT ORDER <select aria-label="Timing program cut order" value={$timingSettings.cutOrder??'balanced'} onchange={e=>setTimingCutOrder(e.currentTarget.value as 'balanced'|'random')}><option value="random">RANDOM</option><option value="balanced">BALANCED</option></select></label>
     <label title={channelHelp}>CHANNEL <select aria-label="Timing trigger channel" aria-describedby="timing-channel-help" title={channelHelp} value={trigger.channel} onchange={e=>change({channel:e.currentTarget.value})}>
       <option value="all" title="Distribute the available channels across decks; each deck keeps its assigned channel.">CHANNELS BY DECK</option>
       {#each signal.channels as channel (channel.name)}<option value={channel.name}>{channel.name.toUpperCase()}</option>{/each}

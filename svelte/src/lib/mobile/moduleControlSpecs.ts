@@ -401,7 +401,9 @@ export const MOBILE_SPECS: Record<string, MobileModuleSpec> = {
           { label: 'FWD', set: { mode: 0 } },
           { label: 'REV', set: { mode: 1 } },
           { label: 'PONG', set: { mode: 2 } },
-          { label: 'RND', set: { mode: 3 } }
+          { label: 'RND', set: { mode: 3 } },
+          { label: '3 STEP', set: { mode: 4 } },
+          { label: '5 STEP', set: { mode: 5 } }
         ],
         match: 'exact',
         primary: 'mode'

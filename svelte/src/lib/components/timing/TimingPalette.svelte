@@ -3,12 +3,13 @@
   import { defaultClipTiming } from '$lib/runtime/timing/envelope';
   import { timingEffectAccent } from './presentation';
   const config=$derived(effectiveClipTiming($timingSettings,$selectedTimingSlot));
-  function choose(effect:'ramp'|'stutter') {setClipTiming($selectedTimingSlot,{...config,effect});timingEditorCollapsed.set(false);}
+  function choose(effect:'ramp'|'stutter'|'timesampler') {setClipTiming($selectedTimingSlot,{...config,effect});timingEditorCollapsed.set(false);}
 </script>
 <div class="timing-palette">
   <span class="label">TIMING FX</span>
   <button style:--timing-accent={timingEffectAccent('ramp')} class:active={config.effect==='ramp'} onclick={()=>choose('ramp')}><b>RAMP</b><span>Editable playback-speed curve</span></button>
   <button style:--timing-accent={timingEffectAccent('stutter')} class:active={config.effect==='stutter'} onclick={()=>choose('stutter')}><b>STUTTER</b><span>Repeat, hold and jump cuts</span></button>
+  <button style:--timing-accent={timingEffectAccent('timesampler')} class:active={config.effect==='timesampler'} onclick={()=>choose('timesampler')}><b>TIMESAMPLER</b><span>Sequence and repeat clip slices</span></button>
   <p>Choose a clip to edit its timing below.</p>
 </div>
 <style>

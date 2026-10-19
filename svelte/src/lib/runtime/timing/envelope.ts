@@ -1,4 +1,5 @@
 import { computeSpeedRampRate } from '$lib/runtime/speedramp';
+import { getModuleDef } from '$lib/modules/catalog';
 
 export type CurveShape = 'linear' | 'smooth' | 'tension' | 'hold' | 'sine';
 export type Snap = 'off' | 'bar' | 'beat' | '16th' | '32nd' | '64th';
@@ -12,7 +13,11 @@ export interface RampConfig {
   legacy?: Record<string, number>;
 }
 export interface StutterConfig { division: number; repeats: number; mode: 'repeat' | 'hold' | 'jump'; slices: number; groove?: 'straight' | 'swing' | 'dotted' }
-export interface ClipTiming { effect: 'ramp' | 'stutter' | 'off'; lastEffect?: 'ramp' | 'stutter'; ramp: RampConfig; stutter: StutterConfig }
+export interface SamplerConfig {
+  controls: Record<string, number>; groove: 'straight' | 'swing' | 'dotted';
+  behavior: 'hit' | 'continuous' | 'phrase'; launchBeats: 1 | 4; retrigger: 'finish' | 'restart';
+}
+export interface ClipTiming { effect: 'ramp' | 'stutter' | 'timesampler' | 'off'; lastEffect?: Exclude<ClipTiming['effect'], 'off'>; ramp: RampConfig; stutter: StutterConfig; sampler: SamplerConfig }
 export const clamp01 = (n: number) => Math.max(0, Math.min(1, Number.isFinite(n) ? n : 0));
 export const rateToY = (rate: number) => clamp01((rate - 0.25) / 3.75);
 export const yToRate = (y: number) => 0.25 + clamp01(y) * 3.75;
@@ -30,7 +35,8 @@ export function defaultClipTiming(slot?: string): ClipTiming {
       { id: 'peak', x: 0.5, y: rateToY(2), tension: 0 },
       { id: 'end', x: 1, y: rateToY(1), tension: 0 }
     ] },
-    stutter: { division: 0.5, repeats: 4, mode: 'repeat', slices: 8 }
+    stutter: { division: 0.5, repeats: 4, mode: 'repeat', slices: 8 },
+    sampler: { controls: { ...getModuleDef('timesampler')!.params }, groove: 'straight', behavior: 'hit', launchBeats: 1, retrigger:'finish' }
   };
 }
 

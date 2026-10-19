@@ -3,6 +3,9 @@
   import TimingCurve from './TimingCurve.svelte';
   import { arrangementMode } from '$lib/arrangement/transportMode';
   import StutterGrid from './StutterGrid.svelte';
+  import SamplerGrid from './SamplerGrid.svelte';
+  import ModuleControls from '../ModuleControls.svelte';
+  import { presetsForModule } from '$lib/modules/presets';
   import TimingTriggers from './TimingTriggers.svelte';
   import TimingEventStrip from './TimingEventStrip.svelte';
   import { rampRange,scaleRampRange,rampPreset,RAMP_PRESET_NAMES,RAMP_PREVIEW_PATHS } from '$lib/runtime/timing/rampPresets';
@@ -48,7 +51,7 @@
     }
     setClipTiming($selectedTimingSlot,{...config,...patch});
   }
-  function choose(effect:'ramp'|'stutter'){update({effect});}
+  function choose(effect:'ramp'|'stutter'|'timesampler'){update({effect});}
   function shortcut(e: KeyboardEvent) {
     if (e.defaultPrevented || e.repeat || e.altKey || !(e.ctrlKey || e.metaKey)) return;
     if (e.composedPath().some(n => n instanceof HTMLElement && (n.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(n.tagName)))) return;
@@ -100,6 +103,7 @@
       <div class="tabs" role="tablist" aria-label="Timing effect">
         <button role="tab" aria-selected={$timingEditorTab==='ramp'} class:active={config.effect==='ramp'} onclick={()=>choose('ramp')}>SPEEDRAMP</button>
         <button role="tab" aria-selected={$timingEditorTab==='stutter'} class:active={config.effect==='stutter'} onclick={()=>choose('stutter')}>STUTTER</button>
+        <button role="tab" aria-selected={$timingEditorTab==='timesampler'} class:active={config.effect==='timesampler'} onclick={()=>choose('timesampler')}>TIMESAMPLER</button>
         <button class:active={config.effect==='off'} onclick={()=>update({effect:config.effect==='off'?$timingEditorTab:'off'})} aria-pressed={config.effect==='off'}>OFF</button>
       </div>
       <div class="effect-parameters">
@@ -115,6 +119,11 @@
         <label>SHAPE <select aria-label="Ramp interpolation" value={config.ramp.shape} onchange={(e)=>update({ramp:{...config.ramp,legacy:undefined,shape:e.currentTarget.value as CurveShape}})}>{#each ['smooth','sine','linear','tension','hold'] as shape (shape)}<option value={shape}>{shape.toUpperCase()}</option>{/each}</select></label>
         <label>SNAP <select aria-label="Ramp snapping" title="Align points while editing the curve. This changes where you can place points; it does not change when music triggers the effect." bind:value={snap}>{#each ['off','bar','beat','16th','32nd','64th'] as option (option)}<option value={option}>{option.toUpperCase()}</option>{/each}</select></label>
         <button onclick={()=>update({ramp:defaultClipTiming().ramp})}>RESET SHAPE</button>
+      {:else if $timingEditorTab==='timesampler'}
+        <label>BEHAVIOR <select aria-label="Timesampler behavior" value={config.sampler.behavior} onchange={e=>update({sampler:{...config.sampler,behavior:e.currentTarget.value as ClipTiming['sampler']['behavior']}})}><option value="hit">TRIGGERED SAMPLE</option><option value="phrase">TRIGGERED SEQUENCE</option><option value="continuous">ORIGINAL · CONTINUOUS</option></select></label>
+        {#if config.sampler.behavior!=='continuous'}<label>LAUNCH <select aria-label="Timesampler phrase launch" value={config.sampler.launchBeats} onchange={e=>update({sampler:{...config.sampler,launchBeats:Number(e.currentTarget.value) as 1|4}})}><option value={1}>NEXT BEAT</option><option value={4}>NEXT BAR</option></select></label>{/if}
+        {#if config.sampler.behavior!=='continuous'}<button aria-label="Restart sample on trigger" aria-pressed={config.sampler.retrigger==='restart'} title="Finish Loop ignores incoming triggers. Restart on Trigger interrupts at the selected launch boundary." onclick={()=>update({sampler:{...config.sampler,retrigger:config.sampler.retrigger==='restart'?'finish':'restart'}})}>RETRIGGER · {config.sampler.retrigger==='restart'?'RESTART ON TRIGGER':'FINISH LOOP'}</button>{/if}
+        {#if config.sampler.behavior!=='hit'}<label>GROOVE <select aria-label="Timesampler groove" value={config.sampler.groove} onchange={e=>update({sampler:{...config.sampler,groove:e.currentTarget.value as ClipTiming['sampler']['groove']}})}><option value="straight">STR8</option><option value="swing">SWNG · 2:1</option><option value="dotted">DOT · 1.5×</option></select></label>{/if}
       {:else}
         <label>GROOVE <select aria-label="Stutter groove" value={config.stutter.groove??'straight'} onchange={e=>update({stutter:{...config.stutter,groove:e.currentTarget.value as 'straight'|'swing'|'dotted'}})}><option value="straight">STR8</option><option value="swing">SWNG · 2:1</option><option value="dotted">DOT · 1.5×</option></select></label>
         <label>DIVISION <select aria-label="Stutter division" value={config.stutter.division} onchange={(e)=>update({stutter:{...config.stutter,division:Number(e.currentTarget.value)}})}>{#each [.125,.25,.5,1,2,4] as b (b)}<option value={b}>{b===4?'1 BAR':`1/${4/b}`}</option>{/each}</select></label>
@@ -127,10 +136,13 @@
       <div class="shape-bank" aria-label="Ramp shape presets">{#each RAMP_PRESET_NAMES as name (name)}<button title={name==='COSINE'?'ZigSwap cosine · 0.5× → 2× → 0.5×':name==='SMASH'?'ZigSwap smash · 12 beats at ¼×, 1 at 2×, 3 at 1×':`Perform ${name} curve`} aria-label={`Ramp shape ${name}`} onclick={()=>update({ramp:{...rampPreset(name,config.ramp.cycleBeats),cycleMode:config.ramp.cycleMode,cycleChoices:config.ramp.cycleChoices}})}><svg viewBox="0 0 64 24" aria-hidden="true"><path d={RAMP_PREVIEW_PATHS[name]} fill="none" stroke="currentColor" stroke-width="1"/></svg><span>{name}</span></button>{/each}</div>
       {/if}
     </div>
-    <div class="effect-stage" title="Click to add a point; Alt for free movement; double-click to delete">
+    <div class="effect-stage" class:sampler-stage={$timingEditorTab==='timesampler'}>
     {#if $timingEditorTab==='ramp'}
 
       <TimingCurve ramp={config.ramp} phase={config.effect==='ramp'?live?.phase??0:0} {snap} onchange={(ramp)=>update({ramp})}/>
+    {:else if $timingEditorTab==='timesampler'}
+      <div class="sampler-controls"><ModuleControls timingOnly samplerTriggered={config.sampler.behavior==='hit'} moduleId="timesampler" params={config.sampler.controls} color={timingEffectAccent('timesampler')} onUpdate={(key,value)=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,[key]:value}}})}/><div class="sampler-presets">PRESET {#each presetsForModule('timesampler') as preset (preset.n)}<button title={preset.title} aria-label={`Timesampler preset ${preset.n}`} onclick={()=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,...preset.set}}})}>{preset.n}</button>{/each}</div></div>
+      <SamplerGrid config={config.sampler} sourceSeconds={live?.sourceSeconds??0} duration={live?.sourceDurationSeconds??0} normalSeconds={live?.samplerNormal??0} trace={live?.samplerTrace??[]} beat={live?.beat??0} enabled={config.effect==='timesampler'} state={live?.state??'waiting'} queuedAt={live?.samplerQueuedAt??null} time={live?.time??0} end={live?.burstEnd??null}/>
     {:else}
       <StutterGrid stutter={config.stutter} phase={config.effect==='stutter'?live?.phase??0:0} enabled={config.effect==='stutter'} state={live?.state??'waiting'}/>
     {/if}
@@ -145,11 +157,13 @@
   .processing-notice{display:flex;align-items:center;gap:10px;padding:9px;background:#1b292b;color:#83ccc5;font:9px var(--font-ui)}
   .follow-on-air[aria-pressed="true"]{color:var(--timing-accent);border-color:var(--timing-accent)}
   .effect-stage{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--timing-plot-height,200px);min-width:0;background:#090b0c}
+  .effect-stage.sampler-stage{grid-template-columns:330px minmax(0,1fr);grid-template-rows:minmax(240px,auto)}
+  .sampler-controls{padding:8px;border-right:1px solid #1e2226;display:flex;flex-direction:column}.sampler-presets{display:flex;align-items:center;gap:6px;padding:4px;font:7px var(--font-ui)}
   .effect-stage :global(.curve-tools){grid-row:1;grid-column:1;align-self:start;justify-self:start;height:20px;position:relative;z-index:1}
   .effect-stage :global(.curve-canvas){grid-row:1;grid-column:1}
   .effect-stage :global(.stutter-grid){grid-row:1;grid-column:1}
   .effect-parameters{display:flex;flex-wrap:nowrap;align-items:center;gap:8px 12px;min-width:0}
-  .editor-controls{display:grid!important;grid-template-columns:176px max-content minmax(0,1fr);align-items:center!important;height:64px;min-height:64px;box-sizing:border-box;overflow-x:auto}
+  .editor-controls{display:grid!important;grid-template-columns:max-content max-content minmax(0,1fr);align-items:center!important;height:64px;min-height:64px;box-sizing:border-box;overflow-x:auto}
   .tabs{flex-shrink:0;white-space:nowrap}
   header>span{min-width:0}.live{width:152px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}.memory{width:94px;text-align:right;flex-shrink:0}
 

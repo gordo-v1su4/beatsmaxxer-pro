@@ -12,7 +12,7 @@ const transientQa = import.meta.env.DEV && typeof window !== 'undefined' && new 
 const slotPattern = /^(top|bottom)-[0-4]$/;
 export const DEFAULT_TIMING_BUDGET_GIB = 12;
 export const TIMING_BUDGET_OPTIONS = [.25,1,2,4,8,12,20,24,32];
-export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }
+export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; cutOrder?:'balanced'|'random'; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }
 const initial = (): TimingSettings => ({ version: 1, capacityRevision: 1, clips: {}, budgetGiB: DEFAULT_TIMING_BUDGET_GIB, outputFps: 24, preloadHeight:0, trigger:defaultTimingTrigger(),scope:'global',master:defaultClipTiming('top-0') });
 const finite = (n: unknown, fallback: number, min: number, max: number) => typeof n === 'number' && Number.isFinite(n) ? Math.max(min,Math.min(max,n)) : fallback;
 
@@ -21,6 +21,7 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
   try {
     const value = JSON.parse(raw || 'null');
     if (value?.version !== 1) return result;
+    result.cutOrder=value.cutOrder==='random'?'random':'balanced';
     result.scope=value.scope==='global'?'global':'deck';
     if(value.master)result.master=parseTimingSettings(JSON.stringify({version:1,clips:{'top-0':value.master}})).clips['top-0'];
     result.deckTriggers={};
@@ -44,8 +45,8 @@ density:finite(t.density,100,10,100),repeatStyle:t.repeatStyle==='fixed'?'fixed'
     for (const [slot, untyped] of Object.entries(value.clips ?? {})) {
       if (!slotPattern.test(slot) || !untyped || typeof untyped !== 'object') continue;
       const c = untyped as ClipTiming, next = defaultClipTiming(slot);
-      next.effect = ['ramp','stutter','off'].includes(c.effect) ? c.effect : 'ramp';
-      next.lastEffect = next.effect !== 'off' ? next.effect : c.lastEffect === 'stutter' ? 'stutter' : 'ramp';
+      next.effect = ['ramp','stutter','timesampler','off'].includes(c.effect) ? c.effect : 'ramp';
+      next.lastEffect = next.effect !== 'off' ? next.effect : c.lastEffect === 'timesampler' ? 'timesampler' : c.lastEffect === 'stutter' ? 'stutter' : 'ramp';
       next.ramp.cycleBeats = finite(c.ramp?.cycleBeats,2,0.125,32);
       next.ramp.cycleMode = c.ramp?.cycleMode === 'random' ? 'random' : 'fixed';
       const cycleChoices = Array.isArray(c.ramp?.cycleChoices) ? c.ramp.cycleChoices.filter(n => typeof n === 'number' && Number.isFinite(n) && n >= .125 && n <= 32).slice(0,4) : [];
@@ -67,6 +68,16 @@ density:finite(t.density,100,10,100),repeatStyle:t.repeatStyle==='fixed'?'fixed'
       next.stutter.slices = Math.round(finite(c.stutter?.slices,8,1,64));
       next.stutter.mode = ['repeat','hold','jump'].includes(c.stutter?.mode) ? c.stutter.mode : 'repeat';
       next.stutter.groove = ['straight','swing','dotted'].includes(c.stutter?.groove??'') ? c.stutter.groove : 'straight';
+      const controls=c.sampler?.controls;
+      for(const key of ['size','rate','chance','mix'])next.sampler.controls[key]=finite(controls?.[key],next.sampler.controls[key],0,100);
+      next.sampler.controls.slices=Math.round(finite(controls?.slices,8,1,64));
+      next.sampler.controls.loops=Math.round(finite(controls?.loops,1,1,16));
+      next.sampler.controls.mode=Math.round(finite(controls?.mode,0,0,5));
+      next.sampler.controls.accent=Math.round(finite(controls?.accent,0,0,2));
+      next.sampler.groove = ['straight','swing','dotted'].includes(c.sampler?.groove) ? c.sampler.groove : 'straight';
+      next.sampler.behavior = c.sampler?.behavior==='phrase'?'phrase':c.sampler?.behavior==='continuous'?'continuous':'hit';
+      next.sampler.launchBeats = c.sampler?.launchBeats===4?4:1;
+      next.sampler.retrigger = c.sampler?.retrigger==='restart'?'restart':'finish';
       result.clips[slot] = { ...next, ramp: normalizeTimingRamp(next.ramp) };
     }
   } catch { /* Old or malformed storage never prevents opening the workspace. */ }
@@ -116,7 +127,7 @@ export const timingEditorTab = derived([timingSettings, selectedTimingSlot], ([s
 });
 export const timingActive = writable(false);
 export const timingClipRestrictions = writable<Record<string,string>>({});
-export const RIFE_RAMP_ONLY = 'This RIFE clip needs a Speedramp slot. Choose Speedramp or load an original clip for Stutter.';
+export const RIFE_RAMP_ONLY = 'This RIFE clip needs a Speedramp slot or Timesampler. Load an original clip for Stutter.';
 export function allowTimingClip(slot:string, factor:number, config=clipTiming(slot)) {
   const effect=config.effect;
   const allowed=factor<=1 || effect!=='stutter';
@@ -137,7 +148,7 @@ export function effectiveClipTiming(settings: TimingSettings, slot: string) {
   if(!cached){cached=new Map();effectiveCache.set(settings,cached);}
   const hit=cached.get(slot);if(hit)return hit;
   const clip=settings.clips[slot]??defaultClipTiming(slot);
-  const result=settings.scope!=='deck'&&settings.master?{...clip,ramp:settings.master.ramp,stutter:settings.master.stutter}:clip;
+  const result=settings.scope!=='deck'&&settings.master?{...clip,ramp:settings.master.ramp,stutter:settings.master.stutter,sampler:settings.master.sampler}:clip;
   cached.set(slot,result);return result;
 }
 export function effectiveTimingTrigger(settings: TimingSettings, slot: string) {
@@ -205,6 +216,11 @@ export function setTimingScope(scope:'global'|'deck') {
   endTimingGesture();remember({settings:structuredClone(get(timingSettings))});
   timingSettings.update(s=>({...s,scope,master:scope==='global'?(s.master??structuredClone(effectiveClipTiming(s,get(selectedTimingSlot)))):s.master}));
 }
+export function setTimingCutOrder(cutOrder:'balanced'|'random') {
+  if(get(arrangementMode)!=='live'||(get(timingSettings).cutOrder??'balanced')===cutOrder)return;
+  endTimingGesture();remember({settings:structuredClone(get(timingSettings))});
+  timingSettings.update(s=>({...s,cutOrder}));
+}
 function moveHistory(from: TimingEdit[], to: TimingEdit[]) {
   if(get(arrangementMode)!=='live')return;
   endTimingGesture();
@@ -238,7 +254,7 @@ export const timingStatus = writable<Record<string, TimingSlotStatus>>({});
 /** Actual resident allocations include shared clips and cached song sections. */
 export const timingCacheCapacity = writable({ usedBytes: 0, requiredBytes: 0, pending: 0 });
 export const timingSceneErrors=writable<Record<string,string>>({});
-export interface TimingLive { sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
+export interface TimingLive { samplerQueuedAt?: number|null; samplerNormal?: number; samplerTrace?: readonly {normal:number;source:number}[]; sourceDurationSeconds?: number; sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
 export const timingLive = writable<Record<string, TimingLive>>({});
 export const timingSchedules = writable<Record<string, import('$lib/runtime/timing/triggers').TimingBurst[]>>({});
 export const timingSceneStatus=writable<Record<string,{state:'loading'|'ready'|'error';message?:string}>>({});

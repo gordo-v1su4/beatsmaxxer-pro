@@ -59,6 +59,11 @@ function sequence(
 }
 
 describe("TimeSampler frozen vectors", () => {
+  test('structured patterns alternate a stable anchor with third- and fifth-slice steps',()=>{
+    expect(sequence('STEP3',8,{sliceCount:8})).toEqual([0,3,0,6,0,1,0,4,0]);
+    expect(sequence('STEP5',8,{sliceCount:8})).toEqual([0,5,0,2,0,7,0,4,0]);
+    expect(sequence('STEP3',8,{sliceCount:8,loopCount:2})).toEqual([0,0,3,3,0,0,6,6,0]);
+  });
   test.each([
     ["FWD", 4, [0, 1, 2, 3, 0]],
     ["REV", 4, [3, 2, 1, 0, 3]],

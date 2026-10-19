@@ -1,8 +1,13 @@
 import { ALL_FORMATS, AudioSampleSink, BlobSource, BufferTarget, Conversion, EncodedPacketSink, Input, Mp4OutputFormat, Output, VideoSample, WebMOutputFormat } from 'mediabunny';
 import { CaptureClock } from './captureClock';
 
+export interface NativeExportVideo {
+  width:number; height:number;
+  frame(timestamp:number,duration:number):Promise<VideoSample>;
+}
+
 /** Canvas capture is variable-rate even when captureStream receives an FPS. */
-export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{signal:AbortSignal;onProgress:(progress:number)=>void}):Promise<Blob>{
+export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{signal:AbortSignal;onProgress:(progress:number)=>void;nativeVideo?:NativeExportVideo}):Promise<Blob>{
   options.signal.throwIfAborted();
   const mp4=recording.type==='video/mp4';
   const input=new Input({formats:ALL_FORMATS,source:new BlobSource(recording)});
@@ -53,7 +58,18 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
     if(clock.drifted)mediaEnd=clock.end;
     let padded=false;
     let nextFrame=0;
-    const process=clock.drifted?(sample:VideoSample)=>{
+    const process=options.nativeVideo?async(sample:VideoSample)=>{
+      const end=sample.timestamp+1/fps>=videoEnd-1e-6?mediaEnd:
+        Math.min(mediaEnd,(clock.drifted?clock.map(sample.timestamp):sample.timestamp)+1/fps);
+      const frames:VideoSample[]=[];
+      try{
+        while(nextFrame/fps<end-1e-6){
+          options.signal.throwIfAborted();
+          frames.push(await options.nativeVideo!.frame(nextFrame++/fps,1/fps));
+        }
+        return frames;
+      }catch(error){frames.forEach(frame=>frame.close());throw error;}
+    }:clock.drifted?(sample:VideoSample)=>{
       // MediaRecorder can timestamp audio by wall time while an overloaded
       // audio device stalls. Keep video on the captured PCM clock, including
       // real silent audio, and snap the result back to explicit CFR frames.
@@ -80,7 +96,8 @@ export async function finalizeRecording(recording:Blob,fps:24|30|60,options:{sig
       return frames;
     }:undefined;
     let audioTime=audioStart;
-    conversion=await Conversion.init({input,output,video:{frameRate:fps,bitrate:fps===60?16000000:10000000,process},
+    conversion=await Conversion.init({input,output,video:{frameRate:fps,bitrate:fps===60?16000000:10000000,process,
+      ...(options.nativeVideo?{processedWidth:options.nativeVideo.width,processedHeight:options.nativeVideo.height}: {})},
       audio:clock.drifted?{process:sample=>{sample.setTimestamp(audioTime);audioTime+=sample.duration;return sample;}}:undefined});
     options.signal.throwIfAborted();
     if(!conversion.isValid||conversion.discardedTracks.length)throw new Error('This browser cannot finalize all recorded audio/video tracks. No incomplete export was saved.');

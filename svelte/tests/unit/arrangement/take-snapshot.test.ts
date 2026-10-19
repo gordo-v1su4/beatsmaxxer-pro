@@ -70,6 +70,27 @@ describe('section take reproduction',()=>{
     viewMode.set('timing');expect(get(timingSettings).trigger.seed).toBe(22);
     expect(live.trigger.seed).toBe(11);
   });
+  test.each(['finish','restart'] as const)('records and restores Timesampler %s retrigger mode for take replay and export',(retrigger)=>{
+    resetArrangement();viewMode.set('timing');playbackWorkspace.set('timing');
+    const config=defaultClipTiming();config.effect='timesampler';
+    config.sampler.controls={...config.sampler.controls,mode:3,loops:4,rate:72,accent:1,slices:16};
+    config.sampler.retrigger=retrigger;
+    timingSettings.update(s=>({...s,scope:'deck',clips:{...s.clips,'top-1':config}}));
+    captureTakeSection(0,120);
+    timingSettings.update(s=>({...s,clips:{...s.clips,'top-1':defaultClipTiming('top-1')}}));
+    setArrangementMode('play',0);
+    expect(get(timingSettings).clips['top-1'].sampler).toEqual(config.sampler);
+    expect(get(timingSettings).clips['top-1'].effect).toBe('timesampler');
+    const signal={label:'MIDI',beats:[],bpm:120,duration:8,channels:[{name:'vocals',events:[.1,.7,1.2,3].map(time=>({time,strength:1}))}]};
+    const trigger={...defaultTimingTrigger(),source:'midi' as const,threshold:0};
+    config.sampler.controls.chance=100;
+    const saved=structuredClone(get(timingSettings).clips['top-1']);saved.sampler.controls.chance=100;
+    const expected=buildTimingSchedule(config,trigger,signal,1,12);
+    expect(buildTimingSchedule(saved,trigger,signal,1,12).bursts).toEqual(expected.bursts);
+    expect(expected.bursts[1].at).toBe(retrigger==='restart'?1:3);
+    setArrangementMode('live',0);
+    expect(get(timingSettings).clips['top-1'].effect).toBe('stutter');
+  });
 });
 
 test.each(['landed','section changed','take changed','stopped'])('async section capture: %s',async(change)=>{

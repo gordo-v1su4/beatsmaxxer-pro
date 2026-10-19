@@ -746,6 +746,7 @@ export class WebGpuEngine {
     return [
       this.timingVersion,
       this.timingTextures?.(sourceId)?.pts ?? 'empty',
+      JSON.stringify(this.timingTextures?.(sourceId)?.sampler?.controls ?? null),
       moduleId,
       sourceId,
       this.renderParamVersions.get(moduleId) ?? 0,
@@ -1188,6 +1189,7 @@ export class WebGpuEngine {
     // show its plain video frame rather than an empty tile.
     const fallbackView = selected ? null : this.timingFallbackView(sourceId);
     const view = selected?.view ?? fallbackView;
+    const frame = this.frameCtx.timeline;
     if (binding.bindingId === 'pgm') this.pgmOutputView = view;
     const pass = encoder.beginRenderPass({ colorAttachments: [{
       view: binding.context.getCurrentTexture().createView(),
@@ -1203,7 +1205,6 @@ export class WebGpuEngine {
       pass.draw(3);
     }
     pass.end();
-    const frame = this.frameCtx.timeline;
     this.renderDiag.set(binding.bindingId, {
       bindingId: binding.bindingId, effectModuleId: selected?.effect ?? 'off', sourceId,
       canvas: `${binding.canvas.width}x${binding.canvas.height}`,

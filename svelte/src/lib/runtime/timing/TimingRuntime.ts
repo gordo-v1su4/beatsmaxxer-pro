@@ -15,6 +15,7 @@ import { ResidentFrameBank, ResidentMemoryBudget, ResidentCapacityError } from '
 import { StreamingFrameSource } from './StreamingFrameSource';
 import { videoPool } from '$lib/media/VideoPool';
 import { advanceClipTiming, timingOutputFrame } from './clock';
+import { TimingTimeSampler } from './sampler';
 import { identifyInterpolation, meetsSlowMotionFrameRate } from './interpolation';
 import { allowTimingClip, RIFE_RAMP_ONLY } from '$lib/stores/timing';
 import { effectiveClipTiming, effectiveTimingTrigger, timingPgmFollowsTriggers } from '$lib/stores/timing';
@@ -35,6 +36,7 @@ export class TimingRuntime {
   private stopSections:(()=>void)|null=null;
   private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank|StreamingFrameSource; clock: SpeedRampSourceState | null; factor: number | null }>();
   private normalized = new WeakMap<ClipTiming, ClipTiming>();
+  private samplers = new Map<string,TimingTimeSampler>();
   private selected = new Map<string, TimingTexture>();
   private budget = new ResidentMemoryBudget(DEFAULT_TIMING_BUDGET_GIB * 2 ** 30);
   private device: GPUDevice | null = null;
@@ -66,6 +68,7 @@ export class TimingRuntime {
   private manualQueued: string | null = null;
   private manualPgm: string | null = null;
   private manualHoldUntil = -Infinity;
+  private offlineExport=false;
 
   readonly textureFor = (slot: string) => this.selected.get(slot) ?? null;
   private readonly sourceResidentFactor=(source:File|string)=>{
@@ -107,6 +110,7 @@ export class TimingRuntime {
     const sources = get(videoLayers);
     for (const [slot, current] of this.banks) {
       if (sources[slot] !== current.source) {
+        this.samplers.delete(slot);
         this.banks.delete(slot); this.selected.delete(slot);
         this.plans.delete(slot);this.programDirty=true;
         timingStatus.update(s => { const next = {...s}; delete next[slot]; return next; });
@@ -116,14 +120,15 @@ export class TimingRuntime {
     for (const [slot, source] of Object.entries(sources)) {
       if (!source) continue;
       let current=this.banks.get(slot);
-      const original=effectiveClipTiming(get(timingSettings),slot).effect!=='ramp';
+      const effect=effectiveClipTiming(get(timingSettings),slot).effect;
+      const original=effect!=='ramp'&&effect!=='timesampler';
       const sourceFps=current?.bank.stats.fps;
       if(current&&(current.bank instanceof StreamingFrameSource)!==original){
         videoPool.get(slot)?.pause();
         this.banks.delete(slot);this.selected.delete(slot);current=undefined;
       }
-      if(!original&&get(slotPreparation)[slot]){videoPool.get(slot)?.pause();continue;}
-      if(source.file&&!original&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
+      if(effect==='ramp'&&get(slotPreparation)[slot]){videoPool.get(slot)?.pause();continue;}
+      if(source.file&&effect==='ramp'&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
         if(!get(slotPreparation)[slot])void mediaRuntime.registerModuleFileClip(slot,source.file);
         continue;
       }
@@ -184,14 +189,15 @@ export class TimingRuntime {
     if(!this.active||!this.device)return;
     const wanted=new Set<File|string>(),originalWanted=new Set<File|string>();
     for(const [slot,source] of Object.entries(get(videoLayers)))if(source){
-      (effectiveClipTiming(get(timingSettings),slot).effect==='ramp'?wanted:originalWanted).add(source.file??source.url);
+      (['ramp','timesampler'].includes(effectiveClipTiming(get(timingSettings),slot).effect)?wanted:originalWanted).add(source.file??source.url);
     }
     const originals=new Set<File>();
     for(const section of get(arrangement)){
       // PLAY recalls the recorded snapshot when present; warm that same scene
       // and its own effects rather than the current rack's settings.
-      const scene=section.deckSnapshot?.scene??section.scene;
-      const settings=section.deckSnapshot?.timing??get(timingSettings);
+      const replay=get(arrangementMode)==='play';
+      const scene=replay?section.deckSnapshot?.scene??section.scene:section.scene??section.deckSnapshot?.scene;
+      const settings=replay?section.deckSnapshot?.timing??get(timingSettings):get(timingSettings);
       for(const [slot,source] of Object.entries(scene?.slots??{}))if(source&&(source.file||source.url)){
         let variant=source;
         if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp'){
@@ -219,7 +225,7 @@ export class TimingRuntime {
           }
           variant=entry.source;
         }
-        const original=effectiveClipTiming(settings,slot).effect!=='ramp';
+        const original=!['ramp','timesampler'].includes(effectiveClipTiming(settings,slot).effect);
         (original?originalWanted:wanted).add(variant.file??variant.url);this.assetFor(variant,original);
       }
     }
@@ -298,6 +304,29 @@ export class TimingRuntime {
   }
 
   tick(frame: TimelineFrame) {
+    if(this.offlineExport)return;
+    this.sampleFrame(frame);
+  }
+
+  /** Reuse the playback clock while native export decodes one output frame at a time. */
+  beginNativeExport() {
+    if(this.offlineExport)throw new Error('A native export is already running.');
+    this.offlineExport=true;
+    this.samplers.clear();
+    for(const entry of this.banks.values())entry.clock=null;
+    return {
+      sample:(frame:TimelineFrame,slot:string)=>{
+        this.sampleFrame(frame);
+        const entry=this.banks.get(slot),selected=this.selected.get(slot);
+        if(!entry||!selected)throw new Error(`Source ${slot} is not ready for native export.`);
+        return {source:entry.source.file??entry.source.url,name:entry.source.file?.name??entry.source.name,
+          seconds:selected.requestedSeconds,duration:entry.bank.duration,fps:entry.bank.stats.fps,prepared:(entry.factor??1)>1};
+      },
+      release:()=>{this.offlineExport=false;this.samplers.clear();this.lastOutput=-1;for(const entry of this.banks.values())entry.clock=null;},
+    };
+  }
+
+  private sampleFrame(frame:TimelineFrame) {
     if (!this.active) return;
     if(frame.generation!==this.manualGeneration){
       this.manualGeneration=frame.generation;this.manualPending=false;
@@ -383,26 +412,33 @@ export class TimingRuntime {
         updateOutput=true;
       }
       const continuous=trigger.source==='continuous';
-      const oldClock=continuous?advanceClipTiming(entry.clock,frame,config,entry.bank.duration,seed):null;
+      const oldClock=continuous&&config.effect!=='timesampler'?advanceClipTiming(entry.clock,frame,config,entry.bank.duration,seed):null;
       if(oldClock)entry.clock=oldClock.state;else entry.clock=null;
-      const clock=oldClock??sampleTimingSchedule(plan.schedule,frame.positionSeconds);
+      let sampler=this.samplers.get(slot);
+      if(config.effect==='timesampler'&&!sampler){sampler=new TimingTimeSampler();this.samplers.set(slot,sampler);}
+      if(config.effect!=='timesampler')this.samplers.delete(slot);
+      const clock=config.effect==='timesampler'?sampler!.sample(frame,config.sampler,signal,trigger,plan.schedule,entry.bank.duration):oldClock??sampleTimingSchedule(plan.schedule,frame.positionSeconds);
       if (updateOutput || !this.selected.has(slot) || entry.bank instanceof StreamingFrameSource) {
         const resident = entry.bank instanceof StreamingFrameSource
           ? entry.bank.frameAt(clock.sourceSeconds,slot,frame,clock.rate)
           : entry.bank.frameAt(clock.sourceSeconds,slot);
         if (resident) this.selected.set(slot,{view:resident.view,pts:resident.pts,requestedSeconds:clock.sourceSeconds,width:entry.bank.width,height:entry.bank.height,effect:config.effect,
-          samplePath:entry.bank instanceof StreamingFrameSource?'cached-video-texture':'resident-frame-bank'});
+          samplePath:entry.bank instanceof StreamingFrameSource?'cached-video-texture':'resident-frame-bank',
+          sampler:'samplerJump' in clock&&(config.sampler.behavior==='continuous'||clock.state==='burst')?{controls:clock.samplerControls,accentTime:clock.samplerAccentTime,jump:clock.samplerJump,slice:clock.samplerSlice,slices:clock.samplerSlices}:undefined});
       }
-      const musical=continuous?{state:'continuous' as const}:sampleTimingSchedule(plan.schedule,frame.positionSeconds);
-      live[slot] = { sourceTimelineSeconds:clock.sourceTimelineSeconds, phase:clock.phase,rate:clock.rate,sourceSeconds:clock.sourceSeconds,pts:this.selected.get(slot)?.pts??0,
-        state:musical.state,triggerTime:'triggerTime' in musical?musical.triggerTime:null,burstEnd:'burstEnd' in musical?musical.burstEnd:null,time:frame.positionSeconds,beat:frame.beatPosition };
+      const musical=config.effect==='timesampler'?clock:continuous?{state:'continuous' as const}:sampleTimingSchedule(plan.schedule,frame.positionSeconds);
+      live[slot] = { sourceDurationSeconds:entry.bank.duration,sourceTimelineSeconds:clock.sourceTimelineSeconds, phase:clock.phase,rate:clock.rate,sourceSeconds:clock.sourceSeconds,pts:this.selected.get(slot)?.pts??0,
+        state:typeof musical.state==='string'?musical.state:'continuous',triggerTime:'triggerTime' in musical?musical.triggerTime:null,burstEnd:'burstEnd' in musical?musical.burstEnd:null,time:frame.positionSeconds,beat:frame.beatPosition,
+        samplerNormal:'samplerNormal' in clock?clock.samplerNormal:undefined,samplerTrace:'samplerTrace' in clock?clock.samplerTrace:undefined,
+        samplerQueuedAt:'samplerQueuedAt' in clock?clock.samplerQueuedAt:undefined };
     }
     if (updateOutput) timingLive.set(live);
+    if((this.lastSettings as {cutOrder?:string}|undefined)?.cutOrder!==settings.cutOrder)this.programDirty=true;
     if (this.programDirty) {
       this.program = programTimeline(Array.from({length:10},(_,index)=>{
         const plan=this.plans.get(`${index<5?'top':'bottom'}-${index%5}`);
         return plan&&!['pgm','beat','continuous'].includes((plan.trigger as TimingTriggerConfig).source)?plan.schedule.bursts:[];
-      }));
+      }),settings.cutOrder??'balanced',settings.trigger.seed);
       this.programDirty = false;
     }
     const timingOwnsPgm=timingPgmFollowsTriggers(settings,[...this.selected.keys()]);
@@ -431,14 +467,14 @@ export class TimingRuntime {
     signal:this.signal?{label:this.signal.label,missing:this.signal.missing,channels:this.signal.channels.map(c=>({name:c.name,events:c.events.length}))}:null,
     schedules:Object.fromEntries([...this.plans].map(([slot,p])=>[slot,{bursts:p.schedule.bursts.length,first:p.schedule.bursts.slice(0,4)}])),
     slots:Object.fromEntries([...this.banks].map(([slot,e])=>[slot,e.bank.stats])),
-    selected:Object.fromEntries([...this.selected].map(([slot,s])=>[slot,{pts:s.pts,requestedSeconds:s.requestedSeconds,effect:s.effect}])) }; }
+    selected:Object.fromEntries([...this.selected].map(([slot,s])=>[slot,{pts:s.pts,requestedSeconds:s.requestedSeconds,effect:s.effect,samplePath:s.samplePath,sampler:s.sampler}])) }; }
 
   private clearBanks() {
     this.generation++;
     for (const asset of this.assets.values()) asset.bank.dispose();
     for (const asset of this.originalAssets.values()) asset.bank.dispose();
     this.assets.clear();this.originalAssets.clear();this.sceneVariants.clear();timingSceneStatus.set({});this.publishCapacity();
-    this.banks.clear(); this.selected.clear(); timingStatus.set({}); timingLive.set({}); this.lastOutput=-1;
+    this.banks.clear(); this.samplers.clear(); this.selected.clear(); timingStatus.set({}); timingLive.set({}); this.lastOutput=-1;
     this.plans.clear();
     this.program=[];this.programDirty=true;this.programSelection='';this.triggerSignals.clear();
     this.pgmSignals.clear();this.pgmLastSlot=null;this.pgmReplayCuts=null;this.pgmGeneration=-1;

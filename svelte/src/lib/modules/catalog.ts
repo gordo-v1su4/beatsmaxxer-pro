@@ -93,7 +93,7 @@ const defs: ModuleDefinition[] = [
       // loops was 2, so every slice retriggered twice before advancing — which
       // is a stutter, and made the sampler read as the same effect as TAPDELAY.
       // At 1 the module does its own job: jump to a slice, play it, move on.
-      mode: 0, size: 50, slices: 8, loops: 1, accent: 0, chance: 60, rate: 43,
+      mode: 0, size: 50, slices: 8, loops: 1, accent: 0, chance: 60, rate: 43, warp: 0,
       mix: 60
     }
   },

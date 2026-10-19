@@ -690,7 +690,7 @@ fn effectTapDelay(col: vec3f, uv: vec2f) -> vec3f {
     tape wobble when the rate is off 1x. aux1 = event pulse; aux2 = LUM/RGB/OFF. */
 fn effectTimeSampler(col: vec3f, uv: vec2f) -> vec3f {
   let rate = 0.25 + u.p0 * 1.75;
-  let wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0);
+    let wob = clamp(abs(rate - 1.0) - 0.05, 0.0, 1.0) * clamp(u.aux3, 0.0, 1.0);
   var st = uv;
   st.x += sin(uv.y * 60.0 + u.beat * 9.0) * wob * 0.004;
   var wet = sampleSource(clamp(st, vec2f(0.0), vec2f(1.0)));

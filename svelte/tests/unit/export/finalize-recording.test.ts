@@ -11,6 +11,23 @@ vi.mock('mediabunny',()=>({
 }));
 import {finalizeRecording} from '$lib/export/finalizeRecording';
 
+test('replaces preview pixels with native source frames at every output timestamp, including the audio tail',async()=>{
+  vi.clearAllMocks();fixture.videoDuration=.08;
+  fixture.audioSample={timestamp:.08,duration:.06,close:vi.fn()};
+  fixture.init.mockResolvedValue({state:'done',isValid:true,discardedTracks:[],execute:vi.fn(async()=>{}),cancel:vi.fn()});
+  const frame=vi.fn(async(timestamp:number,duration:number)=>({timestamp,duration,native:true}));
+  try{
+    await finalizeRecording(new Blob(['small proxy']),24,{signal:new AbortController().signal,onProgress:()=>{},
+      nativeVideo:{width:1280,height:720,frame} as any});
+    const config=fixture.init.mock.calls[0][0];
+    expect(config.video).toMatchObject({processedWidth:1280,processedHeight:720});
+    const output=await config.video.process({timestamp:1/24,duration:1/24});
+    expect(output.map((sample:any)=>sample.timestamp)).toEqual([0,1/24,2/24,3/24]);
+    expect(output.every((sample:any)=>sample.native)).toBe(true);
+    expect(frame).toHaveBeenCalledTimes(4);
+  }finally{fixture.videoDuration=0;fixture.audioSample=null;}
+});
+
 test('permits discarded empty packets on a healthy clock but refuses an ambiguous drift repair',async()=>{
   vi.clearAllMocks();fixture.videoDuration=.12;
   fixture.audioSamples=[0,.06].map(timestamp=>({timestamp,duration:.06,close:vi.fn()}));
