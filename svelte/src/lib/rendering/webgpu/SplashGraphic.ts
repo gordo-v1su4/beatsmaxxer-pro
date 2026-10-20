@@ -56,6 +56,7 @@ export async function renderSplashGraphic(
   const buffer = device.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
   let frame = 0;
   let stopped = false;
+  let drawStaticFrame: (() => void) | undefined;
   const dispose = () => {
     if (stopped) return;
     stopped = true;
@@ -80,7 +81,7 @@ export async function renderSplashGraphic(
       { binding: 3, resource: view }, { binding: 4, resource: sampler }
     ] });
   };
-  const observer = new ResizeObserver(resize);
+  const observer = new ResizeObserver(() => { resize(); drawStaticFrame?.(); });
   try {
     for (const { context } of surfaces) {
       context.configure({ device, format, alphaMode: 'opaque',
@@ -118,8 +119,9 @@ export async function renderSplashGraphic(
         pass.end();
       }
       device.queue.submit([encoder.finish()]);
-      frame = requestAnimationFrame(draw);
+      if (!reducedMotion) frame = requestAnimationFrame(draw);
     };
+    if (reducedMotion) drawStaticFrame = () => draw(started);
     draw(started);
     await device.queue.onSubmittedWorkDone();
     signal.throwIfAborted();

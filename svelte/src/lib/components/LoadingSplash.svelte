@@ -46,7 +46,7 @@
     class="splash"
     class:leaving
     role="region"
-    aria-label={armed ? 'Beatsmaxxer Pro, ready' : 'Beatsmaxxer Pro, loading'}
+    aria-label={phase === 'error' ? 'Beatsmaxxer Pro, startup paused' : armed ? 'Beatsmaxxer Pro, ready' : 'Beatsmaxxer Pro, loading'}
   >
     <div class="stage">
       <div class="mark">

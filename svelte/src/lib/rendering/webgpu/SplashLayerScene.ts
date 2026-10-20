@@ -76,7 +76,8 @@ export async function createSplashLayerScene(device: GPUDevice, signal: AbortSig
     const draws: Array<{ layer: typeof LAYERS[number]; buffer: GPUBuffer; group: GPUBindGroup }> = [];
     for (const layer of LAYERS) {
       signal.throwIfAborted();
-      let texture = uploaded.get(layer.url);
+      const cacheKey = `${layer.url}:${layer.rect.join(',')}`;
+      let texture = uploaded.get(cacheKey);
       if (!texture) {
         const image = new Image(); image.src = layer.url; await image.decode();
         const [x, y, w, h] = layer.rect;
@@ -87,7 +88,7 @@ export async function createSplashLayerScene(device: GPUDevice, signal: AbortSig
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT });
           textures.push(texture);
           device.queue.copyExternalImageToTexture({ source: bitmap }, { texture, premultipliedAlpha: false }, [w, h]);
-          uploaded.set(layer.url, texture);
+          uploaded.set(cacheKey, texture);
         } finally { bitmap.close(); }
       }
       const buffer = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -106,7 +107,10 @@ export async function createSplashLayerScene(device: GPUDevice, signal: AbortSig
         target = device.createTexture({ size: [w, h], format: 'rgba8unorm',
           usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
       },
-      get texture() { return target!; },
+      get texture() {
+        if (!target) throw new Error('Resize the splash scene before rendering.');
+        return target;
+      },
       render(encoder: GPUCommandEncoder, seconds: number) {
         if (!reducedMotion) timeline.time(Math.min(seconds, timeline.duration()));
         const pass = encoder.beginRenderPass({ colorAttachments: [{ view: target!.createView(),
