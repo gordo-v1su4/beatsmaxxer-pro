@@ -12,7 +12,13 @@ await withChrome('verify-cloud-smoke', 9601, async (session) => {
       `window.__BMX_QA__?.waitForSequencerArmed?.(90000)`,
       95_000,
       'wait for qaSequencerArm autoload'
-    );
+    ).catch(async (error) => {
+      console.error('Startup failure state', await evalPage(session, `({
+        splash: document.querySelector('.splash')?.textContent,
+        snapshot: window.__BMX_QA__?.snapshot?.()
+      })`, 15_000));
+      throw error;
+    });
     console.log('cloud-smoke sequencer ARM OK');
     if (process.env.QA_SMOKE_SEQUENCER_ONLY === '1') {
       session.close();
