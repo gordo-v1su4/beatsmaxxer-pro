@@ -1,7 +1,31 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { waitForStartupReady } from '$lib/runtime/startupReady';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+test('resuming after fully suspended background timers does not spend the deadline', async () => {
+  vi.useFakeTimers();
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  const page = Object.assign(new EventTarget(), { hidden: false });
+  vi.stubGlobal('document', page);
+  const state = { ready: 39, total: 40, frame: 1 };
+  let failure: unknown;
+  const waiting = waitForStartupReady(() => state, () => {}, new AbortController().signal, 1000)
+    .catch((error) => { failure = error; });
+  page.hidden = true;
+  page.dispatchEvent(new Event('visibilitychange'));
+  // No poll runs during the hidden interval, as in a frozen browser tab.
+  clock.mockReturnValue(120000);
+  page.hidden = false;
+  page.dispatchEvent(new Event('visibilitychange'));
+  await vi.advanceTimersByTimeAsync(50);
+  expect(failure).toBeUndefined();
+  state.ready = 40;
+  state.frame++;
+  await vi.advanceTimersByTimeAsync(50);
+  await waiting;
+  expect(failure).toBeUndefined();
+});
 
 test('accepts the first idle frame when every pipeline was already ready', async () => {
   await waitForStartupReady(
