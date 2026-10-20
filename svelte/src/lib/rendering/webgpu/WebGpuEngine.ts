@@ -422,8 +422,8 @@ export class WebGpuEngine {
   get fxPipelineWarmup() {
     const cache = this.modePipelines;
     return cache
-      ? { settled: cache.settledCount, total: cache.totalCount }
-      : { settled: 0, total: 0 };
+      ? { settled: cache.settledCount, ready: cache.readyCount, total: cache.totalCount, frame: this.frameIndex }
+      : { settled: 0, ready: 0, total: 0, frame: this.frameIndex };
   }
 
   /** The element a binding draws into — the PGM monitor is what export records. */

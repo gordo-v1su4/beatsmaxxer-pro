@@ -3,7 +3,9 @@
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
+  import { waitForStartupReady } from '$lib/runtime/startupReady';
+  import { SPLASH_REVEAL_SECONDS } from '$lib/rendering/webgpu/splashTimeline';
   import { installArrangementPersistence } from '$lib/arrangement/persistence';
   onMount(installArrangementPersistence);
   import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
@@ -68,21 +70,25 @@
   import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
   import { skipDevSplashReplay } from '$lib/runtime/devBoot';
-  const skipSplash=skipDevSplashReplay();
+  const skipSplash = skipDevSplashReplay() && !(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('splash') === 'hold'
+  );
 
   /** How long the splash intro takes to land, from when it mounts. */
-  const SPLASH_INTRO_MS = 1800;
-  /** False while the intro plays: the app is not mounted and the GPU is idle. */
+  const SPLASH_INTRO_MS = SPLASH_REVEAL_SECONDS * 1000 + 200;
+  /** The workspace mounts behind the first painted splash frame. */
   let introDone = $state(skipSplash);
-  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready'>(skipSplash?'ready':'gpu');
+  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready' | 'error'>(skipSplash?'ready':'gpu');
+  let splashError = $state('');
+  let resolveSplashGraphic: (result: { error?: string; paintedAt: number }) => void;
+  const splashGraphicReady = new Promise<{ error?: string; paintedAt: number }>((resolve) => {
+    resolveSplashGraphic = resolve;
+  });
+  const startupAbort = new AbortController();
+  onDestroy(() => startupAbort.abort());
   let splashDone = $state(0);
   let splashTotal = $state(0);
   let splashExitTimer: ReturnType<typeof setTimeout> | undefined;
-  function enterApp() {
-    if (splashPhase !== 'armed') return;
-    splashPhase = 'go';
-    splashExitTimer = setTimeout(() => { splashPhase = 'ready'; }, 350);
-  }
   onDestroy(() => clearTimeout(splashExitTimer));
 
   const ALL_MODULES = listCatalog();
@@ -108,7 +114,6 @@
     // The splash and its intro mount with this component, so this is when the
     // intro starts. Not navigation start: a reload while the GPU is still busy
     // can hold the first frame back by seconds.
-    const introStartedAt = performance.now();
     const params = new URLSearchParams(window.location.search);
     // Decided before the engine starts: which shell mounts determines how many
     // canvases the engine is about to be asked for — eleven on the rack, one on
@@ -121,17 +126,12 @@
     stopMobileEnv = initMobileEnv();
     stepLayout.done();
 
-    // Let the title intro play out alone. Mounting the app under the splash
-    // (rack, canvases, video elements), even unpainted, starved the
-    // compositor and froze the intro for 70-800ms at a time, somewhere
-    // different on every load; device bring-up and the shader compiles go
-    // through the same GPU process. So the app mounts, and the GPU wakes, only
-    // once the intro has landed, behind the settled logo. Automation skips it.
+    // Paint the title card, then load the workspace behind its animation.
+    // The intro's minimum duration is checked only after startup has finished.
     const automated = params.has('qa') || navigator.webdriver;
-    if (!automated && !skipSplash) {
-      const remaining = SPLASH_INTRO_MS - (performance.now() - introStartedAt);
-      await new Promise((resolve) => setTimeout(resolve, Math.max(0, remaining)));
-    }
+    await document.fonts.ready;
+    await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     introDone = true;
 
     const stepProbe = bootStep('Checking graphics support');
@@ -165,50 +165,28 @@
     unsubHold = fxHold.subscribe((hold) => webGpuEngine.setPaused(hold));
     stepClock.done();
 
-    // init() builds only the dry FX pipelines; each effect's own pipeline
-    // compiles asynchronously after it (see ModePipelineCache). Hold the
-    // splash until a frame has been submitted and those have settled, so the
-    // first frame already has its effects, and cap the wait so a GPU that
-    // never reports ready cannot lock the app behind the overlay. An engine
-    // that never came up has nothing to compile, so it skips the wait.
+    // Hold the title card for every compiled pipeline and a subsequent frame.
+    // Slow graphics never silently bypass this gate.
     if (cap.webgpu && engineReady) {
-      if(!skipSplash)splashPhase = 'shaders';
+      if (!skipSplash) splashPhase = 'shaders';
       const stepShaders = bootStep('Compiling effect shaders');
-      const deadline = performance.now() + 12000;
-      for (;;) {
-        const { settled: compiled, total } = webGpuEngine.fxPipelineWarmup;
-        const warm = total > 0 && compiled >= total;
-        if ((webGpuEngine.hasRenderedFrame && warm) || performance.now() >= deadline) break;
-        splashTotal = total;
-        splashDone = compiled;
-        if (total > 0) stepShaders.note(`${compiled} / ${total}`);
-        // Raced against a timer, not a bare rAF. A surface that is not
-        // compositing -- a background tab, and every in-app browser pane that
-        // has not been scrolled into view -- never fires an animation frame at
-        // all, so awaiting one alone parks this loop forever: the deadline
-        // below is never re-evaluated and the splash stays up over a working
-        // app until the user gives up. That is the reported "splash never
-        // dismisses in the in-app browser". Whichever arrives first wins.
-        await new Promise((resolve) => {
-          let settled = false;
-          const done = () => {
-            if (settled) return;
-            settled = true;
-            resolve(null);
-          };
-          requestAnimationFrame(done);
-          setTimeout(done, 100);
-        });
+      try {
+        await waitForStartupReady(
+          () => webGpuEngine.fxPipelineWarmup,
+          ({ ready, total }) => {
+            splashTotal = total;
+            splashDone = ready;
+            if (total > 0) stepShaders.note(`${ready} / ${total}`);
+          },
+          startupAbort.signal
+        );
+        stepShaders.done();
+      } catch (error) {
+        if (startupAbort.signal.aborted) return;
+        splashError = error instanceof Error ? error.message : 'Graphics could not finish loading.';
+        splashPhase = 'error';
+        return;
       }
-      splashDone = splashTotal;
-      if (splashTotal > 0) stepShaders.note(`${splashTotal} / ${splashTotal}`);
-      stepShaders.done();
-    }
-    // Real visitors stay at 100% until they choose ENTER. Only explicit QA
-    // URLs bypass the title card; an automated browser can still test entry.
-    if (!skipSplash && params.get('splash') !== 'hold') {
-      splashPhase = 'armed';
-      if (params.has('qa')) enterApp();
     }
 
     if (params.has('qa')) {
@@ -243,6 +221,26 @@
       arrangementLoopRegion.set(qaLoopRegionForDuration(audioEngine.getState().duration));
     }
     bootLogSettle();
+    if (startupAbort.signal.aborted) return;
+    if (!skipSplash) {
+      const graphic = await splashGraphicReady;
+      if (startupAbort.signal.aborted) return;
+      if (graphic.error) {
+        splashError = graphic.error;
+        splashPhase = 'error';
+        return;
+      }
+      if (!automated) {
+        const remaining = SPLASH_INTRO_MS - (performance.now() - graphic.paintedAt);
+        await new Promise((resolve) => setTimeout(resolve, Math.max(0, remaining)));
+      }
+      if (startupAbort.signal.aborted) return;
+      if (params.get('splash') === 'hold') splashPhase = 'armed';
+      else {
+        splashPhase = 'go';
+        splashExitTimer = setTimeout(() => { splashPhase = 'ready'; }, 350);
+      }
+    }
   });
 
   onDestroy(() => {
@@ -309,7 +307,8 @@
 </script>
 
 <div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
-<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} onEnter={enterApp} />
+<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} error={splashError}
+  onGraphicReady={(error) => resolveSplashGraphic({ error, paintedAt: performance.now() })} />
 <div inert={splashPhase !== 'ready'} style="display:contents">
 <!--
   One deployment gate for both shells. Mobile can request hosted analysis, and
@@ -328,7 +327,7 @@
   drop surface on the phone to ghost.
 -->
 {#if !introDone}
-  <!-- Nothing mounts under the splash intro; see onMount. -->
+  <!-- Wait for the title card to paint before mounting the workspace. -->
 {:else if $isMobileShell}
   <MobileShell />
 {:else}

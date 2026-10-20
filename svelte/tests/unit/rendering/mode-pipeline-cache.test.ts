@@ -26,8 +26,10 @@ describe('ModePipelineCache', () => {
     const cache = new ModePipelineCache(device, layouts);
     expect(await cache.build('video', 0)).toBeNull();
     expect(cache.settledCount).toBe(1);
+    expect(cache.readyCount).toBe(0);
     expect(await cache.build('video', 0)).not.toBeNull();
     expect(cache.get('video', 0)).not.toBeNull();
+    expect(cache.readyCount).toBe(1);
     expect(cache.settledCount).toBe(1);
   });
 

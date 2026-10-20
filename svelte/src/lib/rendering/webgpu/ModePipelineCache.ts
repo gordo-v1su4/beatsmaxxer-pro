@@ -90,6 +90,10 @@ export class ModePipelineCache {
     return this.ready.size + this.failed.size;
   }
 
+  get readyCount() {
+    return this.ready.size;
+  }
+
   get totalCount() {
     return SHADER_EFFECT_MODES.length * 2;
   }
