@@ -26,8 +26,10 @@ describe('ModePipelineCache', () => {
     const cache = new ModePipelineCache(device, layouts);
     expect(await cache.build('video', 0)).toBeNull();
     expect(cache.settledCount).toBe(1);
+    expect(cache.readyCount).toBe(0);
     expect(await cache.build('video', 0)).not.toBeNull();
     expect(cache.get('video', 0)).not.toBeNull();
+    expect(cache.readyCount).toBe(1);
     expect(cache.settledCount).toBe(1);
   });
 
@@ -37,5 +39,26 @@ describe('ModePipelineCache', () => {
     await cache.warmAll();
     expect(createPipelineLayout).toHaveBeenCalledTimes(2);
     expect(cache.settledCount).toBe(cache.totalCount);
+  });
+
+  test('warmup retries a transient compile failure before reporting completion', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { device } = mockDevice(true);
+    const cache = new ModePipelineCache(device, layouts);
+    await cache.warmAll();
+    expect(cache.readyCount).toBe(cache.totalCount);
+    expect(cache.get('video', 0)).not.toBeNull();
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(cache.totalCount + 1);
+  });
+
+  test('warmup stops retrying a persistent compiler failure', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { device } = mockDevice(false);
+    vi.mocked(device.createRenderPipelineAsync).mockRejectedValue(new Error('persistent compiler failure'));
+    const cache = new ModePipelineCache(device, layouts);
+    await cache.warmAll();
+    expect(cache.readyCount).toBe(0);
+    expect(cache.settledCount).toBe(cache.totalCount);
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(cache.totalCount * 3);
   });
 });

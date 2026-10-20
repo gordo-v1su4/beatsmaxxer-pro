@@ -8,7 +8,9 @@ import { writable, derived } from 'svelte/store';
  * that into a phone. So the two surfaces are two component trees, and this store
  * picks which one mounts.
  *
- * The test is written on the *short* and *long* edges rather than on width and
+ * Automatic selection requires a phone device, so a narrow desktop panel
+ * keeps its rack. Explicit review overrides still work on either device.
+ * The size test uses the *short* and *long* edges rather than width and
  * height, because rotating a phone swaps the two and must not swap the shell.
  * The first version keyed landscape off `pointer: coarse`, and a 850x390 phone
  * that does not report coarse — or any device where the emulation differs —
@@ -52,12 +54,13 @@ export const isPerformPosture = derived(
   ([mobile, o]) => mobile && o === 'landscape'
 );
 
-export function mobileShellForViewport(width: number, height: number, search = ''): boolean {
+export function mobileShellForViewport(width: number, height: number, search = '', phoneDevice = true): boolean {
   const params = new URLSearchParams(search);
   // Both overrides exist so the shell can be reviewed on a desktop browser and
   // so a tablet user who wants the real rack can ask for it.
   if (params.get('mobile') === '1') return true;
   if (params.get('desktop') === '1') return false;
+  if (!phoneDevice) return false;
 
   // Orientation-independent: a phone lying down is short on one edge whichever
   // way it is held, so the same device answers the same either way.
@@ -68,7 +71,9 @@ export function mobileShellForViewport(width: number, height: number, search = '
 
 function evaluate(): boolean {
   if (typeof window === 'undefined') return false;
-  return mobileShellForViewport(window.innerWidth, window.innerHeight, window.location.search);
+  // A narrow desktop panel has phone-sized dimensions but is still a desktop.
+  const phoneDevice = /Android|iPhone|iPod/i.test(navigator.userAgent);
+  return mobileShellForViewport(window.innerWidth, window.innerHeight, window.location.search, phoneDevice);
 }
 
 /**

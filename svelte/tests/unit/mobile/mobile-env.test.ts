@@ -4,6 +4,23 @@ import { mobileShellForViewport, initMobileEnv, isMobileShell, viewportSize } fr
 afterEach(()=>vi.unstubAllGlobals());
 
 describe('mobile shell selection', () => {
+  test('a narrow desktop browser starts with the desktop media session', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' });
+    vi.stubGlobal('window', { innerWidth: 440, innerHeight: 900, location: { search: '' },
+      addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    const stop = initMobileEnv();
+    expect(get(isMobileShell)).toBe(false);
+    stop();
+  });
+
+  test('a real phone still starts with the phone session', () => {
+    vi.stubGlobal('navigator', { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)' });
+    vi.stubGlobal('window', { innerWidth: 390, innerHeight: 844, location: { search: '' },
+      addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    const stop = initMobileEnv();
+    expect(get(isMobileShell)).toBe(true);
+    stop();
+  });
   test('a temporary small viewport updates layout without replacing the desktop media session',()=>{
     const listeners=new Map<string,()=>void>();
     const viewport={innerWidth:1440,innerHeight:900,location:{search:''},
