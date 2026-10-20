@@ -378,15 +378,13 @@ export class WebGpuEngine {
     // nothing repainted it once the real pipeline landed. The builds are async
     // and parallel (~3s cold), so this costs no GPU-process stall, and the
     // splash already holds until warmup settles.
-    this.modePipelinesPromise = Promise.all([
-      cache.build('video', 0),
-      cache.build('idle', 0),
-      cache.warmAll()
-    ]).then(
-      ([video, idle]) => {
+    this.modePipelinesPromise = cache.warmAll().then(
+      () => {
         // A device loss mid-build replaces the cache; the stale one's results
         // belong to a dead device.
         if (this.modePipelines !== cache) return;
+        const video = cache.isReady('video', 0) ? cache.get('video', 0) : null;
+        const idle = cache.isReady('idle', 0) ? cache.get('idle', 0) : null;
         if (!video || !idle) {
           console.error('[webgpu] dry FX pipeline failed to build; the next attach retries');
           // Drop the memo so the next attach rebuilds instead of awaiting this

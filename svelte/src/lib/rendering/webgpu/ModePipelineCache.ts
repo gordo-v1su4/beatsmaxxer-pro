@@ -76,13 +76,17 @@ export class ModePipelineCache {
     return promise;
   }
 
-  /** Kick off every mode for both variants. */
-  warmAll(): Promise<void> {
-    const builds: Promise<unknown>[] = [];
-    for (const mode of SHADER_EFFECT_MODES) {
-      builds.push(this.build('video', mode), this.build('idle', mode));
+  /** Warm every mode, retrying transient compiler failures before startup opens.
+   * Ready entries are reused; only failed entries compile again. */
+  async warmAll(): Promise<void> {
+    for (let attempt = 0; attempt < 3 && !this.disposed; attempt++) {
+      const builds: Promise<unknown>[] = [];
+      for (const mode of SHADER_EFFECT_MODES) {
+        builds.push(this.build('video', mode), this.build('idle', mode));
+      }
+      await Promise.all(builds);
+      if (this.failed.size === 0) return;
     }
-    return Promise.all(builds).then(() => undefined);
   }
 
   /** Settled builds, successful or not — what a progress meter counts. */

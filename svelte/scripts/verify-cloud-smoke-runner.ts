@@ -4,6 +4,12 @@ const QA_URL = process.env.QA_URL ?? 'http://127.0.0.1:5174/?qa=1&qaAutoplay=1';
 const CLIP_WAIT_MS = Number(process.env.CLIP_WAIT_MS ?? 45_000);
 
 await withChrome('verify-cloud-smoke', 9601, async (session) => {
+  session.on('Runtime.consoleAPICalled', (event) => {
+    const message = event as { type?: string; args?: Array<{ value?: unknown; description?: string }> };
+    if (message.type !== 'error' || !String(message.args?.[0]?.value).startsWith('[webgpu]')) return;
+    console.error('Shader compiler:', message.args?.map((arg) => arg.value ?? arg.description));
+  });
+  await session.send('Runtime.enable');
   await navigateAndReady(session, QA_URL);
 
   if (QA_URL.includes('qaSequencerArm=1')) {
