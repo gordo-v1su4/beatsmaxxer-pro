@@ -222,6 +222,12 @@
     }
     bootLogSettle();
     if (startupAbort.signal.aborted) return;
+    // Preserve the existing limited workspace on unsupported devices. The
+    // capability probe is bounded, even if the shared device request stalls.
+    if (!skipSplash && (!cap.webgpu || !engineReady)) {
+      splashPhase = 'ready';
+      return;
+    }
     if (!skipSplash) {
       const graphic = await splashGraphicReady;
       if (startupAbort.signal.aborted) return;
