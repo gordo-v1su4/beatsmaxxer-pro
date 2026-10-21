@@ -1,8 +1,17 @@
 type BrowserGpu = {
   requestAdapter(): Promise<{ requestDevice(): Promise<GPUDevice> } | null>;
+  getPreferredCanvasFormat?(): GPUTextureFormat;
 };
 
 let sharedDevicePromise: Promise<GPUDevice | null> | null = null;
+// Keep the instance and adapter alive for as long as their device. Retaining
+// only the device can leave async compiler callbacks attached to a dropped
+// Dawn instance when the browser collects its navigator.gpu wrapper.
+let sharedContext: {
+  gpu: BrowserGpu;
+  adapter: { requestDevice(): Promise<GPUDevice> };
+  device: GPUDevice;
+} | null = null;
 
 /** Notified when the device is lost, so owners can drop what it created. */
 const lostListeners = new Set<(info: GPUDeviceLostInfo) => void>();
@@ -34,6 +43,7 @@ export async function getSharedWebGpuDevice(): Promise<GPUDevice | null> {
     const adapter = await gpu.requestAdapter();
     if (!adapter) return null;
     const device = await adapter.requestDevice();
+    sharedContext = { gpu, adapter, device };
     // Release the device when the page goes away for good. A reload during
     // the boot shader compiles otherwise leaves them queued in the GPU
     // process, and the next page's splash intro stutters behind them.
@@ -42,9 +52,11 @@ export async function getSharedWebGpuDevice(): Promise<GPUDevice | null> {
       if (!(event as PageTransitionEvent).persisted) device.destroy();
     });
     void device.lost?.then((info) => {
+      if (sharedContext?.device !== device) return;
       // Drop the memo first: whoever handles this will ask for a device, and
       // handing back the lost one would loop.
       sharedDevicePromise = null;
+      sharedContext = null;
       if (info.reason === 'destroyed') return;
       for (const listener of [...lostListeners]) {
         try {
@@ -61,10 +73,11 @@ export async function getSharedWebGpuDevice(): Promise<GPUDevice | null> {
 
 export function resetSharedWebGpuDeviceForTests() {
   sharedDevicePromise = null;
+  sharedContext = null;
   lostListeners.clear();
 }
 
 export function getPreferredCanvasFormat(): GPUTextureFormat {
-  const gpu = (navigator as Navigator & { gpu?: GPU }).gpu;
+  const gpu = sharedContext?.gpu ?? (navigator as Navigator & { gpu?: GPU }).gpu;
   return gpu?.getPreferredCanvasFormat?.() ?? 'bgra8unorm';
 }

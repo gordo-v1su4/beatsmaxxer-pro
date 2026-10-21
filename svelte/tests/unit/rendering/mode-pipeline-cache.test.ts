@@ -20,23 +20,6 @@ function mockDevice(failFirst: boolean) {
 const layouts = { video: {}, idle: {} } as unknown as Record<'video' | 'idle', GPUBindGroupLayout>;
 
 describe('ModePipelineCache', () => {
-  test('warmup bounds simultaneous compiler requests while preparing every effect', async () => {
-    const { device } = mockDevice(false);
-    let inFlight = 0, peak = 0;
-    vi.mocked(device.createRenderPipelineAsync).mockImplementation(() => {
-      inFlight++;
-      peak = Math.max(peak, inFlight);
-      return new Promise(resolve => setTimeout(() => {
-        inFlight--;
-        resolve({} as GPURenderPipeline);
-      }, 0));
-    });
-    const cache = new ModePipelineCache(device, layouts);
-    await cache.warmAll();
-    expect(peak).toBeLessThanOrEqual(4);
-    expect(cache.readyCount).toBe(cache.totalCount);
-  });
-
   test('a failed build is retried on the next request, and counted once', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { device } = mockDevice(true);

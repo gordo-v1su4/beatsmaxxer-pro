@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   getSharedWebGpuDevice,
+  getPreferredCanvasFormat,
   onSharedWebGpuDeviceLost,
   resetSharedWebGpuDeviceForTests
 } from '$lib/rendering/webgpu/SharedGpuDevice';
@@ -34,6 +35,17 @@ afterEach(() => {
 });
 
 describe('shared GPU device loss', () => {
+  test('keeps using the GPU instance that owns the shared device', async () => {
+    const { device, gpu } = fakeGpu(new Promise<GPUDeviceLostInfo>(() => {}));
+    const owner = { ...gpu, getPreferredCanvasFormat: () => 'bgra8unorm' };
+    const replacement = { getPreferredCanvasFormat: () => 'rgba8unorm' };
+    let reads = 0;
+    vi.stubGlobal('navigator', { get gpu() { return reads++ === 0 ? owner : replacement; } });
+    expect(await getSharedWebGpuDevice()).toBe(device);
+    expect(getPreferredCanvasFormat()).toBe('bgra8unorm');
+    expect(reads).toBe(1);
+  });
+
   test('notifies listeners and forgets the lost device', async () => {
     let loseDevice: (info: GPUDeviceLostInfo) => void = () => {};
     const lost = new Promise<GPUDeviceLostInfo>((resolve) => {

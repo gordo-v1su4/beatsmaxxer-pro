@@ -80,19 +80,11 @@ export class ModePipelineCache {
    * Ready entries are reused; only failed entries compile again. */
   async warmAll(): Promise<void> {
     for (let attempt = 0; attempt < 3 && !this.disposed; attempt++) {
-      const jobs = SHADER_EFFECT_MODES.flatMap(mode =>
-        (['video', 'idle'] as const).map(variant => ({ variant, mode }))
-      );
-      let next = 0;
-      // The splash shares this device. Avoid submitting every expensive shader
-      // compile at once while its animation is rendering, especially on the
-      // software GPU used by CI. Startup still waits for every effect.
-      await Promise.all(Array.from({ length: 4 }, async () => {
-        while (!this.disposed && next < jobs.length) {
-          const { variant, mode } = jobs[next++];
-          await this.build(variant, mode);
-        }
-      }));
+      const builds: Promise<unknown>[] = [];
+      for (const mode of SHADER_EFFECT_MODES) {
+        builds.push(this.build('video', mode), this.build('idle', mode));
+      }
+      await Promise.all(builds);
       if (this.failed.size === 0) return;
     }
   }
