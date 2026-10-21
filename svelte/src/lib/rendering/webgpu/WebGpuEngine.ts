@@ -376,7 +376,7 @@ export class WebGpuEngine {
     // fallback meant the first frame — often the only frame while the
     // transport is stopped — showed the bare test card with no effect, and
     // nothing repainted it once the real pipeline landed. The builds are async
-    // and parallel (~3s cold), so this costs no GPU-process stall, and the
+    // and run with bounded parallelism, so this costs no GPU-process stall, and the
     // splash already holds until warmup settles.
     this.modePipelinesPromise = cache.warmAll().then(
       () => {

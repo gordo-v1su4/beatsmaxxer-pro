@@ -367,7 +367,26 @@ export async function withChrome<T>(
   try {
     await Bun.sleep(500);
     const session = await connectCdp(port);
-    return await fn(session);
+    session.on('Runtime.consoleAPICalled', (event) => {
+      const message = event as { type?: string; args?: Array<{ value?: unknown; description?: string }> };
+      if (!['error', 'warning'].includes(message.type ?? '') ||
+          !String(message.args?.[0]?.value).startsWith('[webgpu]')) return;
+      console.error(`[${label}] WebGPU:`, message.args?.map(arg => arg.value ?? arg.description));
+    });
+    await session.send('Runtime.enable');
+    try {
+      return await fn(session);
+    } catch (error) {
+      try {
+        console.error(`[${label}] startup diagnostics`, await evalPage(session, `(() => {
+          const state = window.__BMX_QA__?.snapshot?.();
+          return { splash: document.querySelector('.splash')?.textContent,
+            webgpu: state?.webgpu, clipsLoaded: state?.clipsLoaded,
+            sequencerArmed: state?.sequencerArmed, playing: state?.playing };
+        })()`, 5_000, 'startup failure diagnostics'));
+      } catch { /* Preserve the original failure if the browser also stopped responding. */ }
+      throw error;
+    }
   } finally {
     proc.kill(9);
     try {
