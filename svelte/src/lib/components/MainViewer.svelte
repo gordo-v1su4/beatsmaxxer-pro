@@ -78,7 +78,7 @@
       </span>
     </aside>
 
-    <div class="pgm-screen" style="border-color:{accent}44">
+    <div class="pgm-screen">
       <WebGpuCanvas id="pgm" moduleId={live.id} color={liveColor} class="absolute inset-0 w-full h-full" />
       {#if $screenFxViewer}<ScreenOverlay variant="viewer" />{/if}
     </div>
@@ -171,8 +171,7 @@
        large as the band allows and never pushes the gutters to zero. */
     width: min(100%, calc(100cqh * 16 / 9));
     background: #000;
-    border: 1px solid;
-    border-radius: 2px;
+    border: 0;
     overflow: hidden;
   }
 

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { rackTop, rackBottom } from '$lib/stores/rack';
 import { setAllModuleTriggerSources } from '$lib/stores/midiTrigger';
 
@@ -51,15 +51,14 @@ viewMode.subscribe(mode => {
 });
 
 /**
- * Strip the performance view back to the picture: rack modules to previews and
- * both side rails retracted. The rails are browsers — things you use while
- * building a set, not while playing one — so leaving them out of MIN ALL meant
- * the gesture never actually got you to a clean screen.
+ * Collapse module controls. Perform keeps its rails open until the layout can
+ * reclaim their width without leaving a gap beside the height-fitted rack.
  */
 export function setMinimalPerformView(ids: string[], on: boolean) {
   setAllModulesCollapsed(ids, on);
-  fxLibOpen.set(!on);
-  pgmRailOpen.set(!on);
+  const railsOpen = get(viewMode) === 'perform' || !on;
+  fxLibOpen.set(railsOpen);
+  pgmRailOpen.set(railsOpen);
 }
 
 /** Left browser rail — retracts to a thin strip. */
@@ -81,6 +80,13 @@ export function showSideRailTab(tab: SideRailTab) {
 
 /** PGM source rail — can retract later for extra rack rows. */
 export const pgmRailOpen = writable(true);
+
+viewMode.subscribe(mode => {
+  if (mode === 'perform') {
+    fxLibOpen.set(true);
+    pgmRailOpen.set(true);
+  }
+});
 
 /**
  * MIDI patch + trigger lanes on the rack.

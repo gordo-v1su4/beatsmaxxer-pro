@@ -6,6 +6,7 @@
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
   import { canUndoTiming, canRedoTiming, undoTiming, redoTiming } from '$lib/stores/timing';
   import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen, playbackWorkspace } from '$lib/stores/rackUi';
+  import { timingSourcesCompact } from '$lib/stores/timingLayout';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
   import { transportDisplay } from '$lib/stores/transportDisplay';
   import TopBtn from '$lib/components/rack/TopBtn.svelte';
@@ -609,6 +610,13 @@
           {#if $allModulesCollapsed}<ChevronsUpDown size={10} />{:else}<ChevronsDownUp size={10} />{/if}
         {/snippet}
       </TopBtn>
+      {#if $viewMode==='timing'}
+        <div class="menu-section-label">TIMING SOURCES</div>
+        <div class="menu-row">
+          <TopBtn label="COMPACT PREVIEWS" accent active={$timingSourcesCompact} onclick={()=>timingSourcesCompact.set(true)} title="Two rows of five smaller source cards. Headers remain above their previews; the main program monitor keeps its size." />
+          <TopBtn label="EXPANDED PREVIEWS" accent active={!$timingSourcesCompact} onclick={()=>timingSourcesCompact.set(false)} title="Two rows of five larger source previews." />
+        </div>
+      {/if}
       <div class="menu-section-label">SCANLINES</div>
       <p class="menu-hint">CRT glass on the picture — not a view switch. Program is the big monitor; tiles are the ten small previews.</p>
       <div class="menu-row">
@@ -729,6 +737,8 @@
 {/if}
 
 <style>
+  .topbar-shell{--top-control-height:22px}
+  .clip-order select{height:var(--top-control-height);padding-block:0!important}
   .workflow-menu-note{max-width:300px;padding:8px 12px;margin:0;color:#b2bcc3;font:12px/1.5 system-ui,sans-serif}
   .workflow-menu-note button{border:0;background:#244b46;color:#d2fff0;padding:6px 10px;cursor:pointer}
   .workflow-feedback{position:fixed;bottom:14px;left:14px;z-index:4100;display:flex;align-items:center;gap:10px;max-width:min(440px,calc(100vw - 28px));padding:7px 10px;background:rgb(24 60 55 / 70%);color:#def8ef;font:11px/1.45 var(--font-ui);border-radius:2px}
@@ -933,7 +943,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 0 8px;
-    height: 46px;
+    height: 30px;
     width: 100%;
     min-width: 0;
   }
@@ -982,7 +992,7 @@
 
 
   .transport-btn {
-    height: 26px;
+    height: var(--top-control-height);
     padding-inline: 10px;
     background: var(--control-face);
     border: 1px solid;
@@ -1058,7 +1068,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 26px;
+    height: var(--top-control-height);
     min-width: 0;
     max-width: 180px;
     padding-inline: 8px;
@@ -1105,7 +1115,7 @@
   .rhy-badge,
   .step-block,
   .slider-block {
-    height: 26px;
+    height: var(--top-control-height);
     background: linear-gradient(180deg, #0e1012, #0a0c0e);
     border: 1px solid #1a1c1e;
     border-radius: 2px;
@@ -1256,7 +1266,7 @@
   }
 
   .tap-btn {
-    height: 26px;
+    height: var(--top-control-height);
     padding-inline: 8px;
     background: linear-gradient(180deg, #161a1e, #101418);
     border: 1px solid #1e2226;
@@ -1388,7 +1398,7 @@
   }
 
   .hold-btn {
-    height: 26px;
+    height: var(--top-control-height);
     width: 26px;
     flex-shrink: 0;
     padding: 0;

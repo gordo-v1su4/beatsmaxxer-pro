@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { slotIndexForId } from '$lib/modules/rackSlots';
   import { slotPreparation, retrySlotPreparation } from '$lib/runtime/timing/preparation';
   import TimingCurve from './TimingCurve.svelte';
   import { arrangementMode } from '$lib/arrangement/transportMode';
@@ -23,7 +24,7 @@
   const live=$derived($timingLive[$selectedTimingSlot]);
   const status=$derived($timingStatus[$selectedTimingSlot]);
   const range=$derived(rampRange(config.ramp));
-  const number=$derived(Number($selectedTimingSlot.split('-')[1])+($selectedTimingSlot.startsWith('bottom')?5:0));
+  const number=$derived(slotIndexForId($selectedTimingSlot)??0);
   const used=$derived($timingCacheCapacity.usedBytes/2**30);
   const capacityErrors=$derived(Object.values($timingStatus).filter(s=>s.state==='error' && s.requiredBytes));
   const capacityPending=$derived($timingCacheCapacity.pending>0);
@@ -158,7 +159,7 @@
   .follow-on-air[aria-pressed="true"]{color:var(--timing-accent);border-color:var(--timing-accent)}
   .effect-stage{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--timing-plot-height,200px);min-width:0;background:#090b0c}
   .effect-stage.sampler-stage{grid-template-columns:330px minmax(0,1fr);grid-template-rows:minmax(240px,auto)}
-  .sampler-controls{padding:8px;border-right:1px solid #1e2226;display:flex;flex-direction:column}.sampler-presets{display:flex;align-items:center;gap:6px;padding:4px;font:7px var(--font-ui)}
+  .sampler-controls{padding:8px;border-right:1px solid #1e2226;display:flex;flex-direction:column;justify-content:flex-start}.sampler-controls :global(> div:first-child){flex:0 0 auto!important}.sampler-presets{display:flex;align-items:center;gap:6px;padding:4px;font:7px var(--font-ui)}
   .effect-stage :global(.curve-tools){grid-row:1;grid-column:1;align-self:start;justify-self:start;height:20px;position:relative;z-index:1}
   .effect-stage :global(.curve-canvas){grid-row:1;grid-column:1}
   .effect-stage :global(.stutter-grid){grid-row:1;grid-column:1}

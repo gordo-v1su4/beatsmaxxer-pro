@@ -1,3 +1,4 @@
+import { slotIndexForId } from '$lib/modules/rackSlots';
 import { computeSpeedRampRate } from '$lib/runtime/speedramp';
 import { getModuleDef } from '$lib/modules/catalog';
 
@@ -23,8 +24,7 @@ export const rateToY = (rate: number) => clamp01((rate - 0.25) / 3.75);
 export const yToRate = (y: number) => 0.25 + clamp01(y) * 3.75;
 
 export function defaultClipTiming(slot?: string): ClipTiming {
-  const index = slot && /^(top|bottom)-[0-4]$/.test(slot)
-    ? Number(slot.split('-')[1]) + (slot.startsWith('bottom') ? 5 : 0) : 0;
+  const index = slot ? slotIndexForId(slot) ?? 0 : 0;
   const effect = index % 2 === 0 ? 'ramp' : 'stutter';
   return {
     effect,

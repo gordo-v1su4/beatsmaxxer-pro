@@ -16,7 +16,10 @@ function splashShader(): string {
     let tealLuminance = max(dot(teal, vec3f(0.2126, 0.7152, 0.0722)), 0.0001);
     let recolored = mix(rgb, teal * min(luminance / tealLuminance, 1.5), pink);
     let softened = mix(vec3f(luminance), recolored, 0.80) * 0.85 * smoothstep(0.015, 0.08, luminance);
-    return vec4f(clamp(softened, vec3f(0.0), vec3f(1.0)), 1.0);
+    // VHS noise belongs to the artwork, not the empty canvas around it.
+    let artwork = textureSampleLevel(videoTex, videoSampler, uv, 0.0).rgb;
+    let coverage = smoothstep(0.005, 0.035, max(artwork.r, max(artwork.g, artwork.b)));
+    return vec4f(clamp(softened * coverage, vec3f(0.0), vec3f(1.0)), 1.0);
   `);
 }
 

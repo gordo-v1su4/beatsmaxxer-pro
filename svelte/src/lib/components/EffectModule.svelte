@@ -14,7 +14,6 @@
   import MediaPatchBay from '$lib/components/rack/MediaPatchBay.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import { screenFxModules } from '$lib/stores/screenFx';
-  import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
   import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
@@ -30,7 +29,6 @@
   import { moduleCollapsed, midiUiOpen, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { clipStatus as clipStatusStore } from '$lib/stores/clipStatus';
   import { isVideoFile } from '$lib/media/videoFile';
-  import { previewTargetFps } from '$lib/platform/desktopPerformance';
   import { moduleMidiContract } from '$lib/modules/midiContracts';
 
   interface Props {
@@ -168,7 +166,9 @@
         density={params.density ?? 100}
         onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
       />
-      {#if $midiUiOpen}
+    {/if}
+    {#if !collapsed && $midiUiOpen}
+      <div class="module-midi-strip">
         {#if midiLayer && midiBehavior}
           <MidiTimeline
             color={mod.accentColor}
@@ -177,20 +177,15 @@
             behavior={midiBehavior}
             source={$moduleTriggerSource[mod.id] ?? 'audio'}
             density={params.density ?? 100}
+            compact
           />
-        {:else}
-          <div class="module-midi-lane module-midi-lane-empty" aria-hidden="true"></div>
         {/if}
-      {/if}
+      </div>
     {/if}
     <div class="module-preview">
       <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
       {#if $screenFxModules}<ScreenOverlay variant="module" />{/if}
-      <ScreenBadge
-        text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
-        color={mod.accentColor}
-      />
-    </div>
+   </div>
   </div>
 
   {#if !collapsed}

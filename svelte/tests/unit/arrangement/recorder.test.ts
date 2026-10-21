@@ -8,9 +8,9 @@ describe('rackSlotIndex', () => {
     expect(rackSlotIndex('top-4')).toBe(4);
   });
 
-  it('maps bottom row slots to 5-9', () => {
-    expect(rackSlotIndex('bottom-0')).toBe(5);
-    expect(rackSlotIndex('bottom-4')).toBe(9);
+  it('maps bottom row slots to 6-11', () => {
+    expect(rackSlotIndex('bottom-0')).toBe(6);
+    expect(rackSlotIndex('bottom-4')).toBe(10);
   });
 
   it('rejects unknown ids', () => {

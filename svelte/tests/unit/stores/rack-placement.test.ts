@@ -27,9 +27,7 @@ import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
  * removing anything, so "drop a fifth module into a four-module row" was really
  * dropping a sixth into a full one and three tests failed on the row cap. The
  * spare is now derived, so rearranging the default rack cannot break them. */
-const SPARE_TOP_MODULE = catalogIds().find(
-  (id) => !DEFAULT_RACK_TOP.includes(id) && canPlaceInRow(getModuleDef(id)!, 'top')
-)!;
+const SPARE_TOP_MODULE = DEFAULT_RACK_TOP[5]!;
 
 describe('rack row placement', () => {
   beforeEach(() => {
@@ -55,22 +53,14 @@ describe('rack row placement', () => {
     expect(get(rackTop)[0]).toBe('streak');
   });
 
-  test('adds one compatible fifth module and keeps the row capped at five', () => {
-    const four = DEFAULT_RACK_TOP.slice(0, 4);
-    rackTop.set([...four]);
-    expect(canDropModuleOnSlot(
-      { moduleId: SPARE_TOP_MODULE, source: 'palette' },
-      { row: 'top', index: 4 }
-    )).toBe(true);
-    expect(applyModuleDrop(
-      { moduleId: SPARE_TOP_MODULE, source: 'palette' },
-      { row: 'top', index: 4 }
-    )).toBe(true);
-    expect(get(rackTop)).toEqual([...four, SPARE_TOP_MODULE]);
-    expect(get(videoLayers)['top-4']).toBeNull();
-
-    expect(assignModuleToSlot('top', 5, DEFAULT_RACK_TOP[4]!)).toBe(false);
-    expect(get(rackTop)).toHaveLength(5);
+  test('adds the sixth compatible module and keeps the row capped at six', () => {
+    const five=DEFAULT_RACK_TOP.slice(0,5);rackTop.set([...five]);
+    expect(canDropModuleOnSlot({moduleId:SPARE_TOP_MODULE,source:'palette'},{row:'top',index:5})).toBe(true);
+    expect(applyModuleDrop({moduleId:SPARE_TOP_MODULE,source:'palette'},{row:'top',index:5})).toBe(true);
+    expect(get(rackTop)).toEqual([...five,SPARE_TOP_MODULE]);
+    expect(get(videoLayers)['top-5']).toBeNull();
+    expect(assignModuleToSlot('top',6,DEFAULT_RACK_TOP[0]!)).toBe(false);
+    expect(get(rackTop)).toHaveLength(6);
   });
 
   test('the fifth slot rejects incompatible and already-racked effects', () => {
@@ -93,7 +83,7 @@ describe('rack row placement', () => {
       { row: 'top', index: 0 }
     )).toBe(true);
     expect(get(rackTop)).toEqual([
-      'timesampler', 'speedramp', 'tapdelay', 'transition', DEFAULT_RACK_TOP[4]!
+      'timesampler', 'speedramp', 'tapdelay', 'transition', DEFAULT_RACK_TOP[4]!, DEFAULT_RACK_TOP[5]!
     ]);
   });
 

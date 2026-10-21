@@ -10,8 +10,8 @@ const signal:TimingSignal={label:'test MIDI',bpm:120,beats:Array.from({length:20
 describe('finite musical Timing effects',()=>{
   it('matches the saved R&D ramp schedule and source mapping for each independent slot',()=>{
     const trigger={...defaultTimingTrigger(),source:'midi' as const,threshold:0};
-    const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(10).fill(100),42,100,'speed-ramp');
-    for(let slot=0;slot<10;slot++){
+    const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(12).fill(100),42,100,'speed-ramp');
+    for(let slot=0;slot<12;slot++){
       const config=defaultClipTiming();config.ramp=rampPreset('COSINE');
       const actual=buildTimingSchedule(config,trigger,signal,slot,100);
       expect(actual.bursts.map(b=>b.at)).toEqual(reference[slot].filter(e=>e.rampPeriod).map(e=>e.at));
@@ -24,8 +24,8 @@ describe('finite musical Timing effects',()=>{
   it('matches R&D MIDI stutter slice choices, repeats and normal play after the burst',()=>{
     const config=defaultClipTiming('top-1');config.stutter.mode='jump';
     const trigger={...defaultTimingTrigger(),repeatStyle:'fixed' as const,source:'midi' as const,threshold:0,gapSeconds:0};
-    const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(10).fill(20),42,100,'midi-stems');
-    for(let slot=0;slot<10;slot++){
+    const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(12).fill(20),42,100,'midi-stems');
+    for(let slot=0;slot<12;slot++){
       const actual=buildTimingSchedule(config,trigger,signal,slot,20);
       // R&D stutter preroll uses the same deck offset.
       for(const time of [0,.1,.26,.36,.65,1.099,1.11,2.03,5,10,25,40])expect(sampleTimingSchedule(actual,time).sourceSeconds).toBeCloseTo(targetAt(reference[slot],time,20).source,8);

@@ -16,6 +16,6 @@
 </footer>
 <style>
   .timing-footer { display:flex; align-items:center; gap:10px; min-height:28px; padding:4px 8px; border-top:1px solid #1e2226; background:#131416; font:7px var(--font-mono); color:#6a7a8a; flex-wrap:wrap; }
-  .timing-footer > span:first-child { flex:1; min-width:160px; }
+  .timing-footer > span:first-child { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .timing-footer button { font:8px var(--font-ui); color:#7faaa3; background:linear-gradient(#1a1c1f,#131517); border:1px solid #1e2226; border-radius:2px; padding:3px 6px; letter-spacing:.06em; }
 </style>

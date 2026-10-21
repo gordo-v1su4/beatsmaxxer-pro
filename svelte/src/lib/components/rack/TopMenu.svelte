@@ -72,7 +72,7 @@
   }
 
   .top-menu-btn {
-    height: 26px;
+    height: var(--top-control-height, 26px);
     padding-inline: 8px 6px;
     display: flex;
     align-items: center;

@@ -6,12 +6,12 @@ import { beginTimingGesture, endTimingGesture, canUndoTiming, canRedoTiming, cli
 
 beforeEach(() => { resetTimingHistory(); timingSettings.set({...parseTimingSettings(null),scope:'deck'}); selectedTimingSlot.set('top-0'); });
 describe('Timing editing history and identity', () => {
-  it('alternates all ten defaults across the row boundary while preserving explicit clip choices', () => {
-    const slots=Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`);
-    expect(slots.map(slot=>clipTiming(slot).effect)).toEqual(['ramp','stutter','ramp','stutter','ramp','stutter','ramp','stutter','ramp','stutter']);
+  it('alternates all twelve defaults across the row boundary while preserving explicit clip choices', () => {
+    const slots=Array.from({length:12},(_,i)=>`${i<6?'top':'bottom'}-${i%6}`);
+    expect(slots.map(slot=>clipTiming(slot).effect)).toEqual(['ramp','stutter','ramp','stutter','ramp','stutter','ramp','stutter','ramp','stutter','ramp','stutter']);
     setClipTiming('top-1',{...clipTiming('top-1'),effect:'ramp'});
     timingSettings.set(parseTimingSettings(JSON.stringify(get(timingSettings))));
-    expect(clipTiming('top-1').effect).toBe('ramp');expect(clipTiming('bottom-0').effect).toBe('stutter');
+    expect(clipTiming('top-1').effect).toBe('ramp');expect(clipTiming('bottom-0').effect).toBe('ramp');
   });
   it('undoes a complete drag once without changing unrelated clips or memory capacity', () => {
     setClipTiming('top-1', { ...defaultClipTiming(), effect: 'stutter' }); resetTimingHistory();

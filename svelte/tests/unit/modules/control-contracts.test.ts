@@ -67,8 +67,8 @@ describe('G002 control contracts', () => {
     expect(held).toEqual([...DEFAULT_RACK_TOP, ...DEFAULT_RACK_BOTTOM]);
     expect(swaps.sort()).toEqual([...EXPECTED_PALETTE_SWAP_IDENTITIES].sort());
     expect(new Set([...held, ...swaps]).size).toBe(LIVE_IDENTITY_COUNT);
-    expect(held).toHaveLength(10);
-    expect(swaps).toHaveLength(9);
+    expect(held).toHaveLength(12);
+    expect(swaps).toHaveLength(7);
   });
 
   test('FX palette lists every swap identity by category', () => {

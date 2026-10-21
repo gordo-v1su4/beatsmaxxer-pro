@@ -136,7 +136,7 @@
 	--pgm-rail-collapsed: 22px;
 	--side-rail-width: 8px;
 	--app-min-width: calc(
-		var(--rack-module-width) * 5 + 4px + var(--fx-lib-width) + var(--pgm-rail-width) +
+		var(--rack-module-width) * 6 + 5px + var(--fx-lib-width) + var(--pgm-rail-width) +
 			var(--side-rail-width) * 2 + 3px
 	);
 	--app-min-height: 720px;
@@ -227,6 +227,7 @@ input[type='range']::-moz-range-thumb {
 	background-size: 80px 80px;
 	-webkit-overflow-scrolling: touch;
 	scrollbar-width: thin;
+	scrollbar-gutter: stable;
 	scrollbar-color: #2a3038 var(--rack-bg);
 }
 
@@ -293,8 +294,9 @@ input[type='range']::-moz-range-thumb {
    than the rack scrolls (.app-viewport) rather than squeezing it. */
 @media (min-width: 961px) {
 	.rack-workspace {
-		flex: 0 0 auto;
+		flex: 1 0 auto;
 	}
+	.rack-workspace:not(.timing-workspace) .rack-main > .timing-footer { margin-top: auto; }
 
 	.side-panels {
 		/* Let the rack column set the shared row height. The PGM list then uses
@@ -314,7 +316,7 @@ input[type='range']::-moz-range-thumb {
 	flex: 1;
 	display: flex;
 	flex-direction: column;
-	min-width: calc(var(--rack-module-width) * 5 + 4px);
+	min-width: calc(var(--rack-module-width) * 6 + 5px);
 	min-height: 0;
 	overflow: visible;
 	background: var(--rack-bg);
@@ -325,7 +327,7 @@ input[type='range']::-moz-range-thumb {
 	/* Fill the available width rather than sitting fixed-width with dead space
 	   to the sides, but cap growth so the 16:9 previews cannot push the
 	   controls off the bottom. Leftover space above the cap is split evenly. */
-	grid-template-columns: repeat(5, minmax(var(--rack-module-width), var(--rack-module-max)));
+	grid-template-columns: repeat(6, minmax(var(--rack-module-width), var(--rack-module-max)));
 	/* Center spare width. If the row cannot fit, align to the start so the
 	   overflow runs past the right edge instead of sliding under the left rail. */
 	justify-content: safe center;
@@ -495,6 +497,13 @@ input[type='range']::-moz-range-thumb {
 .module-midi-lane-empty {
 	background: #08090a;
 	border-bottom: 1px solid #0d0e0f;
+}
+
+.module-midi-strip {
+	--module-midi-lane-height: 16px;
+	height: var(--module-midi-lane-height);
+	flex-shrink: 0;
+	background: #08090a;
 }
 
 .rack-module.is-collapsed .module-media-stack {
@@ -680,9 +689,25 @@ input[type='range']::-moz-range-thumb {
 	   Perform and Timing alike. */
 	.rack-workspace .rack-main { container-type: inline-size; }
 	.rack-workspace:not(.timing-workspace) .rack-row {
-		grid-template-columns: repeat(5, minmax(var(--rack-module-width), 1fr));
+		grid-template-columns: repeat(6, minmax(var(--rack-module-width), 1fr));
 	}
 	.module-preview { width: 100%; }
+}
+
+/* Perform fits its actual MIDI-loaded content to the desktop viewport. */
+.perform-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
+.perform-source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
+.perform-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
+@media (min-width: 961px) {
+  .app-viewport.perform-fit { overflow:hidden; }
+  .perform-fit { --module-midi-lane-height:32px; }
+  .perform-fit .rack-module .rack-section-body { padding-top:2px; padding-bottom:2px; }
+  .perform-fit .rack-row:first-child .rack-section-body { padding-top:1px; padding-bottom:1px; }
+  .perform-fit .app-shell { min-width:0; }
+  .perform-fit .rack-main { min-width:0; }
+  .perform-fit .rack-main .main-viewer { height:clamp(200px, min(calc(21cqw + 12px), 26dvh), 560px); }
+  .perform-fit .rack-row { min-height:0!important; max-width:none; align-self:flex-start; }
+  .perform-fit .module-preview { width:100%; min-height:0; }
 }
 
 /* Timing has preview-only rows at every desktop height. */
@@ -705,7 +730,7 @@ input[type='range']::-moz-range-thumb {
 /* Timing cards keep Perform's 16:9 frame, but the five tracks share whatever
    width is left beside the rails. A fixed 272px floor overflowed under the
    open PGM rail and left the right edge pinned to the window. */
-.app-shell:has(.timing-workspace) { min-width: 0; }
+.app-shell:has(.timing-workspace) { min-width: 0; width: 100%; }
 .timing-workspace .rack-main { min-width: 0; }
 .timing-workspace {
 	/* The top bar is 49px (1px top border, 46px row, 2px bottom border).
@@ -715,16 +740,13 @@ input[type='range']::-moz-range-thumb {
 }
 @media (min-width: 961px) {
 	.timing-workspace .rack-row {
-		grid-template-columns: repeat(5, minmax(0, 1fr));
+		grid-template-columns: repeat(6, minmax(0, 1fr));
 		justify-content: safe center;
 	}
 	.timing-workspace .rack-slot { min-width: 0; }
 	/* The native desktop surface is fixed-height. Keep the viewed 16:9 media
 	   geometry intact and spend the saved vertical space in the editor plot. */
 	.timing-workspace { --timing-plot-height: 200px; }
-	/* The accepted-burst timeline is optional detail. When it is expanded,
-	   reclaim its height from the plot so the footer remains in the window. */
-	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) { --timing-plot-height: 136px; }
 	/* Scroll both ways: a window below the minimum reaches the bottom row by
 	   scrolling instead of the layout squeezing to fit. */
 	.app-viewport { overflow: auto; }
@@ -736,16 +758,16 @@ input[type='range']::-moz-range-thumb {
 @media (min-width: 961px) {
 	.rack-workspace.timing-workspace { flex: 1 1 0%; min-height: 0; }
 	.timing-workspace { --timing-plot-height: clamp(100px, calc(100dvh - 760px), 200px); }
-	.timing-workspace .timing-panel:has(.event-strip:not(.event-strip-collapsed)) {
-		--timing-plot-height: clamp(80px, calc(100dvh - 824px), 136px);
-	}
 	.timing-workspace .rack-main {
 		display: grid;
-		align-content: start;
-		grid-template-rows: auto auto auto auto auto;
+		align-content: stretch;
+		grid-template-rows: max-content max-content max-content max-content minmax(min-content, 1fr);
 		min-height: 0;
 	}
 	.timing-workspace .timing-panel { flex: none; margin-top:0; }
+	.timing-workspace .timing-panel > fieldset { display:flex; flex-direction:column; flex:1; min-height:0; }
+	.timing-workspace .timing-panel > fieldset > * { flex-shrink:0; }
+	.timing-workspace .timing-panel .timing-footer { margin-top:auto; }
 	.timing-workspace .timing-panel > * { flex-shrink: 0; }
 	.timing-workspace .rack-row { min-height: 0; height: auto !important; }
 	.timing-workspace .timing-card {
@@ -758,6 +780,15 @@ input[type='range']::-moz-range-thumb {
 
 @media (min-width: 961px) {
   .timing-workspace .effect-stage { flex: 0 0 var(--timing-plot-height); height: var(--timing-plot-height); min-height: 0; grid-template-rows: minmax(0, 1fr) !important; }
+  .timing-workspace .effect-stage.sampler-stage { height:200px; flex-basis:200px; }
   .timing-workspace .curve-canvas { min-height: 0; height: 100%; }
   .timing-workspace .curve-canvas svg { height: 100% !important; }
+}
+
+/* Compact Timing reduces whole cards together; headers stay above pictures. */
+@media (min-width: 961px) {
+  .timing-workspace.timing-compact .rack-row { width:80%; justify-self:center; }
+  .timing-workspace.timing-compact .timing-card-header { overflow: hidden; }
+  .timing-workspace.timing-compact .timing-card-header .module-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timing-workspace.timing-compact .timing-panel .editor-controls:not(:has(.shape-bank)) { height: 36px; min-height: 36px; }
 }
