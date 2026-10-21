@@ -17,11 +17,9 @@
   import FoldGlyph from '$lib/components/rack/FoldGlyph.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import { screenFxModules } from '$lib/stores/screenFx';
-  import ScreenBadge from '$lib/components/rack/ScreenBadge.svelte';
   import { bypassed, updateParam, updateParams, toggleBypass } from '$lib/stores/rack';
   import { moduleCollapsed, midiUiOpen, toggleModuleCollapsed } from '$lib/stores/rackUi';
   import { isVideoFile } from '$lib/media/videoFile';
-  import { previewTargetFps } from '$lib/platform/desktopPerformance';
   // The condensed button/slider table used to be declared here, where only the
   // rack could see it. The phone renders the same parameters at four times the
   // size, so it moved somewhere both surfaces import from — the values are
@@ -171,7 +169,9 @@
         density={params.density ?? 100}
         onDensityChange={(value) => updateParam(mod.id, 'density', Math.round(value))}
       />
-      {#if $midiUiOpen}
+    {/if}
+    {#if !collapsed && $midiUiOpen}
+      <div class="module-midi-strip">
         {#if midiLayer && midiBehavior}
           <MidiTimeline
             color={mod.accentColor}
@@ -180,24 +180,19 @@
             behavior={midiBehavior}
             source={$moduleTriggerSource[mod.id] ?? 'audio'}
             density={params.density ?? 100}
+            compact
           />
-        {:else}
-          <div class="module-midi-lane module-midi-lane-empty" aria-hidden="true"></div>
         {/if}
-      {/if}
+      </div>
     {/if}
     <div class="module-preview">
     <WebGpuCanvas id={slotCanvasId} moduleId={mod.id} {color} class="absolute inset-0 w-full h-full" />
     {#if $screenFxModules}<ScreenOverlay variant="module" />{/if}
-    <ScreenBadge
-      text={isOnAir ? 'FX PREVIEW · 100% WET' : `FX PREVIEW · ${previewTargetFps()} FPS`}
-      color={mod.accentColor}
-    />
-    </div>
+   </div>
   </div>
 
   {#if !collapsed && spec}
-    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:4px;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:3px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div
         style={mod.id === 'mirror'
           ? 'display:grid;grid-template-columns:repeat(12,1fr);gap:2px'
@@ -247,7 +242,7 @@
           />
         {/if}
       </div>
-      <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;flex-direction:column;gap:3px">
         {#each spec.sliders as sl (sl.param)}
           <div style="display:flex;align-items:center;gap:4px">
             <span
@@ -277,7 +272,7 @@
       onApplyPreset={(values) => updateParams(mod.id, values)}
     />
   {:else if !collapsed}
-    <div style="flex:0 0 auto;padding:6px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
+    <div style="flex:0 0 auto;padding:3px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;flex-direction:column;gap:3px">
         <!-- density has its own control on the MIDI lane; it would otherwise
              appear here a second time as a bare slider the moment it is set. -->

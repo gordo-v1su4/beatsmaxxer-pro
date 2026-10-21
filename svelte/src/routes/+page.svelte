@@ -1,6 +1,7 @@
 <script lang="ts">
   import { requireHostedAccess, serviceUnlockRequested } from '$lib/access/accessGate';
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
+  import { timingSourcesCompact } from '$lib/stores/timingLayout';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
   import { onMount, onDestroy, tick } from 'svelte';
@@ -26,6 +27,7 @@
   import AccessGate from '$lib/components/AccessGate.svelte';
   import PgmRail from '$lib/components/PgmRail.svelte';
   import MainViewer from '$lib/components/MainViewer.svelte';
+  import PerformViewportFit from '$lib/components/PerformViewportFit.svelte';
   import RackSlot from '$lib/components/RackSlot.svelte';
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
@@ -312,66 +314,7 @@
   }
 </script>
 
-<div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
-<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} error={splashError}
-  onGraphicReady={(error) => resolveSplashGraphic({ error, paintedAt: performance.now() })} />
-<div inert={splashPhase !== 'ready'} style="display:contents">
-<!--
-  One deployment gate for both shells. Mobile can request hosted analysis, and
-  the protected proxy requires the same signed cookie as desktop. AccessGate
-  remains invisible when the endpoint reports an open deployment, so local
-  development keeps its fail-open behavior without a route-specific bypass.
--->
-<AccessGate />
-<div inert={$serviceUnlockRequested} style="display:contents">
-<CapabilityGate state={$capabilities} />
-
-<!--
-  Two shells, one engine. The rack below is unchanged; the phone gets its own
-  tree because the rack's smallest honest width is 2552px and no breakpoint
-  closes that gap. DragGhost stays on the desktop side — there is no drag-and-
-  drop surface on the phone to ghost.
--->
-{#if !introDone}
-  <!-- Wait for the title card to paint before mounting the workspace. -->
-{:else if $isMobileShell}
-  <MobileShell />
-{:else}
-<DragGhost />
-
-<div class="app-shell">
-  <TopBar
-    onRandomize={randomize}
-    onClear={clearParams}
-    onLoadClips={loadClips}
-    {loadedClipCount}
-    clipSlotCount={activeClipSlotCount}
-  />
-
-  <!-- Two screens, not two panes. Programming wants ten lanes across a whole
-       song; performing wants the picture. Stacked in one window each made the
-       other worse, so ARRANGE replaces the workspace rather than docking under
-       it. The engine keeps running underneath either way. -->
-  <div class="rack-workspace" class:timing-workspace={$viewMode==='timing'} style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
-    <div
-      class="side-panels"
-      style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
-        ? 'var(--fx-lib-width)'
-        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$pgmRailOpen
-        ? 'var(--pgm-rail-width)'
-        : 'var(--pgm-rail-collapsed)'})"
-    >
-      <SideRail onAssignClip={assignLibraryClip} />
-      <ScrewRail side="left" class="hide-on-mobile" />
-      <PgmRail modules={rackModules} />
-    </div>
-
-    <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
-
-    <div class="rack-main">
-      <MainViewer modules={rackModules} />
-      {#if $viewMode==='timing'}<TimingSections/>{/if}
-
+{#snippet rackRows()}
       <div
         class="rack-row top-rack-row"
         style="height:auto;flex-shrink:0;min-height:{($viewMode==='timing' || $topRowCompact) ? 'unset' : '300px'};transition:min-height 0.2s ease"
@@ -418,6 +361,77 @@
         {/each}
       </div>
 
+{/snippet}
+
+<div class="app-viewport" class:mobile-shell-active={$isMobileShell}>
+<LoadingSplash phase={splashPhase} done={splashDone} total={splashTotal} error={splashError}
+  onGraphicReady={(error) => resolveSplashGraphic({ error, paintedAt: performance.now() })} />
+<div inert={splashPhase !== 'ready'} style="display:contents">
+<!--
+  One deployment gate for both shells. Mobile can request hosted analysis, and
+  the protected proxy requires the same signed cookie as desktop. AccessGate
+  remains invisible when the endpoint reports an open deployment, so local
+  development keeps its fail-open behavior without a route-specific bypass.
+-->
+<AccessGate />
+<div inert={$serviceUnlockRequested} style="display:contents">
+<CapabilityGate state={$capabilities} />
+
+<!--
+  Two shells, one engine. The rack below is unchanged; the phone gets its own
+  tree because the rack's smallest honest width is 2552px and no breakpoint
+  closes that gap. DragGhost stays on the desktop side — there is no drag-and-
+  drop surface on the phone to ghost.
+-->
+{#if !introDone}
+  <!-- Wait for the title card to paint before mounting the workspace. -->
+{:else if $isMobileShell}
+  <MobileShell />
+{:else}
+<DragGhost />
+
+<div class="app-shell">
+  <PerformViewportFit active={$viewMode==='perform'} />
+  <TopBar
+    onRandomize={randomize}
+    onClear={clearParams}
+    onLoadClips={loadClips}
+    {loadedClipCount}
+    clipSlotCount={activeClipSlotCount}
+  />
+
+  <!-- Two screens, not two panes. Programming wants ten lanes across a whole
+       song; performing wants the picture. Stacked in one window each made the
+       other worse, so ARRANGE replaces the workspace rather than docking under
+       it. The engine keeps running underneath either way. -->
+  <div class="rack-workspace" class:timing-workspace={$viewMode==='timing'} class:timing-compact={$timingSourcesCompact} style="display:{$viewMode === 'arrange' ? 'none' : 'flex'}">
+    <div
+      class="side-panels"
+      style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
+        ? 'var(--fx-lib-width)'
+        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$viewMode==='perform'?'0px':$pgmRailOpen
+        ? 'var(--pgm-rail-width)'
+        : 'var(--pgm-rail-collapsed)'})"
+    >
+      <SideRail onAssignClip={assignLibraryClip} />
+      <ScrewRail side="left" class="hide-on-mobile" />
+      {#if $viewMode!=='perform'}<PgmRail modules={rackModules} />{/if}
+    </div>
+
+    <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
+
+    <div class="rack-main">
+      <MainViewer modules={rackModules} />
+      <TimingSections/>
+
+      {#if $viewMode==='perform'}
+        <div class="perform-rack-area">
+          <div class="perform-source-rail" style:width={$pgmRailOpen?'var(--pgm-rail-width)':'var(--pgm-rail-collapsed)'}><PgmRail modules={rackModules}/></div>
+          <div class="perform-rows">{@render rackRows()}</div>
+        </div>
+      {:else}
+        {@render rackRows()}
+      {/if}
       {#if $viewMode==='perform'}<TimingFooter />{/if}
 
       {#if $viewMode==='timing'}<TimingPanel/>{/if}

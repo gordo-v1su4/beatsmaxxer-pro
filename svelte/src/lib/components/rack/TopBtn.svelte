@@ -40,7 +40,7 @@
   aria-pressed={active ? true : undefined}
   onmouseenter={() => (hov = true)}
   onmouseleave={() => (hov = false)}
-  style="height:26px;padding-inline:7px;background:{lit
+  style="height:var(--top-control-height,26px);padding-inline:7px;background:{lit
     ? `linear-gradient(180deg,${c}${active ? '2c' : '18'},${c}0c)`
     : 'linear-gradient(180deg,#191b1d,#131517)'};border-style:solid;border-width:1px;border-color:{lit
     ? `${c}${active ? '55' : '22'}`

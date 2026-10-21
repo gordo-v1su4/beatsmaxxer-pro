@@ -39,7 +39,7 @@ describe('desktop QA MIDI assignments', () => {
       ...inactive.midiAssignments![0],
       moduleId: 'streak'
     };
-    expect(() => validateQaMidiAssignments(inactive)).toThrow('inactive rack module');
+    expect(() => validateQaMidiAssignments(inactive, [...DEFAULT_RACK_TOP.filter(id=>id!=='streak'), ...DEFAULT_RACK_BOTTOM])).toThrow('inactive rack module');
   });
 
   test.skipIf(!redlineBundleAvailable)('loads seven real parts into module layers without enabling triggers', async () => {

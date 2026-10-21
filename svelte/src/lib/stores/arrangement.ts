@@ -12,6 +12,7 @@ import {
 import { MAX_RACK_SLOTS_PER_ROW, assignModuleToSlot, rackBottom, rackTop, videoLayers } from '$lib/stores/rack';
 import { captureScene, recallScene } from '$lib/arrangement/sectionScenes';
 import { sequencerArmed } from '$lib/stores/sequencer';
+import { listCatalog, canPlaceInRow } from '$lib/modules/catalog';
 
 export type ArrangementStructureStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -84,7 +85,7 @@ export const ARRANGEMENT_STEPS = 16;
 
 /** Sparse literal to a full 16-step pattern, so the defaults stay readable. */
 function steps(marks: Record<number, number>): (number | null)[] {
-  return Array.from({ length: ARRANGEMENT_STEPS }, (_, i) => (i in marks ? marks[i] : null));
+  return Array.from({ length: ARRANGEMENT_STEPS }, (_, i) => (i in marks ? (marks[i]>=5?marks[i]+1:marks[i]) : null));
 }
 
 // Only six modules can occupy the top row (transition, speedramp, tapdelay,
@@ -177,6 +178,18 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     pattern: steps({ 0: 1, 8: 0 })
   }
 ];
+
+// The authored templates predate six-wide racks. Keep their first five
+// assignments and append one unused compatible effect to each row.
+for (const section of DEFAULT_ARRANGEMENT) {
+  for (const row of ['top', 'bottom'] as const) {
+    const bank=section.bank[row];
+    for (const module of listCatalog()) {
+      if(bank.length>=MAX_RACK_SLOTS_PER_ROW)break;
+      if(canPlaceInRow(module,row)&&!bank.includes(module.id))bank.push(module.id);
+    }
+  }
+}
 
 function cloneDefaultArrangement(): ArrangementSection[] {
   return DEFAULT_ARRANGEMENT.map((section) => ({

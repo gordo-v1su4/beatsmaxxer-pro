@@ -1,3 +1,4 @@
+import { RACK_SLOT_COUNT } from '$lib/modules/rackSlots';
 import { BeatGrid } from '$lib/transport/BeatGrid';
 import { evaluateRamp, integratedRamp, type ClipTiming, type StutterConfig } from './envelope';
 import { timeSamplerParamsFromControls } from '$lib/timesampler/integration';
@@ -83,7 +84,7 @@ export function programTimeline(schedules: readonly TimingBurst[][], order:'bala
 
 /** Compile on edits/input changes, never on each frame. Finite bursts coalesce overlapping triggers. */
 export function buildTimingSchedule(config: ClipTiming, trigger: TimingTriggerConfig, signal: TimingSignal, slot: number, duration: number): TimingSchedule {
-  const initialSource=slot*duration/10;
+  const initialSource=slot*duration/RACK_SLOT_COUNT;
   const schedule:TimingSchedule={bursts:[],initialSource,config,duration};
   if(config.effect==='off'||signal.missing)return schedule;
   const grid=new BeatGrid(signal.beats,signal.bpm);

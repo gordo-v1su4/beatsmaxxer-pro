@@ -16,6 +16,7 @@
     source?: ModuleTriggerSource;
     density?: number;
     behavior?: 'trigger' | 'modulation';
+    compact?: boolean;
   }
 
   let {
@@ -24,7 +25,8 @@
     moduleId,
     source = 'audio',
     density = 100,
-    behavior = 'trigger'
+    behavior = 'trigger',
+    compact = false
   }: Props = $props();
 
   const td = $derived($transportDisplay);
@@ -56,12 +58,14 @@
 
 <div
   class="module-midi-lane"
+  title={compact ? `${midiLayer.name} · AS IMPORTED ${timingLabel} · ${timing.noteCount} notes` : undefined}
   data-midi-identity={midiLayer.identity ?? midiLayer.name}
   data-midi-source={source}
   data-midi-kept={midiLayer.notes.filter((note, index) => noteFires(index, note.velocity, density / 100)).length}
   data-midi-total={midiLayer.notes.length}
   data-midi-density={Math.round(density)}
 >
+{#if !compact}
 <div class="midi-timing-bar">
   <span class="midi-trigger-label">AS IMPORTED</span>
   <span
@@ -76,9 +80,10 @@
   </span>
   <span class="midi-timing-count">{timing.noteCount} notes</span>
 </div>
+{/if}
 
 <div
-  style="position:relative;height:28px;background:#08090a;border-bottom:1px solid #0d0e0f;overflow:hidden;flex-shrink:0;box-shadow:inset 0 2px 6px rgba(0,0,0,0.8)"
+  style="position:relative;flex:1;min-height:0;background:#08090a;border-bottom:1px solid #0d0e0f;overflow:hidden;box-shadow:inset 0 2px 6px rgba(0,0,0,0.8)"
 >
   <div
     style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:{color};box-shadow:0 0 6px {color}88,0 0 12px {color}44;z-index:5"

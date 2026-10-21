@@ -12,6 +12,8 @@ import { writable, derived, get } from 'svelte/store';
 import type { VideoLayer } from '$lib/engine/contracts';
 import type { DragPayload, RackRow } from '$lib/stores/drag';
 import { pgmSource, queuedPgmSource } from '$lib/stores/pgm';
+import { RACK_SLOTS_PER_ROW, RACK_SLOT_IDS, slotIndexForId, type RackSlotId } from '$lib/modules/rackSlots';
+export { RACK_SLOT_IDS, type RackSlotId } from '$lib/modules/rackSlots';
 
 export interface MidiLayer {
   /** Stable identity shared by rack, runtime, and arranger for this parse. */
@@ -39,16 +41,11 @@ function defaultParams(): Record<string, Record<string, number>> {
   return out;
 }
 
-/** Four modules start in each row; a fifth stable slot can be added by drop. */
+/** Six stable media slots in each row. */
 export const rackTop = writable<string[]>([...DEFAULT_RACK_TOP]);
 export const rackBottom = writable<string[]>([...DEFAULT_RACK_BOTTOM]);
 
-export const MAX_RACK_SLOTS_PER_ROW = 5;
-export type RackSlotId = `top-${0 | 1 | 2 | 3 | 4}` | `bottom-${0 | 1 | 2 | 3 | 4}`;
-export const RACK_SLOT_IDS: readonly RackSlotId[] = [
-  'top-0', 'top-1', 'top-2', 'top-3', 'top-4',
-  'bottom-0', 'bottom-1', 'bottom-2', 'bottom-3', 'bottom-4'
-];
+export const MAX_RACK_SLOTS_PER_ROW = RACK_SLOTS_PER_ROW;
 
 export function isRackSlotId(id: string): id is RackSlotId {
   return (RACK_SLOT_IDS as readonly string[]).includes(id);
@@ -70,12 +67,9 @@ export function currentRackSlotForModule(
   return bottomIndex >= 0 ? rackSlotId('bottom', bottomIndex) : null;
 }
 
-/** Rack slot id → arrangement lane index 0–9 (top row then bottom row). */
+/** Rack slot id → arrangement lane index 0–11 (top row then bottom row). */
 export function rackSlotIndex(slotId: string): number | null {
-  const match = /^(top|bottom)-([0-4])$/.exec(slotId);
-  if (!match) return null;
-  const index = Number(match[2]);
-  return match[1] === 'top' ? index : index + MAX_RACK_SLOTS_PER_ROW;
+  return slotIndexForId(slotId);
 }
 
 /** Effect module currently rendered by a stable media/decode slot. */
@@ -84,7 +78,7 @@ export function currentRackModuleForSlot(
   top = get(rackTop),
   bottom = get(rackBottom)
 ): string | null {
-  const match = /^(top|bottom)-([0-4])$/.exec(slotId);
+  const match = /^(top|bottom)-([0-5])$/.exec(slotId);
   if (!match) return null;
   const modules = match[1] === 'top' ? top : bottom;
   return modules[Number(match[2])] ?? null;

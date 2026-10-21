@@ -82,6 +82,7 @@
           {/if}
         </button>
       {/each}
+      {#if $viewMode !== 'perform'}
       <button
         type="button"
         class="rail-collapse"
@@ -91,6 +92,7 @@
       >
         <ChevronLeft size={11} />
       </button>
+      {/if}
     </div>
 
     {#if $sideRailTab === 'fx'}

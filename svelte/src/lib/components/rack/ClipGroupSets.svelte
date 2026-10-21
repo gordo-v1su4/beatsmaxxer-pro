@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { RACK_SLOT_IDS } from '$lib/modules/rackSlots';
   import { onDestroy } from 'svelte';
   import { clipLibrary } from '$lib/stores/clipLibrary';
   import { clipDragState } from '$lib/stores/clipDrag';
@@ -6,7 +7,7 @@
   import { arrangement } from '$lib/stores/arrangement';
   import { clipGroups,clipGroupDrag,addClipGroup,captureClipGroup,setClipGroupClip,assignClipGroup,assignClipGroupToSelection,renameClipGroup } from '$lib/arrangement/clipGroups';
   let selected=$state('');
-  const slots=Array.from({length:10},(_,i)=>({id:`${i<5?'top':'bottom'}-${i%5}`,number:i}));
+  const slots=RACK_SLOT_IDS.map((id,number)=>({id,number}));
   function assign(id:string,slot:string,clipId=selected){const clip=$clipLibrary.find(c=>c.id===clipId);if(clip)setClipGroupClip(id,slot,clip);}
   function begin(id:string,e:PointerEvent){
     if($arrangementMode!=='live'||e.button!==0)return;

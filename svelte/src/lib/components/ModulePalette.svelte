@@ -29,10 +29,11 @@
   const bankChips = $derived(
     [...($activeSection?.bank.top ?? []), ...($activeSection?.bank.bottom ?? [])].map((id, i) => {
       const def = getModuleDef(id);
-      const live = i < 5 ? $rackTop[i] : $rackBottom[i - 5];
+      const topCount=$activeSection?.bank.top.length??0;
+      const live = i < topCount ? $rackTop[i] : $rackBottom[i - topCount];
       return {
         key: `${i}-${id}`,
-        slot: i < 5 ? `A${i + 1}` : `B${i - 4}`,
+        slot: i < topCount ? `A${i + 1}` : `B${i - topCount + 1}`,
         name: def?.shortName ?? id.toUpperCase(),
         pending: live !== id
       };

@@ -27,7 +27,7 @@ function updateGroup(id:string,update:(group:ClipGroup)=>ClipGroup){
 export function renameClipGroup(id:string,name:string){const clean=name.trim().slice(0,80);if(clean)updateGroup(id,g=>({...g,name:clean}));}
 export function captureClipGroup(id:string){updateGroup(id,g=>({...g,scene:captureScene(get(videoLayers))}));}
 export function setClipGroupClip(id:string,slot:string,clip:LibraryClip){
-  if(!/^(top|bottom)-[0-4]$/.test(slot))return;
+  if(!/^(top|bottom)-[0-5]$/.test(slot))return;
   const source=clip.source.kind==='file'?{name:clip.name,url:'',file:clip.source.file}:{name:clip.name,url:clip.source.url};
   updateGroup(id,g=>({...g,scene:{slots:{...g.scene.slots,[slot]:source}}}));
 }

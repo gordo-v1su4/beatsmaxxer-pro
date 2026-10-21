@@ -79,7 +79,7 @@ test('restores performance controls and explicitly empty live slots', async () =
   expect(get(linearOrder)).toBe(true); expect(get(autoRandom)).toBe(false);
   expect(get(intervalBeats)).toBe(8); expect(get(feel)).toBe(2); expect(get(autoClips)).toBe(false);
   expect(get(bypassed).speedramp).toBe(true);
-  expect(clear).toHaveBeenCalledTimes(10);
+  expect(clear).toHaveBeenCalledTimes(12);
 });
 
 test('rejects invalid performance controls before replacing the current take', async () => {

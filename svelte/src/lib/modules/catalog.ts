@@ -307,15 +307,9 @@ export const MODULE_CATALOG = new Map<string, ModuleDefinition>(
   defs.map((d) => [d.id, d])
 );
 
-// Both rows ship full at MAX_RACK_SLOTS_PER_ROW. The top row is exactly the
-// BEAT FX family, which has five members; the bottom takes the four camera
-// moves plus INCEPTION. Leaving two slots empty by default hid two working
-// modules behind a drag nobody knew to perform.
-// LEAK rather than STREAK in the fifth top slot: it is the one being worked on
-// and the one actually reached for, and a default rack should open on what gets
-// used. STREAK is one drag away in the FX rail.
-export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'leak'];
-export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'prism'];
+// Both rows ship with six usable modules, including Motion Streak and Rack Focus.
+export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'leak', 'streak'];
+export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'prism', 'focus'];
 
 export function getModuleDef(id: string): ModuleDefinition | undefined {
   return MODULE_CATALOG.get(id);

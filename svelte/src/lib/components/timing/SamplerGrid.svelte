@@ -28,7 +28,7 @@
 
 <div class="sampler-grid" aria-label="Timesampler original slices and played path">
   <div class="legend"><span>{params.mode} · {params.sliceCount} SOURCE SLICES · {params.loopCount} {params.loopCount===1?'LOOP':'LOOPS'}</span><strong class:active={playing} aria-live="off" data-sampler-status>{label}{queuedAt!==null&&!playing?` · ${(queuedAt-time).toFixed(1)}s`:playing&&end!==null?` · ${Math.max(0,end-time).toFixed(1)}s LEFT`:''}</strong></div>
-  <svg viewBox="0 0 1000 160" role="img" aria-label="Original source positions in gray, played slice positions and groove shifts in cyan">
+  <svg viewBox="0 0 1000 160" preserveAspectRatio="none" role="img" aria-label="Original source positions in gray, played slice positions and groove shifts in cyan">
     {#each Array.from({length:params.sliceCount},(_,i)=>i) as slice (slice)}
       <rect x={12+slice/params.sliceCount*976} y="14" width={976/params.sliceCount-2} height="25" fill="#172329"/>
       <text x={12+(slice+.5)/params.sliceCount*976} y="30" text-anchor="middle">{slice+1}</text>
@@ -44,11 +44,18 @@
     {/each}
   </svg>
   <div class="legend"><span>TOP · NORMAL PLAYHEAD · {normalSeconds.toFixed(2)}s</span><span>BOTTOM · VIDEO OUTPUT · {sourceSeconds.toFixed(2)}s</span></div>
-  <p>{config.behavior==='hit'?'Normal playback until an accepted trigger. One slice is captured on the next beat or bar, loops, then returns to the normal playhead. REV plays backward; PONG plays forward then backward. The line shows the current jump.':config.behavior==='continuous'?'Original continuous sequence: always chops. Triggers add jumps; REV changes slice order.':'Triggered sequence: plays a slice pattern, then returns to normal playback. REV changes slice order.'} {config.behavior!=='continuous'?(config.retrigger==='restart'?'Accepted notes can interrupt and restart at the launch boundary.':'Incoming notes are ignored until every loop finishes.'):''} Trigger chance controls accepted activations. {config.behavior==='hit'?`Sample speed: ${params.playbackRate.toFixed(2)}×. Changes apply to the next sample.`:''}</p>
+  <details class="sampler-help">
+    <summary>{config.behavior==='hit'?'Capture → loop → normal playback':config.behavior==='continuous'?'Continuous slicing · triggers add jumps':'Slice sequence → normal playback'} · DETAILS</summary>
+    <p>{config.behavior==='hit'?'Normal playback until an accepted trigger. One slice is captured on the next beat or bar, loops, then returns to the normal playhead. REV plays backward; PONG plays forward then backward. The line shows the current jump.':config.behavior==='continuous'?'Original continuous sequence: always chops. Triggers add jumps; REV changes slice order.':'Triggered sequence: plays a slice pattern, then returns to normal playback. REV changes slice order.'} {config.behavior!=='continuous'?(config.retrigger==='restart'?'Accepted notes can interrupt and restart at the launch boundary.':'Incoming notes are ignored until every loop finishes.'):''} Trigger chance controls accepted activations. {config.behavior==='hit'?`Sample speed: ${params.playbackRate.toFixed(2)}×. Changes apply to the next sample.`:''}</p>
+  </details>
 </div>
 
 <style>
-  .sampler-grid{display:flex;flex-direction:column;justify-content:center;gap:10px;padding:12px;min-width:0;color:#6a7a8a;font:8px var(--font-mono)}
-  .legend{display:flex;justify-content:space-between;gap:16px}svg{width:100%;height:160px;display:block}text{fill:#80939d;font:9px var(--font-mono)}p{margin:0;font:8px var(--font-ui);line-height:1.5;color:#53616a}
+  .sampler-grid{display:flex;flex-direction:column;justify-content:center;gap:6px;padding:8px 12px;min-width:0;min-height:0;color:#6a7a8a;font:8px var(--font-mono)}
+  .legend{display:flex;justify-content:space-between;gap:16px}svg{width:100%;height:160px;min-height:64px;flex:1 1 0;display:block}text{fill:#80939d;font:9px var(--font-mono)}p{margin:0;font:8px var(--font-ui);line-height:1.5;color:#53616a}
+  .legend{flex-shrink:0}
+  .sampler-help{position:relative;flex-shrink:0;font:8px var(--font-ui)}
+  summary{cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:16px}
+  .sampler-help p{position:absolute;bottom:22px;right:0;z-index:5;max-width:560px;padding:12px;background:#151b20;border:1px solid #354149;color:#a3adb7;box-shadow:0 4px 16px #0008}
   strong{font-weight:600;color:#a3adb7}.active{color:var(--timing-accent)}
 </style>

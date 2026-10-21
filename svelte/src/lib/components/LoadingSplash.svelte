@@ -105,7 +105,7 @@
     justify-content: center;
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
       env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-    background: #000201;
+    background: #000;
   }
   .splash.leaving {
     animation: fade-out 250ms ease-out 50ms both;

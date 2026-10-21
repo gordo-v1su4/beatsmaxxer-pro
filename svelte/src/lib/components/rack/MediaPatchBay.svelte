@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Film, Upload, X } from '@lucide/svelte';
+  import { Film, Music2, Upload, X } from '@lucide/svelte';
   import type { VideoLayer } from '$lib/engine/contracts';
   import type { MidiLayer } from '$lib/stores/rack';
   import type { ClipLoadStatus } from '$lib/stores/clipStatus';
@@ -18,6 +18,7 @@
     midiLayer?: MidiLayer | null;
     onSetMidi?: (file: File | null) => void;
     midiSupported?: boolean;
+    showMidiUi?: boolean;
     midiReason?: string;
     triggerSource?: ModuleTriggerSource;
     onTriggerSourceChange?: (source: ModuleTriggerSource) => void;
@@ -35,6 +36,7 @@
     midiLayer = null,
     onSetMidi,
     midiSupported = false,
+    showMidiUi = true,
     midiReason = 'This effect has no MIDI event consumer.',
     triggerSource = 'audio',
     onTriggerSourceChange,
@@ -58,13 +60,13 @@
 
   const midiActive = $derived(triggerSource === 'midi');
   /** Second patch row + reserved lane height apply to every slot when MIDI UI is open. */
-  const reserveMidiChrome = $derived($midiUiOpen);
+  const reserveMidiChrome = $derived(showMidiUi && $midiUiOpen);
 
   let videoInput: HTMLInputElement;
   let midiInput = $state<HTMLInputElement>();
 
   function patchBtn(active: boolean) {
-    return `height:16px;min-width:26px;padding-inline:5px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'};flex-shrink:0`;
+    return `height:16px;min-width:18px;padding-inline:3px;background:linear-gradient(180deg,#191d22,#121519);border-style:solid;border-width:1px;border-color:#252a30 ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'} ${active ? color + '44' : '#1a1d22'};border-radius:2px;color:${active ? color : '#445060'};display:flex;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:var(--font-ui);font-size:7px;font-weight:500;letter-spacing:0.08em;box-shadow:${active ? `0 0 8px ${color}22` : 'inset 0 1px 2px rgba(0,0,0,0.4)'};flex-shrink:0`;
   }
 
   function iconBtn() {
@@ -86,11 +88,11 @@
   }
 </script>
 
-<div class="media-patch-bay" class:has-trigger-row={reserveMidiChrome}>
+<div class="media-patch-bay">
   <div class="media-patch-row">
     <input bind:this={videoInput} type="file" accept="video/*" multiple class="hidden" onchange={onVideoChange} />
-    <button type="button" style={patchBtn(!!videoLayer)} onclick={() => videoInput?.click()}>
-      <Upload size={8} /> CLIP
+    <button type="button" style={patchBtn(!!videoLayer)} onclick={() => videoInput?.click()} aria-label="Load clip" title="Load clip">
+      <Upload size={12} />
     </button>
 
     <div class="media-patch-readout">
@@ -100,7 +102,7 @@
         title={clipError ?? videoLayer?.name ?? moduleId}
         style="color:{videoLayer ? '#c0d7ff' : '#4a5260'}"
       >
-        {videoLayer?.name ?? 'Test pattern'}
+        {videoLayer?.name.split(/[\\/]/).pop() ?? 'Test pattern'}
       </span>
       {#if statusLabel}
         <span class="media-patch-status" style="color:{statusColor}" title={clipError ?? statusLabel}>
@@ -114,64 +116,37 @@
       </button>
     {/if}
 
-    {#if $midiUiOpen}
+    {#if reserveMidiChrome}
       <div class="media-patch-divider"></div>
     {/if}
 
-    {#if $midiUiOpen && midiSupported}
+    {#if reserveMidiChrome && midiSupported}
       <input bind:this={midiInput} type="file" accept=".mid,.midi" class="hidden" onchange={onMidiChange} />
-      <button type="button" style={patchBtn(!!midiLayer)} onclick={() => midiInput?.click()} title={midiReason}>
-        MIDI
+      <button type="button" style={patchBtn(!!midiLayer)} onclick={() => midiInput?.click()} title={midiLayer?.name ?? midiReason} aria-label="Load MIDI">
+        <Music2 size={12} />
       </button>
       {#if midiLayer}
-        <span class="media-patch-midi-name" style="color:{color}" title={midiLayer.name}>
-          {midiLayer.name}
-        </span>
+
         <button type="button" style={iconBtn()} onclick={() => onSetMidi?.(null)} aria-label="Clear MIDI">
           <X size={8} />
         </button>
       {/if}
-    {:else if $midiUiOpen}
+    {:else if reserveMidiChrome}
       <span class="media-patch-muted" title={midiReason}>NO MIDI</span>
+    {/if}
+    {#if reserveMidiChrome && midiSupported}
+      <button type="button" style={patchBtn(midiActive && !!midiLayer)} disabled={!midiLayer}
+        aria-label="Trigger source: {midiActive ? 'MIDI' : 'audio'}. Switch to {midiActive ? 'audio' : 'MIDI'}"
+        title="Trigger source: {midiActive ? 'MIDI notes' : 'audio onsets'}. Click to switch."
+        onclick={() => onTriggerSourceChange?.(midiActive ? 'audio' : 'midi')}>{midiActive ? 'MIDI' : 'AUD'}</button>
+      <div class="media-patch-dens" style="opacity:{midiLayer && midiActive ? 1 : 0.35}">
+        <HSlider value={density} onChange={(v) => onDensityChange?.(v)} {color}
+          ariaLabel="MIDI note density" controlId="{moduleId}-density" />
+      </div>
+      <span class="media-patch-dens-val" title="MIDI note density">{Math.round(density)}%</span>
     {/if}
   </div>
 
-  {#if reserveMidiChrome}
-    {#if midiSupported}
-      <div class="media-patch-row media-patch-row-trigger">
-        <span class="media-patch-muted">HIT</span>
-        <button
-          type="button"
-          style={patchBtn(!midiActive)}
-          onclick={() => onTriggerSourceChange?.('audio')}
-          title="Fire from audio onsets / rhythm analysis"
-          disabled={!midiLayer}
-        >AUD</button>
-        <button
-          type="button"
-          style={patchBtn(midiActive && !!midiLayer)}
-          onclick={() => onTriggerSourceChange?.('midi')}
-          title="Fire from this MIDI part"
-          disabled={!midiLayer}
-        >MIDI</button>
-        <span class="media-patch-muted" style="opacity:{midiLayer && midiActive ? 1 : 0.35}">DENS</span>
-        <div class="media-patch-dens" style="opacity:{midiLayer && midiActive ? 1 : 0.35}">
-          <HSlider
-            value={density}
-            onChange={(v) => onDensityChange?.(v)}
-            {color}
-            ariaLabel="MIDI note density"
-            controlId="{moduleId}-density"
-          />
-        </div>
-        <span class="media-patch-dens-val" style="opacity:{midiLayer && midiActive ? 1 : 0.35}">
-          {Math.round(density)}%
-        </span>
-      </div>
-    {:else}
-      <div class="media-patch-row media-patch-row-trigger media-patch-row-spacer" aria-hidden="true"></div>
-    {/if}
-  {/if}
 </div>
 
 <style>
@@ -183,12 +158,6 @@
     border-bottom: 1px solid #0d0e0f;
   }
 
-  .media-patch-bay.has-trigger-row {
-    height: 44px;
-    min-height: 44px;
-    max-height: 44px;
-  }
-
   .media-patch-row {
     display: flex;
     align-items: center;
@@ -197,15 +166,6 @@
     min-height: 22px;
     padding: 0 5px;
     overflow: hidden;
-  }
-
-  .media-patch-row-trigger {
-    border-top: 1px solid #0d0e0f;
-    background: #0b0c0e;
-  }
-
-  .media-patch-row-spacer {
-    pointer-events: none;
   }
 
   .media-patch-readout {
@@ -255,20 +215,9 @@
     flex-shrink: 0;
   }
 
-  .media-patch-midi-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--font-mono);
-    font-size: 7px;
-    flex-shrink: 1;
-  }
-
   .media-patch-dens {
-    flex: 1;
-    min-width: 36px;
+    flex: 0 0 32px;
+    min-width: 0;
     height: 16px;
     display: flex;
     align-items: center;
@@ -278,7 +227,7 @@
     font-family: var(--font-mono);
     font-size: 7px;
     color: #6b7280;
-    width: 24px;
+    width: 22px;
     text-align: right;
     flex-shrink: 0;
   }

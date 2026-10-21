@@ -9,7 +9,7 @@ const PRESET_KEY = 'beatsmaxxer.timing.preset.v1';
 const HOT_KEY = 'beatsmaxxer.timing.hmr.v1';
 // Isolated browser acceptance sessions must not overwrite the user's curves.
 const transientQa = import.meta.env.DEV && typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('qaTimingTransient');
-const slotPattern = /^(top|bottom)-[0-4]$/;
+const slotPattern = /^(top|bottom)-[0-5]$/;
 export const DEFAULT_TIMING_BUDGET_GIB = 12;
 export const TIMING_BUDGET_OPTIONS = [.25,1,2,4,8,12,20,24,32];
 export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; cutOrder?:'balanced'|'random'; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }

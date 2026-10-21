@@ -1,3 +1,4 @@
+import { RACK_SLOT_COUNT } from '$lib/modules/rackSlots';
 import { get, writable } from 'svelte/store';
 import { audioEngine } from '$lib/audio';
 import { addClipsToLibrary } from '$lib/stores/clipLibrary';
@@ -111,7 +112,7 @@ export async function loadCompleteDemo(workspace: 'perform' | 'timing' = 'perfor
       if (time >= audioEngine.getState().duration) return [];
       const section = sections.find(s => time >= (s.timeStartS ?? 0) && time < (s.timeEndS ?? Infinity));
       const interval = section?.clipGroupId === groups[1].id ? 2 : 4;
-      return beat % interval === 0 ? [{ step: beat * 4, slotIndex: Math.floor(beat / interval) % 10, timeSeconds: time }] : [];
+      return beat % interval === 0 ? [{ step: beat * 4, slotIndex: Math.floor(beat / interval) % RACK_SLOT_COUNT, timeSeconds: time }] : [];
     }));
     autoClips.set(true); activeSectionIndex.set(0);
     const recalled = await recallScene(sections[0].scene!);

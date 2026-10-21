@@ -7,6 +7,7 @@ import { transportDisplay } from '$lib/stores/transportDisplay';
 import { parseTimingSettings } from '$lib/stores/timing';
 import { arrangementMode } from './transportMode';
 import { clipGroups,type ClipGroup } from './clipGroups';
+import { RACK_SLOTS_PER_ROW, slotIndexForId } from '$lib/modules/rackSlots';
 
 export const arrangementSaveStatus=writable('');
 export const arrangementMissingClips=writable<string[]>([]);
@@ -23,20 +24,20 @@ export function waitForArrangementRestore(generation:number,name:string,timeoutM
   });
 }
 const statusWithMissing=(message:string)=>get(arrangementMissingClips).length?`${message} · Missing clips: ${get(arrangementMissingClips).join(', ')}`:message;
-export interface SavedArrangement { version: 1; song: { name: string; duration: number }; sections: unknown[]; cuts: Cut[]; clipGroups?:unknown[] }
+export interface SavedArrangement { version: 1; slotsPerRow?: number; song: { name: string; duration: number }; sections: unknown[]; cuts: Cut[]; clipGroups?:unknown[] }
 const songKey=(name:string,duration:number)=>`beatsmaxxer.arrangement.v1:${name}:${duration.toFixed(3)}`;
 const sceneNames=(scene:SectionScene|undefined)=>scene?{slots:Object.fromEntries(Object.entries(scene.slots).map(([slot,clip])=>[slot,clip?{name:clip.name}:null]))}:undefined;
 export function serializeArrangement(name:string,duration:number):string {
   const sections=get(arrangement).map(s=>({...s,scene:sceneNames(s.scene),deckSnapshot:s.deckSnapshot?{
     ...s.deckSnapshot,scene:sceneNames(s.deckSnapshot.scene)}:undefined}));
-  return JSON.stringify({version:1,song:{name,duration},sections,cuts:get(cuts),clipGroups:get(clipGroups).map(g=>({...g,scene:sceneNames(g.scene)}))},null,2);
+  return JSON.stringify({version:1,slotsPerRow:RACK_SLOTS_PER_ROW,song:{name,duration},sections,cuts:get(cuts),clipGroups:get(clipGroups).map(g=>({...g,scene:sceneNames(g.scene)}))},null,2);
 }
 function resolveScene(raw:unknown,missing:Set<string>):SectionScene|undefined {
   if(!raw||typeof raw!=='object'||!('slots' in raw))return undefined;
   const entries=Object.entries((raw as {slots:Record<string,unknown>}).slots??{});
   const slots:SectionScene['slots']={};
   for(const [slot,value] of entries){
-    if(!/^(top|bottom)-[0-4]$/.test(slot))throw new Error('Invalid saved clip slot');
+    if(slotIndexForId(slot)===null)throw new Error('Invalid saved clip slot');
     if(value===null){slots[slot]=null;continue;}
     const name=(value as {name?:unknown})?.name;
     if(typeof name!=='string'||!name)throw new Error('Invalid saved clip name');
@@ -52,6 +53,10 @@ function resolveScene(raw:unknown,missing:Set<string>):SectionScene|undefined {
 }
 export function parseArrangementFile(raw:string) {
   const doc=JSON.parse(raw) as SavedArrangement;
+  const savedWidth=doc.slotsPerRow??5;
+  if(savedWidth!==5&&savedWidth!==RACK_SLOTS_PER_ROW)throw new Error('Unsupported saved rack layout');
+  const migrateSlot=(index:number)=>savedWidth===5&&index>=5?index+1:index;
+  const maxSavedSlot=savedWidth*2-1;
   if(doc.version!==1||!doc.song||typeof doc.song.name!=='string'||!Number.isFinite(doc.song.duration)||doc.song.duration<=0
     ||!Array.isArray(doc.sections)||!doc.sections.length||doc.sections.length>500||!Array.isArray(doc.cuts)||doc.cuts.length>200000)throw new Error('Invalid arrangement file');
   const missing=new Set<string>(),ids=new Set<string>();
@@ -63,12 +68,12 @@ export function parseArrangementFile(raw:string) {
     groupIds.add(g.id);const scene=resolveScene(g.scene,missing);if(!scene)throw new Error('Invalid saved clip group');
     return {id:g.id,name:g.name,scene};
   });
-  const validBank=(bank:ArrangementSection['bank'])=>bank&&Array.isArray(bank.top)&&Array.isArray(bank.bottom)&&bank.top.length>0&&bank.top.length<=5&&bank.bottom.length>0&&bank.bottom.length<=5&&[...bank.top,...bank.bottom].every(id=>typeof id==='string'&&!!id);
+  const validBank=(bank:ArrangementSection['bank'])=>bank&&Array.isArray(bank.top)&&Array.isArray(bank.bottom)&&bank.top.length>0&&bank.top.length<=RACK_SLOTS_PER_ROW&&bank.bottom.length>0&&bank.bottom.length<=RACK_SLOTS_PER_ROW&&[...bank.top,...bank.bottom].every(id=>typeof id==='string'&&!!id);
   const sections=doc.sections.map(value=>{
     const s=value as ArrangementSection;
     if(!s||typeof s.id!=='string'||ids.has(s.id)||typeof s.name!=='string'||!Number.isFinite(s.bars)||s.bars<=0
       ||!validBank(s.bank)||!Array.isArray(s.pattern)||s.pattern.length!==16
-      ||[...s.bank.top,...s.bank.bottom].some(id=>typeof id!=='string')||s.pattern.some(v=>v!==null&&(!Number.isInteger(v)||v<0||v>9)))throw new Error('Invalid arrangement section');
+      ||[...s.bank.top,...s.bank.bottom].some(id=>typeof id!=='string')||s.pattern.some(v=>v!==null&&(!Number.isInteger(v)||v<0||v>maxSavedSlot)))throw new Error('Invalid arrangement section');
     ids.add(s.id);
     if(s.clipGroupId!==undefined&&!groupIds.has(s.clipGroupId))throw new Error('Invalid assigned clip group');
     if(s.deckSnapshot&&(!validBank(s.deckSnapshot.bank)||s.deckSnapshot.timing?.version!==1))throw new Error('Invalid deck snapshot');
@@ -81,13 +86,13 @@ export function parseArrangementFile(raw:string) {
     // Analysis timestamps are rounded independently of the decoded audio length.
     for(const t of [s.timeStartS,s.timeEndS])if(t!==undefined&&(!Number.isFinite(t)||t<0||t>doc.song.duration+.05))throw new Error('Invalid section time');
     if(s.timeStartS!==undefined&&s.timeEndS!==undefined&&s.timeEndS<=s.timeStartS)throw new Error('Invalid section time');
-    return {...s,scene:resolveScene(s.scene,missing),deckSnapshot:s.deckSnapshot?{...s.deckSnapshot,
+    return {...s,pattern:s.pattern.map(index=>index===null?null:migrateSlot(index)),scene:resolveScene(s.scene,missing),deckSnapshot:s.deckSnapshot?{...s.deckSnapshot,
       timing:parseTimingSettings(JSON.stringify(s.deckSnapshot.timing)),scene:resolveScene(s.deckSnapshot.scene,missing)??{slots:{}}}:undefined};
   });
   const cutList=doc.cuts.map(c=>{
-    if(!c||!Number.isInteger(c.step)||c.step<0||!Number.isInteger(c.slotIndex)||c.slotIndex<0||c.slotIndex>9
+    if(!c||!Number.isInteger(c.step)||c.step<0||!Number.isInteger(c.slotIndex)||c.slotIndex<0||c.slotIndex>maxSavedSlot
       ||(c.timeSeconds!==undefined&&(!Number.isFinite(c.timeSeconds)||c.timeSeconds<0||c.timeSeconds>doc.song.duration)))throw new Error('Invalid recorded cut');
-    return {step:c.step,slotIndex:c.slotIndex,...(c.timeSeconds===undefined?{}:{timeSeconds:c.timeSeconds})};
+    return {step:c.step,slotIndex:migrateSlot(c.slotIndex),...(c.timeSeconds===undefined?{}:{timeSeconds:c.timeSeconds})};
   });
   return {song:doc.song,sections,cuts:cutList,groups,missing:[...missing]};
 }

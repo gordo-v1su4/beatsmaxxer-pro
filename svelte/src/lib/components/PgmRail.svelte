@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { RACK_SLOTS_PER_ROW } from '$lib/modules/rackSlots';
   import type { ModuleDefinition } from '$lib/modules/catalog';
   import { canSelectRackSource, selectRackSource } from '$lib/runtime/pgm/selection';
   import {
@@ -61,7 +62,7 @@
     // Digits cut PGM in ARRANGE too, so a REC take can be played from the keyboard.
     const editable=e.composedPath().some(n=>n instanceof HTMLElement && (n.isContentEditable || ['INPUT','TEXTAREA','SELECT'].includes(n.tagName) || n.getAttribute('role')==='textbox'));
     const digit=pgmDigit(e,editable);if(digit===null)return;
-    const id=digit<5?$rackTop[digit]:$rackBottom[digit-5];
+    const id=digit<RACK_SLOTS_PER_ROW?$rackTop[digit]:$rackBottom[digit-RACK_SLOTS_PER_ROW];
     if(!id||!available(id))return;e.preventDefault();handleSelect(id);
   }
 </script>
@@ -99,6 +100,7 @@
   <button
     type="button"
     onclick={() => pgmRailOpen.update((v) => !v)}
+    disabled={$viewMode === 'perform'}
     aria-label={$pgmRailOpen?'PGM SOURCE':'Open PGM rail'}
     class:pgm-collapsed={!$pgmRailOpen}
     title="PGM source — arm channels for beat-quantized cuts"
@@ -108,7 +110,7 @@
   >
     {#if $pgmRailOpen}
       <span style="color:#556070">PGM SOURCE</span>
-      <ChevronLeft size={12} />
+      {#if $viewMode !== 'perform'}<ChevronLeft size={12} />{/if}
     {:else}
       <ChevronRight size={12} />
       <span style="writing-mode:vertical-rl;font-size:8px;font-weight:500;letter-spacing:.2em">PGM</span>

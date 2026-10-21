@@ -1,3 +1,4 @@
+import { RACK_SLOT_IDS, slotIndexForId } from '$lib/modules/rackSlots';
 import { get } from 'svelte/store';
 import { videoLayers, currentRackModuleForSlot, currentRackSlotForModule } from '$lib/stores/rack';
 import { pgmSource, queuedPgmSource, manualCutRequests, PGM_LAUNCH_QUANTIZE_BEATS, commitPgmCut } from '$lib/stores/pgm';
@@ -287,8 +288,7 @@ export class TimingRuntime {
       const recorded=get(cuts);
       if(recorded===this.pgmReplayCuts)return;
       this.pgmReplayCuts=recorded;
-      for(let i=0;i<10;i++){
-        const slot=`${i<5?'top':'bottom'}-${i%5}`;
+      for(const [i,slot] of RACK_SLOT_IDS.entries()){
         this.pgmSignals.set(slot,signalFor(recorded.filter(c=>c.slotIndex===i).map(c=>({
           time:c.timeSeconds??c.step/4*60/this.signal!.bpm,strength:1,
         }))));
@@ -361,7 +361,7 @@ export class TimingRuntime {
       timingSignalStatus.set({label:this.signal.label,missing:this.signal.missing,channels:this.signal.channels.map(c=>c.name)});
       timingSignalGrid.set({beats:this.signal.beats,bpm:this.signal.bpm});
     }
-    if(Array.from({length:10},(_,i)=>`${i<5?'top':'bottom'}-${i%5}`).some(slot=>effectiveTimingTrigger(settings,slot).source==='pgm'))this.updatePgmSignals(frame);
+    if(RACK_SLOT_IDS.some(slot=>effectiveTimingTrigger(settings,slot).source==='pgm'))this.updatePgmSignals(frame);
     const live: Record<string,TimingLive> = {};
     for (const [slot, entry] of this.banks) {
       if(entry.bank instanceof ResidentFrameBank)videoPool.get(slot)?.pause();
@@ -402,7 +402,7 @@ export class TimingRuntime {
         updateOutput = true;
       }
       const seed = [...slot].reduce((n,c)=>n+c.charCodeAt(0),0);
-      const slotIndex=Number(slot.split('-')[1])+(slot.startsWith('bottom')?5:0);
+      const slotIndex=slotIndexForId(slot)??0;
       let plan=this.plans.get(slot);
       if(!plan||plan.config!==config||plan.signal!==signal||plan.trigger!==trigger||plan.schedule.duration!==entry.bank.duration){
         plan={config,signal,trigger,schedule:buildTimingSchedule(config,trigger,signal,slotIndex,entry.bank.duration)};
@@ -435,8 +435,8 @@ export class TimingRuntime {
     if (updateOutput) timingLive.set(live);
     if((this.lastSettings as {cutOrder?:string}|undefined)?.cutOrder!==settings.cutOrder)this.programDirty=true;
     if (this.programDirty) {
-      this.program = programTimeline(Array.from({length:10},(_,index)=>{
-        const plan=this.plans.get(`${index<5?'top':'bottom'}-${index%5}`);
+      this.program = programTimeline(RACK_SLOT_IDS.map(slot=>{
+        const plan=this.plans.get(slot);
         return plan&&!['pgm','beat','continuous'].includes((plan.trigger as TimingTriggerConfig).source)?plan.schedule.bursts:[];
       }),settings.cutOrder??'balanced',settings.trigger.seed);
       this.programDirty = false;
@@ -451,7 +451,7 @@ export class TimingRuntime {
         const key=`${frame.generation}:${cut.at}:${cut.deck}`;
         if(key!==this.programSelection){
           this.programSelection=key;
-          const slot=`${cut.deck<5?'top':'bottom'}-${cut.deck%5}`;
+          const slot=RACK_SLOT_IDS[cut.deck];
           const module=currentRackModuleForSlot(slot);
           if(module&&this.selected.has(slot))commitPgmCut(module);
         }

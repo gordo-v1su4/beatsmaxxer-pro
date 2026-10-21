@@ -24,8 +24,6 @@ export const RETIRED_IDENTITIES = ['camcorder'] as const;
 
 /** Extra identities the default rack does not hold — one drag from the FX rail. */
 export const EXPECTED_PALETTE_SWAP_IDENTITIES = [
-  'streak',
-  'focus',
   'anamorphic',
   'grain',
   'dutch',
