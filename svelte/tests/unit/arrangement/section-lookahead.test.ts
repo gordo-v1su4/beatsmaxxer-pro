@@ -19,3 +19,8 @@ test('plans the first section at the normal song restart', () => {
     .toEqual([{ index:0, at:30, positionSeconds:0 }]);
   expect(upcomingSectionBoundaries([], 0, null, 30)).toEqual([]);
 });
+
+test('an unloaded song duration does not suppress BPM-only future sections', () => {
+  expect(upcomingSectionBoundaries(bounds, 2, null, 0))
+    .toEqual([{ index:1, at:10, positionSeconds:10 }, { index:2, at:20, positionSeconds:20 }]);
+});

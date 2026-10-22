@@ -60,7 +60,7 @@ export function upcomingSectionBoundaries(
   songDuration: number
 ) {
   if (!bounds.length) return [];
-  const end = loop?.endSeconds ?? songDuration;
+  const end = loop?.endSeconds ?? (songDuration > 0 ? songDuration : Infinity);
   const upcoming = bounds.flatMap((bound, index) =>
     bound.startSeconds > positionSeconds && (!Number.isFinite(end) || bound.startSeconds < end)
       ? [{ index, at:bound.startSeconds, positionSeconds:bound.startSeconds }] : []);

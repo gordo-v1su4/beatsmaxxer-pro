@@ -70,7 +70,7 @@ effect despite the original Stutter exemption. A [missing-source probe](negative
 returned a serializable failed slot instead of throwing. Both probes restored
 their temporary diagnostic wrappers and are expected failures.
 
-Current unit suite: 1,114 passed, eight skipped. Svelte check: zero errors and
+Current unit suite: 1,115 passed, eight skipped. Svelte check: zero errors and
 warnings. Production build passed. Final native regression and published-site
 verification remain open. The branch is not release-ready on long-run web evidence.
 
