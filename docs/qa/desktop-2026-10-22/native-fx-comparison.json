@@ -1,0 +1,89 @@
+{
+  "sourceCommit": "0150c43",
+  "browser": "Edg/155.0.4283.62",
+  "scenario": "public Redline Perform, 12 slots, RANDOM, 1BT, no concurrent local builds/tests",
+  "limitations": [
+    "One sample per comparison configuration; not a speed ranking.",
+    "Both 120s/190s runs included lightweight instrumentation; other variants did not.",
+    "Earlier uninstrumented 0150c43 repeat failed with a 216.7ms source gap and remains unresolved."
+  ],
+  "cases": [
+    {
+      "name": "baseline",
+      "report": "fx-baseline-120s.json",
+      "capabilities": {
+        "immediates": false,
+        "sharedTextures": false
+      },
+      "previewTargetFps": 60,
+      "seconds": 120,
+      "pass": true,
+      "maxOrdinaryGapMs": 133.40000000002328,
+      "maxRampGapMs": 133.40000000002328,
+      "maxRafGapMs": 100,
+      "rafCallbacksPerSecond": 38.36666666666667,
+      "droppedFrames": 64,
+      "minimumSourceSwaps": 3
+    },
+    {
+      "name": "immediates",
+      "report": "fx-immediates-120s.json",
+      "capabilities": {
+        "immediates": true,
+        "sharedTextures": false
+      },
+      "previewTargetFps": 60,
+      "seconds": 120,
+      "pass": true,
+      "maxOrdinaryGapMs": 133.30000000001746,
+      "maxRampGapMs": 116.70000000001164,
+      "maxRafGapMs": 99.90000000002328,
+      "rafCallbacksPerSecond": 38.425,
+      "droppedFrames": 67,
+      "minimumSourceSwaps": 3
+    },
+    {
+      "name": "shared-bindings",
+      "report": "fx-shared-bindings-120s.json",
+      "capabilities": {
+        "immediates": false,
+        "sharedTextures": true
+      },
+      "previewTargetFps": 60,
+      "seconds": 120,
+      "pass": true,
+      "maxOrdinaryGapMs": 100.10000000000582,
+      "maxRampGapMs": 100.19999999999709,
+      "maxRafGapMs": 66.70000000001164,
+      "rafCallbacksPerSecond": 38.55,
+      "droppedFrames": 50,
+      "minimumSourceSwaps": 3
+    },
+    {
+      "name": "both-instrumented",
+      "report": "fx-both-instrumented-120s.json",
+      "capabilities": {
+        "immediates": true,
+        "sharedTextures": true
+      },
+      "previewTargetFps": 60,
+      "seconds": 120,
+      "pass": true,
+      "maxOrdinaryGapMs": 133.30000000004657,
+      "maxRampGapMs": 133.19999999995343,
+      "maxRafGapMs": 83.39999999990687,
+      "rafCallbacksPerSecond": 38.475,
+      "droppedFrames": 86,
+      "minimumSourceSwaps": 3
+    }
+  ],
+  "uploadProbe": {
+    "report": "fx-both-instrumented-190s.json",
+    "copyCalls": 50134,
+    "copyMs": 4489.59999756515,
+    "maxCopyMs": 2,
+    "uploadCalls": 82564,
+    "uploadMs": 4618.199997618794,
+    "maxUploadMs": 2
+  }
+}

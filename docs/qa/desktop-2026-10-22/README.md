@@ -80,8 +80,14 @@ event files remain under ignored output/. No browser flag, decoder-sharing or
 quality change was shipped from these probes.
 
 CI passed and Greptile reviewed 0150c43 at 5/5. Runtime acceptance remains open.
-The required full OCR re-review was dispatched as Actions run 39827525357 and
-was still running at this checkpoint.
+The required full OCR re-review, Actions run 39827525357, timed out after
+repeated Kimi HTTP 429 five-hour usage-limit errors; its result JSON was empty.
+It does not satisfy the complete-review gate.
+
+A subsequent [four-way native GPU comparison](native-fx-comparison.md) passed
+baseline, immediates-only, shared-bindings-only and both-enabled checks. That
+evidence is recorded with drops, instrumentation differences and the unresolved
+earlier failure; it is not a speed ranking or a claim that the hitch is fixed.
 
 The c259d76 native debug executable was rebuilt from the shared frontend and
 tested with the public twelve-slot Redline Perform demo, RANDOM order and 1BT
