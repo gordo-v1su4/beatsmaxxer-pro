@@ -1,0 +1,71 @@
+{
+  "url": "http://tauri.localhost/",
+  "title": "BEATSMAXXER PRO",
+  "native": true,
+  "slots": [
+    {
+      "slot": "top-0",
+      "module": "transition",
+      "ready": 4
+    },
+    {
+      "slot": "top-1",
+      "module": "speedramp",
+      "ready": 4
+    },
+    {
+      "slot": "top-2",
+      "module": "leak",
+      "ready": 4
+    },
+    {
+      "slot": "top-3",
+      "module": "timesampler",
+      "ready": 4
+    },
+    {
+      "slot": "top-4",
+      "module": "vhs",
+      "ready": 4
+    },
+    {
+      "slot": "top-5",
+      "module": "tapdelay",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-0",
+      "module": "orbit",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-1",
+      "module": "focus",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-2",
+      "module": "bulge",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-3",
+      "module": "lens",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-4",
+      "module": "mirror",
+      "ready": 4
+    },
+    {
+      "slot": "bottom-5",
+      "module": "punch",
+      "ready": 4
+    }
+  ],
+  "decoderCount": 12,
+  "timingActive": false,
+  "pending": 0,
+  "playing": false
+}

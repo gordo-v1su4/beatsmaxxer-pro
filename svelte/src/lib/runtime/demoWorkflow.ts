@@ -17,16 +17,15 @@ import { arrangementMode } from '$lib/arrangement/transportMode';
 import { listCatalog } from '$lib/modules/catalog';
 import { setClipOrder, intervalBeats, feel, commitPgmCut } from '$lib/stores/pgm';
 import { moduleTriggerSource } from '$lib/stores/midiTrigger';
-import { parsePublishedDemoManifest, type DemoManifest, type DemoAsset } from './demoManifest';
+import { type DemoManifest, type DemoAsset } from './demoManifest';
+import { loadDemoCatalog } from './demoCatalog';
 import { hostedDemoFetch } from '$lib/platform/hostedApi';
 
 export const workflowLoadStatus = writable('');
 export let loadedDemo: { id: string; generation: number } | undefined;
 let catalog: DemoManifest | undefined;
 export async function fetchDemoCatalog() {
-  const response = await hostedDemoFetch('/demo-media/manifest.json');
-  if (!response.ok) throw new Error('The demo media is unavailable. Try again shortly.');
-  return catalog = parsePublishedDemoManifest(await response.json());
+  return catalog = await loadDemoCatalog();
 }
 async function downloadAsset(asset: DemoAsset) {
   const response = await hostedDemoFetch(asset.path);
