@@ -22,6 +22,15 @@ try {
       if (qa.timingSnapshot().workspace !== 'perform') throw new Error('This gate measures Perform live decode; resident Timing needs its own frame-selection gate');
       const initial = qa.eightVideoSnapshot();
       if (initial.slots.length !== 12 || initial.decoderCount !== 12) throw new Error('Requires a loaded twelve-slot rack');
+      const pgmControls = () => ({
+        order: document.querySelector<HTMLSelectElement>('select[aria-label="Clip order"]')?.value ?? null,
+        cadence: Array.from(document.querySelectorAll('button')).find(button => button.title.startsWith('Auto-switch to a random channel'))?.title ?? null
+      });
+      const pgmInitial = { ...pgmControls(), mode:qa.arrangementSnapshot().mode };
+      const pgmSelections: {at:number; source:string}[] = [];
+      const unsubscribePgm = audioEngine.subscribePgmSelection((source:string) => {
+        pgmSelections.push({at:qa.arrangementSnapshot().time, source});
+      });
       const startedAt=performance.now();
       const stats = initial.slots.map((slot: any) => ({
         slot: slot.canvasId, module: slot.moduleId, video: videoPool.get(slot.canvasId),
@@ -69,11 +78,13 @@ try {
       raf = requestAnimationFrame(tick);
       await new Promise(resolve => setTimeout(resolve, ms));
       cancelAnimationFrame(raf);
+      unsubscribePgm();
       const endedAt=performance.now();
       const final = qa.eightVideoSnapshot();
       for (const s of stats) { s.active = false; s.video.cancelVideoFrameCallback(s.callback); }
       return {
         durationMs: ms, frames, maxRafGapMs, native: true,
+        pgm: { initial:pgmInitial, final:{...pgmControls(), mode:qa.arrangementSnapshot().mode}, selections:pgmSelections },
         slots: stats.map((s: any) => {
           const end = final.slots.find((v: any) => v.canvasId === s.slot);
           const sameVideo = s.swaps === 0;

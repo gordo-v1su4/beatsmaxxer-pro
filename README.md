@@ -1,7 +1,7 @@
 # Beatsmaxxer Pro
 
 <p align="center">
-  <img src="docs/images/beatsmaxxer-desktop-twelve-slots-20261022.png" alt="Beatsmaxxer Pro — twelve-slot desktop workspace with music-driven video playback and live visual effects" width="100%" />
+  <img src="docs/images/beatsmaxxer-desktop-current-20261022.png" alt="Beatsmaxxer Pro — twelve-slot desktop workspace with music-driven video playback and live visual effects" width="100%" />
 </p>
 
 Beatsmaxxer Pro is a music-driven video editor and live visual-effects instrument.

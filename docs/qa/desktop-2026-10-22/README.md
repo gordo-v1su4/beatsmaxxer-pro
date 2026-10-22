@@ -80,9 +80,10 @@ event files remain under ignored output/. No browser flag, decoder-sharing or
 quality change was shipped from these probes.
 
 CI passed and Greptile reviewed 0150c43 at 5/5. Runtime acceptance remains open.
-The required full OCR re-review, Actions run 39827525357, timed out after
+The attempted full OCR re-review, Actions run 39827525357, timed out after
 repeated Kimi HTTP 429 five-hour usage-limit errors; its result JSON was empty.
-It does not satisfy the complete-review gate.
+No completed OCR review is claimed. Its failure is provider quota evidence,
+not a code finding. The finished run and available comments were inspected.
 
 A subsequent [four-way native GPU comparison](native-fx-comparison.md) passed
 baseline, immediates-only, shared-bindings-only and both-enabled checks. That
@@ -107,6 +108,46 @@ claimed. The subsequent first-scene recall priming fix has unit/type/build
 coverage. Its native executable rebuild passed; its playback repeat is above.
 
 ![Rebuilt native app](current-native-loaded.png)
+
+## Release checkpoint and remaining follow-up
+
+Gordo requested publishing today's completed changes on October 22, while
+tracking the remaining held-frame issue separately in
+[V1S-347](https://linear.app/v1su4/issue/V1S-347).
+
+The [ten-minute native repeat](native-long-600s.json) passed the unchanged
+cadence limits, with nineteen clip replacements per slot, twelve decoders,
+inactive Timing and zero pending Timing work. Ordinary maximum was 133.4 ms;
+SpeedRamp maximum was 133.3 ms; resident TimeSampler maximum was 100.1 ms.
+Decoder drops totaled 32. This does not erase the earlier 216.7 ms failure.
+
+A separate 602-second diagnostic trace observed maximum synchronous
+`renderAll` call time of 3.8 ms across 23,257 calls and maximum video-copy call
+time of 2.4 ms across 156,199 copies. No long tasks or focus changes were
+recorded. All 500 seek events targeted within 0.003 seconds of clip start;
+many smaller decoded gaps presented the first frame after a clip loop.
+These timings measure API calls, not GPU execution. Raw events remain in
+ignored `output/native-upload-long-602s.json`.
+
+The [swing-to-dotted sample](native-swing-to-dotted-120s.json) failed on two
+ordinary clips at media time 0.041667 seconds, with 183.3 ms and 166.7 ms gaps.
+The setting changed during this run, so it cannot isolate a dotted regression.
+The subsequent [dotted-only sample](native-dotted-60s.json) passed sixty seconds
+with two bank replacements per slot. Its 83 positive PGM-selection intervals
+averaged 0.7204 seconds (0.6987–0.7493), consistent with 1.5 beats at 125 BPM.
+It still recorded decoder drops, including 65 on SpeedRamp. Source cadence
+and PGM scheduling are different measurements; neither proves zero display
+stutter. The desktop verifier now records initial/final PGM controls and actual
+automatic selection events so future comparisons can identify these settings.
+
+The signed workflow-dispatch candidate build
+[39835832782](https://github.com/gordo-v1su4/beatsmaxxer-pro/actions/runs/39835832782)
+passed. That build did not publish a release. Publication and installed-updater
+verification must be checked separately.
+
+Current 2880-pixel-wide native capture, with twelve loaded slots and dotted cuts:
+
+![Current native workspace](../../images/beatsmaxxer-desktop-current-20261022.png)
 
 ## Repeat the playback gate
 
