@@ -142,8 +142,8 @@ export class VideoPool {
     const projected = frame ? this.candidateClockResolver?.(candidate.moduleId, candidate.video.duration, frame,
       candidate.video.currentSrc || candidate.video.src || candidate.url) : null;
     const mapped = projected ?? this.controlledTargets.get(candidate.moduleId);
-    const observedControlGeneration = this.controlledSyncStates.get(candidate.moduleId)?.controlGeneration;
-    const controlGeneration = projected?.controlGeneration ?? observedControlGeneration;
+    let observedControlGeneration = this.controlledSyncStates.get(candidate.moduleId)?.controlGeneration;
+    let controlGeneration = projected?.controlGeneration ?? observedControlGeneration;
     const target = frame?.playing
       ? timelineMediaTarget(mapped?.seconds ?? frame.positionSeconds, candidate.video.duration)
       : null;
@@ -164,8 +164,14 @@ export class VideoPool {
       // interval. Catch up while this candidate is still hidden; otherwise
       // the first drift check seeks an already-visible replacement again.
       const current=this.latestFrame;
-      if(!mapped&&current?.playing&&current.generation===frame!.generation) {
-        const currentTarget=timelineMediaTarget(current.positionSeconds,video.duration);
+      if(current?.playing&&current.generation===frame!.generation) {
+        const currentProjection=this.candidateClockResolver?.(candidate.moduleId,video.duration,current,
+          video.currentSrc||video.src||candidate.url);
+        const currentMapped=currentProjection??this.controlledTargets.get(candidate.moduleId);
+        const currentTarget=timelineMediaTarget(currentMapped?.seconds??current.positionSeconds,video.duration);
+        video.playbackRate=Math.max(.25,Math.min(4,currentMapped?.rate??current.playbackRate));
+        observedControlGeneration=this.controlledSyncStates.get(candidate.moduleId)?.controlGeneration;
+        controlGeneration=currentProjection?.controlGeneration??observedControlGeneration;
         if(currentTarget!==null&&Math.abs(timelineMediaDrift(video.currentTime,currentTarget,video.duration))>=VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS) {
           const seeked=this.eventWait(video,['seeked'],controller.signal,VIDEO_FRAME_TIMEOUT_MS);
           video.currentTime=currentTarget;await seeked;

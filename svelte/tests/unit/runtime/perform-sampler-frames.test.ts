@@ -15,6 +15,20 @@ const source={name:'original.webm',url:'blob:original'};
 const device={} as GPUDevice;
 beforeEach(()=>{harness.banks.length=0;});
 describe('Perform sampler original-frame ownership',()=>{
+  it('retries failed banks explicitly without replacing healthy shared banks',async()=>{
+    const cache=new PerformTimeSamplerFrames(),other={name:'other.webm',url:'blob:other'};
+    cache.update(device,[source,other],270,1000);
+    harness.banks[0].reject(new Error('temporary GPU failure'));harness.banks[1].resolve();
+    for(let i=0;i<5;i++)await Promise.resolve();
+    expect(cache.diagnostics.assets[0].error).toBe('temporary GPU failure');
+    cache.retryFailed();cache.update(device,[source,other],270,1000);
+    expect(harness.banks).toHaveLength(3);
+    expect(harness.banks[0].dispose).toHaveBeenCalledOnce();
+    expect(harness.banks[1].dispose).not.toHaveBeenCalled();
+    harness.banks[2].resolve();for(let i=0;i<5;i++)await Promise.resolve();
+    expect(cache.select('top-3',source,1)).not.toBeNull();
+    expect(cache.diagnostics.assets.every(asset=>!asset.error)).toBe(true);cache.dispose();
+  });
   it('loads a shared original only once and advances identity only when the selected frame changes',async()=>{
     const cache=new PerformTimeSamplerFrames();
     cache.update(device,[source,source],270,1000);

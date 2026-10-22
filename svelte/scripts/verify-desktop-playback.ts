@@ -5,6 +5,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { connectCdp } from './cdp';
+import { createSourceFrameCadence } from '../src/lib/qa/sourceFrameCadence';
 
 const port = Number(process.env.DESKTOP_CDP_PORT ?? 9633);
 const durationMs = Number(process.env.DESKTOP_SAMPLE_MS ?? 15000);
@@ -13,7 +14,7 @@ const output = resolve(process.env.DESKTOP_REPORT ?? '.artifacts/desktop-playbac
 const session = await connectCdp(port);
 try {
   const response: any = await session.send('Runtime.evaluate', {
-    expression: `(${async function sample(ms: number) {
+    expression: `(${async function sample(ms: number,createCadence:typeof createSourceFrameCadence) {
       const w = window as any;
       if (!w.__TAURI_INTERNALS__ || !w.__BMX_QA__) throw new Error('Requires the native Tauri app and its QA diagnostics');
       const qa = w.__BMX_QA__, { videoPool, audioEngine } = qa.getEngine();
@@ -21,9 +22,10 @@ try {
       if (qa.timingSnapshot().workspace !== 'perform') throw new Error('This gate measures Perform live decode; resident Timing needs its own frame-selection gate');
       const initial = qa.eightVideoSnapshot();
       if (initial.slots.length !== 12 || initial.decoderCount !== 12) throw new Error('Requires a loaded twelve-slot rack');
+      const startedAt=performance.now();
       const stats = initial.slots.map((slot: any) => ({
         slot: slot.canvasId, module: slot.moduleId, video: videoPool.get(slot.canvasId),
-        callbacks: 0, maxGapMs: 0, previous: null as number | null, callback: 0,
+        cadence:createCadence(startedAt),callback: 0,
         resident:false, sourceFrameId:null as number|null,
         droppedBefore: slot.droppedVideoFrames, dropped:0, swaps:0, active: true, gaps:[] as any[]
       }));
@@ -32,13 +34,10 @@ try {
         const decoded = (now: number, metadata: VideoFrameCallbackMetadata) => {
           if (!s.active || s.video !== video) return;
           if(s.resident){s.callback=video.requestVideoFrameCallback(decoded);return;}
-          s.callbacks++; if (s.previous !== null) {
-            const gap = now - s.previous;
-            s.maxGapMs = Math.max(s.maxGapMs, gap);
+          const gap=s.cadence.frame(now);
             if (gap > 150 && s.gaps.length < 100) s.gaps.push({gap, at:qa.arrangementSnapshot().time,
               media:metadata.mediaTime, swaps:s.swaps, rate:video.playbackRate, seeking:video.seeking});
-          }
-          s.previous = now; s.callback = video.requestVideoFrameCallback(decoded);
+          s.callback = video.requestVideoFrameCallback(decoded);
         };
         s.callback = video.requestVideoFrameCallback(decoded);
       };
@@ -49,10 +48,9 @@ try {
           const render=diagnostics[s.slot];
           s.resident=render?.samplePath==='resident-frame-bank';
           if(s.resident&&render.sourceFrameId!==s.sourceFrameId){
-            const gap=s.previous===null?0:now-s.previous;
-            s.maxGapMs=Math.max(s.maxGapMs,gap);s.callbacks++;
+            const gap=s.cadence.frame(now);
             if(gap>150&&s.gaps.length<100)s.gaps.push({gap,at:qa.arrangementSnapshot().time,media:render.sourceFramePts,resident:true});
-            s.previous=now;s.sourceFrameId=render.sourceFrameId;
+            s.sourceFrameId=render.sourceFrameId;
           }
           const current = videoPool.get(s.slot);
           if (current && current !== s.video) {
@@ -69,6 +67,7 @@ try {
       raf = requestAnimationFrame(tick);
       await new Promise(resolve => setTimeout(resolve, ms));
       cancelAnimationFrame(raf);
+      const endedAt=performance.now();
       const final = qa.eightVideoSnapshot();
       for (const s of stats) { s.active = false; s.video.cancelVideoFrameCallback(s.callback); }
       return {
@@ -76,7 +75,7 @@ try {
         slots: stats.map((s: any) => {
           const end = final.slots.find((v: any) => v.canvasId === s.slot);
           const sameVideo = s.swaps === 0;
-          return { slot:s.slot, module:s.module, sameVideo, swaps:s.swaps, callbacks:s.callbacks, maxGapMs:s.maxGapMs,gaps:s.gaps,
+          return { slot:s.slot, module:s.module, sameVideo, swaps:s.swaps, ...s.cadence.finish(endedAt),gaps:s.gaps,
             droppedFrames:s.dropped + Math.max(0, end.droppedVideoFrames - s.droppedBefore),
             samplePath:end.render.samplePath,
             // STUTTER deliberately holds decoded video. Ramps may slow the
@@ -87,7 +86,7 @@ try {
         timingPending:qa.timingSnapshot().capacity.pending,
         sampler:qa.performSamplerSnapshot()
       };
-    }.toString()})(${durationMs})`,
+    }.toString()})(${durationMs},${createSourceFrameCadence.toString()})`,
     awaitPromise:true, returnByValue:true
   }, durationMs + 20000);
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);

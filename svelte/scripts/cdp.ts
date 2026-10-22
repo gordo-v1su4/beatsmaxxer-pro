@@ -364,6 +364,13 @@ export async function withChrome<T>(
   console.log(`[${label}] Chrome debug port ${port}`);
   console.log(`[${label}] Chrome profile ${userDataDir}`);
   const proc = spawnChrome(port, userDataDir);
+  // Consume continuously: an unread pipe can block Chrome once its buffer is
+  // full, and discarding it hides the GPU-process reason behind InstanceDropped.
+  let chromeStderr='';
+  const decoder=new TextDecoder();
+  const stderrDrain=proc.stderr.pipeTo(new WritableStream<Uint8Array>({
+    write(chunk){chromeStderr=(chromeStderr+decoder.decode(chunk,{stream:true})).slice(-12000);}
+  })).catch(()=>{});
   try {
     await Bun.sleep(500);
     const session = await connectCdp(port);
@@ -377,6 +384,7 @@ export async function withChrome<T>(
     try {
       return await fn(session);
     } catch (error) {
+      if(chromeStderr)console.error(`[${label}] Chrome stderr tail`,chromeStderr);
       try {
         console.error(`[${label}] startup diagnostics`, await evalPage(session, `(() => {
           const state = window.__BMX_QA__?.snapshot?.();
@@ -391,6 +399,7 @@ export async function withChrome<T>(
     proc.kill(9);
     try {
       await proc.exited;
+      await stderrDrain;
     } catch {
       /* ignore */
     }

@@ -68,6 +68,14 @@ export class PerformTimeSamplerFrames {
       selected:this.selected?{slot:this.slot,pts:this.selected.pts,frameId:this.selected.frameId}:null};
   }
 
+  retryFailed() {
+    for(const [key,entry] of this.entries)if(entry.error&&!entry.loading) {
+      entry.bank.dispose();this.entries.delete(key);
+      if(this.selectedKey===key){this.selected=null;this.selectedKey=null;}
+    }
+    this.publish();
+  }
+
   dispose() {
     for(const entry of this.entries.values())entry.bank.dispose();
     this.entries.clear();this.selected=null;this.selectedKey=null;this.slot=null;

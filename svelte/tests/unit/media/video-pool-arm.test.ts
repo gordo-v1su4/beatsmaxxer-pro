@@ -106,6 +106,20 @@ describe('waitForPresentedVideoFrame', () => {
 });
 
 describe('VideoPool arm-at-trim', () => {
+  test('a controlled replacement refreshes its moving target before publication',async()=>{
+    const pool=new VideoPool(),previous=new ArmableVideo(10),video=new ArmableVideo(10);
+    (pool as unknown as {videos:Map<string,unknown>}).videos.set('top-1',previous);
+    const frame={playing:true,positionSeconds:5,playbackRate:1,generation:1,contextTimeSeconds:5} as TimelineFrame;
+    pool.syncControlledModule('top-1',3,.5,frame);pool.tick(frame);
+    vi.spyOn(pool as unknown as {loadVideo:()=>Promise<HTMLVideoElement>},'loadVideo').mockResolvedValue(video as unknown as HTMLVideoElement);
+    const candidate=await pool.prepare('top-1','blob:slow-ramp');
+    const pending=pool.prewarmCandidate(candidate);
+    const later={...frame,positionSeconds:6,contextTimeSeconds:6};
+    pool.syncControlledModule('top-1',4,1.75,later);pool.tick(later);
+    await flushArmPresentation(video);await flushArmPresentation(video);await pending;
+    expect(video.currentTime).toBe(4);expect(video.playbackRate).toBe(1.75);
+    expect(pool.get('top-1')).toBe(previous);
+  });
   test('a slow incoming decoder catches up before it replaces the visible source',async()=>{
     const pool=new VideoPool(),video=new ArmableVideo(10);
     vi.spyOn(pool as unknown as {loadVideo:()=>Promise<HTMLVideoElement>},'loadVideo').mockResolvedValue(video as unknown as HTMLVideoElement);

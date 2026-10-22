@@ -4,7 +4,7 @@
   import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
   import TimingFooterMenu from './TimingFooterMenu.svelte';
   import { playbackWorkspace } from '$lib/stores/rackUi';
-  import { performSamplerStatus } from '$lib/runtime/PerformTimeSamplerFrames';
+  import { performSamplerStatus,performTimeSamplerFrames } from '$lib/runtime/PerformTimeSamplerFrames';
   const timing = $derived($playbackWorkspace === 'timing');
   const status = $derived($timingStatus[$selectedTimingSlot]);
   const sceneError=$derived(Object.entries($timingSceneErrors)[0]);
@@ -23,6 +23,7 @@
     {:else}{$videoLayers[$selectedTimingSlot] ? 'PREPARING CLIP…' : 'LOAD CLIPS FROM THE TOP BAR OR CLIPS BROWSER'}{/if}
   </span>
   {#if timing && sceneError}<button onclick={()=>void timingRuntime.retryScenes()} title="Retry failed preparation for clips in other sections, including failed GPU jobs.">RETRY SECTION CLIPS</button>{/if}
+  {#if !timing && $performSamplerStatus.error}<button onclick={()=>performTimeSamplerFrames.retryFailed()} title="Reload failed GPU sampler banks while keeping ready banks.">RETRY SAMPLER CACHE</button>{/if}
   <TimingFooterMenu label={timing ? 'OUTPUT' : 'TIMING OUTPUT'} value={$timingSettings.outputFps} options={[24,30,60].map(fps => ({value:fps,label:`${fps} FPS`}))} onchange={value => timingSettings.update(s => ({ ...s, outputFps: Number(value) }))} />
   <TimingFooterMenu label={timing ? 'PRELOAD' : 'SAMPLER PRELOAD'} value={$timingSettings.preloadHeight} options={[{value:0,label:'NATIVE'},{value:720,label:'720p'},{value:540,label:'540p'},{value:360,label:'360p'},{value:270,label:'270p'}]} onchange={value => timingSettings.update(s => ({ ...s, preloadHeight: Number(value) }))} />
   <button title="GPU preload preset: 540p frame banks, shared 8 GiB cap, 24 FPS Timing output." onclick={() => timingSettings.update(s => ({ ...s, preloadHeight: 540, budgetGiB: 8, outputFps: 24 }))}>LAPTOP · 540p</button>
