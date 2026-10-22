@@ -70,11 +70,20 @@ describe('CDP browser isolation', () => {
   });
 
   it('confines software WebGPU flags to explicitly headless test runs', () => {
-    const args = chromeLaunchArgs('/Applications/Google Chrome', 10036, '/repo/.artifacts/browser-profiles/test', false);
+    const args = chromeLaunchArgs('/Applications/Google Chrome', 10036, '/repo/.artifacts/browser-profiles/test', false, true, 'win32');
 
     expect(args).toContain('--headless=new');
     expect(args).toContain('--enable-unsafe-swiftshader');
     expect(args).toContain('--use-angle=swiftshader');
+  });
+
+  it('keeps Linux headless compositing and WebGPU on the same SwiftShader Vulkan backend',()=>{
+    const args=chromeLaunchArgs('/chrome',10036,'/tmp/test-profile',false,true,'linux');
+    expect(args).toContain('--use-angle=vulkan');
+    expect(args).toContain('--use-vulkan=swiftshader');
+    expect(args).toContain('--use-webgpu-adapter=swiftshader');
+    expect(args).toContain('--enable-features=Vulkan');
+    expect(args).not.toContain('--use-angle=swiftshader');
   });
 
   it('labels a timed-out evaluation with its action', async () => {

@@ -1,0 +1,310 @@
+{
+  "decoderCount": 12,
+  "durationMs": 120000,
+  "frames": 4591,
+  "maxRafGapMs": 83.29999999998836,
+  "native": false,
+  "sampler": {
+    "assets": [
+      {
+        "bytes": 122342400,
+        "decodedFrames": 219,
+        "decoderDisposed": true,
+        "duration": 9.125,
+        "error": null,
+        "fps": 24,
+        "frames": 219,
+        "height": 270,
+        "loadMs": 731.1000000089407,
+        "loading": false,
+        "name": "Redline clip 04.mp4",
+        "ready": true,
+        "uploadedFrames": 219,
+        "width": 480
+      },
+      {
+        "bytes": 196992000,
+        "decodedFrames": 361,
+        "decoderDisposed": true,
+        "duration": 15.041666666666666,
+        "error": null,
+        "fps": 24,
+        "frames": 361,
+        "height": 270,
+        "loadMs": 378.90000000596046,
+        "loading": false,
+        "name": "Redline clip 09.mp4",
+        "ready": true,
+        "uploadedFrames": 361,
+        "width": 480
+      }
+    ],
+    "limit": 8589934592,
+    "selected": {
+      "frameId": 9166,
+      "pts": 0.20833333333333337,
+      "slot": "top-3"
+    },
+    "usedBytes": 319334400
+  },
+  "slots": [
+    {
+      "callbacks": 2847,
+      "droppedFrames": 3,
+      "gaps": [],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 133.29999999998836,
+      "module": "transition",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-0",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2741,
+      "droppedFrames": 19,
+      "gaps": [],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250,
+      "maxGapMs": 133.19999999995343,
+      "module": "speedramp",
+      "sameVideo": false,
+      "samplePath": "cached-video-texture",
+      "slot": "top-1",
+      "swaps": 5,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2849,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.1228326666667,
+          "gap": 150.09999999997672,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 150.09999999997672,
+      "module": "leak",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-2",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2941,
+      "droppedFrames": 0,
+      "gaps": [],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 99.90000000002328,
+      "module": "timesampler",
+      "sameVideo": false,
+      "samplePath": "resident-frame-bank",
+      "slot": "top-3",
+      "swaps": 4,
+      "trailingGapMs": 66.89999998809071
+    },
+    {
+      "callbacks": 2847,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.13616600000002,
+          "gap": 166.70000000001164,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 166.70000000001164,
+      "module": "vhs",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-4",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2848,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.15216599999998,
+          "gap": 183.39999999996508,
+          "media": 9.916667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 183.39999999996508,
+      "module": "tapdelay",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-5",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2841,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.15216599999998,
+          "gap": 183.39999999996508,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 126.20283266666668,
+          "gap": 183.40000000002328,
+          "media": 5.666667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 183.40000000002328,
+      "module": "orbit",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-0",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2839,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.17349933333334,
+          "gap": 200.09999999997672,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 200.09999999997672,
+      "module": "focus",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-1",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2839,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.17349933333334,
+          "gap": 200.09999999997672,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 200.09999999997672,
+      "module": "bulge",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-2",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2838,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 103.17349933333334,
+          "gap": 200.09999999997672,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 125.85349933333336,
+          "gap": 150.09999999997672,
+          "media": 5.125,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 200.09999999997672,
+      "module": "lens",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-3",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2837,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 126.192166,
+          "gap": 166.70000000001164,
+          "media": 6.375,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 166.70000000001164,
+      "module": "mirror",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-4",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    },
+    {
+      "callbacks": 2842,
+      "droppedFrames": 2,
+      "gaps": [],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 133.29999999998836,
+      "module": "punch",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-5",
+      "swaps": 4,
+      "trailingGapMs": 33.49999998806743
+    }
+  ],
+  "timingActive": false,
+  "timingPending": 0
+}

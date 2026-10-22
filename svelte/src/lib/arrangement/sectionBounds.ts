@@ -51,3 +51,22 @@ export function sectionIndexAtSeconds(
   }
   return index;
 }
+
+/** Musical boundary time differs from source time when the transport wraps. */
+export function upcomingSectionBoundaries(
+  bounds: readonly { startSeconds:number }[],
+  positionSeconds: number,
+  loop: { startSeconds:number; endSeconds:number } | null,
+  songDuration: number
+) {
+  if (!bounds.length) return [];
+  const end = loop?.endSeconds ?? (songDuration > 0 ? songDuration : Infinity);
+  const upcoming = bounds.flatMap((bound, index) =>
+    bound.startSeconds > positionSeconds && (!Number.isFinite(end) || bound.startSeconds < end)
+      ? [{ index, at:bound.startSeconds, positionSeconds:bound.startSeconds }] : []);
+  if (Number.isFinite(end) && end > positionSeconds) {
+    const start = loop?.startSeconds ?? 0;
+    upcoming.push({ index:sectionIndexAtSeconds(bounds, start), at:end, positionSeconds:start });
+  }
+  return upcoming;
+}

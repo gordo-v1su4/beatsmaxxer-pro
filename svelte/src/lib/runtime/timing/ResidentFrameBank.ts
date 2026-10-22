@@ -1,4 +1,9 @@
 import { ALL_FORMATS, BlobSource, Input, UrlSource, VideoSampleSink } from 'mediabunny';
+import { RACK_SLOT_COUNT } from '$lib/modules/rackSlots';
+import { getVideoFrameScaler } from '$lib/rendering/webgpu/VideoFrameScaler';
+
+// Error scopes belong to the device, so all resident loaders share one queue.
+const residentUploads = new WeakMap<GPUDevice, Promise<void>>();
 
 export class ResidentCapacityError extends Error {
   constructor(public readonly requiredBytes: number, availableBytes: number) {
@@ -93,6 +98,20 @@ export class ResidentFrameBank {
   async load(source: Blob | string, progress: (p: BankProgress) => void = () => {}, maxHeight=0) {
     if (this.loading || this.ready || this.stopped) throw new Error('Frame bank cannot be loaded twice');
     this.loading = true;
+    const operation = (residentUploads.get(this.device) ?? Promise.resolve()).then(() => {
+      if (this.stopped) throw new Error('Frame-bank loading cancelled');
+      return this.loadFrames(source, progress, maxHeight);
+    });
+    const settled = operation.then(()=>{},()=>{});
+    residentUploads.set(this.device, settled);
+    try { await operation; }
+    finally {
+      this.loading = false;
+      if (residentUploads.get(this.device) === settled) residentUploads.delete(this.device);
+    }
+  }
+
+  private async loadFrames(source: Blob | string, progress: (p: BankProgress) => void, maxHeight: number) {
     const started = performance.now();
     const input = new Input({ formats: ALL_FORMATS, source: typeof source === 'string' ? new UrlSource(source) : new BlobSource(source) });
     this.input = input;
@@ -109,20 +128,19 @@ export class ResidentFrameBank {
       if (Math.max(width, height) > this.device.limits.maxTextureDimension2D) throw new Error('Video dimensions exceed the GPU texture limit');
       const size=residentDimensions(width,height,maxHeight);
       const frameBytes=size.width*size.height*4;
-      this.budget.check(frameBytes*(packets.packetCount+10));
-      let allocatedFrames=10;
+      this.budget.check(frameBytes*(packets.packetCount+RACK_SLOT_COUNT));
+      let allocatedFrames=RACK_SLOT_COUNT;
       for(let remaining=packets.packetCount;remaining>0;){
         const layout=atlasLayout(size.width,size.height,remaining,this.device.limits.maxTextureDimension2D);
         allocatedFrames+=layout.capacity;remaining-=layout.capacity;
       }
-      // Include ten small output surfaces, one for each independent rack slot.
+      // Include an output surface for every independent rack slot.
       this.budget.check(frameBytes*allocatedFrames);
       this.width = size.width; this.height = size.height; this.fps = packets.averagePacketRate;
-      const canvas=size.width!==width||size.height!==height?new OffscreenCanvas(size.width,size.height):null;
-      const context=canvas?.getContext('2d');
-      if(canvas&&!context)throw new Error('This browser cannot prepare the selected frame resolution');
+      const scaler=size.width!==width||size.height!==height?await getVideoFrameScaler(this.device):null;
+      if(this.stopped)throw new Error('Frame-bank loading cancelled');
       progress({ frames: 0, total: packets.packetCount, bytes: 0 });
-      for(let i=0;i<10;i++){
+      for(let i=0;i<RACK_SLOT_COUNT;i++){
         this.budget.claim(frameBytes);this.bytes+=frameBytes;
         const output=this.device.createTexture({size:[size.width,size.height],format:'rgba8unorm',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
         this.textures.push(output);this.outputs.push({texture:output,view:output.createView(),frameIndex:-1});
@@ -152,8 +170,8 @@ export class ResidentFrameBank {
             const resident = { texture,origin,pts: sample.timestamp,
               duration: sample.duration > 0 ? sample.duration : 1 / Math.max(1, this.fps) };
             this.frames.push(resident);
-            if(canvas&&context)context.drawImage(frame,0,0,size.width,size.height);
-            this.device.queue.copyExternalImageToTexture({ source: canvas??frame }, { texture,origin }, [size.width, size.height]);
+            if(scaler)scaler.copy(frame,texture,origin,size.width,size.height);
+            else this.device.queue.copyExternalImageToTexture({ source:frame }, { texture,origin }, [size.width, size.height]);
             index++;
             this.uploadedFrames++;
           } finally { frame.close(); }
@@ -181,7 +199,6 @@ export class ResidentFrameBank {
       if (errorScopeOpen) await this.device.popErrorScope().catch(() => null);
       input.dispose();
       this.input = null;
-      this.loading = false;
       this.loadMs = performance.now()-started;
     }
   }
@@ -195,7 +212,7 @@ export class ResidentFrameBank {
     let output=this.consumers.get(consumer);
     if(!output){
       output=this.outputs[this.consumers.size];
-      if(!output)throw new Error('Frame bank supports the ten Timing rack slots.');
+      if(!output)throw new Error(`Frame bank supports ${RACK_SLOT_COUNT} independent rack slots.`);
       this.consumers.set(consumer,output);
     }
     if(output.frameIndex!==index){

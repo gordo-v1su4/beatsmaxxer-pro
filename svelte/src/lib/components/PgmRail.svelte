@@ -18,7 +18,6 @@
   import { timingEffectAccent } from './timing/presentation';
   import RampReadiness from './timing/RampReadiness.svelte';
   import { pgmDigit, pgmSlotNumber } from '$lib/runtime/pgm/keyboard';
-  import { transportDisplay } from '$lib/stores/transportDisplay';
   import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 
   interface Props {
@@ -28,7 +27,6 @@
   let { modules }: Props = $props();
 
   const active = $derived(modules.find((m) => m.id === $pgmSource) ?? modules[0]);
-  const queuedModule = $derived(modules.find((m) => m.id === $queuedPgmSource));
   const quantizeLabel = $derived(formatQuantizeLabel($intervalBeats, $feel));
   const playableTimingSlots = $derived(modules.flatMap(module => {
     const slot = currentRackSlotForModule(module.id, $rackTop, $rackBottom);
@@ -41,12 +39,6 @@
     return $viewMode === 'timing' && slot ? timingEffectAccent(effectiveClipTiming($timingSettings,slot).effect) : mod.accentColor;
   }
   const activeColor = $derived(moduleColor(active));
-  const queuedColor = $derived(moduleColor(queuedModule));
-  function sourceLabel(mod: ModuleDefinition | undefined) {
-    if (!mod) return '—';
-    const slot = currentRackSlotForModule(mod.id, $rackTop, $rackBottom);
-    return $viewMode === 'timing' && slot ? `S${pgmSlotNumber(slot)}` : mod.shortName;
-  }
 
   const handleSelect = selectRackSource;
   function available(id:string) {
@@ -70,7 +62,7 @@
 <svelte:window onkeydown={keySelect}/>
 
 <style>
-  .pgm-slot{display:flex;align-items:center;gap:6px;width:100%;height:34px;padding-inline:7px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618);border:1px solid #1e2226;border-radius:2px;cursor:pointer;box-shadow:none;flex-shrink:0;transition:background var(--dur-control) var(--ease-out)}
+  .pgm-slot{display:flex;align-items:center;gap:6px;width:100%;min-height:22px;max-height:34px;flex:1 0 22px;padding-inline:7px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618);border:1px solid #1e2226;border-radius:2px;cursor:pointer;box-shadow:none;transition:background var(--dur-control) var(--ease-out)}
   .pgm-slot.is-active{background:linear-gradient(180deg,color-mix(in srgb,var(--slot-accent) 16%,#1e2124),color-mix(in srgb,var(--slot-accent) 8%,#141618))}
   .pgm-collapsed{flex-direction:column;gap:10px!important;padding-bottom:12px!important}
   @keyframes pgmQueueBlink {
@@ -211,43 +203,6 @@
         {/each}
       </div>
 
-      <div
-        class="flex flex-col gap-1 rounded border border-[#171a1d] bg-[#0a0b0c] p-1.5 shadow-[inset_0_2px_5px_rgba(0,0,0,0.7)]"
-      >
-        <div class="flex items-center justify-between">
-          <span class="font-mono text-[8px] text-[#6a7a8a]">
-            {Math.round($transportDisplay.bpm)} BPM{$transportDisplay.bpmLocked ? '·M' : ''}
-          </span>
-          <span
-            class="h-[7px] w-[7px] rounded-full transition-colors duration-75"
-            style="background:{$transportDisplay.playing && $transportDisplay.beatPhase < 0.15
-              ? activeColor
-              : '#1e2226'};
-              box-shadow:{$transportDisplay.playing && $transportDisplay.beatPhase < 0.15
-              ? `0 0 6px ${activeColor}`
-              : undefined}"
-          ></span>
-        </div>
-        <span
-          class="font-mono text-[8px]"
-          style="color:{queuedModule ? queuedColor : '#4a5260'}"
-        >
-          {#if queuedModule}
-            NEXT {quantizeLabel} → {sourceLabel(queuedModule)}
-          {:else}
-            BAR {Math.max(1, Math.floor($transportDisplay.beat / 4) + 1)} · PGM {sourceLabel(active)}
-          {/if}
-        </span>
-        <div class="flex h-[18px] items-end gap-0.5 opacity-60">
-          {#each $transportDisplay.fftBands as band, i (i)}
-            <div
-              class="min-h-[2px] flex-1 rounded-t-sm"
-              style="height:{Math.max(8, band * 100)}%; background:linear-gradient(180deg, {activeColor}, {activeColor}44)"
-            ></div>
-          {/each}
-          <span class="ml-0.5 font-mono text-[6.5px] text-[#3a4050]">FFT</span>
-        </div>
-      </div>
     </div>
   {/if}
 </aside>

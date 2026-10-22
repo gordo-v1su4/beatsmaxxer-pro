@@ -28,6 +28,7 @@ vi.mock('mediabunny', () => ({
 }));
 
 import { ResidentFrameBank, ResidentMemoryBudget, residentFrameIndex } from '$lib/runtime/timing/ResidentFrameBank';
+import { RACK_SLOT_IDS } from '$lib/modules/rackSlots';
 
 function device() {
   const copy=vi.fn((_source:unknown,_destination:unknown,_size:unknown)=>{});
@@ -49,6 +50,33 @@ beforeEach(() => {
 });
 
 describe('resident production bank', () => {
+  it('serializes upload error scopes across independent banks on the same GPU device', async () => {
+    const d = device(), budget = new ResidentMemoryBudget(100000);
+    let finish!:()=>void, depth=0, peak=0;
+    const blocked = new Promise<void>(resolve=>{finish=resolve;});
+    d.raw.pushErrorScope.mockImplementation(()=>{depth++;peak=Math.max(peak,depth);});
+    d.raw.popErrorScope.mockImplementation(async()=>{depth--;return null;});
+    d.raw.queue.onSubmittedWorkDone.mockImplementationOnce(()=>blocked);
+    const first=new ResidentFrameBank(d.gpu,budget), second=new ResidentFrameBank(d.gpu,budget);
+    const one=first.load('https://example.test/one.mp4');
+    await vi.waitFor(()=>expect(d.raw.queue.onSubmittedWorkDone).toHaveBeenCalledOnce());
+    const two=second.load('https://example.test/two.mp4');
+    try {
+      await new Promise(resolve=>setTimeout(resolve,0));
+      expect(peak).toBe(1);
+    } finally {finish();await Promise.all([one,two]);first.dispose();second.dispose();}
+    expect(depth).toBe(0);
+  });
+  it('serves twelve independent slot times from one shared bank', async () => {
+    const d = device(), bank = new ResidentFrameBank(d.gpu,new ResidentMemoryBudget(100000));
+    await bank.load('https://example.test/shared.mp4');
+    try {
+      const views = RACK_SLOT_IDS.map((slot,i)=>bank.frameAt((i%3)/96,slot)?.view);
+      expect(views).toHaveLength(12);
+      expect(new Set(views).size).toBe(12);
+      expect(views.every(Boolean)).toBe(true);
+    } finally { bank.dispose(); }
+  });
   it('packs frames into atlases and selects separate regions for shared clip consumers', async () => {
     media.count = 130;
     const d = device(), budget = new ResidentMemoryBudget(100000), bank = new ResidentFrameBank(d.gpu, budget);
@@ -91,7 +119,7 @@ describe('resident production bank', () => {
     await first.load('https://example.test/one.mp4');
     const used = budget.used;
     await expect(second.load('https://example.test/two.mp4')).rejects.toThrow('available');
-    expect(d.textures).toHaveLength(11);
+    expect(d.textures).toHaveLength(RACK_SLOT_IDS.length + 1);
     expect(budget.used).toBe(used);
     first.dispose(); expect(budget.used).toBe(0);
   });

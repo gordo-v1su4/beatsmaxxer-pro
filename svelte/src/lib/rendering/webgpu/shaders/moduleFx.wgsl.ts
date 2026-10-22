@@ -314,18 +314,31 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     // legible against.
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
     let r = length(c);
-    let gr = fract((c + vec2f(0.5)) * vec2f(asp * 7.0, 7.0));
-    col += acc * step(0.90, max(gr.x, gr.y)) * 0.55 * fade;
+    let grid = c * 5.0;
+    let distance = abs(fract(grid + vec2f(0.5)) - vec2f(0.5));
+    // Analytic feathering stays valid when effects sample this card inside
+    // non-uniform branches, where fragment derivatives are unavailable.
+    let lines = vec2f(1.0) - smoothstep(vec2f(0.012), vec2f(0.055), distance);
+    let glow = vec2f(1.0) - smoothstep(vec2f(0.025), vec2f(0.10), distance);
+    col += acc * (max(lines.x, lines.y) * 0.44 + max(glow.x, glow.y) * 0.10) * fade;
     col += vec3f(0.85) * smoothstep(0.028, 0.0, r) * 0.3;
   } else if (mode == 15.0) {
-    // VHS / CAM -- the tape's subject, not the tape damage.
-    //
-    // This drew scanlines, a rolling tear AND a chroma split, which is all three
-    // things effectVhs does -- then effectVhs did them again. The drawn tear ran
-    // on the wall clock at a fixed rate, so TRACKING, CHROMA, NOISE and BEAT all
-    // appeared to do nothing against it. Chroma bleed and a tracking tear are
-    // only legible across a hard edge, which the shared subject provides.
-    col += idlePictureSubject(p, asp, fade, acc);
+    // VHS / CAM — broadcast colour bars and a moving calibration marker.
+    // The real tape shader supplies all tracking, chroma bleed and noise.
+    // Clean edges make those controls readable without pre-drawing damage.
+    let bar = min(u32(floor(clamp(p.x, 0.0, 1.0) * 7.0)), 6u);
+    let bars = array<vec3f, 7>(
+      vec3f(0.85), vec3f(0.85, 0.75, 0.12), vec3f(0.12, 0.75, 0.85),
+      vec3f(0.12, 0.70, 0.22), vec3f(0.75, 0.15, 0.75),
+      vec3f(0.75, 0.15, 0.12), vec3f(0.12, 0.18, 0.75)
+    );
+    let upper = smoothstep(0.76, 0.73, p.y);
+    col += bars[bar] * upper * 0.60 * fade;
+    let steps = floor(clamp(p.x, 0.0, 0.999) * 8.0) / 7.0;
+    col += vec3f(steps) * (1.0 - upper) * 0.45 * fade;
+    let marker = vec2f(fract(t * 0.12) * 0.80 + 0.10, 0.84);
+    let d = abs((p - marker) * vec2f(asp, 1.0));
+    col += vec3f(0.90) * (1.0 - smoothstep(0.026, 0.034, max(d.x, d.y))) * fade;
   } else if (mode == 17.0) {
     // PRISM -- deliberately NOT a drawing of a chromatic split.
     //
@@ -395,8 +408,12 @@ fn idleGraphic(p: vec2f, mode: f32, t: f32) -> vec3f {
     // less clearly.
     let c = vec2f((p.x - 0.5) * asp, p.y - 0.5);
     let r = length(c);
-    let gr = fract((c + vec2f(0.5)) * vec2f(asp * 6.0, 6.0));
-    col += acc * step(0.90, max(gr.x, gr.y)) * smoothstep(0.62, 0.08, r) * 0.65 * fade;
+    let grid = c * 4.0;
+    let distance = abs(fract(grid + vec2f(0.5)) - vec2f(0.5));
+    let lines = vec2f(1.0) - smoothstep(vec2f(0.012), vec2f(0.055), distance);
+    let glow = vec2f(1.0) - smoothstep(vec2f(0.025), vec2f(0.10), distance);
+    col += acc * (max(lines.x, lines.y) * 0.42 + max(glow.x, glow.y) * 0.10)
+         * smoothstep(0.62, 0.08, r) * fade;
     col += acc * smoothstep(0.012, 0.003, abs(r - 0.30)) * 0.8 * fade;
     col += vec3f(0.85) * smoothstep(0.035, 0.0, r) * 0.32;
   } else {

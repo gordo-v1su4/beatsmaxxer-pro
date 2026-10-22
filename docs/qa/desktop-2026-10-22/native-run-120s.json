@@ -1,0 +1,219 @@
+{
+  "durationMs": 120000,
+  "frames": 4408,
+  "maxRafGapMs": 100,
+  "native": true,
+  "slots": [
+    {
+      "slot": "top-0",
+      "module": "transition",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2863,
+      "maxGapMs": 100.09999999997672,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-1",
+      "module": "speedramp",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2615,
+      "maxGapMs": 166.70000000001164,
+      "gaps": [
+        {
+          "gap": 166.70000000001164,
+          "at": 102.90133333333333,
+          "media": 0.041667,
+          "swaps": 2,
+          "rate": 0.5776607606089299,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 37,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250
+    },
+    {
+      "slot": "top-2",
+      "module": "leak",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2859,
+      "maxGapMs": 100.10000000000582,
+      "gaps": [],
+      "droppedFrames": 3,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-3",
+      "module": "timesampler",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2943,
+      "maxGapMs": 133.30000000001746,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "resident-frame-bank",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-4",
+      "module": "streak",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2858,
+      "maxGapMs": 100,
+      "gaps": [],
+      "droppedFrames": 3,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-5",
+      "module": "tapdelay",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2864,
+      "maxGapMs": 133.40000000002328,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-0",
+      "module": "orbit",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2859,
+      "maxGapMs": 100,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-1",
+      "module": "focus",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2859,
+      "maxGapMs": 100.10000000000582,
+      "gaps": [],
+      "droppedFrames": 3,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-2",
+      "module": "halation",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2858,
+      "maxGapMs": 133.39999999999418,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-3",
+      "module": "anamorphic",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2857,
+      "maxGapMs": 116.59999999997672,
+      "gaps": [],
+      "droppedFrames": 3,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-4",
+      "module": "grain",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2858,
+      "maxGapMs": 100.09999999997672,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-5",
+      "module": "punch",
+      "sameVideo": false,
+      "swaps": 3,
+      "callbacks": 2862,
+      "maxGapMs": 100,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    }
+  ],
+  "decoderCount": 12,
+  "timingActive": false,
+  "sampler": {
+    "usedBytes": 319334400,
+    "limit": 12884901888,
+    "assets": [
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 219,
+        "bytes": 122342400,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 9.125,
+        "decoderDisposed": true,
+        "decodedFrames": 219,
+        "uploadedFrames": 219,
+        "loadMs": 344.70000000298023
+      },
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 361,
+        "bytes": 196992000,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 15.041666666666666,
+        "decoderDisposed": true,
+        "decodedFrames": 361,
+        "uploadedFrames": 361,
+        "loadMs": 451.5
+      }
+    ],
+    "selected": {
+      "slot": "top-3",
+      "pts": 1.9166666666666667,
+      "frameId": 5922
+    }
+  },
+  "pass": true
+}

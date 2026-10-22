@@ -53,6 +53,35 @@ function triggerEvents(
 }
 
 describe("live TimeSampler integration", () => {
+  test("incoming clip identity previews the same reset that its first live frame will use", () => {
+    const runtime = new LiveScheduleRuntime<string>();
+    const input = {controls:CONTROLS,sourceDurationSeconds:8,sourceKey:'clip-a'};
+    runtime.configureTimeSampler(input);
+    runtime.advance(transport(0), []);
+    runtime.advance(transport(3.2), []);
+    const current = runtime.getFrame();
+    const preview = runtime.previewTimeSamplerSource(16,'clip-b')!;
+    expect(runtime.getFrame()).toBe(current);
+    expect(preview.sourceTimestampSeconds).toBe(0);
+    runtime.configureTimeSampler({...input,sourceDurationSeconds:16,sourceKey:'clip-b'});
+    const actual = runtime.advance(transport(3.2),[]).timeSampler;
+    expect(actual.sourceTimestampSeconds).toBe(preview.sourceTimestampSeconds);
+    expect(actual.jumpGeneration).toBe(preview.jumpGeneration);
+  });
+  test("previews an incoming clip's duration without advancing the live slice state", () => {
+    const sampler = new LiveTimeSamplerSchedule();
+    const input = {controls:CONTROLS,sourceDurationSeconds:8};
+    sampler.sample(transport(0), [], input);
+    const frame = transport(3.2), current = sampler.sample(frame, [], input);
+    const incoming = {...input,sourceDurationSeconds:16};
+    const preview = sampler.preview(frame, incoming);
+    expect(preview.sourceTimestampSeconds).not.toBe(current.sourceTimestampSeconds);
+    expect(sampler.preview(frame,incoming)).toEqual(preview);
+    expect(sampler.sample(frame,[],input).sourceTimestampSeconds).toBe(current.sourceTimestampSeconds);
+    const actual = sampler.sample(frame,[],incoming);
+    expect(actual.sourceTimestampSeconds).toBe(preview.sourceTimestampSeconds);
+    expect(actual.jumpGeneration).toBe(preview.jumpGeneration);
+  });
   test("maps production controls to the frozen reducer contract", () => {
     expect(
       [10, 30, 50, 70, 90].map(jumpSizeBeatsFromControl),

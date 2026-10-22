@@ -8,9 +8,9 @@ mod hosted_api;
 /// dimensions are converted to logical pixels first, so Windows DPI scaling
 /// cannot turn a physical-pixel measurement into an almost-fullscreen window.
 const WINDOW_WIDTH_RATIO: f64 = 0.75;
-// Use the full usable monitor height so the two rack rows and timing editor
-// open together without leaving the lower workspace behind a scroll edge.
-const WINDOW_HEIGHT_RATIO: f64 = 1.0;
+// The twelve-slot surface now fits as one composition. Leave desktop space
+// around the window; expanded Timing controls remain reachable by scrolling.
+const WINDOW_HEIGHT_RATIO: f64 = 0.82;
 const MIN_WINDOW_WIDTH: f64 = 960.0;
 const MIN_WINDOW_HEIGHT: f64 = 600.0;
 
@@ -35,7 +35,7 @@ fn preferred_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
 fn minimum_window_size(screen: LogicalSize<f64>) -> LogicalSize<f64> {
     LogicalSize::new(
         MIN_WINDOW_WIDTH.min((screen.width - 32.0).max(1.0)),
-        1300.0_f64.min((screen.height - 72.0).max(1.0)),
+        MIN_WINDOW_HEIGHT.min((screen.height - 72.0).max(1.0)),
     )
 }
 
@@ -129,11 +129,11 @@ mod tests {
         }
         assert_eq!(
             preferred_window_size(LogicalSize::new(1920.0, 1080.0)),
-            LogicalSize::new(1440.0, 1008.0)
+            LogicalSize::new(1440.0, 1080.0 * WINDOW_HEIGHT_RATIO)
         );
         assert_eq!(
             preferred_window_size(LogicalSize::new(2560.0, 1440.0)),
-            LogicalSize::new(1920.0, 1368.0)
+            LogicalSize::new(1920.0, 1440.0 * WINDOW_HEIGHT_RATIO)
         );
     }
 }

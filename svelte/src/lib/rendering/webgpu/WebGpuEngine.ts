@@ -21,6 +21,7 @@ import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
 import { latencyMarkNow, recordLatencySince } from '$lib/qa/performance';
 import type { TimingTextureProvider } from '$lib/runtime/timing/contracts';
+import type { OwnedVideoFrameProvider } from './OwnedVideoFrame';
 
 export interface ModuleRenderParams {
   mix?: number;
@@ -192,6 +193,7 @@ export class WebGpuEngine {
   /** PGM's last finished frame, for the monitor. */
   private pgmOutputView: GPUTextureView | null = null;
   private timingTextures: TimingTextureProvider | null = null;
+  private ownedVideoFrames: OwnedVideoFrameProvider | null = null;
   private timingVersion = 0;
   private paused = false;
   private frameCtx: FrameContext = {
@@ -473,6 +475,10 @@ export class WebGpuEngine {
 
   setPaused(paused: boolean) {
     this.paused = paused;
+  }
+
+  setOwnedVideoFrames(provider:OwnedVideoFrameProvider|null) {
+    this.ownedVideoFrames=provider;
   }
 
   setFrameContext(ctx: FrameContext) {
@@ -919,7 +925,8 @@ export class WebGpuEngine {
     const shaderKey = def?.shaderKey ?? moduleId;
     const effectMode = SHADER_EFFECT_MODE[shaderKey] ?? 0;
     const video = videoPool.get(sourceId);
-    const hasVideo = video && videoPool.hasReadyFrame(sourceId) ? 1 : 0;
+    const ownedFrame=this.ownedVideoFrames?.(sourceId)??null;
+    const hasVideo = ownedFrame || (video && videoPool.hasReadyFrame(sourceId)) ? 1 : 0;
     const accent = def ? parseAccentColor(def.accentColor) : color;
 
     const pitch = this.frameCtx.pitchSemitones ?? 0;
@@ -967,8 +974,8 @@ export class WebGpuEngine {
     let externalTextureBound = false;
     let cachedTextureUploaded = false;
     let cachedTextureBound = false;
-    const preferPersistentVideoTexture = shouldUsePersistentVideoTexture(moduleId);
-    let cachedVideoView = video ? this.videoTextureCache.cachedView(sourceId, video) : null;
+    const preferPersistentVideoTexture = !!ownedFrame || shouldUsePersistentVideoTexture(moduleId);
+    let cachedVideoView = ownedFrame?.view ?? (video ? this.videoTextureCache.cachedView(sourceId, video) : null);
     const duration = video?.duration ?? 0;
     const hasTimedSource = !!video && Number.isFinite(duration) && duration > 0;
     // Refresh the last-good copy while the clip runs out, never once it has
@@ -978,7 +985,7 @@ export class WebGpuEngine {
       hasTimedSource && duration - video!.currentTime < LOOP_SEAM_COVER_WINDOW_SECONDS;
     const justWrapped = hasTimedSource && video!.currentTime < LOOP_SEAM_CUT_COVER_SECONDS;
     const pendingPgmTarget = this.pendingPgmCut?.sourceId === sourceId;
-    const canUploadFrame =
+    const canUploadFrame = !ownedFrame &&
       !!video &&
       !video.seeking &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
@@ -1108,7 +1115,9 @@ export class WebGpuEngine {
       coveredLoopWrap: coverLoopWrap && cachedTextureBound,
       coveredSeekGap: coverSeekGap && cachedTextureBound,
       coveredPgmCut: coverPgmCut && cachedTextureBound,
-      samplePath: resolveVideoSamplePath(externalTextureBound, cachedTextureBound, Boolean(shaderHasVideo)),
+      samplePath: ownedFrame ? 'resident-frame-bank' : resolveVideoSamplePath(externalTextureBound, cachedTextureBound, Boolean(shaderHasVideo)),
+      sourceFrameId:ownedFrame?.frameId??null,
+      sourceFramePts:ownedFrame?.pts??null,
       source: video?.currentSrc || video?.src || null,
       dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
       frameId: timeline?.frameId ?? null,

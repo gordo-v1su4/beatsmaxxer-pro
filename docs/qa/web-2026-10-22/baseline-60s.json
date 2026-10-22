@@ -1,0 +1,613 @@
+{
+  "decoderCount": 12,
+  "durationMs": 60000,
+  "frames": 2429,
+  "maxRafGapMs": 166.60000000009313,
+  "native": false,
+  "sampler": {
+    "assets": [],
+    "limit": 0,
+    "selected": null,
+    "usedBytes": 0
+  },
+  "slots": [
+    {
+      "callbacks": 1407,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 3.333333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.53066666666668,
+          "gap": 266.69999999995343,
+          "media": 11.25,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 200,
+          "media": 0,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 8.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 266.69999999995343,
+      "module": "transition",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-0",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1372,
+      "droppedFrames": 9,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 5.791667,
+          "rate": 0.8183120365808179,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.472,
+          "gap": 266.80000000004657,
+          "media": 5.291667,
+          "rate": 0.7623735757705309,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 200,
+          "media": 5.75,
+          "rate": 0.7601980841012064,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.57066666666668,
+          "gap": 166.5999999998603,
+          "media": 12.875,
+          "rate": 0.8262728316966303,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250,
+      "maxGapMs": 266.80000000004657,
+      "module": "speedramp",
+      "sameVideo": false,
+      "samplePath": "cached-video-texture",
+      "slot": "top-1",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1410,
+      "droppedFrames": 0,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 1.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.872,
+          "gap": 199.9000000001397,
+          "media": 14.458333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 183.30000000004657,
+          "media": 12.791667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 6.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 199.9000000001397,
+      "module": "leak",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-2",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1333,
+      "droppedFrames": 1,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 4.791667,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 103.22133333333332,
+          "gap": 450,
+          "media": 1.875,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 103.92,
+          "gap": 683.6000000000931,
+          "media": 3.75,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 1
+        },
+        {
+          "at": 104.2,
+          "gap": 250,
+          "media": 5.833333,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 1
+        },
+        {
+          "at": 104.50133333333332,
+          "gap": 266.69999999995343,
+          "media": 7.583333,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 107.272,
+          "gap": 183.10000000009313,
+          "media": 3.75,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 1
+        },
+        {
+          "at": 123.65066666666664,
+          "gap": 233.30000000004657,
+          "media": 7.5,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 1
+        },
+        {
+          "at": 131.30133333333333,
+          "gap": 199.89999999990687,
+          "media": 7.5,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 183.30000000004657,
+          "media": 0.25,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.78666666666663,
+          "gap": 283.30000000004657,
+          "media": 1.125,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 2
+        },
+        {
+          "at": 134.2506666666667,
+          "gap": 266.60000000009313,
+          "media": 2.333333,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 2
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 4.791667,
+          "rate": 1.0025,
+          "seeking": false,
+          "swaps": 2
+        },
+        {
+          "at": 151.072,
+          "gap": 299.89999999990687,
+          "media": 1.875,
+          "rate": 1.0025,
+          "seeking": true,
+          "swaps": 3
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 683.6000000000931,
+      "module": "timesampler",
+      "sameVideo": false,
+      "samplePath": "cached-video-texture",
+      "slot": "top-3",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1413,
+      "droppedFrames": 0,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 1.541667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 6.041667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 199.80000000004657,
+      "module": "streak",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-4",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1407,
+      "droppedFrames": 2,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 3.333333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.53066666666668,
+          "gap": 266.69999999995343,
+          "media": 11.25,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 200,
+          "media": 0,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 8.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 266.69999999995343,
+      "module": "tapdelay",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "top-5",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1411,
+      "droppedFrames": 0,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 14.5,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 105.032,
+          "gap": 200,
+          "media": 14.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 200,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 3.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 200,
+      "module": "orbit",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-0",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1409,
+      "droppedFrames": 1,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 1.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.97066666666667,
+          "gap": 266.60000000009313,
+          "media": 14.5,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 183.30000000004657,
+          "media": 12.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 6.708333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 266.60000000009313,
+      "module": "focus",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-1",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1413,
+      "droppedFrames": 1,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 2.041667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 133.30133333333333,
+          "gap": 183.30000000004657,
+          "media": 12.875,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 4.25,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 199.80000000004657,
+      "module": "halation",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-2",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1417,
+      "droppedFrames": 0,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 166.60000000009313,
+          "media": 1.5,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 6.041667,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 183.0999999998603,
+      "module": "anamorphic",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-3",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1406,
+      "droppedFrames": 1,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 3.333333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 104.57066666666668,
+          "gap": 233.5,
+          "media": 11.375,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 133.2506666666667,
+          "gap": 200,
+          "media": 0.125,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 8.583333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        },
+        {
+          "at": 152.04000000000002,
+          "gap": 233.30000000004657,
+          "media": 5.625,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 3
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 233.5,
+      "module": "grain",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-4",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    },
+    {
+      "callbacks": 1412,
+      "droppedFrames": 0,
+      "gaps": [
+        {
+          "at": 102.56,
+          "gap": 199.80000000004657,
+          "media": 14.5,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 0
+        },
+        {
+          "at": 105.032,
+          "gap": 200,
+          "media": 14.583333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 1
+        },
+        {
+          "at": 150.56,
+          "gap": 183.0999999998603,
+          "media": 3.833333,
+          "rate": 1,
+          "seeking": false,
+          "swaps": 2
+        }
+      ],
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150,
+      "maxGapMs": 200,
+      "module": "punch",
+      "sameVideo": false,
+      "samplePath": "external-texture",
+      "slot": "bottom-5",
+      "swaps": 3,
+      "trailingGapMs": 33.6000000059139
+    }
+  ],
+  "timingActive": false,
+  "timingPending": 0
+}

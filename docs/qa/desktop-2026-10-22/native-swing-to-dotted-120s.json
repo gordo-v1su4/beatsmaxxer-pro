@@ -1,0 +1,1071 @@
+{
+  "durationMs": 120000,
+  "frames": 5163,
+  "maxRafGapMs": 83.4000000001397,
+  "native": true,
+  "pgm": {
+    "initial": {
+      "order": "random",
+      "cadence": "Auto-switch to a random channel on the next 1BT SW boundary",
+      "mode": "live"
+    },
+    "final": {
+      "order": "random",
+      "cadence": "Auto-switch to a random channel on the next 1BT DOT boundary",
+      "mode": "live"
+    },
+    "selections": [
+      {
+        "at": 112.05281899999996,
+        "source": "mirror"
+      },
+      {
+        "at": 112.39148566666672,
+        "source": "vhs"
+      },
+      {
+        "at": 113.02348566666656,
+        "source": "punch"
+      },
+      {
+        "at": 113.35148566666676,
+        "source": "bulge"
+      },
+      {
+        "at": 113.99148566666663,
+        "source": "lens"
+      },
+      {
+        "at": 114.29281899999997,
+        "source": "tapdelay"
+      },
+      {
+        "at": 114.95148566666667,
+        "source": "lens"
+      },
+      {
+        "at": 115.252819,
+        "source": "focus"
+      },
+      {
+        "at": 115.90348566666667,
+        "source": "transition"
+      },
+      {
+        "at": 116.2234856666666,
+        "source": "punch"
+      },
+      {
+        "at": 116.85281899999991,
+        "source": "mirror"
+      },
+      {
+        "at": 117.19148566666668,
+        "source": "focus"
+      },
+      {
+        "at": 117.82348566666674,
+        "source": "timesampler"
+      },
+      {
+        "at": 118.15148566666672,
+        "source": "mirror"
+      },
+      {
+        "at": 118.79148566666659,
+        "source": "lens"
+      },
+      {
+        "at": 119.09281899999992,
+        "source": "focus"
+      },
+      {
+        "at": 119.74081900000006,
+        "source": "vhs"
+      },
+      {
+        "at": 120.05281899999996,
+        "source": "timesampler"
+      },
+      {
+        "at": 120.72215233333323,
+        "source": "bulge"
+      },
+      {
+        "at": 121.02348566666656,
+        "source": "transition"
+      },
+      {
+        "at": 121.6714856666667,
+        "source": "focus"
+      },
+      {
+        "at": 121.99148566666663,
+        "source": "timesampler"
+      },
+      {
+        "at": 122.6234856666667,
+        "source": "bulge"
+      },
+      {
+        "at": 122.95148566666667,
+        "source": "focus"
+      },
+      {
+        "at": 123.58881900000002,
+        "source": "mirror"
+      },
+      {
+        "at": 123.90348566666667,
+        "source": "lens"
+      },
+      {
+        "at": 124.54348566666677,
+        "source": "punch"
+      },
+      {
+        "at": 124.87148566666674,
+        "source": "bulge"
+      },
+      {
+        "at": 125.50348566666658,
+        "source": "focus"
+      },
+      {
+        "at": 125.82348566666674,
+        "source": "timesampler"
+      },
+      {
+        "at": 126.47148566666665,
+        "source": "focus"
+      },
+      {
+        "at": 126.79148566666659,
+        "source": "lens"
+      },
+      {
+        "at": 127.42348566666665,
+        "source": "mirror"
+      },
+      {
+        "at": 127.76215233333342,
+        "source": "leak"
+      },
+      {
+        "at": 128.39148566666674,
+        "source": "lens"
+      },
+      {
+        "at": 128.72215233333324,
+        "source": "orbit"
+      },
+      {
+        "at": 129.34348566666674,
+        "source": "leak"
+      },
+      {
+        "at": 129.99148566666665,
+        "source": "transition"
+      },
+      {
+        "at": 130.32215233333338,
+        "source": "timesampler"
+      },
+      {
+        "at": 133.20215233333326,
+        "source": "leak"
+      },
+      {
+        "at": 133.84215233333336,
+        "source": "vhs"
+      },
+      {
+        "at": 134.1434856666667,
+        "source": "transition"
+      },
+      {
+        "at": 134.8021523333334,
+        "source": "mirror"
+      },
+      {
+        "at": 135.10348566666673,
+        "source": "orbit"
+      },
+      {
+        "at": 135.7434856666666,
+        "source": "focus"
+      },
+      {
+        "at": 136.07148566666658,
+        "source": "transition"
+      },
+      {
+        "at": 136.70348566666664,
+        "source": "speedramp"
+      },
+      {
+        "at": 137.02348566666657,
+        "source": "tapdelay"
+      },
+      {
+        "at": 137.69281900000007,
+        "source": "speedramp"
+      },
+      {
+        "at": 137.99148566666665,
+        "source": "timesampler"
+      },
+      {
+        "at": 138.6234856666667,
+        "source": "leak"
+      },
+      {
+        "at": 138.94348566666665,
+        "source": "timesampler"
+      },
+      {
+        "at": 139.60215233333335,
+        "source": "bulge"
+      },
+      {
+        "at": 139.90348566666668,
+        "source": "transition"
+      },
+      {
+        "at": 140.54348566666678,
+        "source": "orbit"
+      },
+      {
+        "at": 140.87148566666676,
+        "source": "tapdelay"
+      },
+      {
+        "at": 141.5034856666666,
+        "source": "timesampler"
+      },
+      {
+        "at": 141.84215233333336,
+        "source": "mirror"
+      },
+      {
+        "at": 142.47148566666667,
+        "source": "tapdelay"
+      },
+      {
+        "at": 142.7914856666666,
+        "source": "bulge"
+      },
+      {
+        "at": 143.42348566666666,
+        "source": "focus"
+      },
+      {
+        "at": 143.75148566666664,
+        "source": "lens"
+      },
+      {
+        "at": 144.39148566666674,
+        "source": "orbit"
+      },
+      {
+        "at": 144.70348566666664,
+        "source": "transition"
+      },
+      {
+        "at": 145.34348566666674,
+        "source": "vhs"
+      },
+      {
+        "at": 145.6714856666667,
+        "source": "lens"
+      },
+      {
+        "at": 146.30348566666677,
+        "source": "orbit"
+      },
+      {
+        "at": 146.6234856666667,
+        "source": "vhs"
+      },
+      {
+        "at": 147.29281899999998,
+        "source": "mirror"
+      },
+      {
+        "at": 147.59148566666678,
+        "source": "vhs"
+      },
+      {
+        "at": 148.24215233333345,
+        "source": "leak"
+      },
+      {
+        "at": 148.5514856666666,
+        "source": "punch"
+      },
+      {
+        "at": 149.1914856666667,
+        "source": "speedramp"
+      },
+      {
+        "at": 149.52215233333342,
+        "source": "tapdelay"
+      },
+      {
+        "at": 150.15148566666673,
+        "source": "transition"
+      },
+      {
+        "at": 150.47148566666667,
+        "source": "speedramp"
+      },
+      {
+        "at": 151.1434856666667,
+        "source": "focus"
+      },
+      {
+        "at": 151.44215233333327,
+        "source": "lens"
+      },
+      {
+        "at": 152.07148566666658,
+        "source": "mirror"
+      },
+      {
+        "at": 152.39148566666674,
+        "source": "punch"
+      },
+      {
+        "at": 153.0421523333334,
+        "source": "orbit"
+      },
+      {
+        "at": 153.3728189999999,
+        "source": "tapdelay"
+      },
+      {
+        "at": 154.00215233333344,
+        "source": "leak"
+      },
+      {
+        "at": 154.32215233333338,
+        "source": "transition"
+      },
+      {
+        "at": 154.95415233333344,
+        "source": "tapdelay"
+      },
+      {
+        "at": 155.29281899999998,
+        "source": "vhs"
+      },
+      {
+        "at": 155.9221523333333,
+        "source": "lens"
+      },
+      {
+        "at": 156.24215233333345,
+        "source": "transition"
+      },
+      {
+        "at": 156.87148566666676,
+        "source": "focus"
+      },
+      {
+        "at": 157.20748566666677,
+        "source": "leak"
+      },
+      {
+        "at": 157.84215233333336,
+        "source": "orbit"
+      },
+      {
+        "at": 158.15148566666673,
+        "source": "speedramp"
+      },
+      {
+        "at": 158.7914856666666,
+        "source": "vhs"
+      },
+      {
+        "at": 159.12215233333333,
+        "source": "orbit"
+      },
+      {
+        "at": 159.76215233333343,
+        "source": "mirror"
+      },
+      {
+        "at": 160.07148566666658,
+        "source": "punch"
+      },
+      {
+        "at": 160.72215233333324,
+        "source": "speedramp"
+      },
+      {
+        "at": 161.05281899999997,
+        "source": "bulge"
+      },
+      {
+        "at": 161.6714856666667,
+        "source": "orbit"
+      },
+      {
+        "at": 161.99148566666665,
+        "source": "focus"
+      },
+      {
+        "at": 162.6528190000001,
+        "source": "speedramp"
+      },
+      {
+        "at": 162.95681899999997,
+        "source": "lens"
+      },
+      {
+        "at": 163.59148566666678,
+        "source": "bulge"
+      },
+      {
+        "at": 163.9221523333333,
+        "source": "focus"
+      },
+      {
+        "at": 164.5514856666666,
+        "source": "mirror"
+      },
+      {
+        "at": 164.89281900000012,
+        "source": "tapdelay"
+      },
+      {
+        "at": 165.52215233333342,
+        "source": "punch"
+      },
+      {
+        "at": 165.84215233333336,
+        "source": "focus"
+      },
+      {
+        "at": 166.49281900000003,
+        "source": "orbit"
+      },
+      {
+        "at": 166.7914856666666,
+        "source": "vhs"
+      },
+      {
+        "at": 167.46348566666663,
+        "source": "speedramp"
+      },
+      {
+        "at": 167.75148566666664,
+        "source": "lens"
+      },
+      {
+        "at": 168.39148566666674,
+        "source": "transition"
+      },
+      {
+        "at": 168.71148566666668,
+        "source": "mirror"
+      },
+      {
+        "at": 169.3541523333333,
+        "source": "speedramp"
+      },
+      {
+        "at": 169.69281900000007,
+        "source": "leak"
+      },
+      {
+        "at": 169.99148566666665,
+        "source": "lens"
+      },
+      {
+        "at": 170.72215233333324,
+        "source": "speedramp"
+      },
+      {
+        "at": 171.44215233333327,
+        "source": "punch"
+      },
+      {
+        "at": 172.1914856666667,
+        "source": "bulge"
+      },
+      {
+        "at": 172.89281900000012,
+        "source": "timesampler"
+      },
+      {
+        "at": 173.60215233333335,
+        "source": "orbit"
+      },
+      {
+        "at": 174.32215233333338,
+        "source": "lens"
+      },
+      {
+        "at": 175.05281899999997,
+        "source": "leak"
+      },
+      {
+        "at": 175.7914856666666,
+        "source": "transition"
+      },
+      {
+        "at": 176.49281900000003,
+        "source": "mirror"
+      },
+      {
+        "at": 177.20215233333326,
+        "source": "bulge"
+      },
+      {
+        "at": 177.9221523333333,
+        "source": "punch"
+      },
+      {
+        "at": 178.6528190000001,
+        "source": "transition"
+      },
+      {
+        "at": 179.3728189999999,
+        "source": "vhs"
+      },
+      {
+        "at": 180.10348566666673,
+        "source": "focus"
+      },
+      {
+        "at": 180.80481899999992,
+        "source": "vhs"
+      },
+      {
+        "at": 181.54348566666678,
+        "source": "tapdelay"
+      },
+      {
+        "at": 182.24215233333345,
+        "source": "punch"
+      },
+      {
+        "at": 0.7253333333333103,
+        "source": "mirror"
+      },
+      {
+        "at": 1.4800000000000182,
+        "source": "leak"
+      },
+      {
+        "at": 2.1813333333334413,
+        "source": "bulge"
+      },
+      {
+        "at": 2.9093333333332794,
+        "source": "focus"
+      },
+      {
+        "at": 3.6106666666667024,
+        "source": "orbit"
+      },
+      {
+        "at": 4.33066666666673,
+        "source": "speedramp"
+      },
+      {
+        "at": 5.061333333333323,
+        "source": "focus"
+      },
+      {
+        "at": 5.7893333333333885,
+        "source": "transition"
+      },
+      {
+        "at": 6.490666666666584,
+        "source": "punch"
+      },
+      {
+        "at": 7.2106666666666115,
+        "source": "leak"
+      },
+      {
+        "at": 7.941333333333432,
+        "source": "transition"
+      },
+      {
+        "at": 8.680000000000064,
+        "source": "bulge"
+      },
+      {
+        "at": 9.38133333333326,
+        "source": "leak"
+      },
+      {
+        "at": 10.09066666666672,
+        "source": "orbit"
+      },
+      {
+        "at": 10.829333333333352,
+        "source": "vhs"
+      },
+      {
+        "at": 11.530666666666775,
+        "source": "punch"
+      },
+      {
+        "at": 12.261333333333369,
+        "source": "transition"
+      },
+      {
+        "at": 12.981333333333396,
+        "source": "speedramp"
+      },
+      {
+        "at": 13.69066666666663,
+        "source": "punch"
+      },
+      {
+        "at": 14.410666666666657,
+        "source": "bulge"
+      },
+      {
+        "at": 15.130666666666684,
+        "source": "lens"
+      },
+      {
+        "at": 15.861333333333278,
+        "source": "tapdelay"
+      },
+      {
+        "at": 16.581333333333305,
+        "source": "focus"
+      },
+      {
+        "at": 17.290666666666766,
+        "source": "tapdelay"
+      },
+      {
+        "at": 18.010666666666793,
+        "source": "vhs"
+      },
+      {
+        "at": 18.730666666666593,
+        "source": "transition"
+      },
+      {
+        "at": 19.461333333333414,
+        "source": "timesampler"
+      },
+      {
+        "at": 20.18133333333344,
+        "source": "mirror"
+      },
+      {
+        "at": 20.890666666666675,
+        "source": "tapdelay"
+      },
+      {
+        "at": 21.610666666666702,
+        "source": "orbit"
+      },
+      {
+        "at": 22.33066666666673,
+        "source": "mirror"
+      },
+      {
+        "at": 23.061333333333323,
+        "source": "tapdelay"
+      },
+      {
+        "at": 23.78133333333335,
+        "source": "transition"
+      },
+      {
+        "at": 24.490666666666584,
+        "source": "orbit"
+      },
+      {
+        "at": 25.21066666666661,
+        "source": "lens"
+      },
+      {
+        "at": 25.93066666666664,
+        "source": "orbit"
+      },
+      {
+        "at": 26.66133333333346,
+        "source": "timesampler"
+      },
+      {
+        "at": 27.38133333333326,
+        "source": "punch"
+      },
+      {
+        "at": 28.109333333333325,
+        "source": "bulge"
+      },
+      {
+        "at": 28.810666666666748,
+        "source": "vhs"
+      },
+      {
+        "at": 29.530666666666775,
+        "source": "tapdelay"
+      },
+      {
+        "at": 30.26133333333337,
+        "source": "punch"
+      },
+      {
+        "at": 30.981333333333396,
+        "source": "bulge"
+      },
+      {
+        "at": 31.69066666666663,
+        "source": "lens"
+      },
+      {
+        "at": 32.41066666666666,
+        "source": "bulge"
+      },
+      {
+        "at": 33.130666666666684,
+        "source": "speedramp"
+      },
+      {
+        "at": 33.88000000000011,
+        "source": "bulge"
+      },
+      {
+        "at": 34.581333333333305,
+        "source": "speedramp"
+      },
+      {
+        "at": 35.30933333333337,
+        "source": "vhs"
+      },
+      {
+        "at": 36.0293333333334,
+        "source": "punch"
+      },
+      {
+        "at": 36.74133333333339,
+        "source": "vhs"
+      },
+      {
+        "at": 37.461333333333414,
+        "source": "transition"
+      },
+      {
+        "at": 38.18133333333344,
+        "source": "punch"
+      },
+      {
+        "at": 38.90933333333328,
+        "source": "speedramp"
+      },
+      {
+        "at": 39.62933333333331,
+        "source": "tapdelay"
+      },
+      {
+        "at": 40.36000000000013,
+        "source": "transition"
+      },
+      {
+        "at": 41.06133333333332,
+        "source": "mirror"
+      },
+      {
+        "at": 41.78133333333335,
+        "source": "orbit"
+      },
+      {
+        "at": 42.496000000000095,
+        "source": "bulge"
+      },
+      {
+        "at": 43.250666666666575,
+        "source": "timesampler"
+      },
+      {
+        "at": 43.94133333333343,
+        "source": "punch"
+      },
+      {
+        "at": 44.66133333333346,
+        "source": "tapdelay"
+      },
+      {
+        "at": 45.40000000000009,
+        "source": "mirror"
+      },
+      {
+        "at": 46.130666666666684,
+        "source": "vhs"
+      },
+      {
+        "at": 46.82933333333335,
+        "source": "lens"
+      },
+      {
+        "at": 47.559999999999945,
+        "source": "bulge"
+      },
+      {
+        "at": 48.26133333333337,
+        "source": "vhs"
+      }
+    ]
+  },
+  "slots": [
+    {
+      "slot": "top-0",
+      "module": "transition",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2857,
+      "maxGapMs": 100.10000000009313,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-1",
+      "module": "speedramp",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2802,
+      "maxGapMs": 133.19999999995343,
+      "trailingGapMs": 39.70000000298023,
+      "gaps": [],
+      "droppedFrames": 13,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250
+    },
+    {
+      "slot": "top-2",
+      "module": "leak",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2856,
+      "maxGapMs": 183.30000000004657,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [
+        {
+          "gap": 183.30000000004657,
+          "at": 14.581333333333305,
+          "media": 0.041667,
+          "swaps": 3,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-3",
+      "module": "timesampler",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2945,
+      "maxGapMs": 116.69999999995343,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "resident-frame-bank",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-4",
+      "module": "vhs",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2858,
+      "maxGapMs": 150,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-5",
+      "module": "tapdelay",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2857,
+      "maxGapMs": 116.70000000018626,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-0",
+      "module": "orbit",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2856,
+      "maxGapMs": 100.10000000009313,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-1",
+      "module": "focus",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2852,
+      "maxGapMs": 166.70000000018626,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [
+        {
+          "gap": 166.70000000018626,
+          "at": 14.559999999999945,
+          "media": 0.041667,
+          "swaps": 3,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-2",
+      "module": "bulge",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2852,
+      "maxGapMs": 100.10000000009313,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-3",
+      "module": "lens",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2851,
+      "maxGapMs": 150,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-4",
+      "module": "mirror",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2856,
+      "maxGapMs": 100.10000000009313,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-5",
+      "module": "punch",
+      "sameVideo": false,
+      "swaps": 4,
+      "moduleLayoutChanged": false,
+      "callbacks": 2855,
+      "maxGapMs": 100.10000000009313,
+      "trailingGapMs": 23.0000000030268,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    }
+  ],
+  "decoderCount": 12,
+  "timingActive": false,
+  "timingPending": 0,
+  "sampler": {
+    "usedBytes": 319334400,
+    "limit": 8589934592,
+    "assets": [
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 219,
+        "bytes": 122342400,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 9.125,
+        "decoderDisposed": true,
+        "decodedFrames": 219,
+        "uploadedFrames": 219,
+        "loadMs": 819.7000000029802
+      },
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 361,
+        "bytes": 196992000,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 15.041666666666666,
+        "decoderDisposed": true,
+        "decodedFrames": 361,
+        "uploadedFrames": 361,
+        "loadMs": 483.90000000596046
+      }
+    ],
+    "selected": {
+      "slot": "top-3",
+      "pts": 6,
+      "frameId": 28222
+    }
+  },
+  "pass": false
+}

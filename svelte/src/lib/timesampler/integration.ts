@@ -148,6 +148,14 @@ export class LiveTimeSamplerSchedule {
     this.reduction = null;
   }
 
+  /** Read the incoming clip's mapping without consuming live triggers/state. */
+  preview(transport: TransportSample, input: LiveTimeSamplerInput, reset = false): TimeSamplerOutput {
+    const params = timeSamplerParamsFromControls(input.controls, input.sourceDurationSeconds, input.feel);
+    return this.reduction && !reset
+      ? reduceTimeSampler(this.reduction.nextState, transport, [], params).output
+      : createTimeSamplerState(transport, params).output;
+  }
+
   sample(
     transport: TransportSample,
     orderedTransportTriggers: readonly TimeSamplerTriggerEvent[],
@@ -230,6 +238,12 @@ export class LiveScheduleRuntime<T = string> {
 
   constructor(pgmSeed = DEFAULT_PGM_SEED) {
     this.pgmRandomState = pgmSeed >>> 0;
+  }
+
+  previewTimeSamplerSource(sourceDurationSeconds: number, sourceKey = this.timeSamplerInput.sourceKey): TimeSamplerOutput | null {
+    return this.frame ? this.timeSampler.preview(this.frame.transport, {
+      ...this.timeSamplerInput, sourceDurationSeconds, sourceKey
+    }, sourceKey !== this.timeSamplerInput.sourceKey) : null;
   }
 
   configureTimeSampler(input: LiveTimeSamplerInput) {

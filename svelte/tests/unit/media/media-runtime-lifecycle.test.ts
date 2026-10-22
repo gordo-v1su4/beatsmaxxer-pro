@@ -27,6 +27,7 @@ function createHarness(prepareVideo: (id: string, url: string) => Promise<HTMLVi
       generation: 0
     })),
     prewarmCandidate: vi.fn(async () => {}),
+    parkCandidate: vi.fn(async () => {}),
     commitCandidate: vi.fn((candidate) => ({
       video: candidate.video,
       previousReleased: Promise.resolve()
@@ -67,6 +68,55 @@ describe('MediaRuntime clip transactions', () => {
   afterAll(() => {
     create.mockRestore();
     revoke.mockRestore();
+  });
+
+  test('replacing a clip preserves the slot clock instead of marking it free-running again', async () => {
+    const {runtime,pool} = createHarness(async()=>({} as HTMLVideoElement));
+    try {
+      await runtime.registerModuleFileClip('top-1',new File(['first'],'first.mp4'));
+      expect(pool.markFreeRun).toHaveBeenCalledOnce();
+      pool.markFreeRun.mockClear();
+      await runtime.registerModuleFileClip('top-1',new File(['next'],'next.mp4'));
+      expect(pool.markFreeRun).not.toHaveBeenCalled();
+      expect(pool.commitCandidate).toHaveBeenCalledTimes(2);
+    } finally { await runtime.dispose(); }
+  });
+
+  test('a prepared scene transfers its staged URL and decoder without decoding twice', async () => {
+    const { runtime, pool, published } = createHarness(async () => ({} as HTMLVideoElement));
+    const old = new File(['old'], 'old.mp4'), next = new File(['next'], 'next.mp4');
+    try {
+      await runtime.registerModuleFileClip('top-0', old);
+      runtime.prepareUpcomingScene('chorus', [{ slotId: 'top-0', clip: { name: next.name, url: '', file: next } }], 40);
+      await vi.waitFor(() => expect(runtime.upcomingSceneSnapshot.ready).toBe(1));
+      expect(published).toHaveLength(1);
+      expect(runtime.clipRegistry.get('top-0')?.file).toBe(old);
+      expect(pool.prepare).toHaveBeenCalledTimes(2);
+      const prepared = await pool.prepare.mock.results[1].value;
+      await expect(runtime.registerModuleFileClip('top-0', next)).resolves.toMatchObject({ status: 'success' });
+      expect(pool.prepare).toHaveBeenCalledTimes(2);
+      expect(pool.commitCandidate.mock.calls[1][0]).toBe(prepared);
+      await runtime.clearUpcomingScene();
+      expect(runtime.clipRegistry.get('top-0')?.file).toBe(next);
+      expect(revoke).not.toHaveBeenCalledWith(prepared.url);
+    } finally { await runtime.dispose(); }
+  });
+
+  test('superseding a claimed scene releases its decoder and staged URL', async () => {
+    const { runtime, pool } = createHarness(async () => ({} as HTMLVideoElement));
+    const next = new File(['next'], 'next.mp4'), manual = new File(['manual'], 'manual.mp4');
+    try {
+      runtime.prepareUpcomingScene('chorus', [{ slotId: 'top-0', clip: { name: next.name, url: '', file: next } }], 40);
+      await vi.waitFor(() => expect(runtime.upcomingSceneSnapshot.ready).toBe(1));
+      const prepared = await pool.prepare.mock.results[0].value;
+      const recalled = runtime.registerModuleFileClip('top-0', next);
+      const replacement = runtime.registerModuleFileClip('top-0', manual);
+      await expect(recalled).resolves.toMatchObject({ status: 'superseded' });
+      await expect(replacement).resolves.toMatchObject({ status: 'success' });
+      expect(pool.discardCandidate).toHaveBeenCalledWith(prepared);
+      expect(revoke).toHaveBeenCalledWith(prepared.url);
+      expect(runtime.clipRegistry.get('top-0')?.file).toBe(manual);
+    } finally { await runtime.dispose(); }
   });
 
   test('rejects a verified RIFE replacement in Stutter without decoding or replacing the original', async () => {

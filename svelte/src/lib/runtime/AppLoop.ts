@@ -1,4 +1,4 @@
-import { resolveSectionBounds, sectionIndexAtSeconds } from '$lib/arrangement/sectionBounds';
+import { resolveSectionBounds, sectionIndexAtSeconds, upcomingSectionBoundaries } from '$lib/arrangement/sectionBounds';
 import { cutStepAllowedInLoop } from '$lib/arrangement/sequencerLoopGate';
 import { secondsToCutStep, stepSeconds } from '$lib/arrangement/timelineScale';
 import { activeTakeCutAt } from '$lib/arrangement/playbackCut';
@@ -6,11 +6,14 @@ import { arrangementMode, arrangementOverridden, recordOverdub } from '$lib/arra
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
+import { performTimeSamplerFrames, type SamplerFrameSource } from './PerformTimeSamplerFrames';
+import { timingSettings, timingCacheCapacity } from '$lib/stores/timing';
 import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { getVideoSourcePort } from '$lib/platform/videoSource';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
+import { primeSceneRecallRuntime, sceneChanges } from '$lib/arrangement/sectionScenes';
 import {
   advanceSpeedRampSource,
   type SpeedRampSourceState
@@ -38,6 +41,8 @@ import {
   activeSectionIndex,
   sectionStarts,
   arrangement,
+  autoBank,
+  autoClips,
   arrangementLoopRegion,
   arrangementTotalSteps,
   enterSection,
@@ -326,6 +331,32 @@ export function timeSamplerVideoTarget(
   return frame.playing ? sourceTimestampSeconds : frame.positionSeconds;
 }
 
+/** Prepare only the next changed bank, eight beats before its musical boundary. */
+function prepareUpcomingScene(frame: TimelineFrame, songDuration: number) {
+  if (!frame.playing) { void mediaRuntime.clearUpcomingScene(); return; }
+  const sections = get(arrangement), replay = get(arrangementMode) === 'play';
+  const bounds = resolveSectionBounds(sections, get(sectionStarts), get(analysisBeatGrid), frame.bpm);
+  const layers = get(videoLayers), loop = get(arrangementLoopRegion);
+  for (const { index, at, positionSeconds } of upcomingSectionBoundaries(bounds, frame.positionSeconds, loop, songDuration)) {
+    const section = sections[index];
+    const scene = replay ? section.deckSnapshot?.scene ?? section.scene : section.scene;
+    if (!scene || (!replay && !get(autoClips) && !section.clipGroupId)) continue;
+    const changes = sceneChanges(scene, layers);
+    if (!changes.length) continue;
+    if (at - frame.positionSeconds > 8 * (frame.beatIntervalSeconds || 60 / frame.bpm)) break;
+    const bank = replay ? section.deckSnapshot?.bank ?? section.bank
+      : get(autoBank) ? section.bank : { top: get(rackTop), bottom: get(rackBottom) };
+    const nextControlled = new Set<string>(currentRackAssignments(bank.top, bank.bottom)
+      .filter(a => SYNC_MODULES.has(a.moduleId)).map(a => a.slotId));
+    // TimeSampler already has future GPU banks. SpeedRamp needs its live
+    // mapped clock; neither may be parked using the ordinary source clock.
+    const ordinary = changes.filter(c => !nextControlled.has(c.slotId)).map(c => ({ ...c, positionSeconds }));
+    mediaRuntime.prepareUpcomingScene(`${frame.generation}:${section.id}:${replay}:${positionSeconds}`, ordinary, at);
+    return;
+  }
+  void mediaRuntime.clearUpcomingScene();
+}
+
 /**
  * Track which section the playhead is in — and, when auto-bank is on, rebuild
  * the rack from that section's bank on entry, so the chorus plays through
@@ -482,11 +513,34 @@ function syncControlledVideos(
 ) {
   const live = audioEngine.getLiveScheduleFrame();
   const timeSamplerSlot = assignments.find(({ moduleId }) => moduleId === 'timesampler')?.slotId;
+  if (timeSamplerSlot) {
+    const sources:SamplerFrameSource[]=[];
+    const current=get(videoLayers)[timeSamplerSlot];
+    if(current)sources.push(current);
+    const replay=get(arrangementMode)==='play';
+    for(const section of get(arrangement)) {
+      const bank=replay?section.deckSnapshot?.bank??section.bank:section.bank;
+      const top=bank?.top.indexOf('timesampler')??-1, bottom=bank?.bottom.indexOf('timesampler')??-1;
+      const slot=top>=0?`top-${top}`:bottom>=0?`bottom-${bottom}`:null;
+      const scene=replay?section.deckSnapshot?.scene??section.scene:section.scene??section.deckSnapshot?.scene;
+      const source=slot?scene?.slots[slot]:null;
+      if(source)sources.push(source);
+    }
+    const settings=get(timingSettings);
+    performTimeSamplerFrames.update(webGpuEngine.getDevice(),sources,settings.preloadHeight,
+      settings.budgetGiB*2**30-get(timingCacheCapacity).usedBytes);
+  } else if(performTimeSamplerFrames.active)performTimeSamplerFrames.dispose();
   if (timeSamplerSlot && live?.timeSampler) {
     const ts = live.timeSampler;
-    videoPool.syncControlledModule(
+    const seconds=timeSamplerVideoTarget(frame,ts.sourceTimestampSeconds);
+    const resident=performTimeSamplerFrames.select(timeSamplerSlot,get(videoLayers)[timeSamplerSlot]??null,seconds);
+    if(resident) {
+      const video=videoPool.get(timeSamplerSlot);
+      if(video&&!video.paused)video.pause();
+    }
+    else videoPool.syncControlledModule(
       timeSamplerSlot,
-      timeSamplerVideoTarget(frame, ts.sourceTimestampSeconds),
+      seconds,
       ts.targetPlaybackRate,
       frame,
       ts.jumpGeneration
@@ -579,7 +633,9 @@ function configureTimeSampler() {
   const tsDuration = timeSamplerSlot ? videoPool.getDuration(timeSamplerSlot) || 120 : 120;
   audioEngine.configureTimeSampler({
     sourceDurationSeconds: tsDuration,
-    sourceKey: timeSamplerSlot ?? 'timesampler-off-rack',
+    sourceKey: timeSamplerSlot
+      ? `${timeSamplerSlot}:${videoPool.get(timeSamplerSlot)?.currentSrc || videoPool.get(timeSamplerSlot)?.src || ''}`
+      : 'timesampler-off-rack',
     triggerKey: tsMidi?.triggerKey ?? 'audio',
     controls: {
       mode: tsParams.mode,
@@ -599,6 +655,21 @@ function configureTimeSampler() {
 
 export function startAppLoop() {
   if (running) return;
+  primeSceneRecallRuntime(mediaRuntime);
+  webGpuEngine.setOwnedVideoFrames(slot=>performTimeSamplerFrames.textureFor(slot,get(videoLayers)[slot]??null));
+  videoPool.setCandidateClockResolver((slot, duration, frame, source) => {
+    if (get(playbackWorkspace) !== 'perform') return null;
+    if (currentRackSlotForModule('speedramp') === slot) {
+      const mapped = advanceSpeedRampSource(speedRampSourceState, frame, get(moduleParams).speedramp ?? {}, get(bypassed).speedramp === true);
+      return { seconds:mapped.targetSeconds, rate:mapped.rate, controlGeneration:0 };
+    }
+    if (currentRackSlotForModule('timesampler') !== slot) return { seconds:frame.positionSeconds, rate:frame.playbackRate };
+    const preview = audioEngine.previewTimeSamplerSource(duration, `${slot}:${source}`);
+    return preview ? {
+      seconds:timeSamplerVideoTarget(frame, preview.sourceTimestampSeconds),
+      rate:preview.targetPlaybackRate, controlGeneration:preview.jumpGeneration
+    } : null;
+  });
   // Defensive restart cleanup: a prior partial teardown must not leave a
   // renderer subscriber registered alongside the new one.
   unsubscribeTimeline?.();
@@ -634,8 +705,10 @@ export function startAppLoop() {
     webGpuEngine.primeVideoFrames(RACK_SLOT_IDS);
     const timing = get(playbackWorkspace) === 'timing';
     timingRuntime.setActive(timing, webGpuEngine.getDevice());
+    if(timing && performTimeSamplerFrames.active)performTimeSamplerFrames.dispose();
     webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);
     if (timing) {
+      void mediaRuntime.clearUpcomingScene();
       // Timing owns each source: ramps use resident frames, while originals
       // keep normal browser decoding and one reusable video texture.
       if(frame.playing)runArrangement(frame);
@@ -707,6 +780,10 @@ export function startAppLoop() {
     tickArrangementRecorder(frame, moduleIds, triggerAges);
 
     runSequencer(frame);
+    // A bank may move a controlled effect to another slot. Apply the new
+    // ownership before asynchronous clip transactions warm their candidates.
+    syncVideoModes(currentRackAssignments(get(rackTop), get(rackBottom)));
+    prepareUpcomingScene(frame, state.duration);
 
     const queued = get(queuedPgmSource);
     const queuedSlot = queued ? currentRackSlotForModule(queued) : null;
@@ -739,7 +816,11 @@ export function startAppLoop() {
 }
 
 export function stopAppLoop() {
+  void mediaRuntime.clearUpcomingScene();
   running = false;
+  videoPool.setCandidateClockResolver(null);
+  webGpuEngine.setOwnedVideoFrames(null);
+  performTimeSamplerFrames.dispose();
   timingRuntime.dispose();
   webGpuEngine.setTimingTextures(null);
   stopRenderBudget();

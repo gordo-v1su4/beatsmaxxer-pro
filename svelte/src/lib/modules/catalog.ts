@@ -235,20 +235,20 @@ const defs: ModuleDefinition[] = [
     midiControl: 'modulation',
     // amount is signed around 50 now: below pinches, above bulges. 50 is
     // neutral, so the default sits slightly bulged rather than at one extreme.
-    params: { amount: 65, center: 50, falloff: 55, beat: 0, mix: 75 }
+    params: { amount: 65, center: 50, falloff: 55, beat: 0, mix: 100 }
   },
   {
     id: 'vhs',
     name: 'VHS / CAM',
     shortName: 'TAPE',
     accentColor: ACCENTS.vhs,
-    row: 'bottom',
+    row: 'both',
     category: 'film',
     compact: true,
     shaderKey: 'vhs',
     description: 'Tape wave, tracking, chroma + beat glitch',
     midiControl: 'modulation',
-    params: { tracking: 35, chroma: 45, noise: 30, beat: 40, mix: 60 }
+    params: { tracking: 35, chroma: 45, noise: 30, beat: 40, mix: 100 }
   },
   {
     id: 'prism',
@@ -307,9 +307,9 @@ export const MODULE_CATALOG = new Map<string, ModuleDefinition>(
   defs.map((d) => [d.id, d])
 );
 
-// Both rows ship with six usable modules, including Motion Streak and Rack Focus.
-export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'leak', 'streak'];
-export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'shake', 'orbit', 'prism', 'focus'];
+// The showcase favours visible timing, lens and camera moves over finishing looks.
+export const DEFAULT_RACK_TOP = ['transition', 'speedramp', 'tapdelay', 'timesampler', 'leak', 'vhs'];
+export const DEFAULT_RACK_BOTTOM = ['punch', 'mirror', 'bulge', 'orbit', 'lens', 'focus'];
 
 export function getModuleDef(id: string): ModuleDefinition | undefined {
   return MODULE_CATALOG.get(id);

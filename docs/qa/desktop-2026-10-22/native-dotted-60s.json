@@ -1,0 +1,585 @@
+{
+  "durationMs": 60000,
+  "frames": 2302,
+  "maxRafGapMs": 66.69999999995343,
+  "native": true,
+  "pgm": {
+    "initial": {
+      "order": "random",
+      "cadence": "Auto-switch to a random channel on the next 1BT DOT boundary",
+      "mode": "live"
+    },
+    "final": {
+      "order": "random",
+      "cadence": "Auto-switch to a random channel on the next 1BT DOT boundary",
+      "mode": "live"
+    },
+    "selections": [
+      {
+        "at": 67.70933333333346,
+        "source": "focus"
+      },
+      {
+        "at": 68.42933333333326,
+        "source": "vhs"
+      },
+      {
+        "at": 69.16000000000008,
+        "source": "mirror"
+      },
+      {
+        "at": 69.88000000000011,
+        "source": "vhs"
+      },
+      {
+        "at": 70.59999999999991,
+        "source": "speedramp"
+      },
+      {
+        "at": 71.33066666666673,
+        "source": "tapdelay"
+      },
+      {
+        "at": 72.05066666666676,
+        "source": "transition"
+      },
+      {
+        "at": 72.74933333333342,
+        "source": "mirror"
+      },
+      {
+        "at": 73.48000000000002,
+        "source": "vhs"
+      },
+      {
+        "at": 74.20000000000005,
+        "source": "orbit"
+      },
+      {
+        "at": 74.93066666666664,
+        "source": "vhs"
+      },
+      {
+        "at": 75.6293333333333,
+        "source": "punch"
+      },
+      {
+        "at": 76.36000000000013,
+        "source": "bulge"
+      },
+      {
+        "at": 77.10133333333329,
+        "source": "transition"
+      },
+      {
+        "at": 77.79999999999995,
+        "source": "orbit"
+      },
+      {
+        "at": 78.53066666666678,
+        "source": "mirror"
+      },
+      {
+        "at": 79.25066666666658,
+        "source": "transition"
+      },
+      {
+        "at": 79.9813333333334,
+        "source": "lens"
+      },
+      {
+        "at": 80.68000000000006,
+        "source": "vhs"
+      },
+      {
+        "at": 81.40000000000009,
+        "source": "punch"
+      },
+      {
+        "at": 82.14933333333329,
+        "source": "timesampler"
+      },
+      {
+        "at": 82.85066666666671,
+        "source": "lens"
+      },
+      {
+        "at": 83.5813333333333,
+        "source": "speedramp"
+      },
+      {
+        "at": 84.27999999999997,
+        "source": "timesampler"
+      },
+      {
+        "at": 85,
+        "source": "tapdelay"
+      },
+      {
+        "at": 85.74933333333342,
+        "source": "mirror"
+      },
+      {
+        "at": 86.45066666666662,
+        "source": "tapdelay"
+      },
+      {
+        "at": 87.16000000000008,
+        "source": "transition"
+      },
+      {
+        "at": 87.90133333333324,
+        "source": "speedramp"
+      },
+      {
+        "at": 88.59999999999991,
+        "source": "lens"
+      },
+      {
+        "at": 89.33066666666673,
+        "source": "tapdelay"
+      },
+      {
+        "at": 90.06133333333332,
+        "source": "bulge"
+      },
+      {
+        "at": 90.75999999999999,
+        "source": "mirror"
+      },
+      {
+        "at": 91.50133333333338,
+        "source": "leak"
+      },
+      {
+        "at": 92.20000000000005,
+        "source": "bulge"
+      },
+      {
+        "at": 92.93066666666664,
+        "source": "punch"
+      },
+      {
+        "at": 93.65066666666667,
+        "source": "tapdelay"
+      },
+      {
+        "at": 94.38133333333326,
+        "source": "focus"
+      },
+      {
+        "at": 95.07999999999993,
+        "source": "vhs"
+      },
+      {
+        "at": 95.81333333333328,
+        "source": "punch"
+      },
+      {
+        "at": 96.53066666666678,
+        "source": "orbit"
+      },
+      {
+        "at": 97.26666666666665,
+        "source": "speedramp"
+      },
+      {
+        "at": 97.96533333333332,
+        "source": "timesampler"
+      },
+      {
+        "at": 98.70133333333342,
+        "source": "leak"
+      },
+      {
+        "at": 99.42933333333326,
+        "source": "bulge"
+      },
+      {
+        "at": 100.13066666666668,
+        "source": "vhs"
+      },
+      {
+        "at": 100.86933333333332,
+        "source": "focus"
+      },
+      {
+        "at": 101.56799999999998,
+        "source": "bulge"
+      },
+      {
+        "at": 102.30133333333333,
+        "source": "timesampler"
+      },
+      {
+        "at": 103.0186666666666,
+        "source": "focus"
+      },
+      {
+        "at": 103.74933333333342,
+        "source": "bulge"
+      },
+      {
+        "at": 104.45066666666662,
+        "source": "focus"
+      },
+      {
+        "at": 105.20000000000005,
+        "source": "vhs"
+      },
+      {
+        "at": 105.90133333333324,
+        "source": "bulge"
+      },
+      {
+        "at": 106.62133333333327,
+        "source": "lens"
+      },
+      {
+        "at": 107.34933333333333,
+        "source": "punch"
+      },
+      {
+        "at": 108.05066666666676,
+        "source": "speedramp"
+      },
+      {
+        "at": 108.77066666666678,
+        "source": "focus"
+      },
+      {
+        "at": 109.50133333333338,
+        "source": "transition"
+      },
+      {
+        "at": 110.21333333333337,
+        "source": "tapdelay"
+      },
+      {
+        "at": 110.93066666666664,
+        "source": "lens"
+      },
+      {
+        "at": 111.66933333333327,
+        "source": "mirror"
+      },
+      {
+        "at": 112.40000000000009,
+        "source": "focus"
+      },
+      {
+        "at": 113.10133333333329,
+        "source": "punch"
+      },
+      {
+        "at": 113.82933333333335,
+        "source": "bulge"
+      },
+      {
+        "at": 114.53066666666678,
+        "source": "transition"
+      },
+      {
+        "at": 115.2693333333334,
+        "source": "punch"
+      },
+      {
+        "at": 115.9706666666666,
+        "source": "mirror"
+      },
+      {
+        "at": 116.72000000000003,
+        "source": "punch"
+      },
+      {
+        "at": 117.42133333333345,
+        "source": "transition"
+      },
+      {
+        "at": 118.14933333333329,
+        "source": "focus"
+      },
+      {
+        "at": 118.88000000000011,
+        "source": "lens"
+      },
+      {
+        "at": 119.5813333333333,
+        "source": "transition"
+      },
+      {
+        "at": 120.31999999999994,
+        "source": "speedramp"
+      },
+      {
+        "at": 121.02133333333336,
+        "source": "transition"
+      },
+      {
+        "at": 121.74933333333342,
+        "source": "punch"
+      },
+      {
+        "at": 122.46933333333345,
+        "source": "focus"
+      },
+      {
+        "at": 123.20000000000005,
+        "source": "lens"
+      },
+      {
+        "at": 123.92000000000007,
+        "source": "speedramp"
+      },
+      {
+        "at": 124.62133333333327,
+        "source": "vhs"
+      },
+      {
+        "at": 125.34933333333333,
+        "source": "mirror"
+      },
+      {
+        "at": 126.06933333333336,
+        "source": "leak"
+      },
+      {
+        "at": 126.79999999999995,
+        "source": "tapdelay"
+      },
+      {
+        "at": 127.50133333333338,
+        "source": "lens"
+      }
+    ]
+  },
+  "slots": [
+    {
+      "slot": "top-0",
+      "module": "transition",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1431,
+      "maxGapMs": 100,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 2,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-1",
+      "module": "speedramp",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1367,
+      "maxGapMs": 116.70000000018626,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 65,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250
+    },
+    {
+      "slot": "top-2",
+      "module": "leak",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1431,
+      "maxGapMs": 83.30000000004657,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-3",
+      "module": "timesampler",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1459,
+      "maxGapMs": 100,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "resident-frame-bank",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-4",
+      "module": "vhs",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1429,
+      "maxGapMs": 100,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-5",
+      "module": "tapdelay",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1431,
+      "maxGapMs": 100,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-0",
+      "module": "orbit",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1433,
+      "maxGapMs": 83.39999999990687,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-1",
+      "module": "focus",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1432,
+      "maxGapMs": 83.30000000004657,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-2",
+      "module": "bulge",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1429,
+      "maxGapMs": 100,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 2,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-3",
+      "module": "lens",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1430,
+      "maxGapMs": 100,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-4",
+      "module": "mirror",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1431,
+      "maxGapMs": 133.30000000004657,
+      "trailingGapMs": 11.500000011874363,
+      "gaps": [],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-5",
+      "module": "punch",
+      "sameVideo": false,
+      "swaps": 2,
+      "moduleLayoutChanged": false,
+      "callbacks": 1432,
+      "maxGapMs": 83.39999999990687,
+      "trailingGapMs": 28.100000011967495,
+      "gaps": [],
+      "droppedFrames": 2,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    }
+  ],
+  "decoderCount": 12,
+  "timingActive": false,
+  "timingPending": 0,
+  "sampler": {
+    "usedBytes": 319334400,
+    "limit": 8589934592,
+    "assets": [
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 219,
+        "bytes": 122342400,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 9.125,
+        "decoderDisposed": true,
+        "decodedFrames": 219,
+        "uploadedFrames": 219,
+        "loadMs": 819.7000000029802
+      },
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 361,
+        "bytes": 196992000,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 15.041666666666666,
+        "decoderDisposed": true,
+        "decodedFrames": 361,
+        "uploadedFrames": 361,
+        "loadMs": 483.90000000596046
+      }
+    ],
+    "selected": {
+      "slot": "top-3",
+      "pts": 5.625,
+      "frameId": 30148
+    }
+  },
+  "pass": true
+}

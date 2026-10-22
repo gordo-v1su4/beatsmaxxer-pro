@@ -27,7 +27,7 @@
   import AccessGate from '$lib/components/AccessGate.svelte';
   import PgmRail from '$lib/components/PgmRail.svelte';
   import MainViewer from '$lib/components/MainViewer.svelte';
-  import PerformViewportFit from '$lib/components/PerformViewportFit.svelte';
+  import RackViewportFit from '$lib/components/RackViewportFit.svelte';
   import RackSlot from '$lib/components/RackSlot.svelte';
   import ScrewRail from '$lib/components/rack/ScrewRail.svelte';
   import DragGhost from '$lib/components/DragGhost.svelte';
@@ -396,7 +396,7 @@
 <DragGhost />
 
 <div class="app-shell">
-  <PerformViewportFit active={$viewMode==='perform'} />
+  <RackViewportFit active={$viewMode!=='arrange'} />
   <TopBar
     onRandomize={randomize}
     onClear={clearParams}
