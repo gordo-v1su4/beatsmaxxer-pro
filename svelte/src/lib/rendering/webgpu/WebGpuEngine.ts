@@ -357,58 +357,61 @@ export class WebGpuEngine {
     if (this.modePipelinesPromise) return this.modePipelinesPromise;
     const generation = this.deviceGeneration;
     this.modePipelinesPromise = (async () => {
-      const capabilities = await detectFxCapabilities(device);
-      if (generation !== this.deviceGeneration || this.device !== device) return;
-      this.fxCapabilities = capabilities;
-      this.fxBindGroupLayout = device.createBindGroupLayout({
-        entries: [
-          { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-          { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
-          { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-          { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-          { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-        ]
-      });
-      this.fxIdleBindGroupLayout = capabilities.sharedTextures ? this.fxBindGroupLayout : device.createBindGroupLayout({
-        entries: [
-          { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-          { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-          { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
-          { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
-          { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
-        ]
-      });
-      const cache = new ModePipelineCache(device, {
-        video: this.fxBindGroupLayout,
-        idle: this.fxIdleBindGroupLayout
-      }, capabilities);
-      this.modePipelines = cache;
-      // Wait for every effect, not just the dry pair. Rendering on the dry
-      // fallback meant the first frame — often the only frame while the
-      // transport is stopped — showed the bare test card with no effect, and
-      // nothing repainted it once the real pipeline landed. The builds are async
-      // and parallel (~3s cold), so this costs no GPU-process stall, and the
-      // splash already holds until warmup settles.
-      await cache.warmAll().then(
-        () => {
-          // A device loss mid-build replaces the cache; the stale one's results
-          // belong to a dead device.
-          if (this.modePipelines !== cache) return;
-          const video = cache.isReady('video', 0) ? cache.get('video', 0) : null;
-          const idle = cache.isReady('idle', 0) ? cache.get('idle', 0) : null;
-          if (!video || !idle) {
-            console.error('[webgpu] dry FX pipeline failed to build; the next attach retries');
-            // Drop the memo so the next attach rebuilds instead of awaiting this
-            // settled failure forever.
-            cache.dispose();
-            this.modePipelines = null;
-            this.modePipelinesPromise = null;
-            return;
-          }
+      const detected = await detectFxCapabilities(device);
+      const attempts = detected.immediates || detected.sharedTextures
+        ? [detected, { immediates: false, sharedTextures: false }]
+        : [detected];
+      for (const capabilities of attempts) {
+        if (generation !== this.deviceGeneration || this.device !== device) return;
+        this.fxBindGroupLayout = device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, externalTexture: {} },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+          ]
+        });
+        this.fxIdleBindGroupLayout = capabilities.sharedTextures ? this.fxBindGroupLayout : device.createBindGroupLayout({
+          entries: [
+            { binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: {} },
+            { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: {} },
+            { binding: 4, visibility: GPUShaderStage.FRAGMENT, sampler: {} }
+          ]
+        });
+        const cache = new ModePipelineCache(device, {
+          video: this.fxBindGroupLayout,
+          idle: this.fxIdleBindGroupLayout
+        }, capabilities);
+        this.modePipelines = cache;
+        // Wait for every effect, not just the dry pair. Rendering on the dry
+        // fallback meant the first frame — often the only frame while the
+        // transport is stopped — showed the bare test card with no effect, and
+        // nothing repainted it once the real pipeline landed. The builds are async
+        // and parallel (~3s cold), so this costs no GPU-process stall, and the
+        // splash already holds until warmup settles.
+        await cache.warmAll();
+        // A device loss mid-build replaces the cache; never install stale results.
+        if (this.modePipelines !== cache || generation !== this.deviceGeneration) return;
+        const video = cache.isReady('video', 0) ? cache.get('video', 0) : null;
+        const idle = cache.isReady('idle', 0) ? cache.get('idle', 0) : null;
+        if (cache.readyCount === cache.totalCount && video && idle) {
+          this.fxCapabilities = capabilities;
           this.fxPipeline = video;
           this.fxIdlePipeline = idle;
+          return;
         }
-      );
+        cache.dispose();
+        this.modePipelines = null;
+        if (capabilities.immediates || capabilities.sharedTextures) {
+          console.warn('[webgpu] optimized FX catalog incomplete; retrying the legacy WebGPU paths');
+        } else {
+          console.error('[webgpu] FX catalog failed to build; the next attach retries');
+        }
+      }
+      this.modePipelinesPromise = null;
     })().catch((error) => {
       // A stale device's rejection must not tear down its replacement.
       if (generation === this.deviceGeneration && this.device === device) {

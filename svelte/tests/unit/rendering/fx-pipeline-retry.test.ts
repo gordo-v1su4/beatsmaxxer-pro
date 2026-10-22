@@ -18,9 +18,13 @@ function setup() {
     handleDeviceLost(): void;
     modePipelinesPromise: Promise<void> | null;
     modePipelines: ModePipelineCache | null;
+    fxCapabilities: { immediates: boolean; sharedTextures: boolean };
   };
   vi.mocked(detectFxCapabilities).mockReset().mockResolvedValue({ immediates: false, sharedTextures: false });
   vi.spyOn(ModePipelineCache.prototype, 'warmAll').mockResolvedValue();
+  vi.spyOn(ModePipelineCache.prototype, 'readyCount', 'get').mockImplementation(function (this: ModePipelineCache) {
+    return this.totalCount;
+  });
   vi.spyOn(ModePipelineCache.prototype, 'isReady').mockReturnValue(true);
   vi.spyOn(ModePipelineCache.prototype, 'get').mockReturnValue({} as GPURenderPipeline);
   return { device, engine, internals };
@@ -30,6 +34,36 @@ test('a mounted canvas receives false rather than an unhandled setup rejection',
   const { engine, internals } = setup();
   vi.mocked(detectFxCapabilities).mockRejectedValueOnce(new Error('transient probe failure'));
   await expect(engine.attachCanvas('preview', {} as HTMLCanvasElement)).resolves.toBe(false);
+  expect(internals.modePipelinesPromise).toBeNull();
+});
+
+test('an incomplete optimized catalog falls back to the complete legacy WebGPU catalog', async () => {
+  const { device, internals } = setup();
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.mocked(detectFxCapabilities).mockResolvedValue({ immediates: true, sharedTextures: true });
+  // Reproduce the CI state: 19/20 optimized pipelines succeed, including dry.
+  // A valid dry fallback alone must not commit a permanently incomplete cache.
+  vi.spyOn(ModePipelineCache.prototype, 'readyCount', 'get').mockReturnValueOnce(19).mockReturnValue(40);
+  await internals.ensureModulePipelines(device);
+  expect(ModePipelineCache.prototype.warmAll).toHaveBeenCalledTimes(2);
+  expect(internals.fxCapabilities).toEqual({ immediates: false, sharedTextures: false });
+  expect(internals.modePipelines?.readyCount).toBe(internals.modePipelines?.totalCount);
+});
+
+test('a complete optimized catalog keeps both optimizations enabled', async () => {
+  const { device, internals } = setup();
+  vi.mocked(detectFxCapabilities).mockResolvedValue({ immediates: true, sharedTextures: true });
+  await internals.ensureModulePipelines(device);
+  expect(ModePipelineCache.prototype.warmAll).toHaveBeenCalledOnce();
+  expect(internals.fxCapabilities).toEqual({ immediates: true, sharedTextures: true });
+});
+
+test('an incomplete legacy catalog never binds a canvas or weakens readiness', async () => {
+  const { engine, internals } = setup();
+  vi.spyOn(ModePipelineCache.prototype, 'readyCount', 'get').mockReturnValue(39);
+  await expect(engine.attachCanvas('preview', {} as HTMLCanvasElement)).resolves.toBe(false);
+  expect(ModePipelineCache.prototype.warmAll).toHaveBeenCalledOnce();
+  expect(internals.modePipelines).toBeNull();
   expect(internals.modePipelinesPromise).toBeNull();
 });
 

@@ -24,6 +24,8 @@ No GPU validation errors. This verifies one deterministic parameter/input state 
 
 PR review follow-up (2026-10-22): the GPU differential script now renders two consecutive states per mode, changing only immediate fields for the second draw. It asserts that each immediates configuration skips all 20 second-draw uniform uploads and compares those pixels against the corresponding buffer-only states. All four configurations passed again with maximum channel difference 0 and no validation errors on the same NVIDIA adapter. This covers stale uniform-buffer values instead of allowing a full upload to mask a missing immediate rewrite.
 
+Linux CI subsequently reproduced intermittent Chromium/Dawn compilation cancellation for mode 20 (`A valid external Instance reference no longer exists`), while the hardware differential and local Windows SwiftShader smoke/cut tests passed. The exact driver/compiler cause remains unconfirmed. Setup now commits an optimized cache only when the entire catalog compiles; an incomplete optimized attempt retries the original WebGPU buffer/separate-texture paths. An incomplete legacy attempt remains not ready. Unit regressions reproduce the 19/20 state, verify the complete 40-pipeline fallback, retain optimizations after a complete optimized attempt, and reject incomplete legacy catalogs. This adds compatibility recovery without accepting missing effects or adding another renderer.
+
 ## Live Beatsmaxxer playback samples
 
 Four separate 10-second samples used the included 12-clip QA rack, a fresh page, the same output viewport, and one active test renderer. Another Chrome test tab had been closed before these measurements. Both optimizations preserve automatic capability fallback.
