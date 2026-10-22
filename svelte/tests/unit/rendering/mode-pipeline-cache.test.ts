@@ -61,4 +61,15 @@ describe('ModePipelineCache', () => {
     expect(cache.settledCount).toBe(cache.totalCount);
     expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(cache.totalCount * 3);
   });
+
+  test('shared textures compile each mode once and both source paths resolve to the same pipeline', async () => {
+    const { device, createPipelineLayout } = mockDevice(false);
+    const cache = new ModePipelineCache(device, layouts, { immediates: true, sharedTextures: true });
+    await cache.warmAll();
+    expect(createPipelineLayout).toHaveBeenCalledExactlyOnceWith({ bindGroupLayouts: [layouts.video], immediateSize: 64 });
+    expect(device.createRenderPipelineAsync).toHaveBeenCalledTimes(cache.totalCount);
+    expect(cache.get('video', 11)).toBe(cache.get('idle', 11));
+    expect(cache.isReady('idle', 11)).toBe(true);
+    expect(cache.readyCount).toBe(cache.totalCount);
+  });
 });

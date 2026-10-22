@@ -80,7 +80,7 @@
   const SPLASH_INTRO_MS = SPLASH_REVEAL_SECONDS * 1000 + 200;
   /** The workspace mounts behind the first painted splash frame. */
   let introDone = $state(skipSplash);
-  let splashPhase = $state<'gpu' | 'shaders' | 'armed' | 'go' | 'ready' | 'error'>(skipSplash?'ready':'gpu');
+  let splashPhase = $state<'gpu' | 'shaders' | 'slow' | 'armed' | 'go' | 'ready' | 'error'>(skipSplash?'ready':'gpu');
   let splashError = $state('');
   let resolveSplashGraphic: (result: { error?: string; paintedAt: number }) => void;
   const splashGraphicReady = new Promise<{ error?: string; paintedAt: number }>((resolve) => {
@@ -180,7 +180,12 @@
             splashDone = ready;
             if (total > 0) stepShaders.note(`${ready} / ${total}`);
           },
-          startupAbort.signal
+          startupAbort.signal,
+          60000,
+          () => !document.hidden,
+          (stalled) => {
+            if (!skipSplash) splashPhase = stalled ? 'slow' : 'shaders';
+          }
         );
         stepShaders.done();
       } catch (error) {
