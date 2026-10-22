@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { RACK_SLOTS_PER_ROW } from '$lib/modules/rackSlots';
   let { active }: { active: boolean } = $props();
 
   $effect(() => {
@@ -11,30 +10,25 @@
     let frame = 0;
     const rows = [...shell.querySelectorAll<HTMLElement>('.rack-row')];
     const reset = () => {
-      viewport.classList.remove('perform-fit');
-      for (const property of ['width', 'min-height']) shell.style.removeProperty(property);
-      for (const row of rows) for (const property of ['zoom', 'width']) row.style.removeProperty(property);
+      viewport.classList.remove('rack-fit');
+      for (const property of ['width', 'min-height', 'zoom']) shell.style.removeProperty(property);
     };
     const fit = () => {
       frame = 0;
       if (!desktop.matches) { reset(); return; }
-      viewport.classList.add('perform-fit');
+      viewport.classList.add('rack-fit');
       const width = viewport.clientWidth, height = viewport.clientHeight;
-      shell.style.width = `${width}px`;
-      shell.style.minHeight = `${height}px`;
-      const rack = shell.querySelector<HTMLElement>('.perform-rows');
-      if (!rack) return;
-      const rackWidth = rack.getBoundingClientRect().width;
-      const naturalWidth = Math.max(rackWidth, RACK_SLOTS_PER_ROW * 272 + RACK_SLOTS_PER_ROW - 1);
-      for (const row of rows) { row.style.zoom = '1'; row.style.width = `${naturalWidth}px`; }
-      const rowHeight = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
-      const fixedHeight = shell.getBoundingClientRect().height - rowHeight;
-      // Scale complete cards together, including MIDI, controls and presets.
-      // The image continues to fill its card at 16:9, with no side gutters.
-      const scale = Math.min(1, rackWidth / naturalWidth, Math.max(0, height - fixedHeight - 1) / Math.max(1, rowHeight));
-      for (const row of rows) {
-        row.style.zoom = String(Math.max(0.1, scale));
-      }
+      shell.style.zoom = '1';
+      shell.style.minHeight = '0';
+      shell.style.width = 'max(100%, var(--app-min-width))';
+      const naturalWidth = shell.getBoundingClientRect().width;
+      shell.style.width = `${naturalWidth}px`;
+      const naturalHeight = shell.getBoundingClientRect().height;
+      // Fit one surface. Scaling only the cards left the toolbar/library full
+      // size and the unscaled PGM list clipped beside the smaller rack.
+      const scale = Math.max(0.1, Math.min(1, width / naturalWidth, height / Math.max(1, naturalHeight)));
+      shell.style.zoom = String(scale);
+      shell.style.minHeight = `${height / scale}px`;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(fit); };
     let previousRackWidth = -1;

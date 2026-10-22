@@ -68,6 +68,10 @@ export class VideoPool {
     { moduleId: string; promise: Promise<VideoCandidate>; controller: AbortController }
   >();
   private candidates = new Map<number, VideoCandidate>();
+  private warmedClocks = new WeakMap<VideoCandidate, { generation: number; controlGeneration?: number; observedControlGeneration?: number }>();
+  private candidateClockResolver: ((id: string, duration: number, frame: TimelineFrame, source: string) => {
+    seconds: number; rate: number; controlGeneration: number;
+  } | null) | null = null;
   private candidateControllers = new Map<number, AbortController>();
   private generations = new Map<string, number>();
   private destroyed = new WeakSet<HTMLVideoElement>();
@@ -76,6 +80,8 @@ export class VideoPool {
   private freeRun = new Set<string>();
   private syncStates = new Map<string, VideoSyncState>();
   private controlledSyncStates = new Map<string, ControlledVideoSyncState>();
+  private controlledTargets = new Map<string, { seconds: number; rate: number }>();
+  private latestFrame: TimelineFrame | null = null;
   private moduleTimelineTargets = new Map<string, number>();
   private armedStates = new Map<string, ArmedVideoState>();
 
@@ -83,6 +89,10 @@ export class VideoPool {
   setGlobalRate(_rate: number) {}
 
   getGlobalRate() { return 1; }
+
+  setCandidateClockResolver(resolver: typeof this.candidateClockResolver) {
+    this.candidateClockResolver = resolver;
+  }
 
   private sourceId(id: string) {
     if (this.videos.has(id) || this.generations.has(id)) return id;
@@ -93,6 +103,7 @@ export class VideoPool {
     moduleId = this.sourceId(moduleId);
     this.freeRun.add(moduleId);
     this.controlledSyncStates.delete(moduleId);
+    this.controlledTargets.delete(moduleId);
   }
 
   unmarkFreeRun(moduleId: string) {
@@ -127,7 +138,44 @@ export class VideoPool {
     this.assertCandidate(candidate);
     const controller = this.candidateControllers.get(candidate.token);
     if (!controller) throw new Error('video-candidate-invalidated');
-    await this.prewarmVideo(candidate.video, controller.signal);
+    const frame = this.latestFrame;
+    const projected = frame ? this.candidateClockResolver?.(candidate.moduleId, candidate.video.duration, frame,
+      candidate.video.currentSrc || candidate.video.src || candidate.url) : null;
+    const mapped = projected ?? this.controlledTargets.get(candidate.moduleId);
+    const observedControlGeneration = this.controlledSyncStates.get(candidate.moduleId)?.controlGeneration;
+    const controlGeneration = projected?.controlGeneration ?? observedControlGeneration;
+    const target = frame?.playing
+      ? timelineMediaTarget(mapped?.seconds ?? frame.positionSeconds, candidate.video.duration)
+      : null;
+    if (target !== null) {
+      // Warm the incoming decoder at its live clock position, while the old
+      // source is still visible. Parking at zero here forced a second seek
+      // after commit, holding every new rack image across a bank change.
+      const video = candidate.video;
+      video.playbackRate = Math.max(.25, Math.min(4, mapped?.rate ?? frame!.playbackRate));
+      if (Math.abs(video.currentTime - target) > 1 / 120) {
+        const seeked = this.eventWait(video, ['seeked'], controller.signal, VIDEO_FRAME_TIMEOUT_MS);
+        video.currentTime = target;
+        await seeked;
+      }
+      await this.bounded(video.play(), controller.signal, VIDEO_FRAME_TIMEOUT_MS, 'video-play-timeout');
+      await waitForPresentedVideoFrame(video, VIDEO_FRAME_TIMEOUT_MS, controller.signal);
+      // Seeking a dozen incoming decoders can take longer than one drift
+      // interval. Catch up while this candidate is still hidden; otherwise
+      // the first drift check seeks an already-visible replacement again.
+      const current=this.latestFrame;
+      if(!mapped&&current?.playing&&current.generation===frame!.generation) {
+        const currentTarget=timelineMediaTarget(current.positionSeconds,video.duration);
+        if(currentTarget!==null&&Math.abs(timelineMediaDrift(video.currentTime,currentTarget,video.duration))>=VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS) {
+          const seeked=this.eventWait(video,['seeked'],controller.signal,VIDEO_FRAME_TIMEOUT_MS);
+          video.currentTime=currentTarget;await seeked;
+          await waitForPresentedVideoFrame(video,VIDEO_FRAME_TIMEOUT_MS,controller.signal);
+        }
+      }
+      this.warmedClocks.set(candidate, { generation: frame!.generation, controlGeneration, observedControlGeneration });
+    } else {
+      await this.prewarmVideo(candidate.video, controller.signal);
+    }
     this.assertCandidate(candidate);
   }
 
@@ -135,11 +183,32 @@ export class VideoPool {
     this.assertCandidate(candidate);
     this.candidates.delete(candidate.token);
     this.candidateControllers.delete(candidate.token);
+    const warmed = this.warmedClocks.get(candidate);
+    this.warmedClocks.delete(candidate);
+    const controlled = this.controlledSyncStates.get(candidate.moduleId);
     const old = this.videos.get(candidate.moduleId);
     this.videos.set(candidate.moduleId, candidate.video);
     this.urls.set(candidate.moduleId, candidate.url);
     this.syncStates.delete(candidate.moduleId);
     this.controlledSyncStates.delete(candidate.moduleId);
+    const frame = this.latestFrame;
+    if (warmed && frame?.playing && warmed.generation === frame.generation && !candidate.video.paused) {
+      // The warmed decoder is already moving. Accept the normal bounded drift
+      // rather than treating commit as a new transport launch and seeking it
+      // a second time. A real transport/sampler discontinuity still re-seeks.
+      if (controlled && controlled.controlGeneration === warmed.observedControlGeneration) {
+        this.controlledSyncStates.set(candidate.moduleId, {
+          ...controlled, timelineGeneration:frame.generation, playing:true,
+          controlGeneration:warmed.controlGeneration ?? controlled.controlGeneration,
+          playbackRate:candidate.video.playbackRate, lastCorrectionContextSeconds:frame.contextTimeSeconds
+        });
+      } else if (this.freeRun.has(candidate.moduleId)) {
+        this.syncStates.set(candidate.moduleId, {
+          generation:frame.generation, playing:true, playbackRate:frame.playbackRate,
+          lastCorrectionContextSeconds:frame.contextTimeSeconds
+        });
+      }
+    }
     this.moduleTimelineTargets.delete(candidate.moduleId);
     this.armedStates.delete(candidate.moduleId);
     return {
@@ -288,13 +357,13 @@ export class VideoPool {
 
   async prewarm(moduleId: string): Promise<void> {
     moduleId = this.sourceId(moduleId);
-    if (this.isArmedAtTrim(moduleId, 0)) return;
     const video = this.videos.get(moduleId);
-    if (video && this.hasReadyFrame(moduleId) && this.isAtTrimTarget(video, 0)) {
-      this.armedStates.set(moduleId, { trimStart: 0, ready: true });
-      return;
-    }
-    await this.armAtTrim(moduleId, 0);
+    // A committed rack source already belongs to the transport/effect clock.
+    // PGM preparation must only wait for readiness: arming it at zero pauses
+    // live previews, and its asynchronous final pause can interrupt playback
+    // again after the clock has resumed it. New candidates are armed before
+    // commit by prewarmCandidate; explicit trim requests use armAtTrim.
+    if (video) await this.waitForDecodedFrame(video);
   }
 
   private isAtTrimTarget(video: HTMLVideoElement, trimStart: number) {
@@ -438,6 +507,7 @@ export class VideoPool {
 
   tick(frameOrPlaying: TimelineFrame | boolean) {
     const frame = typeof frameOrPlaying === 'boolean' ? null : frameOrPlaying;
+    this.latestFrame = frame;
     for (const [moduleId, video] of this.videos) {
       if (this.freeRun.has(moduleId)) {
         if (frame) this.syncFreeRunVideo(moduleId, video, frame);
@@ -471,6 +541,7 @@ export class VideoPool {
     this.freeRun.delete(moduleId);
     const video = this.videos.get(moduleId);
     if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+    this.controlledTargets.set(moduleId, { seconds: targetSeconds, rate: playbackRate });
 
     const previous = this.controlledSyncStates.get(moduleId);
     const target = timelineMediaTarget(targetSeconds, video.duration)!;
@@ -622,6 +693,7 @@ export class VideoPool {
     this.freeRun.delete(moduleId);
     this.syncStates.delete(moduleId);
     this.controlledSyncStates.delete(moduleId);
+    this.controlledTargets.delete(moduleId);
     this.moduleTimelineTargets.delete(moduleId);
     this.armedStates.delete(moduleId);
     for (const pending of this.pending.values()) {
@@ -643,6 +715,7 @@ export class VideoPool {
   }
 
   async dispose(): Promise<void> {
+    this.latestFrame = null;
     const ids = new Set([
       ...this.videos.keys(),
       ...this.candidates.values().map((candidate) => candidate.moduleId),

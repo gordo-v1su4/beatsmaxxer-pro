@@ -89,6 +89,7 @@ export class TimingRuntime {
       for (const entry of this.banks.values()) entry.clock = null;
       this.lastOutput = -1;
       this.active = active;
+      if (!active) this.cancelPendingLoads();
       timingActive.set(active);
     }
     mediaRuntime.setResidentSourceFactor(active&&device?this.sourceResidentFactor:null);
@@ -245,6 +246,31 @@ export class TimingRuntime {
       ...assets.filter(asset=>asset.error).map(asset=>[asset.source.name,asset.error!]),
       ...[...this.sceneVariants].filter(([,variant])=>variant.error).map(([file,variant])=>[file.name,variant.error!])
     ]));
+  }
+
+  private cancelPendingLoads() {
+    // Ready banks remain cached for returning to Timing. In-flight decoders
+    // and queued uploads must not compete with Perform's live video sources.
+    this.generation++;
+    const cancelled = new Set<ResidentFrameBank | StreamingFrameSource>();
+    const names = new Set<string>();
+    for (const cache of [this.assets, this.originalAssets]) {
+      for (const [key, asset] of cache) if (asset.loading) {
+        cancelled.add(asset.bank); names.add(asset.source.name);
+        asset.bank.dispose(); cache.delete(key);
+      }
+    }
+    for (const [file, variant] of this.sceneVariants) if (variant.loading) {
+      this.sceneVariants.delete(file); names.add(file.name);
+    }
+    for (const [slot, entry] of this.banks) if (cancelled.has(entry.bank)) {
+      this.banks.delete(slot); this.selected.delete(slot);
+      this.samplers.delete(slot); this.plans.delete(slot);
+      timingStatus.update(s => { const next = {...s}; delete next[slot]; return next; });
+    }
+    timingSceneStatus.update(s => Object.fromEntries(Object.entries(s).filter(([name]) => !names.has(name))));
+    this.programDirty = true;
+    this.publishCapacity();
   }
 
   retry(slot: string) {

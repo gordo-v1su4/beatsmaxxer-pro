@@ -69,6 +69,18 @@ describe('MediaRuntime clip transactions', () => {
     revoke.mockRestore();
   });
 
+  test('replacing a clip preserves the slot clock instead of marking it free-running again', async () => {
+    const {runtime,pool} = createHarness(async()=>({} as HTMLVideoElement));
+    try {
+      await runtime.registerModuleFileClip('top-1',new File(['first'],'first.mp4'));
+      expect(pool.markFreeRun).toHaveBeenCalledOnce();
+      pool.markFreeRun.mockClear();
+      await runtime.registerModuleFileClip('top-1',new File(['next'],'next.mp4'));
+      expect(pool.markFreeRun).not.toHaveBeenCalled();
+      expect(pool.commitCandidate).toHaveBeenCalledTimes(2);
+    } finally { await runtime.dispose(); }
+  });
+
   test('rejects a verified RIFE replacement in Stutter without decoding or replacing the original', async () => {
     const {runtime,pool,published}=createHarness(async()=>({} as HTMLVideoElement));
     await runtime.registerModuleFileClip('top-1',new File(['original'],'original.mp4'));

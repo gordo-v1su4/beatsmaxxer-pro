@@ -694,20 +694,20 @@ input[type='range']::-moz-range-thumb {
 	.module-preview { width: 100%; }
 }
 
-/* Perform fits its actual MIDI-loaded content to the desktop viewport. */
+/* Rack workspaces fit as one surface, including the toolbar and source rails. */
 .perform-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
 .perform-source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
 .perform-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
 @media (min-width: 961px) {
-  .app-viewport.perform-fit { overflow:hidden; }
-  .perform-fit { --module-midi-lane-height:32px; }
-  .perform-fit .rack-module .rack-section-body { padding-top:2px; padding-bottom:2px; }
-  .perform-fit .rack-row:first-child .rack-section-body { padding-top:1px; padding-bottom:1px; }
-  .perform-fit .app-shell { min-width:0; }
-  .perform-fit .rack-main { min-width:0; }
-  .perform-fit .rack-main .main-viewer { height:clamp(200px, min(calc(21cqw + 12px), 26dvh), 560px); }
-  .perform-fit .rack-row { min-height:0!important; max-width:none; align-self:flex-start; }
-  .perform-fit .module-preview { width:100%; min-height:0; }
+  .app-viewport.rack-fit { overflow:hidden; }
+  .rack-fit { --module-midi-lane-height:32px; }
+  .rack-fit .rack-module .rack-section-body { padding-top:2px; padding-bottom:2px; }
+  .rack-fit .rack-row:first-child .rack-section-body { padding-top:1px; padding-bottom:1px; }
+  .rack-fit .app-shell { min-width:0; }
+  .rack-fit .rack-main { min-width:0; }
+  .rack-fit .rack-main .main-viewer { height:clamp(200px, min(calc(21cqw + 12px), 26dvh), 560px); }
+  .rack-fit .rack-row { min-height:0!important; max-width:none; align-self:flex-start; }
+  .rack-fit .module-preview { width:100%; min-height:0; }
 }
 
 /* Timing has preview-only rows at every desktop height. */

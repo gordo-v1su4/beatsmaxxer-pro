@@ -17,6 +17,7 @@ import { moduleCollapsed, fxLibOpen, pgmRailOpen } from '$lib/stores/rackUi';
 import { reduceSerialVisualProofSelection } from '$lib/qa/visualProof';
 import { clearLatencySamples, getLatencySamples } from '$lib/qa/performance';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
+import { performTimeSamplerFrames } from '$lib/runtime/PerformTimeSamplerFrames';
 import { timingSettings, timingStatus, timingLive } from '$lib/stores/timing';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import {
@@ -315,6 +316,7 @@ export function installBmxQaHook() {
       videoPool.tick(audioTimeline.getLastFrame() ?? true);
       return this.eightVideoSnapshot();
     },
+    performSamplerSnapshot() { return performTimeSamplerFrames.diagnostics; },
     eightVideoSnapshot() {
       const top = get(rackTop);
       const ids = [...top, ...get(rackBottom)];
@@ -329,6 +331,7 @@ export function installBmxQaHook() {
         const render = diagnostics[canvasId] as {
           source?: string | null; externalTextureImported?: boolean; externalTextureBound?: boolean;
           cachedTextureUploaded?: boolean; cachedTextureBound?: boolean; samplePath?: string; frameId?: number | null;
+          sourceFrameId?:number|null; sourceFramePts?:number|null;
           renderCount?: number; skippedRenderCount?: number; targetFps?: number; frameIntervalMs?: number | null;
         } | undefined;
         const quality = typeof video.getVideoPlaybackQuality === 'function'
@@ -364,6 +367,8 @@ export function installBmxQaHook() {
             cachedTextureBound: render?.cachedTextureBound === true,
             samplePath: render?.samplePath ?? '',
             frameId: render?.frameId ?? null,
+            sourceFrameId:render?.sourceFrameId??null,
+            sourceFramePts:render?.sourceFramePts??null,
             renderCount: render?.renderCount ?? 0,
             skippedRenderCount: render?.skippedRenderCount ?? 0,
             targetFps: render?.targetFps ?? 0,

@@ -219,7 +219,9 @@ export class MediaRuntime {
 
       if(get(timingActive) && !allowTimingClip(moduleId,interpolationFactor))throw new Error(RIFE_RAMP_ONLY);
 
-      this.pool.markFreeRun(moduleId);
+      // Existing slots already have a transport/effect clock. Resetting that
+      // ownership here discards a live-warmed ramp/sampler's synchronization.
+      if (!this.poolClips.has(moduleId)) this.pool.markFreeRun(moduleId);
       const poolCommit = this.pool.commitCandidate(candidate);
       const committed = residentCommit??this.clipRegistry.commit(clip);
       const previousPoolClip=this.poolClips.get(moduleId);

@@ -6,6 +6,9 @@ import { arrangementMode, arrangementOverridden, recordOverdub } from '$lib/arra
 import { get } from 'svelte/store';
 import { playbackWorkspace } from '$lib/stores/rackUi';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
+import { performTimeSamplerFrames, type SamplerFrameSource } from './PerformTimeSamplerFrames';
+import { timingSettings, timingCacheCapacity } from '$lib/stores/timing';
+import { isTauriRuntime } from '$lib/platform/runtime';
 import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
@@ -482,11 +485,34 @@ function syncControlledVideos(
 ) {
   const live = audioEngine.getLiveScheduleFrame();
   const timeSamplerSlot = assignments.find(({ moduleId }) => moduleId === 'timesampler')?.slotId;
+  if (isTauriRuntime() && timeSamplerSlot) {
+    const sources:SamplerFrameSource[]=[];
+    const current=get(videoLayers)[timeSamplerSlot];
+    if(current)sources.push(current);
+    const replay=get(arrangementMode)==='play';
+    for(const section of get(arrangement)) {
+      const bank=replay?section.deckSnapshot?.bank??section.bank:section.bank;
+      const top=bank?.top.indexOf('timesampler')??-1, bottom=bank?.bottom.indexOf('timesampler')??-1;
+      const slot=top>=0?`top-${top}`:bottom>=0?`bottom-${bottom}`:null;
+      const scene=replay?section.deckSnapshot?.scene??section.scene:section.scene??section.deckSnapshot?.scene;
+      const source=slot?scene?.slots[slot]:null;
+      if(source)sources.push(source);
+    }
+    const settings=get(timingSettings);
+    performTimeSamplerFrames.update(webGpuEngine.getDevice(),sources,settings.preloadHeight,
+      settings.budgetGiB*2**30-get(timingCacheCapacity).usedBytes);
+  } else if(performTimeSamplerFrames.active)performTimeSamplerFrames.dispose();
   if (timeSamplerSlot && live?.timeSampler) {
     const ts = live.timeSampler;
-    videoPool.syncControlledModule(
+    const seconds=timeSamplerVideoTarget(frame,ts.sourceTimestampSeconds);
+    const resident=isTauriRuntime() && performTimeSamplerFrames.select(timeSamplerSlot,get(videoLayers)[timeSamplerSlot]??null,seconds);
+    if(resident) {
+      const video=videoPool.get(timeSamplerSlot);
+      if(video&&!video.paused)video.pause();
+    }
+    else videoPool.syncControlledModule(
       timeSamplerSlot,
-      timeSamplerVideoTarget(frame, ts.sourceTimestampSeconds),
+      seconds,
       ts.targetPlaybackRate,
       frame,
       ts.jumpGeneration
@@ -579,7 +605,9 @@ function configureTimeSampler() {
   const tsDuration = timeSamplerSlot ? videoPool.getDuration(timeSamplerSlot) || 120 : 120;
   audioEngine.configureTimeSampler({
     sourceDurationSeconds: tsDuration,
-    sourceKey: timeSamplerSlot ?? 'timesampler-off-rack',
+    sourceKey: timeSamplerSlot
+      ? `${timeSamplerSlot}:${videoPool.get(timeSamplerSlot)?.currentSrc || videoPool.get(timeSamplerSlot)?.src || ''}`
+      : 'timesampler-off-rack',
     triggerKey: tsMidi?.triggerKey ?? 'audio',
     controls: {
       mode: tsParams.mode,
@@ -599,6 +627,15 @@ function configureTimeSampler() {
 
 export function startAppLoop() {
   if (running) return;
+  webGpuEngine.setOwnedVideoFrames(slot=>performTimeSamplerFrames.textureFor(slot,get(videoLayers)[slot]??null));
+  videoPool.setCandidateClockResolver((slot, duration, frame, source) => {
+    if (get(playbackWorkspace) !== 'perform' || currentRackSlotForModule('timesampler') !== slot) return null;
+    const preview = audioEngine.previewTimeSamplerSource(duration, `${slot}:${source}`);
+    return preview ? {
+      seconds:timeSamplerVideoTarget(frame, preview.sourceTimestampSeconds),
+      rate:preview.targetPlaybackRate, controlGeneration:preview.jumpGeneration
+    } : null;
+  });
   // Defensive restart cleanup: a prior partial teardown must not leave a
   // renderer subscriber registered alongside the new one.
   unsubscribeTimeline?.();
@@ -634,6 +671,7 @@ export function startAppLoop() {
     webGpuEngine.primeVideoFrames(RACK_SLOT_IDS);
     const timing = get(playbackWorkspace) === 'timing';
     timingRuntime.setActive(timing, webGpuEngine.getDevice());
+    if(timing && performTimeSamplerFrames.active)performTimeSamplerFrames.dispose();
     webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);
     if (timing) {
       // Timing owns each source: ramps use resident frames, while originals
@@ -740,6 +778,9 @@ export function startAppLoop() {
 
 export function stopAppLoop() {
   running = false;
+  videoPool.setCandidateClockResolver(null);
+  webGpuEngine.setOwnedVideoFrames(null);
+  performTimeSamplerFrames.dispose();
   timingRuntime.dispose();
   webGpuEngine.setTimingTextures(null);
   stopRenderBudget();

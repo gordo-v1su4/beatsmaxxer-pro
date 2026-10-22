@@ -187,6 +187,8 @@ export interface WebGpuRenderDiagnostics {
   coveredSeekGap?: boolean;
   coveredPgmCut?: boolean;
   samplePath: WebGpuVideoSamplePath;
+  sourceFrameId?: number | null;
+  sourceFramePts?: number | null;
   source: string | null;
   dimensions: string | null;
   frameId: number | null;

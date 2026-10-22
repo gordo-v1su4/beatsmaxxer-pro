@@ -927,6 +927,10 @@ export class AudioEngine implements IAudioEngine {
     liveScheduleRuntime.configureTimeSampler(input);
   }
 
+  previewTimeSamplerSource(sourceDurationSeconds: number, sourceKey?: string) {
+    return liveScheduleRuntime.previewTimeSamplerSource(sourceDurationSeconds, sourceKey);
+  }
+
   configurePgmSchedule(input: PgmScheduleInput<string>) {
     liveScheduleRuntime.configurePgm(input);
   }
