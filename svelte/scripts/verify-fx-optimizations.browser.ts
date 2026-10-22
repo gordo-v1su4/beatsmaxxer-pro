@@ -77,9 +77,13 @@ export async function verifyFxOptimizations() {
         for (let sample = 0; sample < 2; sample++) {
           if (sample === 1) {
             // Keep coverage aligned with the shader/writer's actual field map.
+            const before = FX_IMMEDIATE_FIELDS.map(([, word]) => integers[word]);
             FX_IMMEDIATE_FIELDS.forEach(([, word, type], index) => {
               if (type === 'u32') integers[word] = 0x7fffffff - index;
-              else data[word] = .1 * (index + 1);
+              else data[word] += .1 * (index + 1);
+            });
+            FX_IMMEDIATE_FIELDS.forEach(([name, word], index) => {
+              if (integers[word] === before[index]) throw new Error(`Immediate field ${name} did not change`);
             });
           }
           const uploaded = writer.write(device, uniform, data, capabilities.immediates);
