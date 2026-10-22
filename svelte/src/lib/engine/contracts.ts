@@ -199,6 +199,9 @@ export interface WebGpuRenderDiagnostics {
   feedbackDegraded: boolean;
   feedbackSkippedSteps: number;
   uniformHash: string;
+  parameterPath?: 'immediates' | 'uniform-buffer';
+  sharedTextureBindings?: boolean;
+  uniformUploaded?: boolean;
   renderCount: number;
   skippedRenderCount: number;
   /** Zero means uncapped: the binding follows each AppLoop display publication. */

@@ -1,9 +1,12 @@
 import { moduleFxWgslForMode, SHADER_EFFECT_MODES } from './shaders/moduleFx.wgsl';
+import { FX_IMMEDIATE_BYTES, withFxImmediates } from './FxUniforms';
+import type { FxCapabilities } from './FxCapabilities';
 
 export type FxVariant = 'video' | 'idle';
 
 /**
  * One small FX pipeline per (variant, effect mode), compiled asynchronously.
+ * Shared texture bindings alias both variants to one pipeline per effect.
  *
  * The single uber-pipeline took ~11s per variant to compile cold, and it was
  * created synchronously, which parks the GPU process for the duration — the
@@ -26,11 +29,12 @@ export class ModePipelineCache {
 
   constructor(
     private readonly device: GPUDevice,
-    private readonly layouts: Record<FxVariant, GPUBindGroupLayout>
+    private readonly layouts: Record<FxVariant, GPUBindGroupLayout>,
+    private readonly capabilities: FxCapabilities = { immediates: false, sharedTextures: false }
   ) {}
 
   get(variant: FxVariant, mode: number): GPURenderPipeline | null {
-    const key = cacheKey(variant, mode);
+    const key = this.key(variant, mode);
     const pipeline = this.ready.get(key);
     if (pipeline) return pipeline;
     if (!this.pending.has(key)) void this.build(variant, mode);
@@ -39,18 +43,22 @@ export class ModePipelineCache {
 
   /** Whether this mode's own pipeline is built. Never starts a build. */
   isReady(variant: FxVariant, mode: number): boolean {
-    return this.ready.has(cacheKey(variant, mode));
+    return this.ready.has(this.key(variant, mode));
   }
 
   /** Resolves once this mode's pipeline exists (null if it failed to build). */
   build(variant: FxVariant, mode: number): Promise<GPURenderPipeline | null> {
-    const key = cacheKey(variant, mode);
+    variant = this.capabilities.sharedTextures ? 'video' : variant;
+    const key = this.key(variant, mode);
     const built = this.ready.get(key);
     if (built) return Promise.resolve(built);
     const inFlight = this.pending.get(key);
     if (inFlight) return inFlight;
 
-    const module = this.device.createShaderModule({ code: moduleFxWgslForMode(mode, variant) });
+    const source = moduleFxWgslForMode(mode, variant);
+    const module = this.device.createShaderModule({
+      code: this.capabilities.immediates ? withFxImmediates(source) : source
+    });
     const promise = this.device
       .createRenderPipelineAsync({
         layout: this.layoutFor(variant),
@@ -99,13 +107,20 @@ export class ModePipelineCache {
   }
 
   get totalCount() {
-    return SHADER_EFFECT_MODES.length * 2;
+    return SHADER_EFFECT_MODES.length * (this.capabilities.sharedTextures ? 1 : 2);
+  }
+
+  private key(variant: FxVariant, mode: number) {
+    return `${this.capabilities.sharedTextures ? 'video' : variant}:${mode}`;
   }
 
   private layoutFor(variant: FxVariant): GPUPipelineLayout {
     let layout = this.pipelineLayouts.get(variant);
     if (!layout) {
-      layout = this.device.createPipelineLayout({ bindGroupLayouts: [this.layouts[variant]] });
+      layout = this.device.createPipelineLayout({
+        bindGroupLayouts: [this.layouts[variant]],
+        ...(this.capabilities.immediates ? { immediateSize: FX_IMMEDIATE_BYTES } : {})
+      });
       this.pipelineLayouts.set(variant, layout);
     }
     return layout;
@@ -117,8 +132,4 @@ export class ModePipelineCache {
     this.ready.clear();
     this.pending.clear();
   }
-}
-
-function cacheKey(variant: FxVariant, mode: number) {
-  return `${variant}:${mode}`;
 }

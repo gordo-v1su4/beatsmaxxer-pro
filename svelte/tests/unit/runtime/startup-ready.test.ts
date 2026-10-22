@@ -86,3 +86,42 @@ test('unmounting cancels the startup wait', async () => {
   await vi.advanceTimersByTimeAsync(50);
   await assertion;
 });
+
+test('shader progress renews the inactivity deadline instead of timing out an active startup', async () => {
+  vi.useFakeTimers();
+  const state = { ready: 1, total: 4, frame: 1 };
+  let failure: unknown;
+  const waiting = waitForStartupReady(() => state, () => {}, new AbortController().signal, 1000)
+    .catch(error => { failure = error; });
+  for (let ready = 2; ready <= 4; ready++) {
+    await vi.advanceTimersByTimeAsync(900);
+    state.ready = ready;
+    await vi.advanceTimersByTimeAsync(50);
+  }
+  state.frame++;
+  await vi.advanceTimersByTimeAsync(50);
+  await waiting;
+  expect(failure).toBeUndefined();
+});
+
+test('a watched stall stays covered and recovers automatically when graphics finish', async () => {
+  vi.useFakeTimers();
+  const state = { ready: 39, total: 40, frame: 1 };
+  const stalled = vi.fn();
+  let opened = false, failure: unknown;
+  const waiting = waitForStartupReady(
+    () => state, () => {}, new AbortController().signal, 1000, () => true, stalled
+  ).then(() => { opened = true; }).catch(error => { failure = error; });
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(failure).toBeUndefined();
+  expect(opened).toBe(false);
+  expect(stalled).toHaveBeenCalledExactlyOnceWith(true);
+  state.ready = 40;
+  await vi.advanceTimersByTimeAsync(50);
+  expect(opened).toBe(false); // Pipelines alone do not reveal an undrawn workspace.
+  state.frame++;
+  await vi.advanceTimersByTimeAsync(50);
+  await waiting;
+  expect(opened).toBe(true);
+  expect(stalled.mock.calls).toEqual([[true], [false]]);
+});

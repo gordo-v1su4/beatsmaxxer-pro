@@ -5,14 +5,16 @@ export interface StartupProgress {
 }
 
 /** Wait for every shader and then a frame rendered with those shaders.
- * A slow startup remains covered; a timeout is an error, never permission to open.
+ * The deadline measures inactivity, not total loading time. An observed stall
+ * remains covered and keeps watching for recovery; it never permits entry.
  */
 export async function waitForStartupReady(
   read: () => StartupProgress,
   progress: (state: StartupProgress) => void,
   signal: AbortSignal,
   timeoutMs = 60000,
-  isVisible = () => typeof document === 'undefined' || !document.hidden
+  isVisible = () => typeof document === 'undefined' || !document.hidden,
+  onStallChange?: (stalled: boolean) => void
 ): Promise<void> {
   let remainingMs = timeoutMs;
   let previousAt = performance.now();
@@ -28,6 +30,7 @@ export async function waitForStartupReady(
   // init() can finish all compiles before the first poll. That first frame
   // already contains the ready shaders; an idle rack may not draw a second.
   let lastUnreadyFrame = 0;
+  let previousReady = 0, previousTotal = 0, stalled = false;
   try {
     for (;;) {
       signal.throwIfAborted();
@@ -37,11 +40,24 @@ export async function waitForStartupReady(
       previousAt = now;
       wasVisible = visible;
       const state = read();
+      if (state.ready > previousReady || state.total !== previousTotal) {
+        remainingMs = timeoutMs;
+        if (stalled) { stalled = false; onStallChange?.(false); }
+      }
+      previousReady = state.ready;
+      previousTotal = state.total;
       progress(state);
       if (state.total > 0 && state.ready >= state.total) {
-        if (visible && state.frame > lastUnreadyFrame) return;
+        if (visible && state.frame > lastUnreadyFrame) {
+          if (stalled) onStallChange?.(false);
+          return;
+        }
       } else lastUnreadyFrame = state.frame;
-      if (remainingMs <= 0) throw new Error('Graphics are taking too long to finish. Reload to try again.');
+      if (remainingMs <= 0 && !stalled) {
+        if (!onStallChange) throw new Error('Graphics are taking too long to finish. Reload to try again.');
+        stalled = true;
+        onStallChange(true);
+      }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   } finally { page?.removeEventListener('visibilitychange', visibilityChanged); }

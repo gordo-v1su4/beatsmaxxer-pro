@@ -9,9 +9,9 @@
 
   interface Props {
     /** 'gpu' while the adapter/device is acquired, 'shaders' while pipelines
-        compile, 'armed' for the explicit design preview, 'go' to play the
+        compile, 'slow' while watching a stalled startup, 'armed' for the explicit design preview, 'go' to play the
         automatic exit, 'ready' to unmount. */
-    phase: 'gpu' | 'shaders' | 'armed' | 'go' | 'ready' | 'error';
+    phase: 'gpu' | 'shaders' | 'slow' | 'armed' | 'go' | 'ready' | 'error';
     done?: number;
     total?: number;
     error?: string;
@@ -22,7 +22,7 @@
   const percent = $derived(
     phase === 'gpu'
       ? 4
-      : phase === 'shaders' || phase === 'error'
+      : phase === 'shaders' || phase === 'slow' || phase === 'error'
         ? total > 0
           ? Math.min(99, 10 + Math.floor((90 * Math.min(done, total)) / total))
           : 10
@@ -59,6 +59,9 @@
         <div class="task">
           {#if phase === 'error'}
             {error} <button class="retry" onclick={() => window.location.reload()}>Reload</button>
+          {:else if phase === 'slow'}
+            Graphics are still loading. The workspace will open automatically when ready.
+            <button class="retry" onclick={() => window.location.reload()}>Reload</button>
           {:else if armed}
             {leaving ? 'Opening workspace…' : 'Workspace ready'}
           {:else if current}
