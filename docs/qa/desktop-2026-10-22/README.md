@@ -28,7 +28,7 @@ Chrome instance. The installed public release is a separate artifact.
 
 ## Validation
 
-- 1,088 unit tests passed; eight existing tests skipped. Svelte check: zero
+- 1,093 unit tests passed; eight existing tests skipped. Svelte check: zero
   errors and warnings. Desktop frontend and native debug build passed.
 - Two consecutive 60-second native playback runs passed the hold-detection
   gate across section/bank changes. Reports: [run 1](native-run-1.json) and
@@ -38,6 +38,17 @@ Chrome instance. The installed public release is a separate artifact.
   ordinary modules, 250 ms for SpeedRamp, and deliberate STUTTER holds.
   Resident TimeSampler is measured using selected source-frame identities,
   not a continually increasing timeline counter or its paused fallback video.
+- Review hardened the gate to count the first-frame delay and the unfinished
+  gap at the end of sampling. The [reviewed 120-second run](native-run-reviewed-120s.json)
+  passed that stronger check, including idle Timing uploads and sampler readiness.
+  The earlier runs above predate the terminal-gap check.
+- A [negative native probe](native-negative-freeze.json) delivered two source
+  callbacks, then suppressed the remaining callbacks. The stronger gate correctly
+  rejected the 2.95-second unfinished gap. This is an expected failure artifact,
+  not a playback result; the callback method was restored afterward.
+- A [one-time sampler upload failure](native-sampler-retry.json) exposed the
+  native retry action. Retrying recovered the failed bank without replacing
+  healthy banks; preload was restored to 270p afterward.
 - Browser decode-drop counters are included in the reports. Passing this gate
   does not mean zero dropped frames or certify arbitrary media and hardware.
 - Native Timing exit changed 15 pending banks / 105,753,600 allocated bytes to

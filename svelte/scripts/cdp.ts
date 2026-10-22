@@ -213,7 +213,8 @@ export function chromeLaunchArgs(
   headed = process.env.HEADLESS !== '1',
   allowAutoplayBypass =
     process.env.QA_AUTOPLAY_BYPASS === '1' ||
-    (!headed && process.env.QA_AUTOPLAY_BYPASS !== '0')
+    (!headed && process.env.QA_AUTOPLAY_BYPASS !== '0'),
+  platform:NodeJS.Platform=process.platform
 ) {
   return [
     chrome,
@@ -221,7 +222,12 @@ export function chromeLaunchArgs(
       '--headless=new',
       '--enable-unsafe-swiftshader',
       '--enable-unsafe-webgpu',
-      '--use-angle=swiftshader',
+      // Linux's GL compositor can reject Dawn's WebGPU swap images. Keep
+      // compositor, ANGLE and WebGPU on one Vulkan backend on GPU-less CI.
+      ...(platform==='linux'?[
+        '--enable-features=Vulkan','--use-angle=vulkan','--use-vulkan=swiftshader',
+        '--use-webgpu-adapter=swiftshader','--disable-vulkan-surface'
+      ]:['--use-angle=swiftshader']),
       '--use-gl=angle'
     ]),
     '--no-sandbox',
@@ -368,9 +374,10 @@ export async function withChrome<T>(
   // full, and discarding it hides the GPU-process reason behind InstanceDropped.
   let chromeStderr='';
   const decoder=new TextDecoder();
+  const stderrAbort=new AbortController();
   const stderrDrain=proc.stderr.pipeTo(new WritableStream<Uint8Array>({
     write(chunk){chromeStderr=(chromeStderr+decoder.decode(chunk,{stream:true})).slice(-12000);}
-  })).catch(()=>{});
+  }),{signal:stderrAbort.signal}).catch(()=>{});
   try {
     await Bun.sleep(500);
     const session = await connectCdp(port);
@@ -399,6 +406,7 @@ export async function withChrome<T>(
     proc.kill(9);
     try {
       await proc.exited;
+      stderrAbort.abort();
       await stderrDrain;
     } catch {
       /* ignore */

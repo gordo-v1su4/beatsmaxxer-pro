@@ -1,0 +1,85 @@
+{
+  "injected": true,
+  "before": {
+    "usedBytes": 70041600,
+    "limit": 12884901888,
+    "assets": [
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": "QA transient sampler upload failure",
+        "ready": false,
+        "frames": 0,
+        "bytes": 0,
+        "width": 640,
+        "height": 360,
+        "fps": 24,
+        "duration": 0,
+        "decoderDisposed": true,
+        "decodedFrames": 1,
+        "uploadedFrames": 0,
+        "loadMs": 117.79999999701977
+      },
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": true,
+        "error": null,
+        "ready": false,
+        "frames": 11,
+        "bytes": 70041600,
+        "width": 640,
+        "height": 360,
+        "fps": 24,
+        "duration": 0,
+        "decoderDisposed": false,
+        "decodedFrames": 11,
+        "uploadedFrames": 11,
+        "loadMs": 0
+      }
+    ],
+    "selected": null
+  },
+  "after": {
+    "usedBytes": 567705600,
+    "limit": 12884901888,
+    "assets": [
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 361,
+        "bytes": 350208000,
+        "width": 640,
+        "height": 360,
+        "fps": 24,
+        "duration": 15.041666666666666,
+        "decoderDisposed": true,
+        "decodedFrames": 361,
+        "uploadedFrames": 361,
+        "loadMs": 735.9000000059605
+      },
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 219,
+        "bytes": 217497600,
+        "width": 640,
+        "height": 360,
+        "fps": 24,
+        "duration": 9.125,
+        "decoderDisposed": true,
+        "decodedFrames": 219,
+        "uploadedFrames": 219,
+        "loadMs": 502.90000000596046
+      }
+    ],
+    "selected": {
+      "slot": "top-3",
+      "pts": 4.625,
+      "frameId": 944
+    }
+  }
+}
