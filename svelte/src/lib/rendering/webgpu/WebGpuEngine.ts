@@ -417,7 +417,8 @@ export class WebGpuEngine {
         this.modePipelinesPromise = null;
         console.error('[webgpu] FX pipeline setup failed; the next attach retries', error);
       }
-      throw error;
+      // attachCanvas reports false when no FX pipeline is ready. Its mounted
+      // callers do not catch setup rejections, so retain that non-throwing path.
     });
     return this.modePipelinesPromise;
   }

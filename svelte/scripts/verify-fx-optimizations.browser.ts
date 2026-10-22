@@ -2,7 +2,7 @@
  * Compares every effect's real pixels with both optional paths independently. */
 import { ModePipelineCache } from '../src/lib/rendering/webgpu/ModePipelineCache';
 import { SHADER_EFFECT_MODES } from '../src/lib/rendering/webgpu/shaders/moduleFx.wgsl';
-import { FxUniformWriter, FX_UNIFORM_BYTES } from '../src/lib/rendering/webgpu/FxUniforms';
+import { FxUniformWriter, FX_IMMEDIATE_FIELDS, FX_UNIFORM_BYTES } from '../src/lib/rendering/webgpu/FxUniforms';
 import { detectFxCapabilities } from '../src/lib/rendering/webgpu/FxCapabilities';
 
 export async function verifyFxOptimizations() {
@@ -17,6 +17,7 @@ export async function verifyFxOptimizations() {
     const supported = await detectFxCapabilities(device);
     if (!supported.immediates || !supported.sharedTextures) throw new Error('Both optimized paths must be supported to run the comparison');
     const size: [number, number] = [64, 36];
+    const bytesPerRow = size[0] * 4; // 64 RGBA pixels satisfy readback's 256-byte row alignment.
     const texture = (usage: number) => {
       const result = device.createTexture({ size, format: 'rgba8unorm', usage });
       resources.push(result);
@@ -29,7 +30,7 @@ export async function verifyFxOptimizations() {
       pixels[i] = (i * 13) % 251; pixels[i + 1] = (i * 7) % 241;
       pixels[i + 2] = (i * 3) % 239; pixels[i + 3] = 255;
     }
-    for (const target of [source, feedback]) device.queue.writeTexture({ texture: target }, pixels, { bytesPerRow: 256 }, size);
+    for (const target of [source, feedback]) device.queue.writeTexture({ texture: target }, pixels, { bytesPerRow }, size);
     const output = texture(GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
     const readback = device.createBuffer({ size: pixels.length, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
     const uniform = device.createBuffer({ size: FX_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -75,10 +76,11 @@ export async function verifyFxOptimizations() {
         // while the GPU uniform buffer still contains the first draw's values.
         for (let sample = 0; sample < 2; sample++) {
           if (sample === 1) {
-            data[0] = 9.7; data[1] = .7; data[4] = .9; data[5] = .1;
-            data[22] = 4.25; data[23] = 1 / 30; data[25] = .8; data[26] = .5;
-            data[30] = .2; data[34] = .9; data[35] = .1; data[36] = .8;
-            integers[24] = 255; integers[27] = 5; integers[28] = 0x7fffffff; integers[29] = 256;
+            // Keep coverage aligned with the shader/writer's actual field map.
+            FX_IMMEDIATE_FIELDS.forEach(([, word, type], index) => {
+              if (type === 'u32') integers[word] = 0x7fffffff - index;
+              else data[word] = .1 * (index + 1);
+            });
           }
           const uploaded = writer.write(device, uniform, data, capabilities.immediates);
           if (capabilities.immediates && sample === 1) {
@@ -90,7 +92,7 @@ export async function verifyFxOptimizations() {
           pass.setPipeline(cache.get('idle', mode)!);
           if (capabilities.immediates) pass.setImmediates(0, writer.immediateData);
           pass.setBindGroup(0, group); pass.draw(3); pass.end();
-          encoder.copyTextureToBuffer({ texture: output }, { buffer: readback, bytesPerRow: 256 }, size);
+          encoder.copyTextureToBuffer({ texture: output }, { buffer: readback, bytesPerRow }, size);
           device.queue.submit([encoder.finish()]);
           await readback.mapAsync(GPUMapMode.READ);
           const actual = new Uint8Array(readback.getMappedRange()).slice();

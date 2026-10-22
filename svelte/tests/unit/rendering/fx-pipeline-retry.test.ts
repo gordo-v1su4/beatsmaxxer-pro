@@ -23,13 +23,20 @@ function setup() {
   vi.spyOn(ModePipelineCache.prototype, 'warmAll').mockResolvedValue();
   vi.spyOn(ModePipelineCache.prototype, 'isReady').mockReturnValue(true);
   vi.spyOn(ModePipelineCache.prototype, 'get').mockReturnValue({} as GPURenderPipeline);
-  return { device, internals };
+  return { device, engine, internals };
 }
+
+test('a mounted canvas receives false rather than an unhandled setup rejection', async () => {
+  const { engine, internals } = setup();
+  vi.mocked(detectFxCapabilities).mockRejectedValueOnce(new Error('transient probe failure'));
+  await expect(engine.attachCanvas('preview', {} as HTMLCanvasElement)).resolves.toBe(false);
+  expect(internals.modePipelinesPromise).toBeNull();
+});
 
 test('a rejected capability probe clears its memo so the next attach can retry', async () => {
   const { device, internals } = setup();
   vi.mocked(detectFxCapabilities).mockRejectedValueOnce(new Error('probe failed'));
-  await expect(internals.ensureModulePipelines(device)).rejects.toThrow('probe failed');
+  await expect(internals.ensureModulePipelines(device)).resolves.toBeUndefined();
   expect(internals.modePipelinesPromise).toBeNull();
   await expect(internals.ensureModulePipelines(device)).resolves.toBeUndefined();
   expect(detectFxCapabilities).toHaveBeenCalledTimes(2);
@@ -39,7 +46,7 @@ test('a rejected warmup disposes the failed cache and permits a fresh attempt', 
   const { device, internals } = setup();
   const dispose = vi.spyOn(ModePipelineCache.prototype, 'dispose');
   vi.mocked(ModePipelineCache.prototype.warmAll).mockRejectedValueOnce(new Error('warmup failed'));
-  await expect(internals.ensureModulePipelines(device)).rejects.toThrow('warmup failed');
+  await expect(internals.ensureModulePipelines(device)).resolves.toBeUndefined();
   expect(dispose).toHaveBeenCalledOnce();
   expect(internals.modePipelines).toBeNull();
   await expect(internals.ensureModulePipelines(device)).resolves.toBeUndefined();
@@ -50,7 +57,6 @@ test('an old probe rejection cannot clear a replacement device setup', async () 
   let rejectOld!: (error: Error) => void;
   vi.mocked(detectFxCapabilities).mockImplementationOnce(() => new Promise((_, reject) => { rejectOld = reject; }));
   const oldAttempt = internals.ensureModulePipelines(device);
-  const rejected = expect(oldAttempt).rejects.toThrow('old device');
   internals.handleDeviceLost();
   const replacement = { createBindGroupLayout: vi.fn(() => ({})) } as unknown as GPUDevice;
   Object.assign(internals, { device: replacement });
@@ -58,7 +64,7 @@ test('an old probe rejection cannot clear a replacement device setup', async () 
   await newAttempt;
   const newCache = internals.modePipelines;
   rejectOld(new Error('old device'));
-  await rejected;
+  await expect(oldAttempt).resolves.toBeUndefined();
   expect(internals.modePipelines).toBe(newCache);
   expect(internals.modePipelinesPromise).toBe(newAttempt);
 });
