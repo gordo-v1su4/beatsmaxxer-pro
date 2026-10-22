@@ -62,6 +62,27 @@ Chrome instance. The installed public release is a separate artifact.
   viewport offset and untouched atlas pixels with GPU readback. All matched.
   Readback was diagnostic only; production scaling stays on the GPU.
 
+## Current-source follow-up
+
+The c259d76 native debug executable was rebuilt from the shared frontend and
+tested with the public twelve-slot Redline Perform demo, RANDOM order and 1BT
+cuts. The [isolated 120-second repeat](current-native-isolated-120s.json) passed
+every source-cadence check: maximum 100.1 ms for each slot, three source swaps
+per slot, main-loop maximum 83.4 ms, twelve decoders and inactive Timing with
+zero pending work. Decoder drops totaled 55; this is not a zero-drop claim.
+
+An [earlier run](native-overlap-120s.json) failed with gaps up to two seconds.
+Local unit/type-check compilation overlapped its final interval. It is retained
+as a failed measurement with that confound, rather than silently discarded.
+The clean repeat ran without concurrent local builds or tests.
+
+The native frontend and executable compiled successfully. Full smoke packaging
+stopped at updater signing, so no installer-smoke pass or published update is
+claimed. The subsequent first-scene recall priming fix has unit/type/build
+coverage; native rebuild and final acceptance of that follow-up remain pending.
+
+![Rebuilt native app](current-native-loaded.png)
+
 ## Repeat the playback gate
 
 Launch the native app with WebView2 remote debugging on port 9633, load twelve

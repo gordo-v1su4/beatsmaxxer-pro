@@ -13,7 +13,7 @@ import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { getVideoSourcePort } from '$lib/platform/videoSource';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { sceneChanges } from '$lib/arrangement/sectionScenes';
+import { primeSceneRecallRuntime, sceneChanges } from '$lib/arrangement/sectionScenes';
 import {
   advanceSpeedRampSource,
   type SpeedRampSourceState
@@ -655,6 +655,7 @@ function configureTimeSampler() {
 
 export function startAppLoop() {
   if (running) return;
+  primeSceneRecallRuntime(mediaRuntime);
   webGpuEngine.setOwnedVideoFrames(slot=>performTimeSamplerFrames.textureFor(slot,get(videoLayers)[slot]??null));
   videoPool.setCandidateClockResolver((slot, duration, frame, source) => {
     if (get(playbackWorkspace) !== 'perform') return null;

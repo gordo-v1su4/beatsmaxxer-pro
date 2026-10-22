@@ -7,6 +7,12 @@ type SceneMediaRuntime=typeof import('$lib/runtime/media/MediaRuntime').mediaRun
 let recalledRuntime:SceneMediaRuntime|null=null;
 let runtimeLoad:Promise<typeof import('$lib/runtime/media/MediaRuntime')>|null=null;
 
+/** AppLoop already owns the runtime. Prime before lookahead can stage clips so
+ * the first section entry claims them synchronously, ahead of plan cleanup. */
+export function primeSceneRecallRuntime(runtime: SceneMediaRuntime) {
+  recalledRuntime = runtime;
+}
+
 /**
  * A section's scene: which clip sits in each rack slot while it plays.
  *

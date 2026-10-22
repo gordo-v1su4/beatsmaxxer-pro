@@ -6,6 +6,14 @@ preload. These are local measurements, not evidence of a deployed production fix
 
 ## Compiled web and remaining checks
 
+Latest source check: [c259d76, LINEAR with song return, 120 seconds](current-linear-loop-120s.json)
+passed all twelve source-cadence checks with unchanged thresholds. Most slots
+changed sources five times; resident TimeSampler changed four times. The largest
+ordinary-source gap was 133.3 ms and the main-loop gap was 83.3 ms. Total decoder
+drops were 34. A separate targeted twelve-second final-bank check also passed.
+These results supersede the older failed LINEAR candidates below for this head;
+they do not establish zero drops, production deployment, or final native acceptance.
+
 The same working tree was compiled with `bun run build` and served by the real
 `runtime/server.ts` handler on 127.0.0.1:5174. No Vite development runtime or
 temporary clock wrappers were present in this check.
@@ -55,7 +63,9 @@ bytes are not a GPU-resident frame bank. Traces first showed foreground waiting
 while only one hidden candidate was present, so a presumed fixed concurrent
 decoder limit has not been established as the cause. The decode/seek contention
 path still needs isolation; raising the resident-memory ceiling is not a proven
-fix. No source transcoding or proxy-quality change was shipped.
+fix. No source transcoding or proxy-quality change was shipped. The latest source
+passed the targeted final-bank and longer LINEAR checks, so the rejected forecast
+experiment's worst stall must not be described as a reproduced current-head defect.
 
 Review follow-up adds loop-start source positions to lookahead, establishes
 incoming clock ownership after effect-bank changes, and preserves a newly
@@ -70,9 +80,15 @@ effect despite the original Stutter exemption. A [missing-source probe](negative
 returned a serializable failed slot instead of throwing. Both probes restored
 their temporary diagnostic wrappers and are expected failures.
 
-Current unit suite: 1,115 passed, eight skipped. Svelte check: zero errors and
-warnings. Production build passed. Final native regression and published-site
-verification remain open. The branch is not release-ready on long-run web evidence.
+Current unit suite: 1,116 passed, eight skipped. Svelte check: zero errors and
+warnings. Production build passed. Current-head long-run web source cadence passed;
+final native regression, CI/reviews and published-site verification remain open.
+
+Greptile reviewed c259d76 at 5/5 and reported one additional ordering edge case:
+the first scene recall could yield to a lazy import while same-tick lookahead
+cleanup discarded its prepared clips. AppLoop now primes the runtime it already
+owns before lookahead starts. A regression checks that initialized recall claims
+prepared clips synchronously before cleanup. This follow-up needs a new head review.
 
 At a 1920×1000 compiled-web viewport, all twelve PGM buttons remained visible.
 Expanding Timing's accepted-burst timeline initially exposed a missing observer
