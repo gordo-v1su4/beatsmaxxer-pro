@@ -89,6 +89,21 @@
   let workflowBusy = $state<WorkflowId | 'load-file' | null>(null);
   let workflowError = $state<string | null>(null);
   let demoAvailable = $state(false);
+  let demoChecking = $state(true);
+  let demoCheckError = $state('');
+  async function checkDemoAvailability() {
+    demoChecking = true;
+    demoCheckError = '';
+    try {
+      await fetchDemoCatalog();
+      demoAvailable = true;
+    } catch (error) {
+      demoAvailable = false;
+      demoCheckError = error instanceof Error ? error.message : String(error);
+    } finally {
+      demoChecking = false;
+    }
+  }
   let workflowInput: HTMLInputElement;
 
   // Progress/errors remain actionable; completed notices leave the workspace clear.
@@ -102,7 +117,7 @@
   });
 
   $effect(() => {
-    void fetchDemoCatalog().then(() => demoAvailable = true).catch(() => demoAvailable = false);
+    void checkDemoAvailability();
     if (import.meta.env.DEV) fetch('/qa-media/manifest.json', { method: 'HEAD' })
       .then((res) => (testMediaAvailable = res.ok)).catch(() => (testMediaAvailable = false));
   });
@@ -493,7 +508,14 @@
           />
           {/if}
         {/each}
-        {#if !demoAvailable}<p class="workflow-menu-note">Demo files are unavailable. <button type="button" onclick={() => { void fetchDemoCatalog().then(() => demoAvailable = true).catch(() => demoAvailable = false); }}>Retry</button></p>{/if}
+        {#if !demoAvailable}
+          <p class="workflow-menu-note">
+            {#if demoChecking}Checking demo files…
+            {:else}Could not check the demo catalog. {demoCheckError}
+              <button type="button" onclick={() => { void checkDemoAvailability(); }}>Retry</button>
+            {/if}
+          </p>
+        {/if}
         <div class="menu-section-label">YOUR WORKFLOW</div>
         <TopBtn label="SAVE WORKFLOW…" title="Save sections, cuts, clip banks and settings; media files are referenced" disabled={workflowLocked || !td.trackName} onclick={() => { try { downloadWorkflow(); openMenu = null; } catch (error) { workflowError = String(error); } }} />
         <TopBtn label="LOAD WORKFLOW…" title="Restore a workflow file; public demo media loads automatically" disabled={workflowLocked} onclick={() => workflowInput.click()} />
