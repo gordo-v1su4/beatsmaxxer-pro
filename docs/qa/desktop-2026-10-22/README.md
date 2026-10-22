@@ -32,7 +32,9 @@ Chrome instance. The installed public release is a separate artifact.
   errors and warnings. Desktop frontend and native debug build passed.
 - Two consecutive 60-second native playback runs passed the hold-detection
   gate across section/bank changes. Reports: [run 1](native-run-1.json) and
-  [run 2](native-run-2.json). The gate allows 150 ms between source frames for
+  [run 2](native-run-2.json). A further [120-second run](native-run-120s.json)
+  on the 0.2.13 candidate also passed, covering repeated bank returns.
+  The gate allows 150 ms between source frames for
   ordinary modules, 250 ms for SpeedRamp, and deliberate STUTTER holds.
   Resident TimeSampler is measured using selected source-frame identities,
   not a continually increasing timeline counter or its paused fallback video.

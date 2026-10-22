@@ -84,6 +84,7 @@ try {
             intentionalHold:s.module === 'tapdelay', maxAllowedGapMs:s.module === 'speedramp' ? 250 : 150 };
         }),
         decoderCount:final.decoderCount, timingActive:qa.timingSnapshot().active,
+        timingPending:qa.timingSnapshot().capacity.pending,
         sampler:qa.performSamplerSnapshot()
       };
     }.toString()})(${durationMs})`,
@@ -91,8 +92,8 @@ try {
   }, durationMs + 20000);
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
   const report = response.result.value;
-  const failures = report.slots.filter((s: any) => (!allowSceneChanges && !s.sameVideo) || (!s.intentionalHold && (s.callbacks < 2 || s.maxGapMs > s.maxAllowedGapMs)));
-  report.pass = failures.length === 0 && report.decoderCount === 12 && report.timingActive === false;
+  const failures = report.slots.filter((s: any) => !['external-texture','cached-video-texture','resident-frame-bank'].includes(s.samplePath) || (!allowSceneChanges && !s.sameVideo) || (!s.intentionalHold && (s.callbacks < 2 || s.maxGapMs > s.maxAllowedGapMs)));
+  report.pass = failures.length === 0 && report.decoderCount === 12 && report.timingActive === false && report.timingPending === 0 && report.sampler.assets.every((asset:any)=>!asset.loading&&!asset.error);
   mkdirSync(dirname(output), {recursive:true}); writeFileSync(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({pass:report.pass, report:output, maxRafGapMs:report.maxRafGapMs,
     failures:failures.map(({slot,module,maxGapMs,sameVideo}:any)=>({slot,module,maxGapMs,sameVideo}))}, null, 2));
