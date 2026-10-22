@@ -62,4 +62,13 @@ test('the complete Perform demo replaces stale custom MIDI routing without erasi
   expect(get(midiLayers)).toEqual({});expect(get(midiUiOpen)).toBe(false);
   expect(get(signals.timingInput)?.midi[0].events).toEqual([{time:2,strength:1}]);
   expect(get(arrangement).map(section=>section.clipGroupId)).toEqual(['demo-verse','demo-chorus']);
+  for(const section of get(arrangement)) {
+    const modules=[...section.bank.top,...section.bank.bottom];
+    expect(modules).toHaveLength(12);
+    expect(new Set(modules).size).toBe(12);
+    expect(modules).not.toContain('streak');
+    expect(modules.some(id=>['halation','anamorphic','grain'].includes(id))).toBe(false);
+    expect(modules).toEqual(expect.arrayContaining(['bulge','lens','mirror','vhs']));
+    expect(section.deckSnapshot?.bank).toEqual(section.bank);
+  }
 });

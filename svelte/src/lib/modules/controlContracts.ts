@@ -28,9 +28,9 @@ export const EXPECTED_PALETTE_SWAP_IDENTITIES = [
   'grain',
   'dutch',
   'halation',
-  'bulge',
-  'vhs',
-  'lens'
+  'shake',
+  'prism',
+  'streak'
 ] as const;
 
 export type ParamConsumer = 'gpu' | 'runtime' | 'event' | 'midi';

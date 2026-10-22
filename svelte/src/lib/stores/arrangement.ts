@@ -100,8 +100,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 8,
     hue: '#4fd6e8',
     bank: {
-      top: ['transition', 'speedramp', 'leak', 'timesampler', 'streak'],
-      bottom: ['orbit', 'focus', 'halation', 'anamorphic', 'grain']
+      top: ['transition', 'speedramp', 'leak', 'timesampler', 'vhs', 'tapdelay'],
+      bottom: ['orbit', 'focus', 'bulge', 'lens', 'mirror', 'punch']
     },
     pattern: steps({ 0: 0, 8: 2 })
   },
@@ -112,8 +112,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 16,
     hue: '#35e08a',
     bank: {
-      top: ['transition', 'speedramp', 'tapdelay', 'timesampler', 'streak'],
-      bottom: ['punch', 'shake', 'prism', 'focus', 'mirror']
+      top: ['transition', 'speedramp', 'tapdelay', 'timesampler', 'vhs', 'leak'],
+      bottom: ['punch', 'shake', 'prism', 'focus', 'mirror', 'bulge']
     },
     pattern: steps({ 0: 0, 4: 5, 8: 1, 12: 6 })
   },
@@ -124,8 +124,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 16,
     hue: '#ff6bb0',
     bank: {
-      top: ['transition', 'timesampler', 'streak', 'speedramp', 'tapdelay'],
-      bottom: ['punch', 'lens', 'mirror', 'prism', 'bulge']
+      top: ['transition', 'timesampler', 'vhs', 'speedramp', 'tapdelay', 'leak'],
+      bottom: ['punch', 'lens', 'mirror', 'prism', 'bulge', 'orbit']
     },
     pattern: steps({ 0: 0, 2: 1, 4: 3, 6: 2, 8: 0, 10: 4, 12: 9, 13: 5, 14: 1, 15: 3 })
   },
@@ -136,8 +136,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 16,
     hue: '#35e08a',
     bank: {
-      top: ['transition', 'speedramp', 'tapdelay', 'timesampler', 'streak'],
-      bottom: ['punch', 'shake', 'orbit', 'prism', 'grain']
+      top: ['transition', 'speedramp', 'tapdelay', 'timesampler', 'vhs', 'leak'],
+      bottom: ['punch', 'shake', 'orbit', 'prism', 'mirror', 'bulge']
     },
     pattern: steps({ 0: 2, 4: 6, 8: 1, 12: 8 })
   },
@@ -148,8 +148,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 8,
     hue: '#ffb454',
     bank: {
-      top: ['speedramp', 'leak', 'transition', 'timesampler', 'tapdelay'],
-      bottom: ['focus', 'orbit', 'dutch', 'halation', 'vhs']
+      top: ['speedramp', 'leak', 'transition', 'timesampler', 'tapdelay', 'vhs'],
+      bottom: ['focus', 'orbit', 'dutch', 'bulge', 'punch', 'mirror']
     },
     pattern: steps({ 0: 8, 6: 2, 12: 3 })
   },
@@ -160,8 +160,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 16,
     hue: '#ff6bb0',
     bank: {
-      top: ['transition', 'timesampler', 'streak', 'tapdelay', 'speedramp'],
-      bottom: ['punch', 'lens', 'mirror', 'vhs', 'shake']
+      top: ['transition', 'timesampler', 'vhs', 'tapdelay', 'speedramp', 'leak'],
+      bottom: ['punch', 'lens', 'mirror', 'shake', 'bulge', 'orbit']
     },
     pattern: steps({ 0: 0, 1: 5, 3: 2, 4: 3, 6: 9, 8: 0, 9: 1, 11: 4, 12: 6, 14: 2, 15: 7 })
   },
@@ -172,8 +172,8 @@ export const DEFAULT_ARRANGEMENT: ArrangementSection[] = [
     bars: 8,
     hue: '#9d7bff',
     bank: {
-      top: ['leak', 'speedramp', 'transition', 'streak', 'timesampler'],
-      bottom: ['focus', 'halation', 'anamorphic', 'grain', 'orbit']
+      top: ['leak', 'speedramp', 'transition', 'vhs', 'timesampler', 'tapdelay'],
+      bottom: ['focus', 'bulge', 'lens', 'mirror', 'orbit', 'punch']
     },
     pattern: steps({ 0: 1, 8: 0 })
   }

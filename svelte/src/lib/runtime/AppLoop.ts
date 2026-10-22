@@ -8,7 +8,6 @@ import { playbackWorkspace } from '$lib/stores/rackUi';
 import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
 import { performTimeSamplerFrames, type SamplerFrameSource } from './PerformTimeSamplerFrames';
 import { timingSettings, timingCacheCapacity } from '$lib/stores/timing';
-import { isTauriRuntime } from '$lib/platform/runtime';
 import { audioEngine } from '$lib/audio';
 import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
@@ -485,7 +484,7 @@ function syncControlledVideos(
 ) {
   const live = audioEngine.getLiveScheduleFrame();
   const timeSamplerSlot = assignments.find(({ moduleId }) => moduleId === 'timesampler')?.slotId;
-  if (isTauriRuntime() && timeSamplerSlot) {
+  if (timeSamplerSlot) {
     const sources:SamplerFrameSource[]=[];
     const current=get(videoLayers)[timeSamplerSlot];
     if(current)sources.push(current);
@@ -505,7 +504,7 @@ function syncControlledVideos(
   if (timeSamplerSlot && live?.timeSampler) {
     const ts = live.timeSampler;
     const seconds=timeSamplerVideoTarget(frame,ts.sourceTimestampSeconds);
-    const resident=isTauriRuntime() && performTimeSamplerFrames.select(timeSamplerSlot,get(videoLayers)[timeSamplerSlot]??null,seconds);
+    const resident=performTimeSamplerFrames.select(timeSamplerSlot,get(videoLayers)[timeSamplerSlot]??null,seconds);
     if(resident) {
       const video=videoPool.get(timeSamplerSlot);
       if(video&&!video.paused)video.pause();

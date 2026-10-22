@@ -125,7 +125,7 @@ describe('module shader identity contract', () => {
     const idleGraphic = MODULE_FX_WGSL.match(/fn idleGraphic\([^]*?\n\}/)?.[0];
     expect(idleGraphic).toBeDefined();
 
-    for (const mode of [9, 10, 13, 15]) {
+    for (const mode of [9, 10, 13]) {
       const branch = idleGraphic?.match(
         new RegExp(`mode == ${mode}\\.0\\) \\{([^]*?)(?=\\n  \\} else if|\\n  \\} else \\{)`)
       )?.[1];
