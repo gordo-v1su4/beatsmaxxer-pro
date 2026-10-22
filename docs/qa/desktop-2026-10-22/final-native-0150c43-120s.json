@@ -1,0 +1,334 @@
+{
+  "durationMs": 120000,
+  "frames": 4607,
+  "maxRafGapMs": 116.59999999999127,
+  "native": true,
+  "slots": [
+    {
+      "slot": "top-0",
+      "module": "transition",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2857,
+      "maxGapMs": 183.29999999998836,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 183.29999999998836,
+          "at": 64.41866666666667,
+          "media": 11.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-1",
+      "module": "speedramp",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2725,
+      "maxGapMs": 183.29999999998836,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 183.29999999998836,
+          "at": 64.52000000000001,
+          "media": 7.833333,
+          "swaps": 1,
+          "rate": 0.7160202210554251,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 46,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 250
+    },
+    {
+      "slot": "top-2",
+      "module": "leak",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2859,
+      "maxGapMs": 183.29999999998836,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 183.29999999998836,
+          "at": 64.41866666666667,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-3",
+      "module": "timesampler",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2944,
+      "maxGapMs": 116.59999999999127,
+      "trailingGapMs": 40.09999998807325,
+      "gaps": [],
+      "droppedFrames": 0,
+      "samplePath": "resident-frame-bank",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-4",
+      "module": "vhs",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2854,
+      "maxGapMs": 166.59999999999127,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 166.59999999999127,
+          "at": 64.52000000000001,
+          "media": 4.083333,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "top-5",
+      "module": "tapdelay",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2858,
+      "maxGapMs": 216.6999999999971,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 216.6999999999971,
+          "at": 64.44800000000001,
+          "media": 11.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": true,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-0",
+      "module": "orbit",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2858,
+      "maxGapMs": 199.89999999999418,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 199.89999999999418,
+          "at": 64.488,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-1",
+      "module": "focus",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2858,
+      "maxGapMs": 183.3000000000029,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 183.3000000000029,
+          "at": 64.488,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-2",
+      "module": "bulge",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2850,
+      "maxGapMs": 166.59999999999127,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 166.59999999999127,
+          "at": 64.36800000000001,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-3",
+      "module": "lens",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2854,
+      "maxGapMs": 183.3000000000029,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 183.3000000000029,
+          "at": 64.38933333333334,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-4",
+      "module": "mirror",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2857,
+      "maxGapMs": 150.10000000000582,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 150.10000000000582,
+          "at": 64.44800000000001,
+          "media": 11.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    },
+    {
+      "slot": "bottom-5",
+      "module": "punch",
+      "sameVideo": false,
+      "swaps": 3,
+      "moduleLayoutChanged": false,
+      "callbacks": 2858,
+      "maxGapMs": 166.60000000000582,
+      "trailingGapMs": 6.799999988084892,
+      "gaps": [
+        {
+          "gap": 166.60000000000582,
+          "at": 64.488,
+          "media": 4.041667,
+          "swaps": 1,
+          "rate": 1,
+          "seeking": false
+        }
+      ],
+      "droppedFrames": 1,
+      "samplePath": "cached-video-texture",
+      "intentionalHold": false,
+      "maxAllowedGapMs": 150
+    }
+  ],
+  "decoderCount": 12,
+  "timingActive": false,
+  "timingPending": 0,
+  "sampler": {
+    "usedBytes": 319334400,
+    "limit": 8589934592,
+    "assets": [
+      {
+        "name": "Redline clip 04.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 219,
+        "bytes": 122342400,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 9.125,
+        "decoderDisposed": true,
+        "decodedFrames": 219,
+        "uploadedFrames": 219,
+        "loadMs": 935.9000000059605
+      },
+      {
+        "name": "Redline clip 09.mp4",
+        "loading": false,
+        "error": null,
+        "ready": true,
+        "frames": 361,
+        "bytes": 196992000,
+        "width": 480,
+        "height": 270,
+        "fps": 24,
+        "duration": 15.041666666666666,
+        "decoderDisposed": true,
+        "decodedFrames": 361,
+        "uploadedFrames": 361,
+        "loadMs": 551.8999999910593
+      }
+    ],
+    "selected": {
+      "slot": "top-3",
+      "pts": 9.75,
+      "frameId": 2953
+    }
+  },
+  "pass": false
+}

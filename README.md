@@ -26,7 +26,7 @@ DaVinci Resolve timeline.
 - **First-pass editing** — use musical triggers to generate cuts, with Balanced or Random clip selection; record and review the take.
 - **Timing** — shape playback with speed ramps, stutters and Time Sampler.
 - **Arrange** — edit song sections, assign clip banks, loop sections and replay saved cuts and settings.
-- **Perform** — play ten clip slots through live shader effects and a beat-synced program monitor.
+- **Perform** — play twelve clip slots through live shader effects and a beat-synced program monitor.
 - **Export** — render video from original-resolution sources or export a Timing timeline for further editing in **DaVinci Resolve**.
 - **Music controls** — rhythm/structure analysis, MIDI note triggers, and independent key, pitch and tempo.
 - **Web and desktop** — browser app, phone performance view and Windows desktop app with updates.
@@ -62,7 +62,7 @@ Slow-motion preparation can use the optional [GPU interpolation worker](media-wo
 |-------|------|
 | UI | SvelteKit 5 + runes |
 | Render | **WebGPU only** (WGSL) — one `AppLoop` rAF drives `WebGpuEngine` |
-| Decode | 10 slot-owned `HTMLVideoElement` pipelines in a shared pool; PGM reuses one |
+| Decode | 12 slot-owned `HTMLVideoElement` pipelines in a shared pool; PGM reuses one; TimeSampler selects resident GPU frames |
 | Rhythm | Hosted Essentia analysis + Web Audio fallback |
 | Audio FX | SoundTouchJS (KEY / PITCH / TEMPO) |
 | Desktop | Tauri 2 shell around the same web build (Windows) |

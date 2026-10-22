@@ -64,6 +64,25 @@ Chrome instance. The installed public release is a separate artifact.
 
 ## Current-source follow-up
 
+**Latest native acceptance still fails intermittently.** The rebuilt 0150c43
+executable [failed a 120-second repeat](final-native-0150c43-120s.json) with
+simultaneous ordinary-source gaps of 150.1–216.7 ms around song second 64.4.
+Main-loop maximum was 116.6 ms. No local build or unit test overlapped this run;
+the event occurred away from a section handoff. Earlier clean runs below do not
+establish consistent final-source acceptance.
+
+A fifteen-second replay under CPU profiling passed. A subsequent 120-second
+trace correlated seeks/waits, long tasks and focus/visibility. The page stayed
+visible and focused, with no reported long tasks. Its only failed source gap
+was a 179.1 ms leading gap on top-0 while seeking after the diagnostic jump to
+60 seconds. The original steady-playback hitch did not recur. Raw profile and
+event files remain under ignored output/. No browser flag, decoder-sharing or
+quality change was shipped from these probes.
+
+CI passed and Greptile reviewed 0150c43 at 5/5. Runtime acceptance remains open.
+The required full OCR re-review was dispatched as Actions run 39827525357 and
+was still running at this checkpoint.
+
 The c259d76 native debug executable was rebuilt from the shared frontend and
 tested with the public twelve-slot Redline Perform demo, RANDOM order and 1BT
 cuts. The [isolated 120-second repeat](current-native-isolated-120s.json) passed
@@ -79,7 +98,7 @@ The clean repeat ran without concurrent local builds or tests.
 The native frontend and executable compiled successfully. Full smoke packaging
 stopped at updater signing, so no installer-smoke pass or published update is
 claimed. The subsequent first-scene recall priming fix has unit/type/build
-coverage; native rebuild and final acceptance of that follow-up remain pending.
+coverage. Its native executable rebuild passed; its playback repeat is above.
 
 ![Rebuilt native app](current-native-loaded.png)
 
