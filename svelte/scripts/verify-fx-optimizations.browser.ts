@@ -2,7 +2,7 @@
  * Compares every effect's real pixels with both optional paths independently. */
 import { ModePipelineCache } from '../src/lib/rendering/webgpu/ModePipelineCache';
 import { SHADER_EFFECT_MODES } from '../src/lib/rendering/webgpu/shaders/moduleFx.wgsl';
-import { FxUniformWriter } from '../src/lib/rendering/webgpu/FxUniforms';
+import { FxUniformWriter, FX_UNIFORM_BYTES } from '../src/lib/rendering/webgpu/FxUniforms';
 import { detectFxCapabilities } from '../src/lib/rendering/webgpu/FxCapabilities';
 
 export async function verifyFxOptimizations() {
@@ -32,12 +32,12 @@ export async function verifyFxOptimizations() {
     for (const target of [source, feedback]) device.queue.writeTexture({ texture: target }, pixels, { bytesPerRow: 256 }, size);
     const output = texture(GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC);
     const readback = device.createBuffer({ size: pixels.length, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-    const uniform = device.createBuffer({ size: 160, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+    const uniform = device.createBuffer({ size: FX_UNIFORM_BYTES, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
     resources.push(readback, uniform);
     const sampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
     const sourceView = source.createView(), feedbackView = feedback.createView();
-    const baseline = new Map<number, Uint8Array>();
-    const report: Array<{ immediates: boolean; sharedTextures: boolean; pipelines: number; comparedModes: number; maxChannelDifference: number }> = [];
+    const baseline = new Map<string, Uint8Array>();
+    const report: Array<{ immediates: boolean; sharedTextures: boolean; pipelines: number; comparedModes: number; skippedUploads: number; maxChannelDifference: number }> = [];
     for (const capabilities of [
       { immediates: false, sharedTextures: false },
       { immediates: true, sharedTextures: false },
@@ -62,32 +62,48 @@ export async function verifyFxOptimizations() {
       ] });
       const writer = new FxUniformWriter();
       let maxChannelDifference = 0;
+      let skippedUploads = 0;
       for (const mode of SHADER_EFFECT_MODES) {
-        const data = new Float32Array(40).fill(.5);
+        const data = new Float32Array(FX_UNIFORM_BYTES / Float32Array.BYTES_PER_ELEMENT).fill(.5);
         data[0] = 7.2; data[1] = .2; data[2] = 128; data[3] = 1;
         data[6] = .75; data[7] = mode; data[14] = 1; data[19] = 16 / 9;
         data[20] = 1; data[22] = 3.375; data[23] = 1 / 60;
         data[26] = 1; data[30] = -.1;
         const integers = new Uint32Array(data.buffer);
         integers[24] = 203; integers[27] = 4; integers[28] = 0xfedcba98; integers[29] = 207;
-        writer.write(device, uniform, data, capabilities.immediates);
-        const encoder = device.createCommandEncoder();
-        const pass = encoder.beginRenderPass({ colorAttachments: [{ view: output.createView(), loadOp: 'clear', storeOp: 'store' }] });
-        pass.setPipeline(cache.get('idle', mode)!);
-        if (capabilities.immediates) pass.setImmediates(0, writer.immediateData);
-        pass.setBindGroup(0, group); pass.draw(3); pass.end();
-        encoder.copyTextureToBuffer({ texture: output }, { buffer: readback, bytesPerRow: 256 }, size);
-        device.queue.submit([encoder.finish()]);
-        await readback.mapAsync(GPUMapMode.READ);
-        const actual = new Uint8Array(readback.getMappedRange()).slice();
-        readback.unmap();
-        if (!capabilities.immediates && !capabilities.sharedTextures) baseline.set(mode, actual);
-        else {
-          const expected = baseline.get(mode)!;
-          actual.forEach((channel, i) => { maxChannelDifference = Math.max(maxChannelDifference, Math.abs(channel - expected[i])); });
+        // Same mode and static controls: the second draw must use immediates
+        // while the GPU uniform buffer still contains the first draw's values.
+        for (let sample = 0; sample < 2; sample++) {
+          if (sample === 1) {
+            data[0] = 9.7; data[1] = .7; data[4] = .9; data[5] = .1;
+            data[22] = 4.25; data[23] = 1 / 30; data[25] = .8; data[26] = .5;
+            data[30] = .2; data[34] = .9; data[35] = .1; data[36] = .8;
+            integers[24] = 255; integers[27] = 5; integers[28] = 0x7fffffff; integers[29] = 256;
+          }
+          const uploaded = writer.write(device, uniform, data, capabilities.immediates);
+          if (capabilities.immediates && sample === 1) {
+            if (uploaded) throw new Error(`Mode ${mode}: immediate-only changes unexpectedly uploaded uniforms`);
+            skippedUploads++;
+          }
+          const encoder = device.createCommandEncoder();
+          const pass = encoder.beginRenderPass({ colorAttachments: [{ view: output.createView(), loadOp: 'clear', storeOp: 'store' }] });
+          pass.setPipeline(cache.get('idle', mode)!);
+          if (capabilities.immediates) pass.setImmediates(0, writer.immediateData);
+          pass.setBindGroup(0, group); pass.draw(3); pass.end();
+          encoder.copyTextureToBuffer({ texture: output }, { buffer: readback, bytesPerRow: 256 }, size);
+          device.queue.submit([encoder.finish()]);
+          await readback.mapAsync(GPUMapMode.READ);
+          const actual = new Uint8Array(readback.getMappedRange()).slice();
+          readback.unmap();
+          const key = `${mode}:${sample}`;
+          if (!capabilities.immediates && !capabilities.sharedTextures) baseline.set(key, actual);
+          else {
+            const expected = baseline.get(key)!;
+            actual.forEach((channel, i) => { maxChannelDifference = Math.max(maxChannelDifference, Math.abs(channel - expected[i])); });
+          }
         }
       }
-      report.push({ ...capabilities, pipelines: cache.readyCount, comparedModes: SHADER_EFFECT_MODES.length, maxChannelDifference });
+      report.push({ ...capabilities, pipelines: cache.readyCount, comparedModes: SHADER_EFFECT_MODES.length, skippedUploads, maxChannelDifference });
       if (maxChannelDifference > 1) throw new Error(`GPU pixel regression: ${JSON.stringify(report)}`);
     }
     await device.queue.onSubmittedWorkDone();

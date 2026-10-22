@@ -18,10 +18,10 @@ const immediateWords = new Set<number>(FX_IMMEDIATE_FIELDS.map(([, word]) => wor
 
 export function withFxImmediates(source: string): string {
   for (const [name] of FX_IMMEDIATE_FIELDS) {
-    source = source.replaceAll(new RegExp(`\\bu\\.${name}\\b`, 'g'), `live.${name}`);
+    source = source.replaceAll(new RegExp(`\\bu\\.${name}\\b`, 'g'), `fxLive.${name}`);
   }
-  return `requires immediate_address_space;\nstruct LiveUniforms {\n${FX_IMMEDIATE_FIELDS
-    .map(([name, , type]) => `  ${name}: ${type},`).join('\n')}\n}\nvar<immediate> live: LiveUniforms;\n${source}`;
+  return `requires immediate_address_space;\nstruct FxLiveUniforms {\n${FX_IMMEDIATE_FIELDS
+    .map(([name, , type]) => `  ${name}: ${type},`).join('\n')}\n}\nvar<immediate> fxLive: FxLiveUniforms;\n${source}`;
 }
 
 /** One instance per binding, so two draws never share mutable uniform storage. */

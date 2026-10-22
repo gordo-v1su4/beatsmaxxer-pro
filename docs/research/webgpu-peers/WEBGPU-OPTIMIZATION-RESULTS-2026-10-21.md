@@ -22,6 +22,8 @@ Import `/scripts/verify-fx-optimizations.browser.ts` from the local Vite server 
 
 No GPU validation errors. This verifies one deterministic parameter/input state per mode, not every control combination, imported-video color space, or every browser. Live playback separately exercised both external and cached video paths.
 
+PR review follow-up (2026-10-22): the GPU differential script now renders two consecutive states per mode, changing only immediate fields for the second draw. It asserts that each immediates configuration skips all 20 second-draw uniform uploads and compares those pixels against the corresponding buffer-only states. All four configurations passed again with maximum channel difference 0 and no validation errors on the same NVIDIA adapter. This covers stale uniform-buffer values instead of allowing a full upload to mask a missing immediate rewrite.
+
 ## Live Beatsmaxxer playback samples
 
 Four separate 10-second samples used the included 12-clip QA rack, a fresh page, the same output viewport, and one active test renderer. Another Chrome test tab had been closed before these measurements. Both optimizations preserve automatic capability fallback.

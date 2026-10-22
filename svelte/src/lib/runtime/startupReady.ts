@@ -30,7 +30,8 @@ export async function waitForStartupReady(
   // init() can finish all compiles before the first poll. That first frame
   // already contains the ready shaders; an idle rack may not draw a second.
   let lastUnreadyFrame = 0;
-  let previousReady = 0, previousTotal = 0, stalled = false;
+  let previousReady = 0;
+  let stalled = false;
   try {
     for (;;) {
       signal.throwIfAborted();
@@ -40,12 +41,11 @@ export async function waitForStartupReady(
       previousAt = now;
       wasVisible = visible;
       const state = read();
-      if (state.ready > previousReady || state.total !== previousTotal) {
+      if (state.ready > previousReady) {
         remainingMs = timeoutMs;
         if (stalled) { stalled = false; onStallChange?.(false); }
       }
       previousReady = state.ready;
-      previousTotal = state.total;
       progress(state);
       if (state.total > 0 && state.ready >= state.total) {
         if (visible && state.frame > lastUnreadyFrame) {

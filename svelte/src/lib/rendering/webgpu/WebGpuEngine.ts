@@ -409,7 +409,16 @@ export class WebGpuEngine {
           this.fxIdlePipeline = idle;
         }
       );
-    })();
+    })().catch((error) => {
+      // A stale device's rejection must not tear down its replacement.
+      if (generation === this.deviceGeneration && this.device === device) {
+        this.modePipelines?.dispose();
+        this.modePipelines = null;
+        this.modePipelinesPromise = null;
+        console.error('[webgpu] FX pipeline setup failed; the next attach retries', error);
+      }
+      throw error;
+    });
     return this.modePipelinesPromise;
   }
 
@@ -1071,6 +1080,8 @@ export class WebGpuEngine {
       );
     }
 
+    // attachCanvas allocates one uniform buffer per binding; each writer owns
+    // that buffer's last uploaded static values exclusively.
     let uniforms = this.uniformWriters.get(binding.uniformBuffer);
     if (!uniforms) {
       uniforms = new FxUniformWriter();

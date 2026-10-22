@@ -42,7 +42,7 @@ describe('FX immediate parameter transport', () => {
     const source = withFxImmediates(moduleFxWgslForMode(11, 'video'));
     expect(source).toContain('requires immediate_address_space;');
     expect(source).toContain('fixedStepIndex: u32');
-    expect(source).toContain('live.beatPhase');
+    expect(source).toContain('fxLive.beatPhase');
     expect(source).not.toMatch(/\bu\.(beat|beatPhase|highAmp|audioFrameId)\b/);
     expect(source).toContain('u.p0');
     expect(source).toContain('var<uniform> u: Uniforms;');

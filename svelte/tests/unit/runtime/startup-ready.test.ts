@@ -125,3 +125,20 @@ test('a watched stall stays covered and recovers automatically when graphics fin
   expect(opened).toBe(true);
   expect(stalled.mock.calls).toEqual([[true], [false]]);
 });
+
+test('registering more pipelines without compiling any does not conceal a stall', async () => {
+  vi.useFakeTimers();
+  const state = { ready: 1, total: 40, frame: 1 };
+  const abort = new AbortController();
+  const stalled = vi.fn();
+  const waiting = waitForStartupReady(() => state, () => {}, abort.signal, 1000, () => true, stalled);
+  for (let i = 0; i < 3; i++) {
+    await vi.advanceTimersByTimeAsync(400);
+    state.total++;
+  }
+  expect(stalled).toHaveBeenCalledExactlyOnceWith(true);
+  const cancelled = expect(waiting).rejects.toThrow();
+  abort.abort();
+  await vi.advanceTimersByTimeAsync(50);
+  await cancelled;
+});
