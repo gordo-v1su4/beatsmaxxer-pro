@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { VIDEO_LOAD_TIMEOUT_MS, VideoPool } from '$lib/media/VideoPool';
+import type { TimelineFrame } from '$lib/transport';
 
 class FakeVideo {
   src = '';
@@ -91,6 +92,56 @@ describe('VideoPool candidate transactions', () => {
     expect(pool.get('fx')).toBe(second.video);
     await commit.previousReleased;
     expect((first.video as unknown as FakeVideo).removed).toBe(1);
+  });
+
+  test('parks a future landing without playing or replacing the visible video', async () => {
+    const pool = new VideoPool();
+    const current = await pool.prepare('fx', 'blob:current');
+    pool.commitCandidate(current);
+    const next = await pool.prepare('fx', 'blob:next');
+    const video = next.video as unknown as FakeVideo;
+    const play = vi.spyOn(video, 'play');
+    const parked = pool.parkCandidate(next, 41);
+    expect(video.currentTime).toBe(1);
+    video.emit('seeked');
+    await parked;
+    expect(play).not.toHaveBeenCalled();
+    expect(video.paused).toBe(true);
+    expect(pool.get('fx')).toBe(current.video);
+    await pool.discardCandidate(next);
+  });
+
+  test('external cancellation releases a pending lookahead decoder', async () => {
+    const video = new FakeVideo(null);
+    vi.mocked(document.createElement).mockReturnValueOnce(video as unknown as HTMLVideoElement);
+    const pool = new VideoPool(), controller = new AbortController();
+    const pending = pool.prepare('fx', 'blob:next', controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toThrow('video-candidate-invalidated');
+    expect(video.removed).toBe(1);
+  });
+
+  test.each([0.5, 1, 2])('starts a parked replacement at rate %s after stopping the outgoing decoder, without seeking its ready frame again', async (rate) => {
+    const pool = new VideoPool();
+    const current = await pool.prepare('fx', 'blob:current');
+    pool.commitCandidate(current); pool.markFreeRun('fx');
+    const frame = { playing: true, positionSeconds: 41.08, playbackRate: rate,
+      generation: 1, contextTimeSeconds: 41.08 } as TimelineFrame;
+    pool.tick(frame);
+    const next = await pool.prepare('fx', 'blob:next'), video = next.video as unknown as FakeVideo;
+    const parked = pool.parkCandidate(next, 41);
+    video.emit('seeked'); await parked;
+    const play = vi.spyOn(video, 'play').mockImplementation(async () => {
+      expect(current.video.paused).toBe(true); video.paused = false;
+    });
+    await pool.prewarmCandidate(next);
+    expect(video.playbackRate).toBe(rate);
+    expect(play).not.toHaveBeenCalled();
+    expect(current.video.paused).toBe(false);
+    pool.commitCandidate(next);
+    expect(play).toHaveBeenCalledOnce();
+    pool.tick({ ...frame, contextTimeSeconds: 41.096, positionSeconds: 41.096 });
+    expect(video.currentTime).toBe(1);
   });
 
   test('invalidates pending preparation on detach and destroys its late element', async () => {

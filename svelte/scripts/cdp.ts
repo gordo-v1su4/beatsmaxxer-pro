@@ -391,7 +391,6 @@ export async function withChrome<T>(
     try {
       return await fn(session);
     } catch (error) {
-      if(chromeStderr)console.error(`[${label}] Chrome stderr tail`,chromeStderr);
       try {
         console.error(`[${label}] startup diagnostics`, await evalPage(session, `(() => {
           const state = window.__BMX_QA__?.snapshot?.();
@@ -402,6 +401,9 @@ export async function withChrome<T>(
       } catch { /* Preserve the original failure if the browser also stopped responding. */ }
       throw error;
     }
+  } catch (error) {
+    if(chromeStderr)console.error(`[${label}] Chrome stderr tail`,chromeStderr);
+    throw error;
   } finally {
     proc.kill(9);
     try {

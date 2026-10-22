@@ -8,7 +8,6 @@
     if (!viewport || !shell) return;
     const desktop = matchMedia('(min-width: 961px)');
     let frame = 0;
-    const rows = [...shell.querySelectorAll<HTMLElement>('.rack-row')];
     const reset = () => {
       viewport.classList.remove('rack-fit');
       for (const property of ['width', 'min-height', 'zoom']) shell.style.removeProperty(property);
@@ -31,35 +30,42 @@
       shell.style.minHeight = `${height / scale}px`;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(fit); };
-    let previousRackWidth = -1;
-    const previousRowHeights = new Map<Element, number>();
-    const previousFixedHeights = new Map<Element, number>();
-    const fixedBlocks = [...shell.querySelectorAll<HTMLElement>('.main-viewer, .sections, .topbar-shell, .timing-footer')];
+    const heightTargets = '.rack-row, .main-viewer, .sections, .topbar-shell, .timing-footer';
+    const targetSelector = `.perform-rows, ${heightTargets}`;
+    // These are imperative observer caches, not state consumed by the template.
+    const observed = new Set<Element>();
+    const previousSizes = new Map<Element, number>();
     const resize = new ResizeObserver(entries => {
       for (const entry of entries) {
         if (entry.target === viewport) schedule();
-        else if (rows.includes(entry.target as HTMLElement)) {
-          if (Math.abs(entry.contentRect.height - (previousRowHeights.get(entry.target) ?? -1)) > 0.5) {
-            previousRowHeights.set(entry.target, entry.contentRect.height);
-            schedule();
+        else {
+          const size = entry.target.matches('.perform-rows') ? entry.contentRect.width : entry.contentRect.height;
+          if (Math.abs(size - (previousSizes.get(entry.target) ?? -1)) > 0.5) {
+            previousSizes.set(entry.target, size); schedule();
           }
-        } else if (fixedBlocks.includes(entry.target as HTMLElement)) {
-          if (Math.abs(entry.contentRect.height - (previousFixedHeights.get(entry.target) ?? -1)) > 0.5) {
-            previousFixedHeights.set(entry.target, entry.contentRect.height);
-            schedule();
-          }
-        } else if (Math.abs(entry.contentRect.width - previousRackWidth) > 0.5) {
-          previousRackWidth = entry.contentRect.width;
-          schedule();
         }
       }
     });
     resize.observe(viewport);
-    const rack = shell.querySelector<HTMLElement>('.perform-rows');
-    if (rack) resize.observe(rack);
-    for (const row of rows) resize.observe(row);
-    for (const block of fixedBlocks) resize.observe(block);
-    const content = new MutationObserver(schedule);
+    const refreshTargets = () => {
+      const targets = new Set(shell.querySelectorAll(targetSelector));
+      for (const target of observed) if (!targets.has(target)) {
+        resize.unobserve(target); observed.delete(target); previousSizes.delete(target);
+      }
+      for (const target of targets) if (!observed.has(target)) {
+        observed.add(target); resize.observe(target);
+      }
+    };
+    refreshTargets();
+    const content = new MutationObserver(records => {
+      // ON AIR badges, beat counters and filenames change during playback but
+      // do not change the workspace's dimensions. Measuring them reset zoom
+      // and forced two full layouts on every PGM cut. Only discover newly
+      // mounted layout blocks here; ResizeObserver owns actual size changes.
+      const changedTargets = records.some(record => [...record.addedNodes, ...record.removedNodes]
+        .some(node => node instanceof Element && (node.matches(targetSelector) || node.querySelector(targetSelector))));
+      if (changedTargets) { refreshTargets(); schedule(); }
+    });
     content.observe(shell, { childList: true, subtree: true });
     desktop.addEventListener('change', schedule);
     schedule();

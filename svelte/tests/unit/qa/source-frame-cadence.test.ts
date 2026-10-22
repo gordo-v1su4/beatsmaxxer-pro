@@ -1,5 +1,11 @@
 import { describe,expect,it } from 'vitest';
 import { createSourceFrameCadence } from '$lib/qa/sourceFrameCadence';
+
+it('cadence factory survives serialization into a separate browser scope',()=>{
+  const factory=new Function(`return (${createSourceFrameCadence.toString()})`)() as typeof createSourceFrameCadence;
+  const cadence=factory(100);cadence.frame(140);
+  expect(cadence.finish(500)).toEqual({callbacks:1,maxGapMs:360,trailingGapMs:360});
+});
 describe('native source frame cadence evidence',()=>{
   it('rejects two early frames followed by a freeze through the sample end',()=>{
     const cadence=createSourceFrameCadence(0);cadence.frame(20);cadence.frame(60);

@@ -13,6 +13,7 @@ import { webGpuEngine } from '$lib/rendering/webgpu/WebGpuEngine';
 import { videoPool } from '$lib/media/VideoPool';
 import { getVideoSourcePort } from '$lib/platform/videoSource';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
+import { sceneChanges } from '$lib/arrangement/sectionScenes';
 import {
   advanceSpeedRampSource,
   type SpeedRampSourceState
@@ -40,6 +41,8 @@ import {
   activeSectionIndex,
   sectionStarts,
   arrangement,
+  autoBank,
+  autoClips,
   arrangementLoopRegion,
   arrangementTotalSteps,
   enterSection,
@@ -326,6 +329,36 @@ export function timeSamplerVideoTarget(
   sourceTimestampSeconds: number
 ) {
   return frame.playing ? sourceTimestampSeconds : frame.positionSeconds;
+}
+
+/** Prepare only the next changed bank, eight beats before its musical boundary. */
+function prepareUpcomingScene(frame: TimelineFrame) {
+  if (!frame.playing) { void mediaRuntime.clearUpcomingScene(); return; }
+  const sections = get(arrangement), replay = get(arrangementMode) === 'play';
+  const bounds = resolveSectionBounds(sections, get(sectionStarts), get(analysisBeatGrid), frame.bpm);
+  const current = sectionIndexAtSeconds(bounds, frame.positionSeconds);
+  const layers = get(videoLayers), loop = get(arrangementLoopRegion);
+  const controlled = new Set<string>(currentRackAssignments(get(rackTop), get(rackBottom))
+    .filter(a => a.moduleId === 'speedramp' || a.moduleId === 'timesampler').map(a => a.slotId));
+  for (let i = Math.max(0, current + 1); i < sections.length; i++) {
+    const section = sections[i], at = bounds[i].startSeconds;
+    if (loop && at >= loop.endSeconds) break;
+    const scene = replay ? section.deckSnapshot?.scene ?? section.scene : section.scene;
+    if (!scene || (!replay && !get(autoClips) && !section.clipGroupId)) continue;
+    const changes = sceneChanges(scene, layers);
+    if (!changes.length) continue;
+    if (at - frame.positionSeconds > 8 * (frame.beatIntervalSeconds || 60 / frame.bpm)) break;
+    const bank = replay ? section.deckSnapshot?.bank ?? section.bank
+      : get(autoBank) ? section.bank : { top: get(rackTop), bottom: get(rackBottom) };
+    const nextControlled = new Set<string>(currentRackAssignments(bank.top, bank.bottom)
+      .filter(a => a.moduleId === 'speedramp' || a.moduleId === 'timesampler').map(a => a.slotId));
+    // TimeSampler already has future GPU banks. SpeedRamp needs its live
+    // mapped clock; neither may be parked using the ordinary source clock.
+    const ordinary = changes.filter(c => !controlled.has(c.slotId) && !nextControlled.has(c.slotId));
+    mediaRuntime.prepareUpcomingScene(`${frame.generation}:${section.id}:${replay}`, ordinary, at);
+    return;
+  }
+  void mediaRuntime.clearUpcomingScene();
 }
 
 /**
@@ -673,6 +706,7 @@ export function startAppLoop() {
     if(timing && performTimeSamplerFrames.active)performTimeSamplerFrames.dispose();
     webGpuEngine.setTimingTextures(timing ? timingRuntime.textureFor : null);
     if (timing) {
+      void mediaRuntime.clearUpcomingScene();
       // Timing owns each source: ramps use resident frames, while originals
       // keep normal browser decoding and one reusable video texture.
       if(frame.playing)runArrangement(frame);
@@ -745,6 +779,8 @@ export function startAppLoop() {
 
     runSequencer(frame);
 
+    prepareUpcomingScene(frame);
+
     const queued = get(queuedPgmSource);
     const queuedSlot = queued ? currentRackSlotForModule(queued) : null;
     if (queuedSlot !== lastQueuedPrewarmSlot) {
@@ -776,6 +812,7 @@ export function startAppLoop() {
 }
 
 export function stopAppLoop() {
+  void mediaRuntime.clearUpcomingScene();
   running = false;
   videoPool.setCandidateClockResolver(null);
   webGpuEngine.setOwnedVideoFrames(null);

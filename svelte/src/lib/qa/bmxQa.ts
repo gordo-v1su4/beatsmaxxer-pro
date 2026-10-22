@@ -317,6 +317,7 @@ export function installBmxQaHook() {
       return this.eightVideoSnapshot();
     },
     performSamplerSnapshot() { return performTimeSamplerFrames.diagnostics; },
+    upcomingSceneSnapshot() { return mediaRuntime.upcomingSceneSnapshot; },
     eightVideoSnapshot() {
       const top = get(rackTop);
       const ids = [...top, ...get(rackBottom)];

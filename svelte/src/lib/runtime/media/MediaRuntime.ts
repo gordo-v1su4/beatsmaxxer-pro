@@ -18,9 +18,11 @@ import { get } from 'svelte/store';
 import { timingActive, allowTimingClip, RIFE_RAMP_ONLY, clipTiming } from '$lib/stores/timing';
 import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation } from '$lib/runtime/timing/preparation';
 import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
+import { PreparedSceneClips, type UpcomingSceneClip } from './PreparedSceneClips';
 
 interface MediaPoolPort {
-  prepare(moduleId: string, url: string): Promise<VideoCandidate>;
+  prepare(moduleId: string, url: string, signal?: AbortSignal): Promise<VideoCandidate>;
+  parkCandidate?(candidate: VideoCandidate, positionSeconds: number): Promise<void>;
   prewarmCandidate(candidate: VideoCandidate): Promise<void>;
   commitCandidate(candidate: VideoCandidate): VideoCommitResult;
   discardCandidate(candidate: VideoCandidate): Promise<void>;
@@ -69,6 +71,7 @@ export class MediaRuntime {
   private disposed = false;
   private readonly enforceRackSlots: boolean;
   private residentFactor:((source:File|string)=>number|null)|null;
+  private readonly upcoming: PreparedSceneClips;
 
   constructor(dependencies: MediaRuntimeDependencies = {}) {
     this.clipRegistry = dependencies.clipRegistry ?? new ClipRegistry();
@@ -76,12 +79,19 @@ export class MediaRuntime {
     this.decks = dependencies.decks ?? hotDeckManager;
     this.publish = dependencies.publish ?? publishVideoLayer;
     this.residentFactor=dependencies.residentFactor??null;
+    this.upcoming = new PreparedSceneClips(this.clipRegistry, this.pool);
     // Dependency-injected runtimes remain generic for isolated lifecycle tests.
-    // The production singleton is hard-capped to the ten stable rack slots.
+    // The production singleton is hard-capped to the twelve stable rack slots.
     this.enforceRackSlots = !dependencies.pool && !dependencies.clipRegistry;
   }
 
   setResidentSourceFactor(factor:((source:File|string)=>number|null)|null){this.residentFactor=factor;}
+
+  prepareUpcomingScene(key: string, clips: readonly UpcomingSceneClip[], at: number) {
+    this.upcoming.stage(key, clips, at);
+  }
+  clearUpcomingScene() { return this.upcoming.clear(); }
+  get upcomingSceneSnapshot() { return this.upcoming.diagnostics; }
 
   private resolveSourceId(id: string) {
     const sourceId = currentRackSlotForModule(id) ?? id;
@@ -113,7 +123,8 @@ export class MediaRuntime {
       return Promise.resolve({status:'success',clip:current,previous:current});
     }
     clearSlotPreparation(sourceId);
-    return this.registerStaged(sourceId, target.name, () => this.clipRegistry.stageFile(sourceId, target));
+    return this.registerStaged(sourceId, target.name, () =>
+      this.upcoming.take(sourceId, target) ?? this.clipRegistry.stageFile(sourceId, target));
   }
 
   private async prepareAndRegister(sourceId:string,file:File):Promise<ClipRegistrationResult>{
@@ -159,7 +170,8 @@ export class MediaRuntime {
     }
     return file
       ? this.registerModuleFileClip(sourceId, file)
-      : this.registerStaged(sourceId, name, () => this.clipRegistry.stageUrl(sourceId, name, url));
+      : this.registerStaged(sourceId, name, () =>
+        this.upcoming.take(sourceId, url) ?? this.clipRegistry.stageUrl(sourceId, name, url));
   }
 
   private registerStaged(
@@ -207,7 +219,7 @@ export class MediaRuntime {
   ): Promise<ClipRegistrationResult> {
     let candidate: VideoCandidate | null = null;
     try {
-      candidate = await this.pool.prepare(moduleId, clip.url);
+      candidate = this.upcoming.candidateFor(clip) ?? await this.pool.prepare(moduleId, clip.url);
       await this.pool.prewarmCandidate(candidate);
 
       if (!this.isFresh(moduleId, generation)) {
@@ -250,6 +262,7 @@ export class MediaRuntime {
     predecessor: Promise<unknown>
   ): Promise<ClipRegistrationResult> {
     if (!this.isFresh(moduleId, generation)) {
+      await this.upcoming.releaseTransfer(clip);
       this.clipRegistry.rollback(clip);
       return { status: 'superseded', previous };
     }
@@ -296,6 +309,7 @@ export class MediaRuntime {
       this.markDeckFailed(moduleId, message);
       return { status: 'failed', error: message, previous };
     }finally{
+      await this.upcoming.releaseTransfer(clip);
       if(heldPrevious)this.clipRegistry.releaseReference(heldPrevious);
     }
   }
@@ -334,6 +348,7 @@ export class MediaRuntime {
   }
 
   async removeModuleClip(moduleId: string) {
+    await this.upcoming.clear();
     clearSlotPreparation(this.resolveSourceId(moduleId));
     moduleId = this.resolveSourceId(moduleId);
     this.bumpGeneration(moduleId);
@@ -354,6 +369,7 @@ export class MediaRuntime {
     if (this.disposePromise) return this.disposePromise;
     if (this.disposed) return Promise.resolve();
     this.disposed = true;
+    const clearedUpcoming = this.upcoming.clear();
     const ids = new Set([
       ...this.generations.keys(),
       ...this.poolClips.keys(),
@@ -371,7 +387,7 @@ export class MediaRuntime {
       }
       this.poolClips.clear();
       this.clipRegistry.dispose();
-    });
+    }).then(() => clearedUpcoming);
     this.disposePromise = operation;
     void operation.finally(() => {
       if (this.disposePromise === operation) this.disposePromise = null;

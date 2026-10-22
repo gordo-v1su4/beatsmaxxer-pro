@@ -69,6 +69,8 @@ export class VideoPool {
   >();
   private candidates = new Map<number, VideoCandidate>();
   private warmedClocks = new WeakMap<VideoCandidate, { generation: number; controlGeneration?: number; observedControlGeneration?: number }>();
+  private parkedCandidates = new WeakSet<VideoCandidate>();
+  private resumeParkedOnCommit = new WeakSet<VideoCandidate>();
   private candidateClockResolver: ((id: string, duration: number, frame: TimelineFrame, source: string) => {
     seconds: number; rate: number; controlGeneration: number;
   } | null) | null = null;
@@ -111,11 +113,14 @@ export class VideoPool {
     this.freeRun.delete(moduleId);
   }
 
-  async prepare(moduleId: string, url: string): Promise<VideoCandidate> {
+  async prepare(moduleId: string, url: string, signal?: AbortSignal): Promise<VideoCandidate> {
     const token = ++this.nextToken;
     const generation = this.generations.get(moduleId) ?? 0;
     const key = `${moduleId}\u0000${url}\u0000${token}`;
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) controller.abort();
     const promise = this.loadVideo(url, controller.signal).then(async (video) => {
       if ((this.generations.get(moduleId) ?? 0) !== generation) {
         await this.destroyElement(video);
@@ -131,7 +136,25 @@ export class VideoPool {
       return await promise;
     } finally {
       this.pending.delete(key);
+      signal?.removeEventListener('abort', abort);
     }
+  }
+
+  /** Decode a known future landing frame while keeping the incoming video paused. */
+  async parkCandidate(candidate: VideoCandidate, positionSeconds: number): Promise<void> {
+    this.assertCandidate(candidate);
+    const controller = this.candidateControllers.get(candidate.token);
+    if (!controller) throw new Error('video-candidate-invalidated');
+    const video = candidate.video;
+    video.pause();
+    const target = timelineMediaTarget(positionSeconds, video.duration);
+    if (target !== null && Math.abs(video.currentTime - target) > 1 / 120) {
+      const seeked = this.eventWait(video, ['seeked'], controller.signal, VIDEO_FRAME_TIMEOUT_MS);
+      video.currentTime = target;
+      await seeked;
+    }
+    this.assertCandidate(candidate);
+    this.parkedCandidates.add(candidate);
   }
 
   async prewarmCandidate(candidate: VideoCandidate): Promise<void> {
@@ -147,13 +170,26 @@ export class VideoPool {
     const target = frame?.playing
       ? timelineMediaTarget(mapped?.seconds ?? frame.positionSeconds, candidate.video.duration)
       : null;
+    const parked = this.parkedCandidates.delete(candidate);
+    if (parked && target !== null &&
+      Math.abs(timelineMediaDrift(candidate.video.currentTime, target, candidate.video.duration)) <= 1 / 8) {
+      candidate.video.playbackRate = Math.max(.25, Math.min(4, mapped?.rate ?? frame!.playbackRate));
+      // The landing frame is decoded already. Keep it paused until commit has
+      // stopped the outgoing decoder, rather than briefly playing two banks.
+      this.warmedClocks.set(candidate, { generation: frame!.generation, controlGeneration, observedControlGeneration });
+      this.resumeParkedOnCommit.add(candidate);
+      return;
+    }
     if (target !== null) {
       // Warm the incoming decoder at its live clock position, while the old
       // source is still visible. Parking at zero here forced a second seek
       // after commit, holding every new rack image across a bank change.
       const video = candidate.video;
       video.playbackRate = Math.max(.25, Math.min(4, mapped?.rate ?? frame!.playbackRate));
-      if (Math.abs(video.currentTime - target) > 1 / 120) {
+      // A parked landing is already decoded. A normal frame of scheduling
+      // jitter at the boundary must not throw it away for another seek.
+      const tolerance = parked ? 1 / 8 : 1 / 120;
+      if (Math.abs(video.currentTime - target) > tolerance) {
         const seeked = this.eventWait(video, ['seeked'], controller.signal, VIDEO_FRAME_TIMEOUT_MS);
         video.currentTime = target;
         await seeked;
@@ -193,12 +229,15 @@ export class VideoPool {
     this.warmedClocks.delete(candidate);
     const controlled = this.controlledSyncStates.get(candidate.moduleId);
     const old = this.videos.get(candidate.moduleId);
+    const resumeParked = this.resumeParkedOnCommit.delete(candidate);
     this.videos.set(candidate.moduleId, candidate.video);
     this.urls.set(candidate.moduleId, candidate.url);
     this.syncStates.delete(candidate.moduleId);
     this.controlledSyncStates.delete(candidate.moduleId);
     const frame = this.latestFrame;
-    if (warmed && frame?.playing && warmed.generation === frame.generation && !candidate.video.paused) {
+    const previousReleased = old && old !== candidate.video ? this.destroyElement(old) : Promise.resolve();
+    if (resumeParked && frame?.playing) void candidate.video.play().catch(() => {});
+    if (warmed && frame?.playing && warmed.generation === frame.generation && (!candidate.video.paused || resumeParked)) {
       // The warmed decoder is already moving. Accept the normal bounded drift
       // rather than treating commit as a new transport launch and seeking it
       // a second time. A real transport/sampler discontinuity still re-seeks.
@@ -219,8 +258,7 @@ export class VideoPool {
     this.armedStates.delete(candidate.moduleId);
     return {
       video: candidate.video,
-      previousReleased:
-        old && old !== candidate.video ? this.destroyElement(old) : Promise.resolve()
+      previousReleased
     };
   }
 

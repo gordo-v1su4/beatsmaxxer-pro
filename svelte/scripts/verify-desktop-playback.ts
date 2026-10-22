@@ -76,8 +76,8 @@ try {
           const end = final.slots.find((v: any) => v.canvasId === s.slot);
           const sameVideo = s.swaps === 0;
           return { slot:s.slot, module:s.module, sameVideo, swaps:s.swaps, ...s.cadence.finish(endedAt),gaps:s.gaps,
-            droppedFrames:s.dropped + Math.max(0, end.droppedVideoFrames - s.droppedBefore),
-            samplePath:end.render.samplePath,
+            droppedFrames:s.dropped + Math.max(0, (end?.droppedVideoFrames ?? s.droppedBefore) - s.droppedBefore),
+            samplePath:end?.render?.samplePath ?? 'missing-source',
             // STUTTER deliberately holds decoded video. Ramps may slow the
             // source cadence; neither exemption applies to ordinary effects.
             intentionalHold:s.module === 'tapdelay', maxAllowedGapMs:s.module === 'speedramp' ? 250 : 150 };
@@ -90,7 +90,8 @@ try {
     awaitPromise:true, returnByValue:true
   }, durationMs + 20000);
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
-  const report = response.result.value;
+  const report = response.result?.value;
+  if (!report || !Array.isArray(report.slots)) throw new Error('Playback sampling returned no serializable slot report');
   const failures = report.slots.filter((s: any) => !['external-texture','cached-video-texture','resident-frame-bank'].includes(s.samplePath) || (!allowSceneChanges && !s.sameVideo) || (!s.intentionalHold && (s.callbacks < 2 || s.maxGapMs > s.maxAllowedGapMs)));
   report.pass = failures.length === 0 && report.decoderCount === 12 && report.timingActive === false && report.timingPending === 0 && report.sampler.assets.every((asset:any)=>!asset.loading&&!asset.error);
   mkdirSync(dirname(output), {recursive:true}); writeFileSync(output, JSON.stringify(report, null, 2));

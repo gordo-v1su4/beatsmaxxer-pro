@@ -1,8 +1,48 @@
 # Web playback verification — October 22, 2026
 
-Local development candidate, in-app Chromium browser, public Redline Perform
-workflow, twelve loaded slots, RANDOM cuts every beat, 270p sampler preload.
-These are local measurements, not evidence of a deployed production fix.
+Local development and compiled-web candidates, in-app Chromium browser, public
+Redline Perform workflow, twelve loaded slots, cuts every beat, 270p sampler
+preload. These are local measurements, not evidence of a deployed production fix.
+
+## Compiled web and remaining checks
+
+The same working tree was compiled with `bun run build` and served by the real
+`runtime/server.ts` handler on 127.0.0.1:5174. No Vite development runtime or
+temporary clock wrappers were present in this check.
+
+- [RANDOM, 120 seconds](production-random-120s.json): all twelve source-cadence
+  checks passed, including three source swaps per slot. Ordinary source maximum
+  gaps were 116.6–149.9 ms; SpeedRamp reached 100.1 ms and resident TimeSampler
+  99.9 ms. Main-loop maximum gap was 99.9 ms. Decoder drops were nonzero, including
+  39 for SpeedRamp; passing is not a claim of zero dropped frames.
+- [LINEAR, 30 seconds](production-linear-30s.json): one source swap per slot.
+  Lens had one 166.6 ms gap at song second 174.18, exceeding the unchanged 150 ms
+  threshold. The other source checks passed. Longer loop coverage remains open.
+
+Two measured fixes are included:
+
+1. Incoming ordinary clips prepare serially during the eight beats before a
+   changed scene. They decode the future landing and remain paused until needed.
+   The normal commit transaction takes over the prepared decoder and URL; it
+   releases the outgoing decoder before starting the replacement. Future
+   SpeedRamp and TimeSampler sources keep their own preparation/clock paths.
+   Traces showed ten ordinary sources ready before bank boundaries and no more
+   than twelve playing decoders during handoff, down from nineteen initially.
+2. A CPU profile identified `RackViewportFit.fit` as the caller of every hot
+   `getBoundingClientRect` sample. Each ON AIR badge mutation reset zoom and forced
+   two full workspace layouts. ResizeObserver now owns size changes, while the
+   mutation observer only discovers mounted/unmounted layout blocks. The same
+   five-second live probe changed from [20 measurements](layout-before.json) to
+   [zero](layout-after.json), without disabling fitting.
+
+The [development run after the layout fix](development-layout-fixed-120s.json)
+still failed two slots. A [temporary bounded clock-correction experiment](phase-probe-120s.json)
+did not consistently improve delivery and was restored; it is not shipped.
+Compiled-web acceptance is therefore recorded separately from development runs.
+
+Current unit suite: 1,107 passed, eight skipped. Svelte check: zero errors and
+warnings. Production build passed. Final native regression, expanded-layout
+acceptance and published-site verification remain open.
 
 ## Results so far
 
