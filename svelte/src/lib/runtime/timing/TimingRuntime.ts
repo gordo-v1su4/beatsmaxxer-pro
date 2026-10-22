@@ -29,7 +29,7 @@ import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile, resumeInterpolationJob } from './preparation';
 
 /** Owns resident banks; AppLoop owns time and WebGpuEngine owns presentation. */
-type TimingAsset={bank:ResidentFrameBank|StreamingFrameSource;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null};
+type TimingAsset={bank:ResidentFrameBank|StreamingFrameSource;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null;retainReady:boolean};
 export class TimingRuntime {
   private assets=new Map<File|string,TimingAsset>();
   private originalAssets=new Map<File|string,TimingAsset>();
@@ -135,7 +135,7 @@ export class TimingRuntime {
         continue;
       }
       if(current)continue;
-      const asset=this.assetFor(source,original);
+      const asset=this.assetFor(source,original,original||effect==='ramp');
       const entry = { source, bank: asset.bank, clock: null, factor: asset.factor };
       this.banks.set(slot,entry);
       const stats=asset.bank.stats;
@@ -145,11 +145,11 @@ export class TimingRuntime {
   }
 
   /** Cache by the actual file identity: section swaps reuse decoded GPU frames. */
-  private assetFor(source:VideoLayer|SceneClip,original=false){
+  private assetFor(source:VideoLayer|SceneClip,original=false,retainReady=true){
     const key=source.file??source.url;
     const cache=original?this.originalAssets:this.assets;
-    const existing=cache.get(key);if(existing)return existing;
-    const asset={source,bank:original?new StreamingFrameSource():new ResidentFrameBank(this.device!,this.budget),factor:null as number|null,requiredBytes:0,loading:true,error:null as string|null};
+    const existing=cache.get(key);if(existing){existing.retainReady ||= retainReady;return existing;}
+    const asset={source,bank:original?new StreamingFrameSource():new ResidentFrameBank(this.device!,this.budget),factor:null as number|null,requiredBytes:0,loading:true,error:null as string|null,retainReady};
     cache.set(key,asset);
     this.publishCapacity();
     const generation=this.generation,height=this.preloadHeight;
@@ -190,8 +190,11 @@ export class TimingRuntime {
   private prewarmScenes(){
     if(!this.active||!this.device)return;
     const wanted=new Set<File|string>(),originalWanted=new Set<File|string>();
+    for(const asset of this.assets.values())asset.retainReady=false;
     for(const [slot,source] of Object.entries(get(videoLayers)))if(source){
-      (['ramp','timesampler'].includes(effectiveClipTiming(get(timingSettings),slot).effect)?wanted:originalWanted).add(source.file??source.url);
+      const effect=effectiveClipTiming(get(timingSettings),slot).effect,key=source.file??source.url;
+      (['ramp','timesampler'].includes(effect)?wanted:originalWanted).add(key);
+      const asset=this.assets.get(key);if(asset&&effect==='ramp')asset.retainReady=true;
     }
     const originals=new Set<File>();
     for(const section of get(arrangement)){
@@ -222,13 +225,16 @@ export class TimingRuntime {
           if(!entry.source){
             // A shared preparation promise may still be resolving while a
             // rack recall changes sources; retain its already decoded bank.
-            for(const [key,asset] of this.assets)if(asset.source.file&&originalSlowMotionFile(asset.source.file)===file)wanted.add(key);
+            for(const [key,asset] of this.assets)if(asset.source.file&&originalSlowMotionFile(asset.source.file)===file){
+              wanted.add(key);asset.retainReady=true;
+            }
             continue;
           }
           variant=entry.source;
         }
         const original=!['ramp','timesampler'].includes(effectiveClipTiming(settings,slot).effect);
-        (original?originalWanted:wanted).add(variant.file??variant.url);this.assetFor(variant,original);
+        (original?originalWanted:wanted).add(variant.file??variant.url);
+        this.assetFor(variant,original,original||effectiveClipTiming(settings,slot).effect==='ramp');
       }
     }
     for(const file of this.sceneVariants.keys())if(!originals.has(file))this.sceneVariants.delete(file);
@@ -249,13 +255,14 @@ export class TimingRuntime {
   }
 
   private cancelPendingLoads() {
-    // Ready banks remain cached for returning to Timing. In-flight decoders
-    // and queued uploads must not compete with Perform's live video sources.
+    // Keep expensive ramp banks for returning to Timing. Sampler-only banks
+    // are released before Perform builds its originals, avoiding duplicate
+    // residency and a reduced budget that could force Perform into live seeks.
     this.generation++;
     const cancelled = new Set<ResidentFrameBank | StreamingFrameSource>();
     const names = new Set<string>();
     for (const cache of [this.assets, this.originalAssets]) {
-      for (const [key, asset] of cache) if (asset.loading) {
+      for (const [key, asset] of cache) if (asset.loading || !asset.retainReady) {
         cancelled.add(asset.bank); names.add(asset.source.name);
         asset.bank.dispose(); cache.delete(key);
       }

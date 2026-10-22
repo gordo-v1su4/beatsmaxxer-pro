@@ -61,3 +61,39 @@ test('twelve slots share one resident load and retain the completed bank across 
     expect(load).toHaveBeenCalledOnce();
   } finally { runtime.dispose(); }
 });
+
+test('leaving Timing releases sampler-only resident banks instead of duplicating Perform storage', async () => {
+  prepareRack(true);
+  timingSettings.update(settings => ({ ...settings, clips: Object.fromEntries(
+    RACK_SLOT_IDS.map(slot => [slot, { ...settings.clips[slot], effect:'timesampler' as const }])) }));
+  const load = vi.spyOn(ResidentFrameBank.prototype, 'load').mockResolvedValue();
+  const dispose = vi.spyOn(ResidentFrameBank.prototype, 'dispose');
+  const runtime = new TimingRuntime(), device = {} as GPUDevice;
+  try {
+    runtime.setActive(true, device);
+    await vi.waitFor(() => expect(runtime.diagnostics.capacity.pending).toBe(0));
+    expect(load).toHaveBeenCalledOnce();
+    runtime.setActive(false, device);
+    expect(dispose).toHaveBeenCalledOnce();
+    runtime.setActive(true, device);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  } finally { runtime.dispose(); }
+});
+
+test('a resident source shared by ramp and sampler keeps its expensive ramp cache', async () => {
+  prepareRack(true);
+  timingSettings.update(settings => ({ ...settings,
+    clips: { ...settings.clips, 'top-1': { ...settings.clips['top-1'], effect:'timesampler' } } }));
+  const load = vi.spyOn(ResidentFrameBank.prototype, 'load').mockResolvedValue();
+  const dispose = vi.spyOn(ResidentFrameBank.prototype, 'dispose');
+  const runtime = new TimingRuntime(), device = {} as GPUDevice;
+  try {
+    runtime.setActive(true, device);
+    await vi.waitFor(() => expect(runtime.diagnostics.capacity.pending).toBe(0));
+    runtime.setActive(false, device);
+    expect(dispose).not.toHaveBeenCalled();
+    runtime.setActive(true, device);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(load).toHaveBeenCalledOnce();
+  } finally { runtime.dispose(); }
+});

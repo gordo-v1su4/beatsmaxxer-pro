@@ -106,6 +106,21 @@ describe('waitForPresentedVideoFrame', () => {
 });
 
 describe('VideoPool arm-at-trim', () => {
+  test('a newly moved controlled effect preserves its warmed clock on first presentation', async () => {
+    const pool = new VideoPool(), video = new ArmableVideo(10);
+    const frame = { playing:true, positionSeconds:5, playbackRate:1, generation:1, contextTimeSeconds:5 } as TimelineFrame;
+    pool.tick(frame);
+    pool.setCandidateClockResolver(() => ({ seconds:3, rate:.5, controlGeneration:0 }));
+    vi.spyOn(pool as unknown as { loadVideo: () => Promise<HTMLVideoElement> }, 'loadVideo')
+      .mockResolvedValue(video as unknown as HTMLVideoElement);
+    const candidate = await pool.prepare('top-1', 'blob:moved-ramp');
+    const pending = pool.prewarmCandidate(candidate);
+    await flushArmPresentation(video); await pending;
+    await pool.commitCandidate(candidate).previousReleased;
+    pool.syncControlledModule('top-1', 3.1, .5, { ...frame, contextTimeSeconds:5.2 });
+    expect(video.currentTime).toBe(3);
+    expect(video.paused).toBe(false);
+  });
   test('a controlled replacement refreshes its moving target before publication',async()=>{
     const pool=new VideoPool(),previous=new ArmableVideo(10),video=new ArmableVideo(10);
     (pool as unknown as {videos:Map<string,unknown>}).videos.set('top-1',previous);

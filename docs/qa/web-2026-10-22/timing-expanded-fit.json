@@ -1,0 +1,16 @@
+{
+  "capacity": {
+    "pending": 0,
+    "requiredBytes": 7054387200,
+    "usedBytes": 7054387200
+  },
+  "footerBottom": 999.3333549499512,
+  "footerVisible": true,
+  "pgmCount": 12,
+  "pgmVisible": true,
+  "scale": "0.856516",
+  "viewport": [
+    1920,
+    1000
+  ]
+}

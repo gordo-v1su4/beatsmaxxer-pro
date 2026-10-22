@@ -17,7 +17,14 @@ temporary clock wrappers were present in this check.
   39 for SpeedRamp; passing is not a claim of zero dropped frames.
 - [LINEAR, 30 seconds](production-linear-30s.json): one source swap per slot.
   Lens had one 166.6 ms gap at song second 174.18, exceeding the unchanged 150 ms
-  threshold. The other source checks passed. Longer loop coverage remains open.
+  threshold. The other source checks passed.
+- [LINEAR including song return, 120 seconds](production-linear-loop-120s.json):
+  the song return itself completed, but a bank handoff had ordinary gaps up to
+  200.1 ms. The whole-rack check failed.
+- A [future-ramp forecast experiment](ramp-forecast-probe-120s.json) passed a
+  short targeted handoff, then failed extended playback badly near the final
+  bank: up to 950.1 ms. That speculative preloading was removed. It is not part
+  of the implementation. This result is not a final-source playback result.
 
 Two measured fixes are included:
 
@@ -40,9 +47,38 @@ still failed two slots. A [temporary bounded clock-correction experiment](phase-
 did not consistently improve delivery and was restored; it is not shipped.
 Compiled-web acceptance is therefore recorded separately from development runs.
 
-Current unit suite: 1,107 passed, eight skipped. Svelte check: zero errors and
-warnings. Production build passed. Final native regression, expanded-layout
-acceptance and published-site verification remain open.
+The first incoming original in that slow preparation is 1280×720 H.264 at 24 FPS,
+340 frames, with keyframes at 0, 1.5, 4.125, 6.5, 8.041667 and 12.166667 seconds
+(local `ffprobe` packet metadata). Its final-bank target is approximately 11.04
+seconds, requiring decoding forward from the earlier keyframe. Cached compressed
+bytes are not a GPU-resident frame bank. Traces first showed foreground waiting
+while only one hidden candidate was present, so a presumed fixed concurrent
+decoder limit has not been established as the cause. The decode/seek contention
+path still needs isolation; raising the resident-memory ceiling is not a proven
+fix. No source transcoding or proxy-quality change was shipped.
+
+Review follow-up adds loop-start source positions to lookahead, establishes
+incoming clock ownership after effect-bank changes, and preserves a newly
+controlled slot's warm clock at commit. Incoming SpeedRamp still follows its
+mapped-clock preparation at the boundary. Timing releases completed sampler-only
+resident banks on exit while retaining banks also needed by its ramps.
+
+The gate now rejects module-layout changes during a sample: initial Stutter or
+SpeedRamp exemptions cannot follow an ordinary effect into that slot. A
+[negative module-layout probe](negative-module-layout.json) detected the changed
+effect despite the original Stutter exemption. A [missing-source probe](negative-missing-source.json)
+returned a serializable failed slot instead of throwing. Both probes restored
+their temporary diagnostic wrappers and are expected failures.
+
+Current unit suite: 1,114 passed, eight skipped. Svelte check: zero errors and
+warnings. Production build passed. Final native regression and published-site
+verification remain open. The branch is not release-ready on long-run web evidence.
+
+At a 1920×1000 compiled-web viewport, all twelve PGM buttons remained visible.
+Expanding Timing's accepted-burst timeline initially exposed a missing observer
+target: the footer reached 1069.7 px. Observing `.timing-panel` fixed the same
+interaction: [footer bottom 999.33 px, all twelve PGM buttons visible](timing-expanded-fit.json),
+with a uniform scale of 0.856516. [Expanded Timing screenshot](timing-expanded-fit.png).
 
 ## Results so far
 
@@ -83,14 +119,15 @@ subjects. Both complete idle and video shader variants compiled without GPU
 errors after the change. A derivative-based attempt was rejected by WGSL
 uniform-control-flow validation and was replaced before saving these results.
 
-![Updated graphic previews](showcase-previews.png)
+![Updated abstract graphic subjects with real effect shaders](graphic-previews-3200.png)
 
-Unit suite: 1,094 passed, eight skipped. Production build passed. The demo
+At the showcase-change commit, 1,094 unit tests passed and eight were skipped;
+the production build passed. The demo
 integration test also checks all section banks and stored replay snapshots for
 twelve unique effects and the four showcase replacements. Browser acceptance,
 published-site verification and release propagation remain open.
 
-## Next diagnosis
+## Original hypotheses and next diagnosis
 
 Ranked hypotheses to isolate before further playback edits:
 
@@ -103,3 +140,9 @@ Ranked hypotheses to isolate before further playback edits:
 Repeat with only the measured app active, compare a no-swap interval against
 bank crossings, and record candidate/outgoing decoder lifetimes. LINEAR and
 RANDOM should then be compared under the same prepared-bank workload.
+
+Those isolation/comparison runs above confirmed smooth warm steady intervals,
+reduced playing-decoder overlap and the layout-measurement bug, but did not
+resolve every decoding stall. Next isolate the final-bank paused seek and its
+foreground drift-correction cascade with a short reproduction. Preserve source
+resolution and the frame-gap limits while comparing alternatives.

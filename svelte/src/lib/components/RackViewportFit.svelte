@@ -30,7 +30,7 @@
       shell.style.minHeight = `${height / scale}px`;
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(fit); };
-    const heightTargets = '.rack-row, .main-viewer, .sections, .topbar-shell, .timing-footer';
+    const heightTargets = '.rack-row, .main-viewer, .sections, .topbar-shell, .timing-panel, .timing-footer';
     const targetSelector = `.perform-rows, ${heightTargets}`;
     // These are imperative observer caches, not state consumed by the template.
     const observed = new Set<Element>();

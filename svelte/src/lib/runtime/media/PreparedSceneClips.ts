@@ -4,6 +4,8 @@ import type { VideoCandidate } from '$lib/media/VideoPool';
 export interface UpcomingSceneClip {
   slotId: string;
   clip: { name: string; url: string; file?: File };
+  /** At a loop end, decode the loop-start position rather than the end time. */
+  positionSeconds?: number;
 }
 
 interface PreparationPool {
@@ -42,7 +44,7 @@ export class PreparedSceneClips {
     void this.clear();
     this.key = key; this.at = at;
     this.planned = sources.map(({ slotId, clip }) => ({ slotId, source: clip.file ?? clip.url }));
-    for (const { slotId, clip: source } of sources) {
+    for (const { slotId, clip: source, positionSeconds } of sources) {
       let clip: RegisteredClip;
       try {
         clip = source.file ? this.registry.stageFile(slotId, source.file)
@@ -55,7 +57,7 @@ export class PreparedSceneClips {
         if (entry.controller.signal.aborted) return;
         entry.candidate = await this.pool.prepare(slotId, clip.url, entry.controller.signal);
         if (entry.controller.signal.aborted) return;
-        await this.pool.parkCandidate!(entry.candidate, at);
+        await this.pool.parkCandidate!(entry.candidate, positionSeconds ?? at);
         entry.ready = !entry.controller.signal.aborted;
       }).catch(error => {
         if (!entry.controller.signal.aborted) entry.error = String(error);

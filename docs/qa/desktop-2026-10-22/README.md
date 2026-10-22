@@ -19,7 +19,8 @@ Chrome instance. The installed public release is a separate artifact.
   repeatedly seeking a live decoder. Repeated sources share a bank. This path
   does not request interpolation or use a Canvas2D pixel scaler.
 - Inactive Timing could retain pending uploads. Leaving Timing now cancels
-  unfinished resident loads while retaining completed caches for reuse.
+  unfinished resident loads. Completed ramp caches remain reusable; a later
+  review fix releases sampler-only banks before Perform allocates its copies.
 - Resident banks allocated only ten independent output surfaces. They now
   support all twelve rack slots, with a shared upload queue per GPU device.
 - Rack-only scaling left the toolbar and PGM rail too large. A single surface

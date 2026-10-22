@@ -47,6 +47,19 @@ test('repeating a plan does not create duplicate decoders or staged URLs', async
   await prepared.clear();
 });
 
+test('parks a loop landing at the incoming source position instead of the boundary time', async () => {
+  const pool = { prepare: vi.fn(async (id: string, url: string) => candidate(id, url)),
+    parkCandidate: vi.fn(async () => {}), discardCandidate: vi.fn(async () => {}) };
+  const prepared = new PreparedSceneClips(new ClipRegistry(), pool);
+  const clips = [{ ...source('top-1'), positionSeconds:2.5 }];
+  prepared.stage('loop', clips, 40);
+  await vi.waitFor(() => expect(prepared.diagnostics.ready).toBe(1));
+  expect(pool.parkCandidate).toHaveBeenCalledWith(expect.objectContaining({ moduleId: 'top-1' }), 2.5);
+  prepared.stage('loop', clips, 40);
+  expect(pool.parkCandidate).toHaveBeenCalledTimes(1);
+  await prepared.clear();
+});
+
 test('cancels stale pending preparation without touching the current clip', async () => {
   const registry = new ClipRegistry();
   const current = registry.registerUrl('top-0', 'old', 'https://example.test/old.mp4');

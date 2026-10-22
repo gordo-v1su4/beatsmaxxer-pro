@@ -72,7 +72,7 @@ export class VideoPool {
   private parkedCandidates = new WeakSet<VideoCandidate>();
   private resumeParkedOnCommit = new WeakSet<VideoCandidate>();
   private candidateClockResolver: ((id: string, duration: number, frame: TimelineFrame, source: string) => {
-    seconds: number; rate: number; controlGeneration: number;
+    seconds: number; rate: number; controlGeneration?: number;
   } | null) | null = null;
   private candidateControllers = new Map<number, AbortController>();
   private generations = new Map<string, number>();
@@ -246,6 +246,14 @@ export class VideoPool {
           ...controlled, timelineGeneration:frame.generation, playing:true,
           controlGeneration:warmed.controlGeneration ?? controlled.controlGeneration,
           playbackRate:candidate.video.playbackRate, lastCorrectionContextSeconds:frame.contextTimeSeconds
+        });
+      } else if (!controlled && !this.freeRun.has(candidate.moduleId) && warmed.controlGeneration !== undefined) {
+        // A bank can move the controlled effect into a previously ordinary
+        // slot. Its projected clock is warm even without a previous controller.
+        this.controlledSyncStates.set(candidate.moduleId, {
+          timelineGeneration:frame.generation, controlGeneration:warmed.controlGeneration,
+          playing:true, playbackRate:candidate.video.playbackRate,
+          lastCorrectionContextSeconds:frame.contextTimeSeconds
         });
       } else if (this.freeRun.has(candidate.moduleId)) {
         this.syncStates.set(candidate.moduleId, {

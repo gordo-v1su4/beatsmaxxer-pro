@@ -27,7 +27,8 @@ try {
         slot: slot.canvasId, module: slot.moduleId, video: videoPool.get(slot.canvasId),
         cadence:createCadence(startedAt),callback: 0,
         resident:false, sourceFrameId:null as number|null,
-        droppedBefore: slot.droppedVideoFrames, dropped:0, swaps:0, active: true, gaps:[] as any[]
+        droppedBefore: slot.droppedVideoFrames, dropped:0, swaps:0, moduleLayoutChanged:false,
+        active: true, gaps:[] as any[]
       }));
       let frames = 0, maxRafGapMs = 0, previousRaf: number | null = null, raf = 0;
       const watch = (s: any, video: HTMLVideoElement) => {
@@ -46,6 +47,7 @@ try {
         const diagnostics=qa.getEngine().webGpuEngine.getRenderDiagnostics();
         for (const s of stats) {
           const render=diagnostics[s.slot];
+          if (render?.effectModuleId && render.effectModuleId !== s.module) s.moduleLayoutChanged = true;
           s.resident=render?.samplePath==='resident-frame-bank';
           if(s.resident&&render.sourceFrameId!==s.sourceFrameId){
             const gap=s.cadence.frame(now);
@@ -75,7 +77,9 @@ try {
         slots: stats.map((s: any) => {
           const end = final.slots.find((v: any) => v.canvasId === s.slot);
           const sameVideo = s.swaps === 0;
-          return { slot:s.slot, module:s.module, sameVideo, swaps:s.swaps, ...s.cadence.finish(endedAt),gaps:s.gaps,
+          return { slot:s.slot, module:s.module, sameVideo, swaps:s.swaps,
+            moduleLayoutChanged:s.moduleLayoutChanged || end?.moduleId !== s.module,
+            ...s.cadence.finish(endedAt),gaps:s.gaps,
             droppedFrames:s.dropped + Math.max(0, (end?.droppedVideoFrames ?? s.droppedBefore) - s.droppedBefore),
             samplePath:end?.render?.samplePath ?? 'missing-source',
             // STUTTER deliberately holds decoded video. Ramps may slow the
@@ -92,10 +96,10 @@ try {
   if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description ?? response.exceptionDetails.text);
   const report = response.result?.value;
   if (!report || !Array.isArray(report.slots)) throw new Error('Playback sampling returned no serializable slot report');
-  const failures = report.slots.filter((s: any) => !['external-texture','cached-video-texture','resident-frame-bank'].includes(s.samplePath) || (!allowSceneChanges && !s.sameVideo) || (!s.intentionalHold && (s.callbacks < 2 || s.maxGapMs > s.maxAllowedGapMs)));
+  const failures = report.slots.filter((s: any) => s.moduleLayoutChanged || !['external-texture','cached-video-texture','resident-frame-bank'].includes(s.samplePath) || (!allowSceneChanges && !s.sameVideo) || (!s.intentionalHold && (s.callbacks < 2 || s.maxGapMs > s.maxAllowedGapMs)));
   report.pass = failures.length === 0 && report.decoderCount === 12 && report.timingActive === false && report.timingPending === 0 && report.sampler.assets.every((asset:any)=>!asset.loading&&!asset.error);
   mkdirSync(dirname(output), {recursive:true}); writeFileSync(output, JSON.stringify(report, null, 2));
   console.log(JSON.stringify({pass:report.pass, report:output, maxRafGapMs:report.maxRafGapMs,
-    failures:failures.map(({slot,module,maxGapMs,sameVideo}:any)=>({slot,module,maxGapMs,sameVideo}))}, null, 2));
+    failures:failures.map(({slot,module,maxGapMs,sameVideo,moduleLayoutChanged}:any)=>({slot,module,maxGapMs,sameVideo,moduleLayoutChanged}))}, null, 2));
   if (!report.pass) process.exitCode = 1;
 } finally { session.close(); }
