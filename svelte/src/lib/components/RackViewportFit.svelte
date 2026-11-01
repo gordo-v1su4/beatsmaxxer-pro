@@ -22,10 +22,10 @@
       shell.style.width = 'max(100%, var(--app-min-width))';
       const naturalWidth = shell.getBoundingClientRect().width;
       shell.style.width = `${naturalWidth}px`;
-      const naturalHeight = shell.getBoundingClientRect().height;
-      // Fit one surface. Scaling only the cards left the toolbar/library full
-      // size and the unscaled PGM list clipped beside the smaller rack.
-      const scale = Math.max(0.1, Math.min(1, width / naturalWidth, height / Math.max(1, naturalHeight)));
+      // Scale the complete instrument as one surface, but only to its width.
+      // Taller workspaces scroll vertically; height-fitting made Timing's
+      // program viewer smaller than Perform and crushed the twelve-slot rail.
+      const scale = Math.max(0.1, Math.min(1, width / naturalWidth));
       shell.style.zoom = String(scale);
       shell.style.minHeight = `${height / scale}px`;
     };

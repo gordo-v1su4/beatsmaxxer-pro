@@ -20,6 +20,8 @@ describe('Perform and Timing rack composition', () => {
 
     expect(fit).toContain(".source-rows");
     expect(fit).not.toContain('.perform-rows');
+    expect(fit).toContain('Math.min(1, width / naturalWidth)');
+    expect(fit).not.toContain('height / Math.max(1, naturalHeight)');
   });
 
   test('themes native dropdown menus and their selected options globally', () => {
@@ -29,5 +31,22 @@ describe('Perform and Timing rack composition', () => {
     expect(css).toContain('::picker(select)');
     expect(css).toMatch(/select option:is\(:checked, :hover, :focus\)/);
     expect(css).toContain('background: #19302e !important');
+  });
+
+  test('keeps the program viewer width-driven at the fitted desktop size', () => {
+    const css = read('src/app.css');
+    const viewer = read('src/lib/components/MainViewer.svelte');
+
+    expect(viewer).toContain('height: clamp(260px, calc(21cqw + 12px), 560px)');
+    expect(css).not.toContain('26dvh');
+    expect(css).not.toMatch(/\.rack-fit[^\n]*\.main-viewer\s*\{[^}]*height:/);
+  });
+
+  test('gives the Timing PGM source list enough vertical room for twelve slots', () => {
+    const css = read('src/app.css');
+
+    expect(css).toContain('--timing-source-rack-height: 560px');
+    expect(css).toContain('min-height: var(--timing-source-rack-height)');
+    expect(css).toContain('.timing-workspace .source-rows > .rack-row { flex-grow: 1; }');
   });
 });

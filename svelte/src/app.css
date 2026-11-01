@@ -741,13 +741,15 @@ input[type='range']::-moz-range-thumb {
 .source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
 .source-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
 @media (min-width: 961px) {
-  .app-viewport.rack-fit { overflow:hidden; }
+  .app-viewport.rack-fit { overflow-x:hidden; overflow-y:auto; }
   .rack-fit { --module-midi-lane-height:32px; }
   .rack-fit .rack-module .rack-section-body { padding-top:2px; padding-bottom:2px; }
   .rack-fit .rack-row:first-child .rack-section-body { padding-top:1px; padding-bottom:1px; }
   .rack-fit .app-shell { min-width:0; }
   .rack-fit .rack-main { min-width:0; }
-  .rack-fit .rack-main .main-viewer { height:clamp(200px, min(calc(21cqw + 12px), 26dvh), 560px); }
+  /* MainViewer keeps its width-driven height while the fit pass scales the
+     whole instrument. A viewport-height cap left unused space below the rack
+     and made the program picture too small on both Perform and Timing. */
   .rack-fit .rack-row { min-height:0!important; max-width:none; align-self:flex-start; }
   .rack-fit .module-preview { width:100%; min-height:0; }
 }
@@ -779,8 +781,11 @@ input[type='range']::-moz-range-thumb {
 	   Keep the timing surface flush with the native desktop window bottom. */
 	min-height: max(calc(100dvh - 49px), 0px);
 	--timing-plot-height: clamp(120px, 14vh, 200px);
+	--timing-source-rack-height: 560px;
 }
 @media (min-width: 961px) {
+	.timing-workspace .source-rack-area { min-height: var(--timing-source-rack-height); }
+	.timing-workspace .source-rows > .rack-row { flex-grow: 1; }
 	.timing-workspace .rack-row {
 		grid-template-columns: repeat(6, minmax(0, 1fr));
 		justify-content: safe center;
