@@ -573,10 +573,14 @@ await withChrome("verify-timing-cadence", 10_050, async (session) => {
       });
     }
     for (const slot of report.slots) {
+      const minimumSourcePtsChanges = Math.floor(
+        (report.durationMs / 1000) * (slot.effect === "stutter" ? 4 : 10),
+      );
       if (
         slot.maxRenderGapMs > MAX_GAP_MS ||
         slot.maxStaleMs > MAX_GAP_MS ||
         slot.renderUpdates < Math.floor((report.durationMs / 1000) * 10) ||
+        slot.sourcePtsChanges < minimumSourcePtsChanges ||
         (RESIDENT_PRELOAD &&
           slot.effect === "ramp" &&
           slot.samplePath !== "resident-frame-bank") ||
@@ -589,6 +593,8 @@ await withChrome("verify-timing-cadence", 10_050, async (session) => {
           maxRenderGapMs: slot.maxRenderGapMs,
           maxStaleMs: slot.maxStaleMs,
           renderUpdates: slot.renderUpdates,
+          sourcePtsChanges: slot.sourcePtsChanges,
+          minimumSourcePtsChanges,
           samplePath: slot.samplePath,
         });
       }

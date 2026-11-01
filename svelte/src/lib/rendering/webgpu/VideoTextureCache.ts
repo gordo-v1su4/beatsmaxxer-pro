@@ -4,6 +4,7 @@ import type { NativeFrameSurface } from '$lib/media/NativeFrameSurface';
 const LOOP_SEAM_SECONDS = 0.55;
 const LOOP_SEAM_FRAMES = 8;
 const LOOP_SEAM_BUDGET_BYTES = 512 * 1024 * 1024;
+const LOOP_SEAM_MAX_FRAME_DISTANCE_SECONDS = LOOP_SEAM_SECONDS / LOOP_SEAM_FRAMES + 1 / 120;
 
 function observeFrames(source: HTMLVideoElement) {
   let revision = 0, callback: number | undefined, disposed = false;
@@ -122,6 +123,10 @@ export class VideoTextureCache {
       if (frame.time > targetSeconds + 1 / 120) break;
       selected = frame;
     }
+    if (
+      selected.time > targetSeconds + 1 / 120 ||
+      targetSeconds - selected.time > LOOP_SEAM_MAX_FRAME_DISTANCE_SECONDS
+    ) return null;
     return { view: selected.view, pts: selected.time };
   }
 

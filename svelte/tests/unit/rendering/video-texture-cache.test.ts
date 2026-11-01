@@ -83,6 +83,8 @@ test('fills early seam positions on a later loop when initial playback started l
     cache.beginFrame();
     cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
   }
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, .02)).toBeNull();
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, .33)?.pts).toBe(.32);
   for (const time of [.01, .09, .17, .25, .55]) {
     video.currentTime = time;
     video.present();

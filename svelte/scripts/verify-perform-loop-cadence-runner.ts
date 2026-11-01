@@ -64,6 +64,7 @@ interface SlotCadence {
   cachedSeamSamples: number;
   cachedSeamPtsChanges: number;
   maxCachedSeamStaleMs: number;
+  trailingCachedSeamRun: number | null;
   cachedSeamRuns: Array<{
     index: number;
     samples: number;
@@ -531,7 +532,7 @@ async function samplePerformLoops(
         previousPresentationTime: _previousPresentationTime,
         previousPresentedFrames: _previousPresentedFrames,
         previousMediaTime: _previousMediaTime,
-        cachedSeamActive: _cachedSeamActive,
+        cachedSeamActive,
         cachedSeamLastPts: _cachedSeamLastPts,
         cachedSeamLastChangeAt: _cachedSeamLastChangeAt,
         droppedBefore,
@@ -541,6 +542,9 @@ async function samplePerformLoops(
         durationSeconds: video.duration,
         trailingGapMs:
           previousNow === null ? ms : Math.max(0, endedAt - previousNow),
+        trailingCachedSeamRun: cachedSeamActive
+          ? stat.cachedSeamRuns.length - 1
+          : null,
         maxGapMs: stat.maxGapMs,
         droppedFrames:
           stat.droppedFrames +
@@ -631,6 +635,12 @@ await withChrome("verify-perform-loop-cadence", 9650, async (session) => {
       };
       const uncoveredSourceGaps = slot.gaps.filter(uncovered);
       const uncoveredLoopGaps = slot.loopGaps.filter(uncovered);
+      const trailingSeam = slot.trailingCachedSeamRun === null
+        ? null
+        : slot.cachedSeamRuns[slot.trailingCachedSeamRun];
+      const trailingCovered = !!trailingSeam &&
+        trailingSeam.ptsChanges > 0 &&
+        trailingSeam.maxStaleMs <= MAX_GAP_MS;
       const reasons = [
         ...(slot.loops < MIN_LOOPS ? [`only ${slot.loops} decoder loops`] : []),
         ...(slot.cachedSeams < MIN_LOOPS
@@ -644,6 +654,9 @@ await withChrome("verify-perform-loop-cadence", 9650, async (session) => {
           : []),
         ...(uncoveredLoopGaps.length
           ? [`${uncoveredLoopGaps.length} uncovered decoder loop gaps`]
+          : []),
+        ...(slot.trailingGapMs > MAX_GAP_MS && !trailingCovered
+          ? [`trailing decoder gap ${slot.trailingGapMs.toFixed(1)}ms`]
           : []),
       ];
       return reasons.length
