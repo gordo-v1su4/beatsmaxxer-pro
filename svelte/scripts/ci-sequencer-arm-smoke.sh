@@ -19,16 +19,46 @@ export HEADLESS=1
 export QA_URL="http://127.0.0.1:5174/?qa=1&qaAutoplay=1&qaSequencerArm=1"
 export QA_SMOKE_SEQUENCER_ONLY=1
 
-echo "▶ sequencer ARM CDP smoke"
-bun run scripts/verify-cloud-smoke-runner.ts
-echo "▶ sequencer ARMED cut CDP gate"
-bun run scripts/verify-sequencer-cut-runner.ts
-echo "▶ sequencer ARMED loop region CDP gate"
+run_cdp_gate() {
+  local label="$1"
+  local runner="$2"
+  local max_attempts="${CDP_INFRA_MAX_ATTEMPTS:-3}"
+  local attempt=1
+  local status=0
+  local log_file
+
+  log_file="$(mktemp "${TMPDIR:-/tmp}/bmx-cdp-gate.XXXXXX")"
+  while (( attempt <= max_attempts )); do
+    echo "▶ ${label} (attempt ${attempt}/${max_attempts})"
+    set +e
+    bun run "$runner" 2>&1 | tee "$log_file"
+    status=${PIPESTATUS[0]}
+    set -e
+
+    if (( status == 0 )); then
+      rm -f "$log_file"
+      return 0
+    fi
+
+    if (( attempt == max_attempts )) || ! grep -Eq \
+      'A valid external Instance reference no longer exists|Internal Vulkan error|Exiting GPU process due to errors during initialization' \
+      "$log_file"; then
+      rm -f "$log_file"
+      return "$status"
+    fi
+
+    echo "[ci] Chromium/WebGPU infrastructure failed; retrying ${label} with a clean browser process"
+    cleanup_stale_test_chrome
+    : > "$log_file"
+    attempt=$((attempt + 1))
+  done
+}
+
+run_cdp_gate "sequencer ARM CDP smoke" scripts/verify-cloud-smoke-runner.ts
+run_cdp_gate "sequencer ARMED cut CDP gate" scripts/verify-sequencer-cut-runner.ts
 export QA_URL="http://127.0.0.1:5174/?qa=1&qaAutoplay=1&qaSequencerArm=1&qaLoopRegion=1"
-bun run scripts/verify-sequencer-loop-runner.ts
-echo "▶ trigger mark commit CDP gate"
+run_cdp_gate "sequencer ARMED loop region CDP gate" scripts/verify-sequencer-loop-runner.ts
 export QA_URL="http://127.0.0.1:5174/?qa=1&qaAutoplay=1"
-bun run scripts/verify-trigger-commit-runner.ts
-echo "▶ arrangement REC clip/trigger CDP gate"
-bun run scripts/verify-arrangement-rec-runner.ts
+run_cdp_gate "trigger mark commit CDP gate" scripts/verify-trigger-commit-runner.ts
+run_cdp_gate "arrangement REC clip/trigger CDP gate" scripts/verify-arrangement-rec-runner.ts
 echo "ci-sequencer-arm-smoke PASSED"
