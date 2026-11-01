@@ -170,6 +170,47 @@ button:focus-visible,
 	outline-offset: 2px;
 }
 
+/* Keep every native dropdown inside the instrument palette. `color-scheme`
+	 covers browsers using the platform picker; Chromium's customizable select
+	 path lets us remove the bright operating-system selection highlight too. */
+select {
+	color-scheme: dark;
+	accent-color: var(--focus-ring);
+}
+
+@supports (appearance: base-select) {
+	select,
+	::picker(select) {
+		appearance: base-select;
+	}
+
+	::picker(select) {
+		margin-block: 2px;
+		padding: 3px;
+		color: var(--ink-dim);
+		background: var(--surface-panel);
+		border: 1px solid var(--edge-lit);
+		border-radius: 2px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
+	}
+
+	select option {
+		padding: 5px 8px;
+		color: var(--ink-dim);
+		background: var(--surface-panel);
+	}
+
+	select option:is(:checked, :hover, :focus) {
+		color: #c4f4e8 !important;
+		background: #19302e !important;
+	}
+
+	select option::checkmark,
+	select::picker-icon {
+		color: var(--focus-ring);
+	}
+}
+
 input[type='range'] {
 	-webkit-appearance: none;
 	appearance: none;
@@ -694,10 +735,11 @@ input[type='range']::-moz-range-thumb {
 	.module-preview { width: 100%; }
 }
 
-/* Rack workspaces fit as one surface, including the toolbar and source rails. */
-.perform-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
-.perform-source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
-.perform-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
+/* Perform and Timing share one composition: the program monitor and song
+   sections span the source rail, then the rail starts beside the source rows. */
+.source-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
+.source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
+.source-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
 @media (min-width: 961px) {
   .app-viewport.rack-fit { overflow:hidden; }
   .rack-fit { --module-midi-lane-height:32px; }

@@ -31,7 +31,7 @@
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(fit); };
     const heightTargets = '.rack-row, .main-viewer, .sections, .topbar-shell, .timing-panel, .timing-footer';
-    const targetSelector = `.perform-rows, ${heightTargets}`;
+    const targetSelector = `.source-rows, ${heightTargets}`;
     // These are imperative observer caches, not state consumed by the template.
     const observed = new Set<Element>();
     const previousSizes = new Map<Element, number>();
@@ -39,7 +39,7 @@
       for (const entry of entries) {
         if (entry.target === viewport) schedule();
         else {
-          const size = entry.target.matches('.perform-rows') ? entry.contentRect.width : entry.contentRect.height;
+          const size = entry.target.matches('.source-rows') ? entry.contentRect.width : entry.contentRect.height;
           if (Math.abs(size - (previousSizes.get(entry.target) ?? -1)) > 0.5) {
             previousSizes.set(entry.target, size); schedule();
           }

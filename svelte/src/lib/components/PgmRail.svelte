@@ -110,7 +110,7 @@
   </button>
 
   {#if $pgmRailOpen}
-    <div style="flex:1;display:flex;flex-direction:column;gap:4px;padding:8px;overflow:hidden;min-height:0">
+    <div style="flex:1;display:flex;flex-direction:column;gap:4px;padding:8px 8px 14px;overflow:hidden;min-height:0">
       <div class="flex items-center justify-end">
         <button
           type="button"

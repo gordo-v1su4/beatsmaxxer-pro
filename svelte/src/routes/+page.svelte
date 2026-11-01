@@ -414,13 +414,10 @@
       class="side-panels"
       style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
         ? 'var(--fx-lib-width)'
-        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$viewMode==='perform'?'0px':$pgmRailOpen
-        ? 'var(--pgm-rail-width)'
-        : 'var(--pgm-rail-collapsed)'})"
+        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width))"
     >
       <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
-      {#if $viewMode!=='perform'}<PgmRail modules={rackModules} />{/if}
     </div>
 
     <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
@@ -429,14 +426,10 @@
       <MainViewer modules={rackModules} />
       <TimingSections/>
 
-      {#if $viewMode==='perform'}
-        <div class="perform-rack-area">
-          <div class="perform-source-rail" style:width={$pgmRailOpen?'var(--pgm-rail-width)':'var(--pgm-rail-collapsed)'}><PgmRail modules={rackModules}/></div>
-          <div class="perform-rows">{@render rackRows()}</div>
-        </div>
-      {:else}
-        {@render rackRows()}
-      {/if}
+      <div class="source-rack-area">
+        <div class="source-rail" style:width={$pgmRailOpen?'var(--pgm-rail-width)':'var(--pgm-rail-collapsed)'}><PgmRail modules={rackModules}/></div>
+        <div class="source-rows">{@render rackRows()}</div>
+      </div>
       {#if $viewMode==='perform'}<TimingFooter />{/if}
 
       {#if $viewMode==='timing'}<TimingPanel/>{/if}
