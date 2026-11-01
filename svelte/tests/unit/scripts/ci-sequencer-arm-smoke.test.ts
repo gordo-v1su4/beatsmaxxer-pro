@@ -36,4 +36,15 @@ describe('ci-sequencer-arm-smoke.sh (#25 CDP bundle)', () => {
     expect(script).toContain('ensure_dev_server');
     expect(script).toContain('ensure-cloud-qa-media.sh');
   });
+
+  test('retries only recognized Chromium/WebGPU infrastructure failures', () => {
+    expect(script).toContain('CDP_INFRA_MAX_ATTEMPTS:-3');
+    expect(script).toContain('A valid external Instance reference no longer exists');
+    expect(script).toContain('Internal Vulkan error');
+    expect(script).toContain('Exiting GPU process due to errors during initialization');
+    expect(script).toContain('cleanup_stale_test_chrome');
+    expect(script).toContain('^[1-9][0-9]*$');
+    expect(script).toContain("falling back to 3");
+    expect(script).not.toContain('Timed out waiting|');
+  });
 });

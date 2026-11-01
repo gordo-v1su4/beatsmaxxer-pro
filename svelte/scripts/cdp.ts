@@ -298,6 +298,22 @@ export async function dispatchUserGesture(session: CdpSession) {
   });
 }
 
+export async function ensureTransportPlaying(session: CdpSession) {
+  await dispatchUserGesture(session);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await dispatchUserGesture(session);
+    await evalPage(session, 'window.__BMX_QA__?.startTransport?.()', 25_000);
+    const playing = await evalPage<boolean>(
+      session,
+      'window.__BMX_QA__?.snapshot?.()?.playing',
+      10_000,
+    );
+    if (playing) return;
+    await Bun.sleep(500);
+  }
+  await evalPage(session, 'window.__BMX_QA__?.waitForPlaying?.(15000)', 20_000);
+}
+
 /** Match `+page.svelte` ?qaAutoplay boot before CDP starts transport. */
 export async function waitForQaSongAndRhythm(session: CdpSession, timeoutMs = 90_000) {
   const budget = timeoutMs + 5_000;

@@ -7,7 +7,8 @@ const fakeVideo = { currentTime: 0, duration: 10, seeking: false };
 vi.mock('$lib/media/VideoPool', () => ({
   videoPool: {
     get: () => fakeVideo as unknown as HTMLVideoElement,
-    getDuration: () => fakeVideo.duration
+    getDuration: () => fakeVideo.duration,
+    getTimelineTarget: () => fakeVideo.currentTime
   }
 }));
 
@@ -45,10 +46,18 @@ function buildEngine() {
   return engine;
 }
 
-const frame = () => ({ contextTimeSeconds: 0 }) as TimelineFrame;
+let contextTimeSeconds = 0;
+const frame = () => {
+  const value = contextTimeSeconds;
+  // Step beyond the 24fps render interval so every call below represents one
+  // submitted output frame rather than depending on floating-point equality.
+  contextTimeSeconds += 1 / 20;
+  return { contextTimeSeconds: value } as TimelineFrame;
+};
 
 describe('loop wrap cover', () => {
   beforeEach(() => {
+    contextTimeSeconds = 0;
     fakeVideo.currentTime = 0;
     fakeVideo.duration = 10;
     fakeVideo.seeking = false;
@@ -81,12 +90,12 @@ describe('loop wrap cover', () => {
     engine.renderAll(frame());
     expect(coveringWrap(engine, 'top-0')).toBe(true);
 
-    fakeVideo.currentTime = 0.04;
+    fakeVideo.currentTime = 0.05;
     engine.renderAll(frame());
     expect(coveringWrap(engine, 'top-0')).toBe(true);
 
     // Budget spent — back to the live external texture.
-    fakeVideo.currentTime = 0.08;
+    fakeVideo.currentTime = 0.1;
     engine.renderAll(frame());
     expect(coveringWrap(engine, 'top-0')).toBe(false);
   });
@@ -130,12 +139,15 @@ describe('loop wrap cover', () => {
     expect(coveringSeekGap(engine, 'top-0')).toBe(true);
 
     fakeVideo.seeking = false;
+    fakeVideo.currentTime = 4.05;
     engine.renderAll(frame());
     expect(coveringSeekGap(engine, 'top-0')).toBe(true);
 
+    fakeVideo.currentTime = 4.1;
     engine.renderAll(frame());
     expect(coveringSeekGap(engine, 'top-0')).toBe(true);
 
+    fakeVideo.currentTime = 4.15;
     engine.renderAll(frame());
     expect(coveringSeekGap(engine, 'top-0')).toBe(false);
   });

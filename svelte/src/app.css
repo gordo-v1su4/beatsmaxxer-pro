@@ -88,6 +88,8 @@
 	--ink: #edf0f3;
 	--ink-dim: #8d96a2;
 	--ink-faint: #4f5864;
+	--option-selected-ink: #c4f4e8;
+	--option-selected-bg: #19302e;
 	--focus-ring: #7fe3d4;
 	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 	--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -168,6 +170,47 @@ button:focus-visible,
 [role='tab']:focus-visible {
 	outline: 2px solid var(--focus-ring);
 	outline-offset: 2px;
+}
+
+/* Keep every native dropdown inside the instrument palette. `color-scheme`
+	 covers browsers using the platform picker; Chromium's customizable select
+	 path lets us remove the bright operating-system selection highlight too. */
+select {
+	color-scheme: dark;
+	accent-color: var(--focus-ring);
+}
+
+@supports (appearance: base-select) {
+	select,
+	::picker(select) {
+		appearance: base-select;
+	}
+
+	::picker(select) {
+		margin-block: 2px;
+		padding: 3px;
+		color: var(--ink-dim);
+		background: var(--surface-panel);
+		border: 1px solid var(--edge-lit);
+		border-radius: 2px;
+		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
+	}
+
+	select option {
+		padding: 5px 8px;
+		color: var(--ink-dim);
+		background: var(--surface-panel);
+	}
+
+	select option:is(:checked, :hover, :focus) {
+		color: var(--option-selected-ink) !important;
+		background: var(--option-selected-bg) !important;
+	}
+
+	select option::checkmark,
+	select::picker-icon {
+		color: var(--focus-ring);
+	}
 }
 
 input[type='range'] {
@@ -694,18 +737,21 @@ input[type='range']::-moz-range-thumb {
 	.module-preview { width: 100%; }
 }
 
-/* Rack workspaces fit as one surface, including the toolbar and source rails. */
-.perform-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
-.perform-source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
-.perform-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
+/* Perform and Timing share one composition: the program monitor and song
+   sections span the source rail, then the rail starts beside the source rows. */
+.source-rack-area { display:flex; align-items:stretch; flex:0 0 auto; min-width:0; }
+.source-rail { display:flex; flex-shrink:0; contain:size; min-height:0; overflow:hidden; }
+.source-rows { display:flex; flex-direction:column; flex:1; min-width:0; }
 @media (min-width: 961px) {
-  .app-viewport.rack-fit { overflow:hidden; }
+  .app-viewport.rack-fit { overflow-x:hidden; overflow-y:auto; }
   .rack-fit { --module-midi-lane-height:32px; }
   .rack-fit .rack-module .rack-section-body { padding-top:2px; padding-bottom:2px; }
   .rack-fit .rack-row:first-child .rack-section-body { padding-top:1px; padding-bottom:1px; }
   .rack-fit .app-shell { min-width:0; }
   .rack-fit .rack-main { min-width:0; }
-  .rack-fit .rack-main .main-viewer { height:clamp(200px, min(calc(21cqw + 12px), 26dvh), 560px); }
+  /* MainViewer keeps its width-driven height while the fit pass scales the
+     whole instrument. A viewport-height cap left unused space below the rack
+     and made the program picture too small on both Perform and Timing. */
   .rack-fit .rack-row { min-height:0!important; max-width:none; align-self:flex-start; }
   .rack-fit .module-preview { width:100%; min-height:0; }
 }

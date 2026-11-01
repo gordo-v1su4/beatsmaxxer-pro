@@ -20,6 +20,21 @@ export const defaultTimingTrigger = (): TimingTriggerConfig => ({source:'beat',c
 export interface TimingEvent { time: number; strength: number }
 export interface TimingChannel { name: string; events: TimingEvent[] }
 export interface TimingSignal { channels: TimingChannel[]; beats: readonly number[]; bpm: number; duration: number; label: string; missing?: string }
+export const PERFORMANCE_MIDI_CHANNEL = 'vocals-synth-bass';
+const PERFORMANCE_MIDI_PARTS = ['vocals', 'synth', 'bass'] as const;
+
+/** Frame Lab's performance lane combines the three musical parts that drove
+ * its cleanest cuts while retaining the individual channels for diagnostics. */
+export function performanceMidiChannel(channels: readonly TimingChannel[]): TimingChannel | null {
+  const byName = new Map(channels.map(channel => [channel.name.trim().toLowerCase(), channel]));
+  if (!PERFORMANCE_MIDI_PARTS.every(name => byName.has(name))) return null;
+  return {
+    name: PERFORMANCE_MIDI_CHANNEL,
+    events: PERFORMANCE_MIDI_PARTS
+      .flatMap(name => byName.get(name)!.events)
+      .sort((a, b) => a.time - b.time || b.strength - a.strength)
+  };
+}
 export interface TimingBurst {
   at: number; end: number; blockedUntil: number; source: number; exitSource: number;
   repeats: number[]; triggerIndex: number; triggerAt?: number; phrase?: SamplerPhrase;

@@ -49,18 +49,20 @@ function scheduledEngine(active = true) {
 }
 
 describe('bounded WebGPU render scheduling', () => {
-  test('keeps PGM at display cadence while capping previews at the web budget', () => {
+  test('caps PGM and previews at the 24 fps output cadence', () => {
     const { engine, encodeBinding } = scheduledEngine();
 
-    // Drive one second of 60fps display frames. PGM is exempt from the cadence
-    // cap and must render on every one; each preview must land on exactly the
-    // web budget. Counting over a second rather than asserting a frame pattern
-    // keeps this honest if the budget changes.
+    // Drive one second of 60fps display frames. PGM and previews share the
+    // 24fps output cadence: running the full-resolution program effect at the
+    // display refresh rate only repeats source frames and can starve decoding.
+    // Counting over a second keeps this honest if the budget changes.
     const DISPLAY_FPS = 60;
     for (let i = 0; i < DISPLAY_FPS; i++) engine.renderAll(frame(i / DISPLAY_FPS, i));
 
     const rendered = encodeBinding.mock.calls.map((call) => call[3] as string);
-    expect(rendered.filter((id) => id === 'transition')).toHaveLength(DISPLAY_FPS);
+    expect(rendered.filter((id) => id === 'transition')).toHaveLength(
+      WEB_PREVIEW_TARGET_FPS
+    );
     for (let slot = 0; slot < 8; slot++) {
       expect(rendered.filter((id) => id === `module-${slot}`)).toHaveLength(
         WEB_PREVIEW_TARGET_FPS
@@ -70,7 +72,15 @@ describe('bounded WebGPU render scheduling', () => {
     const cadence = engine.getRenderDiagnostics()['slot-0'];
     expect(cadence).toMatchObject({ bindingId: 'slot-0', targetFps: WEB_PREVIEW_TARGET_FPS });
     expect(cadence?.renderCount).toBe(WEB_PREVIEW_TARGET_FPS);
-    expect(cadence?.frameIntervalMs).toBeCloseTo(1000 / WEB_PREVIEW_TARGET_FPS, 0);
+    expect(cadence?.frameIntervalMs).toBeGreaterThanOrEqual(1000 / WEB_PREVIEW_TARGET_FPS);
+    expect(cadence?.frameIntervalMs).toBeLessThanOrEqual(
+      1000 / WEB_PREVIEW_TARGET_FPS + 1000 / DISPLAY_FPS
+    );
+    expect(engine.getRenderDiagnostics().pgm).toMatchObject({
+      bindingId: 'pgm',
+      targetFps: WEB_PREVIEW_TARGET_FPS,
+      renderCount: WEB_PREVIEW_TARGET_FPS
+    });
   });
 
   test('the first frame renders every binding', () => {
@@ -86,13 +96,27 @@ describe('bounded WebGPU render scheduling', () => {
 
     encodeBinding.mockClear();
     engine.renderAll(frame(0.1, 4));
-    expect(encodeBinding).toHaveBeenCalledTimes(1);
+    expect(encodeBinding).not.toHaveBeenCalled();
 
     engine.setModuleParams('module-3', { mix: 75 });
     encodeBinding.mockClear();
     engine.renderAll(frame(0.2, 4));
-    expect(encodeBinding).toHaveBeenCalledTimes(2);
-    expect(encodeBinding.mock.calls.map((call) => call[3])).toEqual(['transition', 'module-3']);
+    expect(encodeBinding).toHaveBeenCalledOnce();
+    expect(encodeBinding.mock.calls.map((call) => call[3])).toEqual(['module-3']);
+  });
+
+  test('renders a PGM cut immediately even inside the cadence interval', () => {
+    const { engine, encodeBinding } = scheduledEngine();
+    engine.renderAll(frame(0, 0));
+
+    encodeBinding.mockClear();
+    engine.setPgmLiveModule('module-4', 'slot-4');
+    engine.renderAll(frame(0.01, 1));
+
+    expect(encodeBinding.mock.calls.map((call) => [call[3], call[4]])).toContainEqual([
+      'module-4',
+      'slot-4'
+    ]);
   });
 
   test('repaints a stopped preview, effect pass forced, once its effect pipeline lands', () => {
@@ -106,7 +130,7 @@ describe('bounded WebGPU render scheduling', () => {
     engine.renderAll(frame(0, 0));
     encodeBinding.mockClear();
     engine.renderAll(frame(0, 0));
-    expect(encodeBinding.mock.calls.map((call) => call[3])).toEqual(['transition']);
+    expect(encodeBinding).not.toHaveBeenCalled();
 
     ready = true;
     encodeBinding.mockClear();
@@ -116,9 +140,7 @@ describe('bounded WebGPU render scheduling', () => {
 
     encodeBinding.mockClear();
     engine.renderAll(frame(0, 0));
-    expect(encodeBinding.mock.calls.map((call) => [call[3], call[5]])).toEqual([
-      ['transition', false]
-    ]);
+    expect(encodeBinding).not.toHaveBeenCalled();
   });
 
   test('never encodes inactive bindings and avoids empty command submissions', () => {
