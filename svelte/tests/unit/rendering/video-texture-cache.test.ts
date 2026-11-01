@@ -75,6 +75,13 @@ test('keeps a bounded owned loop-seam sequence without retaining decoder frames'
   expect(cache.diagnostics.loopSeamBytes).toBe(0);
 });
 
+test('allows the creating upload to capture the earliest loop-seam frame', () => {
+  const { cache, device } = setup(), video = new Video();
+  expect(cache.needsLoopSeamCapture('top-0', video as unknown as HTMLVideoElement)).toBe(true);
+  cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, 0)?.pts).toBe(0);
+});
+
 test('fills early seam positions on a later loop when initial playback started late', () => {
   const { cache, device } = setup(), video = new Video();
   for (const time of [.32, .40, .48]) {

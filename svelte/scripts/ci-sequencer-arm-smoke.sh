@@ -23,6 +23,10 @@ run_cdp_gate() {
   local label="$1"
   local runner="$2"
   local max_attempts="${CDP_INFRA_MAX_ATTEMPTS:-3}"
+  if [[ ! "$max_attempts" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ci] invalid CDP_INFRA_MAX_ATTEMPTS='$max_attempts'; falling back to 3" >&2
+    max_attempts=3
+  fi
   local attempt=1
   local status=0
   local log_file

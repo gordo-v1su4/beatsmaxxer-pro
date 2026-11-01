@@ -1,7 +1,7 @@
 /** Persistent GPU copies of the latest decoded video frames for seek gaps. */
 import type { NativeFrameSurface } from '$lib/media/NativeFrameSurface';
 
-const LOOP_SEAM_SECONDS = 0.55;
+export const LOOP_SEAM_SECONDS = 0.55;
 const LOOP_SEAM_FRAMES = 8;
 const LOOP_SEAM_BUDGET_BYTES = 512 * 1024 * 1024;
 const LOOP_SEAM_MAX_FRAME_DISTANCE_SECONDS = LOOP_SEAM_SECONDS / LOOP_SEAM_FRAMES + 1 / 120;
@@ -45,11 +45,13 @@ export class VideoTextureCache {
   private copiedFrames = 0;
   private reusedFrames = 0;
   private loopSeamBytes = 0;
+  private loopSeamFrameCount = 0;
+  private loopSeamBudgetWarned = false;
   get diagnostics() {
     return {
       copiedFrames: this.copiedFrames,
       reusedFrames: this.reusedFrames,
-      loopSeamFrames: [...this.entries.values()].reduce((sum, entry) => sum + (entry.loopSeam?.length ?? 0), 0),
+      loopSeamFrames: this.loopSeamFrameCount,
       loopSeamBytes: this.loopSeamBytes
     };
   }
@@ -96,6 +98,7 @@ export class VideoTextureCache {
 
     const revision = entry.frames!.revision();
     if (entry.hasFrame && entry.uploadedRevision === revision) {
+      if (options.captureLoopSeam) this.captureLoopSeamFrame(device, entry, source);
       this.reusedFrames++;
       this.frameViews.set(key, entry.view);
       return entry.view;
@@ -111,8 +114,9 @@ export class VideoTextureCache {
 
   needsLoopSeamCapture(key: string, source: HTMLVideoElement) {
     const entry = this.entries.get(key);
+    const captured = entry?.source === source ? (entry.loopSeam?.length ?? 0) : 0;
     return source.currentTime <= LOOP_SEAM_SECONDS &&
-      entry?.source === source && (entry.loopSeam?.length ?? 0) < LOOP_SEAM_FRAMES;
+      captured < LOOP_SEAM_FRAMES;
   }
 
   loopSeamFrame(key: string, source: HTMLVideoElement, targetSeconds: number) {
@@ -151,7 +155,13 @@ export class VideoTextureCache {
     );
     if (alreadyCaptured) return;
     const bytes = entry.width * entry.height * 4;
-    if (this.loopSeamBytes + bytes > LOOP_SEAM_BUDGET_BYTES) return;
+    if (this.loopSeamBytes + bytes > LOOP_SEAM_BUDGET_BYTES) {
+      if (!this.loopSeamBudgetWarned) {
+        this.loopSeamBudgetWarned = true;
+        console.warn('[VideoTextureCache] loop-seam budget exhausted; later sources have no seam cover');
+      }
+      return;
+    }
     const texture = device.createTexture({
       size: [entry.width, entry.height],
       format: 'rgba8unorm',
@@ -166,6 +176,7 @@ export class VideoTextureCache {
       frames.push({ texture, view: texture.createView(), time });
       frames.sort((a, b) => a.time - b.time);
       this.loopSeamBytes += bytes;
+      this.loopSeamFrameCount++;
     } catch (error) {
       texture.destroy();
       throw error;
@@ -230,6 +241,8 @@ export class VideoTextureCache {
     entry.texture.destroy();
     const bytes = entry.width * entry.height * 4;
     for (const frame of entry.loopSeam ?? []) frame.texture.destroy();
-    this.loopSeamBytes = Math.max(0, this.loopSeamBytes - bytes * (entry.loopSeam?.length ?? 0));
+    const seamFrames = entry.loopSeam?.length ?? 0;
+    this.loopSeamBytes = Math.max(0, this.loopSeamBytes - bytes * seamFrames);
+    this.loopSeamFrameCount = Math.max(0, this.loopSeamFrameCount - seamFrames);
   }
 }

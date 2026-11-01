@@ -28,9 +28,10 @@ export function timelineMediaDrift(
 
 /** Spread decoder drift probes across the rack instead of seeking every
  * lagging video on the same animation frame. The full rack is still checked
- * once per interval and non-rack sources retain the original zero phase. */
-export function videoDriftCheckPhaseSeconds(moduleId: string) {
-  const slotIndex = slotIndexForId(moduleId);
+ * once per interval and non-rack sources retain the original zero phase.
+ * `sourceId` is the resolved VideoPool key (`top-0`…`bottom-5`). */
+export function videoDriftCheckPhaseSeconds(sourceId: string) {
+  const slotIndex = slotIndexForId(sourceId);
   return slotIndex === null
     ? 0
     : (slotIndex / RACK_SLOT_COUNT) * VIDEO_DRIFT_CHECK_INTERVAL_SECONDS;

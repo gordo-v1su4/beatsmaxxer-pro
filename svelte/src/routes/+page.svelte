@@ -150,8 +150,12 @@
     startAppLoop();
     stopLifecycle = startLifecycleWatch();
     if (automated) {
-      const { installBmxQaHook } = await import('$lib/qa/bmxQa');
-      installBmxQaHook();
+      try {
+        const { installBmxQaHook } = await import('$lib/qa/bmxQa');
+        installBmxQaHook();
+      } catch (err) {
+        console.error('[QA] installBmxQaHook failed:', err);
+      }
     }
 
     // Every app load begins unheld. With no song playing, the beat-driven cards

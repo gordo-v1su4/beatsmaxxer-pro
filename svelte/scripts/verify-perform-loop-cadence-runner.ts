@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
-  dispatchUserGesture,
+  ensureTransportPlaying,
   evalPage,
   navigateAndReady,
   waitForQaSongAndRhythm,
@@ -126,22 +126,6 @@ interface ScenarioReport {
   slots: SlotCadence[];
 }
 
-async function ensureTransportPlaying(session: Parameters<typeof evalPage>[0]) {
-  await dispatchUserGesture(session);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await dispatchUserGesture(session);
-    await evalPage(session, "window.__BMX_QA__?.startTransport?.()", 25_000);
-    const playing = await evalPage<boolean>(
-      session,
-      "window.__BMX_QA__?.snapshot?.()?.playing",
-      10_000,
-    );
-    if (playing) return;
-    await Bun.sleep(500);
-  }
-  await evalPage(session, "window.__BMX_QA__?.waitForPlaying?.(15000)", 20_000);
-}
-
 async function configureScenario(
   session: Parameters<typeof evalPage>[0],
   scenario: Scenario,
@@ -160,18 +144,13 @@ async function configureScenario(
       order.value = next.order;
       order.dispatchEvent(new Event("change", { bubbles: true }));
 
+      const rail = document.querySelector('[data-bmx-pgm-rail]');
       const findButton = (label: string) =>
-        Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+        Array.from(rail?.querySelectorAll<HTMLButtonElement>("button") ?? []).find(
           (button) => button.textContent?.trim() === label && !button.disabled,
         );
       if (!findButton("1BT")) {
-        const toggle = Array.from(
-          document.querySelectorAll<HTMLButtonElement>("button"),
-        ).find((button) => button.title.startsWith("PGM source"));
-        toggle?.click();
-        // Svelte flushes the disclosure DOM in a microtask. Do not await rAF:
-        // a hidden/occluded verification tab may throttle it indefinitely.
-        await Promise.resolve();
+        throw new Error("PGM cadence controls are unavailable: PGM rail is closed");
       }
       const interval = findButton("1BT");
       const feelLabel = { straight: "STR8", swing: "SWNG", dotted: "DOT" }[
@@ -181,11 +160,20 @@ async function configureScenario(
       if (!interval || !feel)
         throw new Error("PGM cadence controls are unavailable");
       interval.click();
-      feel.click();
+      await Promise.resolve();
+      findButton(feelLabel)?.click();
+      await Promise.resolve();
+      const appliedFeel = ([
+        ["STR8", "straight"],
+        ["SWNG", "swing"],
+        ["DOT", "dotted"],
+      ] as const).find(([label]) =>
+        findButton(label)?.className.includes("border-current/30"),
+      )?.[1] ?? "";
       return {
         order: order.value,
-        feel: feelLabel,
-        interval: interval.textContent?.trim() ?? "",
+        feel: appliedFeel,
+        interval: findButton("1BT")?.textContent?.trim() ?? "",
       };
     }.toString()})(${JSON.stringify(scenario)})`,
     10_000,
@@ -193,8 +181,7 @@ async function configureScenario(
   );
   if (
     configured?.order !== scenario.order ||
-    configured.feel !==
-      { straight: "STR8", swing: "SWNG", dotted: "DOT" }[scenario.feel] ||
+    configured.feel !== scenario.feel ||
     configured.interval !== "1BT"
   ) {
     throw new Error(

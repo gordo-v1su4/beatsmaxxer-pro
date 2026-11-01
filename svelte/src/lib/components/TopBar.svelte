@@ -24,7 +24,6 @@
     type HostedAnalysisPreference
   } from '$lib/audio/hostedAnalysisPreference';
   import { arrangementStructureStatus, loadDemoArrangement } from '$lib/stores/arrangement';
-  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { fetchDemoCatalog, loadCompleteDemo, workflowLoadStatus } from '$lib/runtime/demoWorkflow';
   import { downloadWorkflow, loadWorkflowFile } from '$lib/runtime/workflowFile';
   import { cuts } from '$lib/stores/arrangement';
@@ -120,7 +119,10 @@
     try {
       if (id === 'demo-arrangement') loadDemoArrangement();
       else if (id === 'redline-timing' || id === 'redline-originals') await loadCompleteDemo(id === 'redline-timing' ? 'timing' : 'perform');
-      else await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
+      else {
+        const { fetchAndLoadQaMedia } = await import('$lib/qa/loadQaMedia');
+        await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
+      }
     } catch (err) {
       workflowError = err instanceof Error ? err.message : String(err);
       console.error('[workflow]', id, err);

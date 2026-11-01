@@ -30,7 +30,7 @@ describe('Perform and Timing rack composition', () => {
     expect(css).toContain('color-scheme: dark');
     expect(css).toContain('::picker(select)');
     expect(css).toMatch(/select option:is\(:checked, :hover, :focus\)/);
-    expect(css).toContain('background: #19302e !important');
+    expect(css).toContain('background: var(--option-selected-bg) !important');
   });
 
   test('keeps the program viewer width-driven at the fitted desktop size', () => {

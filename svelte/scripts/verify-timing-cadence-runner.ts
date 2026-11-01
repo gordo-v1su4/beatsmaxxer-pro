@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
-  dispatchUserGesture,
+  ensureTransportPlaying,
   evalPage,
   navigateAndReady,
   waitForQaSongAndRhythm,
@@ -87,7 +87,7 @@ interface ScenarioReport {
     outputFps: number;
     master?: { stutter?: { groove?: string } };
   };
-  capacity: { pending: number; ready: number; errors: number };
+  capacity: { pending: number; usedBytes: number; requiredBytes: number };
   scheduleBursts: number;
   slots: SlotReport[];
 }
@@ -112,22 +112,6 @@ async function clickButtonInPage(
     10_000,
     `click ${label}`,
   );
-}
-
-async function ensureTransportPlaying(session: Parameters<typeof evalPage>[0]) {
-  await dispatchUserGesture(session);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await dispatchUserGesture(session);
-    await evalPage(session, "window.__BMX_QA__?.startTransport?.()", 25_000);
-    const playing = await evalPage<boolean>(
-      session,
-      "window.__BMX_QA__?.snapshot?.()?.playing",
-      10_000,
-    );
-    if (playing) return;
-    await Bun.sleep(500);
-  }
-  await evalPage(session, "window.__BMX_QA__?.waitForPlaying?.(15000)", 20_000);
 }
 
 async function openTimingWorkspace(session: Parameters<typeof evalPage>[0]) {
@@ -197,9 +181,12 @@ async function waitForTimingReady(
             ],
           };
         }
-        if (snapshot?.capacity?.errors > 0) {
+        const failedSlot = Object.values(snapshot?.status ?? {}).find(
+          (slot: any) => slot?.state === "error",
+        );
+        if (failedSlot) {
           throw new Error(
-            `Timing preparation failed: ${JSON.stringify(snapshot.capacity)}`,
+            `Timing preparation failed: ${JSON.stringify({ capacity: snapshot?.capacity, status: snapshot?.status })}`,
           );
         }
         if (performance.now() >= deadline) {
@@ -286,9 +273,7 @@ async function configureScenario(
       if (stutterSlot.disabled)
         throw new Error("Timing stutter slot is disabled");
       stutterSlot.click();
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve()),
-      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
       const groove = await waitFor<HTMLSelectElement>(
         'select[aria-label="Stutter groove"]',
@@ -300,9 +285,7 @@ async function configureScenario(
       );
       order.value = next.cutOrder;
       order.dispatchEvent(new Event("change", { bubbles: true }));
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve()),
-      );
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
 
       const source = await waitFor<HTMLSelectElement>(
         'select[aria-label="Timing trigger source"]',
@@ -513,6 +496,13 @@ await withChrome("verify-timing-cadence", 10_050, async (session) => {
   );
   const reports: ScenarioReport[] = [];
   for (const scenario of SCENARIOS) {
+    await evalPage(
+      session,
+      "window.__BMX_QA__?.getEngine?.().audioEngine.seek(0)",
+      10_000,
+      `reset transport for ${scenario.feel} ${scenario.cutOrder}`,
+    );
+    await ensureTransportPlaying(session);
     const configured = await configureScenario(session, scenario);
     if (
       configured?.feel !== scenario.feel ||
@@ -534,6 +524,15 @@ await withChrome("verify-timing-cadence", 10_050, async (session) => {
     if (!report)
       throw new Error(`No Timing cadence report for ${scenario.feel}`);
     reports.push(report);
+    await mkdir(dirname(REPORT), { recursive: true });
+    await Bun.write(
+      REPORT,
+      JSON.stringify(
+        { complete: false, sampleMsPerScenario: SAMPLE_MS, reports },
+        null,
+        2,
+      ),
+    );
   }
 
   const failures = reports.flatMap((report) => {

@@ -15,7 +15,7 @@ import { videoPool } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
 import type { WebGpuRenderDiagnostics } from '$lib/engine/contracts';
 import { resolveVideoSamplePath } from '$lib/qa/proofEnvironment';
-import { VideoTextureCache } from './VideoTextureCache';
+import { LOOP_SEAM_SECONDS, VideoTextureCache } from './VideoTextureCache';
 import { BlitBindGroupCache } from './BindGroupCache';
 import { isTauriRuntime } from '$lib/platform/runtime';
 import { previewTargetFps } from '$lib/platform/desktopPerformance';
@@ -117,13 +117,14 @@ interface BindingScheduleState {
 
 /** Modules that remap source time and seek often — external imports flash black. */
 const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler', 'speedramp']);
+const LOOP_SEAM_CAPTURE_EXCLUDED_MODULES = new Set(['speedramp', 'stutter', 'timesampler']);
 
 /** Refresh the last-good-frame copy inside this window on both sides of an
  * HTMLVideo loop wrap, where the decoder can briefly report no current frame.
  * The cover frame guarantees the seam shows the clip's last real frame instead
  * of a black flash or the idle test card. */
 const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
-const LOOP_SEAM_CACHE_SECONDS = 0.55;
+const LOOP_SEAM_CACHE_SECONDS = LOOP_SEAM_SECONDS;
 
 /** How far into a clip a source still counts as "just wrapped" for the purpose
  * of a PGM cut. Cutting onto a source in this window can import an external
@@ -1013,7 +1014,7 @@ export class WebGpuEngine {
       !video.seeking &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
     const captureLoopSeam = !!video &&
-      !['speedramp', 'stutter', 'timesampler'].includes(moduleId) &&
+      !LOOP_SEAM_CAPTURE_EXCLUDED_MODULES.has(moduleId) &&
       this.videoTextureCache.needsLoopSeamCapture(sourceId, video);
     if (
       hasVideo &&
@@ -1036,7 +1037,7 @@ export class WebGpuEngine {
       }
     }
     const loopTarget = video ? videoPool.getTimelineTarget(sourceId) : null;
-    const cachedLoopSeam = video && loopTarget !== null && this.isInCachedLoopSeam(sourceId)
+    const cachedLoopSeam = !ownedFrame && video && loopTarget !== null && this.isInCachedLoopSeam(sourceId)
       ? this.videoTextureCache.loopSeamFrame(sourceId, video, loopTarget)
       : null;
     if (cachedLoopSeam) {

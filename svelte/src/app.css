@@ -88,6 +88,8 @@
 	--ink: #edf0f3;
 	--ink-dim: #8d96a2;
 	--ink-faint: #4f5864;
+	--option-selected-ink: #c4f4e8;
+	--option-selected-bg: #19302e;
 	--focus-ring: #7fe3d4;
 	--ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 	--ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -201,8 +203,8 @@ select {
 	}
 
 	select option:is(:checked, :hover, :focus) {
-		color: #c4f4e8 !important;
-		background: #19302e !important;
+		color: var(--option-selected-ink) !important;
+		background: var(--option-selected-bg) !important;
 	}
 
 	select option::checkmark,

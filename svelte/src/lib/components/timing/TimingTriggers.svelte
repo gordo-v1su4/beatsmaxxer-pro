@@ -23,9 +23,10 @@
     'mix-loudness':'Mix means the whole song. Trigger on its loud peaks, including sustained loud moments, rather than just the start of a sound.',
     continuous:'Keep the effect cycling on the beat grid without waiting for a note or onset. Density, trigger chance and gaps do not apply.'
   };
+  const channelLabel=$derived(trigger.channel===PERFORMANCE_MIDI_CHANNEL?'VOCALS + SYNTH + BASS':trigger.channel);
   const channelHelp=$derived(trigger.channel==='all'
     ? 'Assign one available channel to each deck in order, repeating across S0–S9. Each deck keeps its channel; channels do not rotate over time.'
-    : `Use only ${trigger.channel} ${trigger.source==='midi'?'MIDI note':'audio analysis'} triggers. Global applies this channel to every deck; Modular applies it to the selected deck.`);
+    : `Use only ${channelLabel} ${trigger.source==='midi'?'MIDI note':'audio analysis'} triggers. Global applies this channel to every deck; Modular applies it to the selected deck.`);
   const songDuration=$derived($transportDisplay.duration);
   // Resolve the editor's own trigger, including per-deck overrides. The
   // renderer's global signal status may describe a different source.
@@ -67,7 +68,7 @@
   {/if}
   <button disabled={busy} onclick={()=>openProtectedFilePicker(files)}>IMPORT MIDI / DATA</button>
   <input class="file" bind:this={files} type="file" multiple accept=".mid,.midi,.json,.mp3,.wav,.m4a,.ogg,.flac" aria-label="Import Timing MIDI or analysis and matching song" onchange={async e=>{const chosen=Array.from(e.currentTarget.files??[]);e.currentTarget.value='';if(chosen.length && await requireHostedAccess())void load(()=>importTimingFiles(chosen));}}/>
-  {#if import.meta.env.DEV}<button disabled={busy} title="Load the saved matching song, MIDI and stem analysis from ZigSwap; preserve your Timing parameters." onclick={()=>load(async()=>{await loadRedlineTimingReference();timingSettings.update(s=>({...s,trigger:{...s.trigger,source:'midi',channel:PERFORMANCE_MIDI_CHANNEL}}));})}>LOAD REDLINE SONG + TRIGGERS</button>{/if}
+  {#if import.meta.env.DEV}<button disabled={busy} title="Load the saved matching song, MIDI and stem analysis from ZigSwap; preserve your Timing parameters except Channel, which is set to vocals + synth + bass." onclick={()=>load(async()=>{await loadRedlineTimingReference();timingSettings.update(s=>({...s,trigger:{...s.trigger,source:'midi',channel:PERFORMANCE_MIDI_CHANNEL}}));})}>LOAD REDLINE SONG + TRIGGERS</button>{/if}
   <div class="signal" role="status">{signal.missing??signal.label} {message?` · ${message}`:''}</div>
 </div>
 <style>

@@ -65,7 +65,7 @@
   .pgm-slot{display:flex;align-items:center;gap:6px;width:100%;min-height:22px;max-height:34px;flex:1 0 22px;padding-inline:7px;background:linear-gradient(180deg,#1e2124,#181a1c 55%,#141618);border:1px solid #1e2226;border-radius:2px;cursor:pointer;box-shadow:none;transition:background var(--dur-control) var(--ease-out)}
   .pgm-slots.timing-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:24px;align-content:start;gap:4px}
   .pgm-slots.timing-grid .pgm-slot{min-width:0;height:24px;min-height:24px;max-height:24px;padding-inline:4px;gap:3px}
-  .pgm-slots.timing-grid .pgm-slot > :global(:last-child){margin-left:auto}
+  .pgm-slots.timing-grid .pgm-slot > :global(.readiness){margin-left:auto}
   .pgm-slot.is-active{background:linear-gradient(180deg,color-mix(in srgb,var(--slot-accent) 16%,#1e2124),color-mix(in srgb,var(--slot-accent) 8%,#141618))}
   .pgm-collapsed{flex-direction:column;gap:10px!important;padding-bottom:12px!important}
   @keyframes pgmQueueBlink {
