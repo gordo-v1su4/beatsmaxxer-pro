@@ -7,7 +7,8 @@
 	"scripts": {
 		"dev": "vite dev",
 		"dev:desktop": "TAURI_ENV_PLATFORM=1 vite dev --host 127.0.0.1 --port 5175 --strictPort",
-		"build": "vite build",
+		"build": "vite build && bun scripts/verify-client-bundle.ts",
+		"verify:client-bundle": "bun scripts/verify-client-bundle.ts",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo '' && cp node_modules/@soundtouchjs/audio-worklet/.dist/soundtouch-processor.js static/soundtouch-processor.js 2>/dev/null || true",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",

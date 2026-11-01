@@ -60,6 +60,17 @@ interface SlotCadence {
   maxCallbackGapMs: number;
   maxLoopGapMs: number;
   maxLoopCallbackGapMs: number;
+  cachedSeams: number;
+  cachedSeamSamples: number;
+  cachedSeamPtsChanges: number;
+  maxCachedSeamStaleMs: number;
+  cachedSeamRuns: Array<{
+    index: number;
+    samples: number;
+    ptsChanges: number;
+    maxStaleMs: number;
+    startedSongTime: number;
+  }>;
   droppedFrames: number;
   gaps: Array<{
     gapMs: number;
@@ -69,6 +80,8 @@ interface SlotCadence {
     songTime: number;
     seeking: boolean;
     pgmModule: string;
+    coveredLoopWrap: boolean;
+    cachedSeamRun: number | null;
   }>;
   loopGaps: Array<{
     gapMs: number;
@@ -77,6 +90,12 @@ interface SlotCadence {
     mediaTime: number;
     songTime: number;
     coveredLoopWrap: boolean;
+    cachedSeamRun: number | null;
+  }>;
+  cachedSeamGaps: Array<{
+    gapMs: number;
+    sourceFramePts: number;
+    songTime: number;
   }>;
 }
 
@@ -192,7 +211,7 @@ async function samplePerformLoops(
   if (qa.timingSnapshot().workspace !== "perform") {
     throw new Error("Perform workspace is required");
   }
-  const { videoPool, audioEngine } = qa.getEngine();
+  const { videoPool, audioEngine, webGpuEngine } = qa.getEngine();
   const initial = qa.eightVideoSnapshot();
   if (initial.slots.length !== 12 || initial.decoderCount !== 12) {
     throw new Error("A decoded twelve-slot rack is required");
@@ -275,10 +294,19 @@ async function samplePerformLoops(
       maxCallbackGapMs: 0,
       maxLoopGapMs: 0,
       maxLoopCallbackGapMs: 0,
+      cachedSeams: 0,
+      cachedSeamSamples: 0,
+      cachedSeamPtsChanges: 0,
+      maxCachedSeamStaleMs: 0,
+      cachedSeamActive: false,
+      cachedSeamLastPts: null as number | null,
+      cachedSeamLastChangeAt: null as number | null,
+      cachedSeamRuns: [] as SlotCadence["cachedSeamRuns"],
       droppedFrames: 0,
       droppedBefore: 0,
       gaps: [] as SlotCadence["gaps"],
       loopGaps: [] as SlotCadence["loopGaps"],
+      cachedSeamGaps: [] as SlotCadence["cachedSeamGaps"],
     }));
 
   const watch = (stat: (typeof stats)[number], video: HTMLVideoElement) => {
@@ -320,6 +348,11 @@ async function samplePerformLoops(
       const looped =
         stat.previousMediaTime !== null &&
         metadata.mediaTime + 0.1 < stat.previousMediaTime;
+      const coveredLoopWrap =
+        webGpuEngine.getRenderDiagnostics()[stat.slot]?.coveredLoopWrap === true;
+      const cachedSeamRun = stat.cachedSeamActive
+        ? stat.cachedSeamRuns.length - 1
+        : null;
       stat.callbacks++;
       stat.maxGapMs = Math.max(stat.maxGapMs, gapMs);
       stat.maxCallbackGapMs = Math.max(stat.maxCallbackGapMs, callbackGapMs);
@@ -332,6 +365,8 @@ async function samplePerformLoops(
           songTime: qa.arrangementSnapshot().time,
           seeking: video.seeking,
           pgmModule: qa.snapshot().pgmModule,
+          coveredLoopWrap,
+          cachedSeamRun,
         });
       }
       if (looped) {
@@ -347,9 +382,8 @@ async function samplePerformLoops(
           presentedFramesDelta,
           mediaTime: metadata.mediaTime,
           songTime: qa.arrangementSnapshot().time,
-          coveredLoopWrap:
-            qa.getEngine().webGpuEngine.getRenderDiagnostics()[stat.slot]
-              ?.coveredLoopWrap === true,
+          coveredLoopWrap,
+          cachedSeamRun,
         });
       }
       stat.previousNow = now;
@@ -379,7 +413,68 @@ async function samplePerformLoops(
       }
     }
     previousRaf = now;
+    const renderDiagnostics = webGpuEngine.getRenderDiagnostics();
     for (const stat of stats) {
+      const render = renderDiagnostics[stat.slot];
+      const seamActive =
+        render?.coveredLoopWrap === true &&
+        Number.isFinite(render.sourceFramePts);
+      if (seamActive) {
+        const sourceFramePts = render.sourceFramePts as number;
+        stat.cachedSeamSamples++;
+        if (!stat.cachedSeamActive) {
+          stat.cachedSeams++;
+          stat.cachedSeamActive = true;
+          stat.cachedSeamLastPts = sourceFramePts;
+          stat.cachedSeamLastChangeAt = now;
+          stat.cachedSeamRuns.push({
+            index: stat.cachedSeamRuns.length,
+            samples: 1,
+            ptsChanges: 0,
+            maxStaleMs: 0,
+            startedSongTime: qa.arrangementSnapshot().time,
+          });
+        } else if (sourceFramePts !== stat.cachedSeamLastPts) {
+          const gapMs = Math.max(
+            0,
+            now - (stat.cachedSeamLastChangeAt ?? now),
+          );
+          stat.maxCachedSeamStaleMs = Math.max(
+            stat.maxCachedSeamStaleMs,
+            gapMs,
+          );
+          stat.cachedSeamPtsChanges++;
+          const run = stat.cachedSeamRuns.at(-1)!;
+          run.samples++;
+          run.ptsChanges++;
+          run.maxStaleMs = Math.max(run.maxStaleMs, gapMs);
+          if (gapMs > 100 && stat.cachedSeamGaps.length < 100) {
+            stat.cachedSeamGaps.push({
+              gapMs,
+              sourceFramePts,
+              songTime: qa.arrangementSnapshot().time,
+            });
+          }
+          stat.cachedSeamLastPts = sourceFramePts;
+          stat.cachedSeamLastChangeAt = now;
+        } else {
+          const staleMs = Math.max(
+            0,
+            now - (stat.cachedSeamLastChangeAt ?? now),
+          );
+          stat.maxCachedSeamStaleMs = Math.max(
+            stat.maxCachedSeamStaleMs,
+            staleMs,
+          );
+          const run = stat.cachedSeamRuns.at(-1)!;
+          run.samples++;
+          run.maxStaleMs = Math.max(run.maxStaleMs, staleMs);
+        }
+      } else if (stat.cachedSeamActive) {
+        stat.cachedSeamActive = false;
+        stat.cachedSeamLastPts = null;
+        stat.cachedSeamLastChangeAt = null;
+      }
       const current = videoPool.get(stat.slot) as HTMLVideoElement | undefined;
       if (!current || current === stat.video) continue;
       stat.video.cancelVideoFrameCallback(stat.callback);
@@ -393,6 +488,9 @@ async function samplePerformLoops(
       stat.previousPresentationTime = null;
       stat.previousPresentedFrames = null;
       stat.previousMediaTime = null;
+      stat.cachedSeamActive = false;
+      stat.cachedSeamLastPts = null;
+      stat.cachedSeamLastChangeAt = null;
       watch(stat, current);
     }
     raf = requestAnimationFrame(checkSources);
@@ -433,6 +531,9 @@ async function samplePerformLoops(
         previousPresentationTime: _previousPresentationTime,
         previousPresentedFrames: _previousPresentedFrames,
         previousMediaTime: _previousMediaTime,
+        cachedSeamActive: _cachedSeamActive,
+        cachedSeamLastPts: _cachedSeamLastPts,
+        cachedSeamLastChangeAt: _cachedSeamLastChangeAt,
         droppedBefore,
         ...stat
       }: any) => ({
@@ -517,21 +618,50 @@ await withChrome("verify-perform-loop-cadence", 9650, async (session) => {
   }
 
   const failures = reports.flatMap((report) =>
-    report.slots
-      .filter(
-        (slot) =>
-          slot.loops < MIN_LOOPS ||
-          slot.maxLoopGapMs > MAX_GAP_MS ||
-          slot.maxGapMs > MAX_GAP_MS,
-      )
-      .map(({ slot, module, loops, maxGapMs, maxLoopGapMs }) => ({
-        scenario: report.scenario,
-        slot,
-        module,
-        loops,
-        maxGapMs,
-        maxLoopGapMs,
-      })),
+    report.slots.flatMap((slot) => {
+      const uncovered = (gap: {
+        gapMs: number;
+        coveredLoopWrap: boolean;
+        cachedSeamRun: number | null;
+      }) => {
+        if (gap.gapMs <= MAX_GAP_MS) return false;
+        if (!gap.coveredLoopWrap || gap.cachedSeamRun === null) return true;
+        const seam = slot.cachedSeamRuns[gap.cachedSeamRun];
+        return !seam || seam.ptsChanges === 0 || seam.maxStaleMs > MAX_GAP_MS;
+      };
+      const uncoveredSourceGaps = slot.gaps.filter(uncovered);
+      const uncoveredLoopGaps = slot.loopGaps.filter(uncovered);
+      const reasons = [
+        ...(slot.loops < MIN_LOOPS ? [`only ${slot.loops} decoder loops`] : []),
+        ...(slot.cachedSeams < MIN_LOOPS
+          ? [`only ${slot.cachedSeams} rendered cached seams`]
+          : []),
+        ...(slot.cachedSeamPtsChanges < slot.cachedSeams
+          ? ["cached seam did not advance"]
+          : []),
+        ...(uncoveredSourceGaps.length
+          ? [`${uncoveredSourceGaps.length} uncovered source gaps`]
+          : []),
+        ...(uncoveredLoopGaps.length
+          ? [`${uncoveredLoopGaps.length} uncovered decoder loop gaps`]
+          : []),
+      ];
+      return reasons.length
+        ? [
+            {
+              scenario: report.scenario,
+              slot: slot.slot,
+              module: slot.module,
+              loops: slot.loops,
+              cachedSeams: slot.cachedSeams,
+              maxGapMs: slot.maxGapMs,
+              maxLoopGapMs: slot.maxLoopGapMs,
+              maxCachedSeamStaleMs: slot.maxCachedSeamStaleMs,
+              reasons,
+            },
+          ]
+        : [];
+    }),
   );
   const result = {
     complete: true,

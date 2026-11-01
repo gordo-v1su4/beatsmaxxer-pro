@@ -58,6 +58,42 @@ test('uses media time when frame callbacks are unavailable', () => {
   cache.dispose();
 });
 
+test('keeps a bounded owned loop-seam sequence without retaining decoder frames', () => {
+  const { cache, device, copy } = setup(), video = new Video();
+  cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
+  for (const time of [.08, .16, .24, .32, .40, .48, .55]) {
+    video.currentTime = time;
+    video.present();
+    cache.beginFrame();
+    cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
+  }
+  expect(cache.diagnostics.loopSeamFrames).toBeGreaterThanOrEqual(6);
+  expect(cache.diagnostics.loopSeamFrames).toBeLessThanOrEqual(8);
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, .3)?.pts).toBeLessThanOrEqual(.3);
+  expect(copy).toHaveBeenCalledTimes(8 + cache.diagnostics.loopSeamFrames);
+  cache.dispose();
+  expect(cache.diagnostics.loopSeamBytes).toBe(0);
+});
+
+test('fills early seam positions on a later loop when initial playback started late', () => {
+  const { cache, device } = setup(), video = new Video();
+  for (const time of [.32, .40, .48]) {
+    video.currentTime = time;
+    video.present();
+    cache.beginFrame();
+    cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
+  }
+  for (const time of [.01, .09, .17, .25, .55]) {
+    video.currentTime = time;
+    video.present();
+    cache.beginFrame();
+    cache.upload(device, 'top-0', video as unknown as HTMLVideoElement, { captureLoopSeam: true });
+  }
+  expect(cache.diagnostics.loopSeamFrames).toBe(8);
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, .02)?.pts).toBe(.01);
+  expect(cache.loopSeamFrame('top-0', video as unknown as HTMLVideoElement, .3)?.pts).toBe(.25);
+});
+
 test('a failed replacement copy never publishes an uninitialized or destroyed frame', () => {
   const { cache, device, copy } = setup(), first = new Video(), second = new Video();
   const old = cache.upload(device, 'top-0', first as unknown as HTMLVideoElement);

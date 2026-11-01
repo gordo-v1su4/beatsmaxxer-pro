@@ -1,6 +1,10 @@
 /** Persistent GPU copies of the latest decoded video frames for seek gaps. */
 import type { NativeFrameSurface } from '$lib/media/NativeFrameSurface';
 
+const LOOP_SEAM_SECONDS = 0.55;
+const LOOP_SEAM_FRAMES = 8;
+const LOOP_SEAM_BUDGET_BYTES = 512 * 1024 * 1024;
+
 function observeFrames(source: HTMLVideoElement) {
   let revision = 0, callback: number | undefined, disposed = false;
   const hasCallbacks = typeof source.requestVideoFrameCallback === 'function';
@@ -34,17 +38,31 @@ export class VideoTextureCache {
     frames?: ReturnType<typeof observeFrames>;
     uploadedRevision?: string;
     hasFrame?: boolean;
+    loopSeam?: Array<{ texture: GPUTexture; view: GPUTextureView; time: number }>;
   }>();
   private frameViews = new Map<string, GPUTextureView>();
   private copiedFrames = 0;
   private reusedFrames = 0;
-  get diagnostics() { return { copiedFrames: this.copiedFrames, reusedFrames: this.reusedFrames }; }
+  private loopSeamBytes = 0;
+  get diagnostics() {
+    return {
+      copiedFrames: this.copiedFrames,
+      reusedFrames: this.reusedFrames,
+      loopSeamFrames: [...this.entries.values()].reduce((sum, entry) => sum + (entry.loopSeam?.length ?? 0), 0),
+      loopSeamBytes: this.loopSeamBytes
+    };
+  }
 
   beginFrame() {
     this.frameViews.clear();
   }
 
-  upload(device: GPUDevice, key: string, source: HTMLVideoElement): GPUTextureView {
+  upload(
+    device: GPUDevice,
+    key: string,
+    source: HTMLVideoElement,
+    options: { captureLoopSeam?: boolean } = {}
+  ): GPUTextureView {
     const stale = this.entries.get(key);
     const inFrame = this.frameViews.get(key);
     if (inFrame && stale?.hasFrame && stale.source === source && inFrame === stale.view
@@ -65,8 +83,7 @@ export class VideoTextureCache {
 
     let entry = this.entries.get(key);
     if (!entry || entry.width !== width || entry.height !== height || entry.source !== source) {
-      entry?.frames?.dispose();
-      entry?.texture.destroy();
+      if (entry) this.destroyEntry(entry);
       const texture = device.createTexture({
         size: [width, height],
         format: 'rgba8unorm',
@@ -83,11 +100,71 @@ export class VideoTextureCache {
       return entry.view;
     }
     device.queue.copyExternalImageToTexture({ source }, { texture: entry.texture }, [width, height]);
+    if (options.captureLoopSeam) this.captureLoopSeamFrame(device, entry, source);
     entry.uploadedRevision = revision;
     entry.hasFrame = true;
     this.copiedFrames++;
     this.frameViews.set(key, entry.view);
     return entry.view;
+  }
+
+  needsLoopSeamCapture(key: string, source: HTMLVideoElement) {
+    const entry = this.entries.get(key);
+    return source.currentTime <= LOOP_SEAM_SECONDS &&
+      entry?.source === source && (entry.loopSeam?.length ?? 0) < LOOP_SEAM_FRAMES;
+  }
+
+  loopSeamFrame(key: string, source: HTMLVideoElement, targetSeconds: number) {
+    const entry = this.entries.get(key);
+    if (entry?.source !== source || !entry.loopSeam?.length) return null;
+    let selected = entry.loopSeam[0];
+    for (const frame of entry.loopSeam) {
+      if (frame.time > targetSeconds + 1 / 120) break;
+      selected = frame;
+    }
+    return { view: selected.view, pts: selected.time };
+  }
+
+  private captureLoopSeamFrame(
+    device: GPUDevice,
+    entry: NonNullable<ReturnType<VideoTextureCache['entries']['get']>>,
+    source: HTMLVideoElement
+  ) {
+    const time = source.currentTime;
+    if (time > LOOP_SEAM_SECONDS) return;
+    const frames = entry.loopSeam ??= [];
+    if (frames.length >= LOOP_SEAM_FRAMES) return;
+    const bin = Math.min(
+      LOOP_SEAM_FRAMES - 1,
+      Math.floor((time / LOOP_SEAM_SECONDS) * LOOP_SEAM_FRAMES)
+    );
+    const alreadyCaptured = frames.some((frame) =>
+      Math.min(
+        LOOP_SEAM_FRAMES - 1,
+        Math.floor((frame.time / LOOP_SEAM_SECONDS) * LOOP_SEAM_FRAMES)
+      ) === bin
+    );
+    if (alreadyCaptured) return;
+    const bytes = entry.width * entry.height * 4;
+    if (this.loopSeamBytes + bytes > LOOP_SEAM_BUDGET_BYTES) return;
+    const texture = device.createTexture({
+      size: [entry.width, entry.height],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    try {
+      device.queue.copyExternalImageToTexture(
+        { source },
+        { texture },
+        [entry.width, entry.height]
+      );
+      frames.push({ texture, view: texture.createView(), time });
+      frames.sort((a, b) => a.time - b.time);
+      this.loopSeamBytes += bytes;
+    } catch (error) {
+      texture.destroy();
+      throw error;
+    }
   }
 
   uploadBgra(device: GPUDevice, key: string, surface: NativeFrameSurface): GPUTextureView {
@@ -100,8 +177,7 @@ export class VideoTextureCache {
 
     let entry = this.entries.get(key);
     if (!entry || entry.width !== width || entry.height !== height || entry.source !== null) {
-      entry?.frames?.dispose();
-      entry?.texture.destroy();
+      if (entry) this.destroyEntry(entry);
       const texture = device.createTexture({
         size: [width, height],
         format: 'bgra8unorm',
@@ -139,8 +215,16 @@ export class VideoTextureCache {
   }
 
   dispose() {
-    for (const entry of this.entries.values()) { entry.frames?.dispose(); entry.texture.destroy(); }
+    for (const entry of this.entries.values()) this.destroyEntry(entry);
     this.entries.clear();
     this.frameViews.clear();
+  }
+
+  private destroyEntry(entry: NonNullable<ReturnType<VideoTextureCache['entries']['get']>>) {
+    entry.frames?.dispose();
+    entry.texture.destroy();
+    const bytes = entry.width * entry.height * 4;
+    for (const frame of entry.loopSeam ?? []) frame.texture.destroy();
+    this.loopSeamBytes = Math.max(0, this.loopSeamBytes - bytes * (entry.loopSeam?.length ?? 0));
   }
 }

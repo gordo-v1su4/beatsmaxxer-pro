@@ -123,6 +123,7 @@ const PERSISTENT_VIDEO_CACHE_MODULES = new Set(['timesampler', 'speedramp']);
  * The cover frame guarantees the seam shows the clip's last real frame instead
  * of a black flash or the idle test card. */
 const LOOP_SEAM_COVER_WINDOW_SECONDS = 0.3;
+const LOOP_SEAM_CACHE_SECONDS = 0.55;
 
 /** How far into a clip a source still counts as "just wrapped" for the purpose
  * of a PGM cut. Cutting onto a source in this window can import an external
@@ -182,7 +183,12 @@ export class WebGpuEngine {
   private frameIndex = 0;
   /** Per-source loop-wrap state: last observed time, and the frame index through
    * which this source's seam still renders from the cached last-good frame. */
-  private loopWrapCover = new Map<string, { lastTime: number; coverUntilFrame: number }>();
+  private loopWrapCover = new Map<string, {
+    lastTime: number;
+    lastTarget: number | null;
+    coverUntilFrame: number;
+    hasWrapped: boolean;
+  }>();
   private seekGapCover = new Map<string, { wasSeeking: boolean; coverUntilFrame: number }>();
   /** Per-source PGM cut cover budget — holds last-good frame across the cut. */
   private pgmCutCover = new Map<string, number>();
@@ -710,15 +716,25 @@ export class WebGpuEngine {
       const video = videoPool.get(sourceId);
       if (!video || !Number.isFinite(video.duration) || video.duration <= 0) continue;
       const current = video.currentTime;
+      const target = videoPool.getTimelineTarget(sourceId);
       const state = this.loopWrapCover.get(sourceId);
       if (!state) {
-        this.loopWrapCover.set(sourceId, { lastTime: current, coverUntilFrame: 0 });
+        this.loopWrapCover.set(sourceId, {
+          lastTime: current,
+          lastTarget: target,
+          coverUntilFrame: 0,
+          hasWrapped: false
+        });
         continue;
       }
-      if (current < state.lastTime - LOOP_WRAP_DETECT_EPSILON_SECONDS) {
+      const timelineWrapped = target !== null && state.lastTarget !== null &&
+        target < state.lastTarget - LOOP_WRAP_DETECT_EPSILON_SECONDS;
+      if (current < state.lastTime - LOOP_WRAP_DETECT_EPSILON_SECONDS || timelineWrapped) {
         state.coverUntilFrame = this.frameIndex + LOOP_WRAP_COVER_FRAMES;
+        state.hasWrapped = true;
       }
       state.lastTime = current;
+      state.lastTarget = target;
     }
   }
 
@@ -726,6 +742,12 @@ export class WebGpuEngine {
   private isCoveringLoopWrap(sourceId: string) {
     const state = this.loopWrapCover.get(sourceId);
     return !!state && this.frameIndex < state.coverUntilFrame;
+  }
+
+  private isInCachedLoopSeam(sourceId: string) {
+    const state = this.loopWrapCover.get(sourceId);
+    const target = videoPool.getTimelineTarget(sourceId);
+    return !!state?.hasWrapped && target !== null && target <= LOOP_SEAM_CACHE_SECONDS;
   }
 
   /** Detect seek start/end once per frame per source, before encoding bindings. */
@@ -974,6 +996,7 @@ export class WebGpuEngine {
     let externalTextureBound = false;
     let cachedTextureUploaded = false;
     let cachedTextureBound = false;
+    let cachedLoopSeamPts: number | null = null;
     const preferPersistentVideoTexture = !!ownedFrame || shouldUsePersistentVideoTexture(moduleId);
     let cachedVideoView = ownedFrame?.view ?? (video ? this.videoTextureCache.cachedView(sourceId, video) : null);
     const duration = video?.duration ?? 0;
@@ -989,20 +1012,36 @@ export class WebGpuEngine {
       !!video &&
       !video.seeking &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    const captureLoopSeam = !!video &&
+      !['speedramp', 'stutter', 'timesampler'].includes(moduleId) &&
+      this.videoTextureCache.needsLoopSeamCapture(sourceId, video);
     if (
       hasVideo &&
       video &&
       canUploadFrame &&
-      (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView || pendingPgmTarget)
+      (preferPersistentVideoTexture || approachingLoopEnd || !cachedVideoView || pendingPgmTarget || captureLoopSeam)
     ) {
       try {
         const copied = this.videoTextureCache.diagnostics.copiedFrames;
-        cachedVideoView = this.videoTextureCache.upload(this.device, sourceId, video);
+        cachedVideoView = this.videoTextureCache.upload(
+          this.device,
+          sourceId,
+          video,
+          { captureLoopSeam }
+        );
         cachedTextureUploaded = this.videoTextureCache.diagnostics.copiedFrames > copied;
       } catch {
         // A seek can invalidate the current external frame between readiness
         // inspection and upload. Preserve the last successfully cached frame.
       }
+    }
+    const loopTarget = video ? videoPool.getTimelineTarget(sourceId) : null;
+    const cachedLoopSeam = video && loopTarget !== null && this.isInCachedLoopSeam(sourceId)
+      ? this.videoTextureCache.loopSeamFrame(sourceId, video, loopTarget)
+      : null;
+    if (cachedLoopSeam) {
+      cachedVideoView = cachedLoopSeam.view;
+      cachedLoopSeamPts = cachedLoopSeam.pts;
     }
     // PGM cuts and drift-correction seeks can import an external texture that is
     // still empty. Hold the last-good cached frame for a bounded window instead.
@@ -1017,7 +1056,7 @@ export class WebGpuEngine {
       justWrapped &&
       !!cachedVideoView;
     // The wrap itself, cut or not, on PGM and previews alike.
-    const coverLoopWrap = this.isCoveringLoopWrap(sourceId) && !!cachedVideoView;
+    const coverLoopWrap = (this.isCoveringLoopWrap(sourceId) || !!cachedLoopSeam) && !!cachedVideoView;
     const coverFromCache =
       coverPgmCut || coverSeekGap || coverCutSeam || coverLoopWrap;
     data[14] = shaderHasVideo;
@@ -1117,7 +1156,7 @@ export class WebGpuEngine {
       coveredPgmCut: coverPgmCut && cachedTextureBound,
       samplePath: ownedFrame ? 'resident-frame-bank' : resolveVideoSamplePath(externalTextureBound, cachedTextureBound, Boolean(shaderHasVideo)),
       sourceFrameId:ownedFrame?.frameId??null,
-      sourceFramePts:ownedFrame?.pts??null,
+      sourceFramePts:ownedFrame?.pts??cachedLoopSeamPts,
       source: video?.currentSrc || video?.src || null,
       dimensions: video ? `${video.videoWidth}x${video.videoHeight}` : null,
       frameId: timeline?.frameId ?? null,
