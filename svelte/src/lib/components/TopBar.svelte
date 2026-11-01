@@ -4,7 +4,7 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { canUndoTiming, canRedoTiming, undoTiming, redoTiming } from '$lib/stores/timing';
+  import { canUndoTiming, canRedoTiming, undoTiming, redoTiming, timingEditorCollapsed } from '$lib/stores/timing';
   import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen, playbackWorkspace } from '$lib/stores/rackUi';
   import { timingSourcesCompact } from '$lib/stores/timingLayout';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
@@ -525,7 +525,7 @@
 
         <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={locked} title={locked ? 'Stop playback before switching between PERFORM and TIMING' : undefined} onclick={()=>{
           viewMode.set(mode as 'perform'|'arrange'|'timing');
-          if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
+          if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);timingEditorCollapsed.set(false);}
         }}/>
       {/each}
     </div>

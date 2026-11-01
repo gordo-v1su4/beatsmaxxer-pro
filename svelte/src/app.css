@@ -781,11 +781,8 @@ input[type='range']::-moz-range-thumb {
 	   Keep the timing surface flush with the native desktop window bottom. */
 	min-height: max(calc(100dvh - 49px), 0px);
 	--timing-plot-height: clamp(120px, 14vh, 200px);
-	--timing-source-rack-height: 560px;
 }
 @media (min-width: 961px) {
-	.timing-workspace .source-rack-area { min-height: var(--timing-source-rack-height); }
-	.timing-workspace .source-rows > .rack-row { flex-grow: 1; }
 	.timing-workspace .rack-row {
 		grid-template-columns: repeat(6, minmax(0, 1fr));
 		justify-content: safe center;

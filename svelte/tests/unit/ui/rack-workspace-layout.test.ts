@@ -42,11 +42,20 @@ describe('Perform and Timing rack composition', () => {
     expect(css).not.toMatch(/\.rack-fit[^\n]*\.main-viewer\s*\{[^}]*height:/);
   });
 
-  test('gives the Timing PGM source list enough vertical room for twelve slots', () => {
+  test('lays out Timing PGM sources in compact sequential pairs without stretching preview rows', () => {
     const css = read('src/app.css');
+    const pgm = read('src/lib/components/PgmRail.svelte');
 
-    expect(css).toContain('--timing-source-rack-height: 560px');
-    expect(css).toContain('min-height: var(--timing-source-rack-height)');
-    expect(css).toContain('.timing-workspace .source-rows > .rack-row { flex-grow: 1; }');
+    expect(css).not.toContain('--timing-source-rack-height');
+    expect(css).not.toContain('.timing-workspace .source-rows > .rack-row { flex-grow: 1; }');
+    expect(pgm).toContain('grid-template-columns:repeat(2,minmax(0,1fr))');
+    expect(pgm).toContain('grid-auto-rows:24px');
+    expect(pgm).toContain("class:timing-grid={$viewMode==='timing'}");
+  });
+
+  test('opens the Timing editor whenever Timing is selected', () => {
+    const topBar = read('src/lib/components/TopBar.svelte');
+
+    expect(topBar).toContain('timingEditorCollapsed.set(false)');
   });
 });
