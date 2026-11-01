@@ -8,13 +8,14 @@ import { viewMode } from '$lib/stores/rackUi';
 import { fetchManifestClipFiles } from '$lib/media/loadRackClips';
 import { audioEngine } from '$lib/audio';
 import { addClipsToLibrary } from '$lib/stores/clipLibrary';
+import { PERFORMANCE_MIDI_CHANNEL } from '$lib/runtime/timing/triggers';
 
 /** Prepared song, MIDI and analysis share a verified SHA; never rerun analysis. */
 export async function loadSavedRedlinePreset(preparedClips = true) {
   audioEngine.stop('operator');
   viewMode.set('timing');
   timingSettings.update(s => ({ ...s, scope: 'global', master: undefined, clips: {}, deckTriggers: {},
-    preloadHeight: 540, outputFps: 24, trigger: { ...s.trigger, source: 'midi', channel: 'all',
+    preloadHeight: 540, outputFps: 24, trigger: { ...s.trigger, source: 'midi', channel: PERFORMANCE_MIDI_CHANNEL,
       rampChance: 40, density: 70, repeatStyle: 'energy', threshold: 0, gapSeconds: .12, seed: 42 } }));
   const saved=readTimingPreset();
   if(saved)timingSettings.set(saved);

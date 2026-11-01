@@ -5,7 +5,7 @@
   import { midiChannels } from '$lib/stores/midiChannels';
   import { analysisOnsets } from '$lib/stores/triggerLane';
   import { transportDisplay } from '$lib/stores/transportDisplay';
-  import { TRIGGER_SOURCES, type TimingTriggerConfig, type TimingTriggerSource } from '$lib/runtime/timing/triggers';
+  import { PERFORMANCE_MIDI_CHANNEL, TRIGGER_SOURCES, type TimingTriggerConfig, type TimingTriggerSource } from '$lib/runtime/timing/triggers';
   import HSlider from '$lib/components/rack/HSlider.svelte';
   import { timingEffectAccent } from './presentation';
   import { openWorkflowHelp } from '$lib/stores/workflowHelp';
@@ -49,7 +49,8 @@
     <label title="Choose which eligible deck takes the program output. Random uses Seed and avoids an immediate repeat when another deck is eligible. Balanced favors the least recently shown deck. Applies to all decks.">CUT ORDER <select aria-label="Timing program cut order" value={$timingSettings.cutOrder??'balanced'} onchange={e=>setTimingCutOrder(e.currentTarget.value as 'balanced'|'random')}><option value="random">RANDOM</option><option value="balanced">BALANCED</option></select></label>
     <label title={channelHelp}>CHANNEL <select aria-label="Timing trigger channel" aria-describedby="timing-channel-help" title={channelHelp} value={trigger.channel} onchange={e=>change({channel:e.currentTarget.value})}>
       <option value="all" title="Distribute the available channels across decks; each deck keeps its assigned channel.">CHANNELS BY DECK</option>
-      {#each signal.channels as channel (channel.name)}<option value={channel.name}>{channel.name.toUpperCase()}</option>{/each}
+      {#if trigger.source==='midi'}<option value={PERFORMANCE_MIDI_CHANNEL}>VOCALS + SYNTH + BASS</option>{/if}
+      {#each signal.channels.filter(channel=>channel.name!==PERFORMANCE_MIDI_CHANNEL) as channel (channel.name)}<option value={channel.name}>{channel.name.toUpperCase()}</option>{/each}
     </select></label>
     <label title="Ignore triggers weaker than this level. 0 admits every positive-strength event; 1 admits only the strongest. Density still filters the eligible events.">THRESHOLD <input aria-label="Timing trigger threshold" type="number" min="0" max="1" step=".05" value={trigger.threshold} onchange={e=>change({threshold:value(e,0,1)})}/></label>
   {:else if trigger.source==='beat'}
@@ -66,7 +67,7 @@
   {/if}
   <button disabled={busy} onclick={()=>openProtectedFilePicker(files)}>IMPORT MIDI / DATA</button>
   <input class="file" bind:this={files} type="file" multiple accept=".mid,.midi,.json,.mp3,.wav,.m4a,.ogg,.flac" aria-label="Import Timing MIDI or analysis and matching song" onchange={async e=>{const chosen=Array.from(e.currentTarget.files??[]);e.currentTarget.value='';if(chosen.length && await requireHostedAccess())void load(()=>importTimingFiles(chosen));}}/>
-  {#if import.meta.env.DEV}<button disabled={busy} title="Load the saved matching song, MIDI and stem analysis from ZigSwap; preserve your Timing parameters." onclick={()=>load(async()=>{await loadRedlineTimingReference();timingSettings.update(s=>({...s,trigger:{...s.trigger,source:'midi',channel:s.trigger.source==='midi'?s.trigger.channel:'all'}}));})}>LOAD REDLINE SONG + TRIGGERS</button>{/if}
+  {#if import.meta.env.DEV}<button disabled={busy} title="Load the saved matching song, MIDI and stem analysis from ZigSwap; preserve your Timing parameters." onclick={()=>load(async()=>{await loadRedlineTimingReference();timingSettings.update(s=>({...s,trigger:{...s.trigger,source:'midi',channel:PERFORMANCE_MIDI_CHANNEL}}));})}>LOAD REDLINE SONG + TRIGGERS</button>{/if}
   <div class="signal" role="status">{signal.missing??signal.label} {message?` · ${message}`:''}</div>
 </div>
 <style>

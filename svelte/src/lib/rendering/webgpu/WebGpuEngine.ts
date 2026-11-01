@@ -808,7 +808,8 @@ export class WebGpuEngine {
       this.bindingStateKey(binding, moduleId, sourceId),
       frame.generation,
       frame.fixedStepIndex,
-      sourceTime
+      sourceTime,
+      video?.seeking ? 'seeking' : 'ready'
     ].join(':');
   }
 
@@ -821,7 +822,6 @@ export class WebGpuEngine {
   ): WebGpuRenderDiagnostics['skipReason'] {
     // PGM's own canvas is hidden in ARRANGE; it still renders for the monitor.
     if (binding.active === false && !(id === 'pgm' && this.pgmMonitorActive())) return 'inactive';
-    if (id === 'pgm') return 'none';
     const state = this.bindingSchedule.get(id);
     if (!state) return 'none';
     // Swapping a module changed the colour and title but left the card showing
@@ -874,7 +874,7 @@ export class WebGpuEngine {
       bindingId: id,
       renderCount: state.renderCount,
       skippedRenderCount: state.skippedRenderCount,
-      targetFps: id === 'pgm' ? 0 : this.previewTargetFps,
+      targetFps: this.previewTargetFps,
       frameIntervalMs: intervalMs,
       lastRenderContextTimeSeconds: contextTimeSeconds,
       renderedThisFrame: true,

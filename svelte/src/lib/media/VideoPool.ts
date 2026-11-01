@@ -1,10 +1,12 @@
 import type { TimelineFrame } from '$lib/transport';
+import { RACK_SLOT_COUNT, slotIndexForId } from '$lib/modules/rackSlots';
 import { currentRackSlotForModule } from '$lib/stores/rack';
 
 export const VIDEO_LOAD_TIMEOUT_MS = 15_000;
 export const VIDEO_FRAME_TIMEOUT_MS = 3_000;
 export const VIDEO_DRIFT_CHECK_INTERVAL_SECONDS = 0.5;
 export const VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS = 0.35;
+export const VIDEO_DRIFT_CORRECTION_COOLDOWN_SECONDS = 1.5;
 
 export function timelineMediaTarget(positionSeconds: number, durationSeconds: number) {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
@@ -22,6 +24,16 @@ export function timelineMediaDrift(
   const direct = targetSeconds - currentSeconds;
   const wrapped = direct > 0 ? direct - durationSeconds : direct + durationSeconds;
   return Math.abs(direct) <= Math.abs(wrapped) ? direct : wrapped;
+}
+
+/** Spread decoder drift probes across the rack instead of seeking every
+ * lagging video on the same animation frame. The full rack is still checked
+ * once per interval and non-rack sources retain the original zero phase. */
+export function videoDriftCheckPhaseSeconds(moduleId: string) {
+  const slotIndex = slotIndexForId(moduleId);
+  return slotIndex === null
+    ? 0
+    : (slotIndex / RACK_SLOT_COUNT) * VIDEO_DRIFT_CHECK_INTERVAL_SECONDS;
 }
 
 interface VideoSyncState {
@@ -245,7 +257,8 @@ export class VideoPool {
         this.controlledSyncStates.set(candidate.moduleId, {
           ...controlled, timelineGeneration:frame.generation, playing:true,
           controlGeneration:warmed.controlGeneration ?? controlled.controlGeneration,
-          playbackRate:candidate.video.playbackRate, lastCorrectionContextSeconds:frame.contextTimeSeconds
+          playbackRate:candidate.video.playbackRate,
+          lastCorrectionContextSeconds:frame.contextTimeSeconds + videoDriftCheckPhaseSeconds(candidate.moduleId)
         });
       } else if (!controlled && !this.freeRun.has(candidate.moduleId) && warmed.controlGeneration !== undefined) {
         // A bank can move the controlled effect into a previously ordinary
@@ -253,12 +266,12 @@ export class VideoPool {
         this.controlledSyncStates.set(candidate.moduleId, {
           timelineGeneration:frame.generation, controlGeneration:warmed.controlGeneration,
           playing:true, playbackRate:candidate.video.playbackRate,
-          lastCorrectionContextSeconds:frame.contextTimeSeconds
+          lastCorrectionContextSeconds:frame.contextTimeSeconds + videoDriftCheckPhaseSeconds(candidate.moduleId)
         });
       } else if (this.freeRun.has(candidate.moduleId)) {
         this.syncStates.set(candidate.moduleId, {
           generation:frame.generation, playing:true, playbackRate:frame.playbackRate,
-          lastCorrectionContextSeconds:frame.contextTimeSeconds
+          lastCorrectionContextSeconds:frame.contextTimeSeconds + videoDriftCheckPhaseSeconds(candidate.moduleId)
         });
       }
     }
@@ -624,12 +637,17 @@ export class VideoPool {
     let targetApplied = true;
     if (timelineChanged || controlChanged || starting) {
       targetApplied = this.seekForSync(video, target, 1 / 30);
-      if (targetApplied) lastCorrection = frame.contextTimeSeconds;
+      if (targetApplied) {
+        lastCorrection = frame.contextTimeSeconds + videoDriftCheckPhaseSeconds(moduleId);
+      }
     } else if (frame.contextTimeSeconds - lastCorrection >= VIDEO_DRIFT_CHECK_INTERVAL_SECONDS) {
       lastCorrection = frame.contextTimeSeconds;
       const drift = timelineMediaDrift(video.currentTime, target, video.duration);
       if (Math.abs(drift) >= VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS) {
         this.seekForSync(video, target, VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS);
+        // A long-GOP decoder needs forward-running time after a correction.
+        // Re-seeking it every probe interval can keep it permanently starved.
+        lastCorrection += VIDEO_DRIFT_CORRECTION_COOLDOWN_SECONDS;
       }
     }
 
@@ -672,7 +690,7 @@ export class VideoPool {
     let cadenceCheck = false;
     if ((generationChanged || rateChanged || starting) && target !== null) {
       this.seekForSync(video, target, 0.05);
-      lastCorrection = frame.contextTimeSeconds;
+      lastCorrection = frame.contextTimeSeconds + videoDriftCheckPhaseSeconds(moduleId);
     } else if (
       target !== null &&
       frame.contextTimeSeconds - lastCorrection >= VIDEO_DRIFT_CHECK_INTERVAL_SECONDS
@@ -682,6 +700,7 @@ export class VideoPool {
       const drift = timelineMediaDrift(video.currentTime, target, video.duration);
       if (Math.abs(drift) >= VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS) {
         this.seekForSync(video, target, VIDEO_DRIFT_CORRECTION_THRESHOLD_SECONDS);
+        lastCorrection += VIDEO_DRIFT_CORRECTION_COOLDOWN_SECONDS;
       }
     }
 
