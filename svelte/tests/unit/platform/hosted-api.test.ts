@@ -14,6 +14,19 @@ it('downloads desktop demo assets through binary IPC without text conversion',as
   expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
   expect(invoke).toHaveBeenCalledWith('hosted_demo_request',{path:'/demo-media/'+'a'.repeat(64)+'.mp4'});
 });
+it.each([
+  {message:'Not found', retryable:false, status:404},
+  {message:'Server busy', retryable:true, status:503},
+  {message:'Configuration invalid', retryable:false},
+  {message:'Download interrupted', retryable:true},
+])('preserves native demo failure classification: $message', async failure => {
+  invoke.mockRejectedValue(failure);
+  await expect(hostedDemoFetch('/demo-media/manifest.json')).rejects.toMatchObject(failure);
+});
+it('treats unclassified failures from an older native binary as permanent', async () => {
+  invoke.mockRejectedValue('Desktop media service is not configured');
+  await expect(hostedDemoFetch('/demo-media/manifest.json')).rejects.toMatchObject({retryable:false});
+});
 it('uses native session for access status and PIN, preserving rejection status', async () => {
   invoke.mockResolvedValueOnce({status:200,body:'{"required":true,"unlocked":false}'})
     .mockResolvedValueOnce({status:401,body:'{}'}).mockResolvedValueOnce({status:200,body:'{}'});

@@ -4,8 +4,17 @@ import { tauriInvoke } from './tauriInvoke';
 /** Public, content-addressed demo assets also live on the hosted application. */
 export async function hostedDemoFetch(path: string): Promise<Response> {
   if (!isTauriRuntime()) return globalThis.fetch(path);
-  const bytes = await tauriInvoke<ArrayBuffer>('hosted_demo_request', { path });
-  return new Response(bytes);
+  try {
+    const bytes = await tauriInvoke<ArrayBuffer>('hosted_demo_request', { path });
+    return new Response(bytes);
+  } catch (cause) {
+    // New native binaries classify errors; old binaries only reject with text.
+    const detail = typeof cause === 'object' && cause !== null ? cause as Record<string, unknown> : {};
+    throw Object.assign(new Error(typeof detail.message === 'string' ? detail.message : 'Desktop demo files are unavailable.', { cause }), {
+      retryable: detail.retryable === true,
+      ...(typeof detail.status === 'number' ? { status: detail.status } : {})
+    });
+  }
 }
 
 /** Browser requests stay same-origin; bundled desktop assets use the native session. */
