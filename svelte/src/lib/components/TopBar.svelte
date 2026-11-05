@@ -511,9 +511,9 @@
           {/if}
         {/each}
         {#if !demoAvailable}
-          <p class="workflow-menu-note">
+          <p class="workflow-menu-note" role="status" aria-live="polite">
             {#if demoChecking}Checking demo files…
-            {:else}Could not check the demo catalog. {demoCheckError}
+            {:else}{demoCheckError}
               <button type="button" onclick={() => { void checkDemoAvailability(); }}>Retry</button>
             {/if}
           </p>

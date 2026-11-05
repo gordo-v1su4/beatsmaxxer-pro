@@ -91,27 +91,20 @@ impl DemoRequestError {
     }
 }
 
-impl From<String> for DemoRequestError {
-    fn from(message: String) -> Self {
-        Self::permanent(message)
-    }
-}
-
-impl From<&str> for DemoRequestError {
-    fn from(message: &str) -> Self {
-        Self::permanent(message)
-    }
-}
-
 #[tauri::command]
 pub async fn hosted_demo_request(path: String) -> Result<tauri::ipc::Response, DemoRequestError> {
     if !permitted_demo_path(&path) {
-        return Err("Unsupported desktop demo asset".into());
+        return Err(DemoRequestError::permanent(
+            "Unsupported desktop demo asset",
+        ));
     }
-    let origin = configured_origin()?;
+    let origin = configured_origin().map_err(DemoRequestError::permanent)?;
     tauri::async_runtime::spawn_blocking(move || download_demo_asset(origin, path))
         .await
-        .map_err(|_| DemoRequestError::permanent("Desktop demo connection could not complete"))?
+        .map_err(|error| {
+            eprintln!("[demo] download task failed: {error}");
+            DemoRequestError::permanent("Desktop demo connection could not complete")
+        })?
 }
 
 fn download_demo_asset(
@@ -120,16 +113,33 @@ fn download_demo_asset(
 ) -> Result<tauri::ipc::Response, DemoRequestError> {
     let client = Client::builder()
         .redirect(Policy::none())
-        .timeout(Duration::from_secs(120))
+        .timeout(Duration::from_secs(
+            if path == "/demo-media/manifest.json" {
+                8
+            } else {
+                120
+            },
+        ))
         .build()
-        .map_err(|_| "Could not start desktop demo connection")?;
+        .map_err(|error| {
+            eprintln!("[demo] client setup failed: {}", error.without_url());
+            DemoRequestError::permanent("Could not start desktop demo connection")
+        })?;
     let response = client
-        .get(origin.join(&path).map_err(|_| "Invalid demo route")?)
+        .get(
+            origin
+                .join(&path)
+                .map_err(|_| DemoRequestError::permanent("Invalid demo route"))?,
+        )
         .send()
-        .map_err(|error| DemoRequestError {
-            message: "Desktop demo connection failed.".into(),
-            retryable: error.is_timeout() || error.is_connect() || error.is_request(),
-            status: None,
+        .map_err(|error| {
+            let retryable = error.is_timeout() || error.is_connect() || error.is_request();
+            eprintln!("[demo] transport failed: {}", error.without_url());
+            DemoRequestError {
+                message: "Desktop demo connection failed.".into(),
+                retryable,
+                status: None,
+            }
         })?;
     if !response.status().is_success() {
         return Err(DemoRequestError::http(response.status().as_u16()));
@@ -139,9 +149,14 @@ fn download_demo_asset(
     response
         .take(limit + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| DemoRequestError::interrupted("Desktop demo download interrupted"))?;
+        .map_err(|error| {
+            eprintln!("[demo] body download failed: {error}");
+            DemoRequestError::interrupted("Desktop demo download interrupted")
+        })?;
     if bytes.len() as u64 > limit {
-        return Err("Desktop demo asset exceeds size limit".into());
+        return Err(DemoRequestError::permanent(
+            "Desktop demo asset exceeds size limit",
+        ));
     }
     Ok(tauri::ipc::Response::new(bytes))
 }

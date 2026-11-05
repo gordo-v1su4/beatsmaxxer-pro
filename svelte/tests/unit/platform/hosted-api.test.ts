@@ -23,9 +23,20 @@ it.each([
   invoke.mockRejectedValue(failure);
   await expect(hostedDemoFetch('/demo-media/manifest.json')).rejects.toMatchObject(failure);
 });
-it('treats unclassified failures from an older native binary as permanent', async () => {
-  invoke.mockRejectedValue('Desktop media service is not configured');
-  await expect(hostedDemoFetch('/demo-media/manifest.json')).rejects.toMatchObject({retryable:false});
+it.each(['Desktop media service is not configured','Desktop demo download interrupted'])('preserves unclassified legacy failures without inventing retryability: %s', async message => {
+  invoke.mockRejectedValue(message);
+  const error = await hostedDemoFetch('/demo-media/manifest.json').catch(error => error);
+  expect(error).toMatchObject({message,cause:message});
+  expect(error).not.toHaveProperty('retryable');
+});
+it('releases a canceled native demo wait and discards its later binary response', async () => {
+  let complete!:(value:ArrayBuffer)=>void;
+  invoke.mockImplementation(()=>new Promise(resolve=>complete=resolve));
+  const controller=new AbortController();
+  const result=hostedDemoFetch('/demo-media/manifest.json',controller.signal);
+  const assertion=expect(result).rejects.toThrow();
+  controller.abort(); await assertion;
+  complete(new ArrayBuffer(0));
 });
 it('uses native session for access status and PIN, preserving rejection status', async () => {
   invoke.mockResolvedValueOnce({status:200,body:'{"required":true,"unlocked":false}'})

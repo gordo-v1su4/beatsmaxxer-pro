@@ -68,3 +68,18 @@ test('does not retry native configuration or permanent HTTP failures', async () 
   await expect(loadDemoCatalog()).rejects.toThrow('unavailable');
   expect(fetcher).toHaveBeenCalledOnce();
 });
+
+test('bounds stalled catalog attempts and releases the shared check for recovery', async () => {
+  vi.useFakeTimers();
+  fetcher.mockImplementation((_path:string,signal:AbortSignal)=>new Promise((_resolve,reject)=>{
+    signal?.addEventListener('abort',()=>reject(signal.reason),{once:true});
+  }));
+  const first=loadDemoCatalog();
+  expect(loadDemoCatalog()).toBe(first);
+  const assertion=expect(first).rejects.toThrow('unavailable');
+  await vi.advanceTimersByTimeAsync(25_200);
+  await assertion;
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  fetcher.mockResolvedValue(Response.json(publishedDemo));
+  await expect(loadDemoCatalog()).resolves.toEqual(publishedDemo);
+});
