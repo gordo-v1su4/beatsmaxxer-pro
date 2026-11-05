@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { WebGpuEngine, type CanvasBinding } from '$lib/rendering/webgpu/WebGpuEngine';
 import type { FeedbackPair } from '$lib/rendering/webgpu/feedback';
 import type { TimelineFrame } from '$lib/transport';
+import { videoPool } from '$lib/media/VideoPool';
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 type MockFormat = 'rgba8unorm' | 'bgra8unorm';
 type MockView = { format: MockFormat; name: string };
@@ -74,6 +77,8 @@ function formatCheckingEngine(id: 'pgm' | 'slot-0') {
 
   const device = {
     createBindGroup: () => ({}),
+    importExternalTexture: () => ({}),
+    createTexture: () => ({ createView: () => ({ format: 'rgba8unorm', name: 'video' }), destroy: vi.fn() }),
     createCommandEncoder: () => {
       const passes: Array<{ attachment: MockView; pipeline: MockPipeline }> = [];
       return {
@@ -100,7 +105,7 @@ function formatCheckingEngine(id: 'pgm' | 'slot-0') {
         }
       };
     },
-    queue: { writeBuffer: vi.fn(), submit: vi.fn() }
+    queue: { writeBuffer: vi.fn(), submit: vi.fn(), copyExternalImageToTexture: vi.fn() }
   };
 
   Object.assign(engine, {
@@ -141,6 +146,29 @@ describe.each([
           ]
     );
   });
+});
+
+test('a decoded paused preview reruns its effect before blitting, then stays idle', () => {
+  vi.stubGlobal('HTMLMediaElement', { HAVE_CURRENT_DATA: 2 });
+  vi.stubGlobal('GPUTextureUsage', { TEXTURE_BINDING: 1, COPY_DST: 2, RENDER_ATTACHMENT: 4 });
+  const { engine, submittedPasses } = formatCheckingEngine('slot-0');
+  const video = Object.assign(new EventTarget(), {
+    readyState: 1, videoWidth: 0, videoHeight: 0, currentTime: 0,
+    duration: 10, seeking: false, paused: true, src: 'first.mp4', currentSrc: 'first.mp4'
+  });
+  vi.spyOn(videoPool, 'get').mockImplementation(id => id === 'slot-0' ? video as HTMLVideoElement : undefined);
+  vi.spyOn(videoPool, 'hasReadyFrame').mockImplementation(id => id === 'slot-0' && video.readyState >= 2 && video.videoWidth > 0);
+  engine.renderAll(timeline(0));
+  expect(engine.getRenderDiagnostics()['slot-0'].hasVideo).toBe(0);
+
+  Object.assign(video, { readyState: 4, videoWidth: 1280, videoHeight: 720 });
+  engine.renderAll(timeline(0));
+  expect(submittedPasses).toHaveLength(2);
+  expect(submittedPasses[1].map(pass => pass.pipeline.name)).toEqual(['external-fx', 'canvas-blit']);
+  expect(engine.getRenderDiagnostics()['slot-0']).toMatchObject({ hasVideo: 1, externalTextureBound: true });
+
+  engine.renderAll(timeline(0));
+  expect(submittedPasses).toHaveLength(2);
 });
 
 test('source only binds the canvas-format blit pipeline to the canvas render pass', () => {

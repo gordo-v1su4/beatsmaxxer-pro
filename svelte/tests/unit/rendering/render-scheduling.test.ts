@@ -1,7 +1,10 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { WebGpuEngine, type CanvasBinding } from '$lib/rendering/webgpu/WebGpuEngine';
 import type { TimelineFrame } from '$lib/transport';
 import { WEB_PREVIEW_TARGET_FPS } from '$lib/platform/desktopPerformance';
+import { videoPool } from '$lib/media/VideoPool';
+
+afterEach(() => vi.restoreAllMocks());
 
 function frame(contextTimeSeconds: number, fixedStepIndex: number, generation = 1): TimelineFrame {
   return {
@@ -141,6 +144,54 @@ describe('bounded WebGPU render scheduling', () => {
     encodeBinding.mockClear();
     engine.renderAll(frame(0, 0));
     expect(encodeBinding).not.toHaveBeenCalled();
+  });
+
+  test('repaints a newly decoded stopped source once without a clock or parameter change', () => {
+    const { engine, encodeBinding } = scheduledEngine();
+    const video = { currentTime: 0, seeking: false, readyState: 1, videoWidth: 0, videoHeight: 0 } as HTMLVideoElement;
+    vi.spyOn(videoPool, 'get').mockImplementation(id => id === 'slot-0' ? video : undefined);
+    vi.spyOn(videoPool, 'hasReadyFrame').mockImplementation(id => id === 'slot-0' && video.readyState >= 2 && video.videoWidth > 0);
+    engine.renderAll(frame(0, 0));
+    encodeBinding.mockClear();
+
+    Object.assign(video, { readyState: 4, videoWidth: 1280, videoHeight: 720 });
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding).toHaveBeenCalledOnce();
+    expect(encodeBinding.mock.calls[0].slice(3)).toEqual(['module-0', 'slot-0', true]);
+
+    encodeBinding.mockClear();
+    for (let i = 0; i < 10; i++) engine.renderAll(frame(0, 0));
+    expect(encodeBinding).not.toHaveBeenCalled();
+  });
+
+  test('repaints an equally ready replacement in the same stopped slot once', () => {
+    const { engine, encodeBinding } = scheduledEngine();
+    let video = { currentTime: 0, seeking: false, readyState: 4, videoWidth: 1280, videoHeight: 720 } as HTMLVideoElement;
+    vi.spyOn(videoPool, 'get').mockImplementation(id => id === 'slot-0' ? video : undefined);
+    vi.spyOn(videoPool, 'hasReadyFrame').mockImplementation(id => id === 'slot-0');
+    engine.renderAll(frame(0, 0));
+    encodeBinding.mockClear();
+
+    video = { ...video };
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding).toHaveBeenCalledOnce();
+    expect(encodeBinding.mock.calls[0].slice(3)).toEqual(['module-0', 'slot-0', true]);
+
+    encodeBinding.mockClear();
+    engine.renderAll(frame(0, 0));
+    expect(encodeBinding).not.toHaveBeenCalled();
+  });
+
+  test('keeps the playback cadence cap as ready video frames advance', () => {
+    const { engine, encodeBinding } = scheduledEngine();
+    const video = { currentTime: 0, seeking: false, readyState: 4, videoWidth: 1280, videoHeight: 720 } as HTMLVideoElement;
+    vi.spyOn(videoPool, 'get').mockImplementation(id => id === 'slot-0' ? video : undefined);
+    vi.spyOn(videoPool, 'hasReadyFrame').mockImplementation(id => id === 'slot-0');
+    for (let i = 0; i < 60; i++) {
+      video.currentTime = i / 60;
+      engine.renderAll(frame(i / 60, i));
+    }
+    expect(encodeBinding.mock.calls.filter(call => call[4] === 'slot-0')).toHaveLength(WEB_PREVIEW_TARGET_FPS);
   });
 
   test('never encodes inactive bindings and avoids empty command submissions', () => {

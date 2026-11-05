@@ -178,6 +178,8 @@ export class WebGpuEngine {
   private renderParams = new Map<string, ModuleRenderParams>();
   private renderParamVersions = new Map<string, number>();
   private bindingSchedule = new Map<string, BindingScheduleState>();
+  private videoIdentities = new WeakMap<HTMLVideoElement, number>();
+  private nextVideoIdentity = 0;
   /** Pending PGM source change awaiting its first submitted frame, for cut-latency QA. */
   private pendingPgmCut: { at: number; sourceId: string } | null = null;
   /** Monotonic count of frames that actually encoded work, used to bound seam cover. */
@@ -795,12 +797,25 @@ export class WebGpuEngine {
       timeline, so a change here always means the card is displaying something
       stale — a different module, source, parameter set, or canvas size. */
   private bindingStateKey(binding: CanvasBinding, moduleId: string, sourceId: string) {
+    const video = videoPool.get(sourceId);
+    let videoIdentity = video ? this.videoIdentities.get(video) : 0;
+    if (video && videoIdentity === undefined) {
+      videoIdentity = ++this.nextVideoIdentity;
+      this.videoIdentities.set(video, videoIdentity);
+    }
     return [
       this.timingVersion,
       this.timingTextures?.(sourceId)?.pts ?? 'empty',
       JSON.stringify(this.timingTextures?.(sourceId)?.sampler?.controls ?? null),
       moduleId,
       sourceId,
+      // A slot can first render its test card before decode completes, or
+      // receive another element at the same time zero. Both change its picture
+      // while stopped: bypass cadence and force the effect pass once. Media
+      // time/frame revisions remain outside this key to preserve playback caps.
+      videoIdentity,
+      video ? videoPool.hasReadyFrame(sourceId) : false,
+      video?.currentSrc || video?.src || '',
       this.renderParamVersions.get(moduleId) ?? 0,
       binding.canvas?.width ?? 0,
       binding.canvas?.height ?? 0,

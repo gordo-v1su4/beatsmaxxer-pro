@@ -7,6 +7,7 @@ const fakeVideo = { currentTime: 0, duration: 10, seeking: false };
 vi.mock('$lib/media/VideoPool', () => ({
   videoPool: {
     get: () => fakeVideo as unknown as HTMLVideoElement,
+    hasReadyFrame: () => true,
     getDuration: () => fakeVideo.duration,
     getTimelineTarget: () => fakeVideo.currentTime
   }
