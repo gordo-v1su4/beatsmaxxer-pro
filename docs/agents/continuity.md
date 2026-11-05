@@ -1,5 +1,9 @@
 # Agent continuity — where to pick up
 
+**Current work (November 5, 2026):** [Pro completion plan](../qa/completion-2026-11-05/PLAN.md), tracked by Linear V1S-428.
+Use that plan for the active web/shared-desktop performance, UI, presets and Experimental Desktop scope.
+The separate Beatsmaxxer Native product is excluded. The September sprint snapshot below is historical.
+
 **Last updated:** 2026-09-07 (WebGPU sprint landed; arrangement deferred)  
 **Read this first** when using Matt Pocock skills on this repo.
 

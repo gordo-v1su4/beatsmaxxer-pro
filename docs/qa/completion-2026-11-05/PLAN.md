@@ -127,4 +127,3 @@ support alone does not establish application performance. Verify installed versi
 All in-scope children and Experimental Desktop acceptance have reproducible evidence, substantial chunks are reviewed/merged,
 affected public/installed flows pass at the delivered revision, and unresolved hardware/platform requirements are resolved.
 Until then the goal remains active. This plan is an execution checklist, not a claim of completion.
-
