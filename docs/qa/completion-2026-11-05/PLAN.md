@@ -112,7 +112,10 @@ November5, main2b531ff / initial working branch:
 - Native in-app browser QA navigation:12/12clips ready, real song and current Perform layout visible; transport stopped.
   This is a visual baseline, not a performance run.
 - Mixed-resolution characterization:6passed,1TODO; actual renderer with mocked decoder/canvas boundaries, not real codec proof.
-- Lifecycle harness written; runtime verification pending.
+- Lifecycle harness: Windows headed Chrome passed20observations across3cycles and actual background/foreground for both workspaces.
+- Physical M3 Air16GB/macOS26.7.2/Chrome156 at isolated90c92e4: check/build pass;1128unit tests pass,16skip,1TODO.
+  Headed lifecycle3cycles plus actual browser background/foreground passed20observations. Volume0; physical audio remains unverified.
+- Existing six-scenario Perform source-cadence baseline is running separately; lifecycle progress does not certify cadence.
 
 ## Research used to choose measurements
 

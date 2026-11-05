@@ -7,6 +7,7 @@
   import SamplerGrid from './SamplerGrid.svelte';
   import ModuleControls from '../ModuleControls.svelte';
   import { presetsForModule } from '$lib/modules/presets';
+  import PresetSelector from '../rack/PresetSelector.svelte';
   import TimingTriggers from './TimingTriggers.svelte';
   import TimingEventStrip from './TimingEventStrip.svelte';
   import { rampRange,scaleRampRange,rampPreset,RAMP_PRESET_NAMES,RAMP_PREVIEW_PATHS } from '$lib/runtime/timing/rampPresets';
@@ -142,7 +143,7 @@
 
       <TimingCurve ramp={config.ramp} phase={config.effect==='ramp'?live?.phase??0:0} {snap} onchange={(ramp)=>update({ramp})}/>
     {:else if $timingEditorTab==='timesampler'}
-      <div class="sampler-controls"><ModuleControls timingOnly samplerTriggered={config.sampler.behavior==='hit'} moduleId="timesampler" params={config.sampler.controls} color={timingEffectAccent('timesampler')} onUpdate={(key,value)=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,[key]:value}}})}/><div class="sampler-presets">PRESET {#each presetsForModule('timesampler') as preset (preset.n)}<button title={preset.title} aria-label={`Timesampler preset ${preset.n}`} onclick={()=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,...preset.set}}})}>{preset.n}</button>{/each}</div></div>
+      <div class="sampler-controls"><ModuleControls timingOnly samplerTriggered={config.sampler.behavior==='hit'} moduleId="timesampler" params={config.sampler.controls} color={timingEffectAccent('timesampler')} onUpdate={(key,value)=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,[key]:value}}})}/><div class="sampler-presets"><PresetSelector params={config.sampler.controls} presets={presetsForModule('timesampler')} color={timingEffectAccent('timesampler')} label="Timesampler preset" onApplyPreset={values=>update({sampler:{...config.sampler,controls:{...config.sampler.controls,...values}}})}/></div></div>
       <SamplerGrid config={config.sampler} sourceSeconds={live?.sourceSeconds??0} duration={live?.sourceDurationSeconds??0} normalSeconds={live?.samplerNormal??0} trace={live?.samplerTrace??[]} beat={live?.beat??0} enabled={config.effect==='timesampler'} state={live?.state??'waiting'} queuedAt={live?.samplerQueuedAt??null} time={live?.time??0} end={live?.burstEnd??null}/>
     {:else}
       <StutterGrid stutter={config.stutter} phase={config.effect==='stutter'?live?.phase??0:0} enabled={config.effect==='stutter'} state={live?.state??'waiting'}/>

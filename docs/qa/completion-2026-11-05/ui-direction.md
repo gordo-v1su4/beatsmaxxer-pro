@@ -3,6 +3,11 @@
 Date: 2026-11-05. Status: source audit and proposed implementation slices;
 no browser visual acceptance has been performed for this proposal.
 
+Implementation checkpoint: named selectors are implemented in MixSection and Timing Timesampler.
+Windows native in-app browser selected Pulse alt during real-media playback and displayed Custom after an owned edit.
+Independent review tightened matching to floating-point noise only: one-unit Mix/mode/accent/feel edits must be Custom.
+Atomic rack and Global/Per-video Timing undo are covered by focused tests. The broader UI pass below remains planned.
+
 ## Product job
 
 Start with a musical result. Load the reviewed song/clip workflow, see the clips

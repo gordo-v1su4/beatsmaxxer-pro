@@ -1,7 +1,7 @@
 <script lang="ts">
   import Knob from '$lib/components/Knob.svelte';
   import VertLabel from './VertLabel.svelte';
-  import RackBtn from './RackBtn.svelte';
+  import PresetSelector from './PresetSelector.svelte';
 
   interface Preset {
     n: string;
@@ -15,7 +15,7 @@
     color: string;
     moduleId: string;
     presets?: Preset[];
-    onApplyPreset?: (values: Record<string, number>) => void;
+    onApplyPreset: (values: Record<string, number>) => void;
   }
   let { params, onUpdate, onApplyPreset, color, moduleId, presets }: Props = $props();
 </script>
@@ -25,26 +25,8 @@
        PACK / FIRE / SHAPE above it on every card. -->
   <span class="mix-strip-rail"><VertLabel text="MIX" {color} /></span>
   {#if presets && presets.length > 0}
-    <div class="mix-strip-presets">
-      <span class="mix-strip-presets-label">PRESET</span>
-      <div class="mix-strip-presets-row">
-        {#each presets as p (p.n)}
-          {@const active = Object.entries(p.set).every(
-            ([k, v]) => Math.abs((params[k] ?? -999) - v) <= 1
-          )}
-          <RackBtn
-            label={p.n}
-            title={p.title}
-            {active}
-            {color}
-            width={16}
-            onclick={() => {
-              if (onApplyPreset) onApplyPreset(p.set);
-              else Object.entries(p.set).forEach(([k, v]) => onUpdate(k, v));
-            }}
-          />
-        {/each}
-      </div>
+    <div class="mix-strip-presets named-presets">
+      <PresetSelector {params} {presets} {color} label={`${moduleId} preset`} {onApplyPreset} />
     </div>
   {/if}
   <div class="mix-strip-knobs">
@@ -58,3 +40,10 @@
     />
   </div>
 </div>
+
+<style>
+  .named-presets { flex:1 1 0; min-width:0; }
+  @media (pointer:coarse) {
+    .mix-strip { height:auto; min-height:64px; }
+  }
+</style>
