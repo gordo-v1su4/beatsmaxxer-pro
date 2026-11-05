@@ -165,7 +165,7 @@ export class VideoTextureCache {
     const texture = device.createTexture({
       size: [entry.width, entry.height],
       format: 'rgba8unorm',
-      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT
     });
     try {
       device.queue.copyExternalImageToTexture(

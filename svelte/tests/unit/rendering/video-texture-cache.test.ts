@@ -21,8 +21,12 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 function setup() {
-  const copy = vi.fn(), destroy = vi.fn();
-  const device = { createTexture: () => ({ createView: () => ({}), destroy }), queue: { copyExternalImageToTexture: copy } } as unknown as GPUDevice;
+  const copy = vi.fn((_source: unknown, destination: {texture: {usage:number}}) => {
+    const required = GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT;
+    if ((destination.texture.usage & required) !== required)
+      throw new Error('Destination texture needs CopyDst and RenderAttachment usage');
+  }), destroy = vi.fn();
+  const device = { createTexture: (descriptor: {usage:number}) => ({ usage:descriptor.usage, createView: () => ({}), destroy }), queue: { copyExternalImageToTexture: copy } } as unknown as GPUDevice;
   const cache = new VideoTextureCache();
   const upload = (video: Video) => { cache.beginFrame(); return cache.upload(device, 'top-0', video as unknown as HTMLVideoElement); };
   return { copy, destroy, device, cache, upload };
