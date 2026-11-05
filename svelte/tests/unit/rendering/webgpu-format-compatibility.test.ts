@@ -126,12 +126,12 @@ describe.each([
       attachment: expect.objectContaining({ format: 'bgra8unorm', name: 'canvas' }),
       pipeline: expect.objectContaining({ targetFormat: 'bgra8unorm', name: 'canvas-blit' })
     };
-    // PGM on a duplicate step only re-presents. The preview's params changed,
-    // so it re-runs the effect into the RGBA feedback target before blitting —
-    // a stopped transport must not hold a stale picture.
+    // A stopped PGM with no changed input submits no duplicate GPU work. The
+    // preview's params changed, so it re-runs the effect into the RGBA feedback
+    // target before blitting — a stopped transport must not hold stale input.
     expect(submittedPasses[1]).toEqual(
       id === 'pgm'
-        ? [blit]
+        ? undefined
         : [
             {
               attachment: expect.objectContaining({ format: 'rgba8unorm' }),

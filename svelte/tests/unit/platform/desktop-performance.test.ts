@@ -11,8 +11,8 @@ describe('desktop preview performance budget', () => {
     expect(DESKTOP_PREVIEW_TARGET_FPS).toBe(60);
   });
 
-  test('preserves the web preview budget', () => {
+  test('matches the web preview budget to the 24 fps output cadence', () => {
     expect(previewTargetFps('web')).toBe(WEB_PREVIEW_TARGET_FPS);
-    expect(WEB_PREVIEW_TARGET_FPS).toBe(30);
+    expect(WEB_PREVIEW_TARGET_FPS).toBe(24);
   });
 });

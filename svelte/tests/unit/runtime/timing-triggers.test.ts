@@ -1,5 +1,5 @@
 import { describe,it,expect } from 'vitest';
-import { buildTimingSchedule,sampleTimingSchedule,defaultTimingTrigger,stutterBoundaries,type TimingSignal } from '$lib/runtime/timing/triggers';
+import { buildTimingSchedule,sampleTimingSchedule,defaultTimingTrigger,performanceMidiChannel,PERFORMANCE_MIDI_CHANNEL,stutterBoundaries,type TimingSignal } from '$lib/runtime/timing/triggers';
 import { defaultClipTiming,evaluateRamp } from '$lib/runtime/timing/envelope';
 import { rampPreset,scaleRampRange,rampRange } from '$lib/runtime/timing/rampPresets';
 import { residentDimensions } from '$lib/runtime/timing/ResidentFrameBank';
@@ -8,6 +8,17 @@ import { parseTimingSettings } from '$lib/stores/timing';
 
 const signal:TimingSignal={label:'test MIDI',bpm:120,beats:Array.from({length:201},(_,i)=>i*.5),duration:100,channels:[{name:'vocals',events:Array.from({length:120},(_,i)=>({time:.1+i*.37,strength:1}))}]};
 describe('finite musical Timing effects',()=>{
+  it('combines the Frame Lab vocals, synth and bass MIDI lanes in time order',()=>{
+    const combined=performanceMidiChannel([
+      {name:'Synth',events:[{time:2,strength:.7}]},
+      {name:'vocals',events:[{time:1,strength:.8}]},
+      {name:'bass',events:[{time:1,strength:.9}]}
+    ]);
+    expect(combined).toEqual({name:PERFORMANCE_MIDI_CHANNEL,events:[
+      {time:1,strength:.9},{time:1,strength:.8},{time:2,strength:.7}
+    ]});
+    expect(performanceMidiChannel([{name:'vocals',events:[]}])).toBeNull();
+  });
   it('matches the saved R&D ramp schedule and source mapping for each independent slot',()=>{
     const trigger={...defaultTimingTrigger(),source:'midi' as const,threshold:0};
     const reference=buildSchedule({...signal,beats:[...signal.beats],triggerChannels:signal.channels},Array(12).fill(100),42,100,'speed-ramp');

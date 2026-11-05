@@ -39,7 +39,6 @@
   import { startAppLoop, stopAppLoop } from '$lib/runtime/AppLoop';
   import { startLifecycleWatch } from '$lib/runtime/lifecycle';
   import { startTransportPoll, stopTransportPoll } from '$lib/stores/transportDisplay';
-  import { installBmxQaHook } from '$lib/qa/bmxQa';
   import { fxHold } from '$lib/stores/rack';
   import {
     topRowCompact,
@@ -52,14 +51,6 @@
   import { supportsModuleMidi } from '$lib/modules/midiContracts';
   import { attachModuleMidiFile } from '$lib/stores/moduleMidi';
   import { setModuleTriggerSource } from '$lib/stores/midiTrigger';
-  import {
-    fetchAndLoadQaMedia,
-    shouldAutoloadQaArrangerMidi,
-    shouldAutoloadQaMidi,
-    shouldAutoloadQaSequencerArm,
-    shouldAutoloadQaLoopRegion,
-    qaLoopRegionForDuration,
-  } from '$lib/qa/loadQaMedia';
   import { arrangementLoopRegion, loadDemoArrangement } from '$lib/stores/arrangement';
   import { sequencerArmed } from '$lib/stores/sequencer';
   import { loadRackClipsFromFiles } from '$lib/media/loadRackClips';
@@ -68,7 +59,6 @@
   import LoadingSplash from '$lib/components/LoadingSplash.svelte';
   import MobileShell from '$lib/mobile/MobileShell.svelte';
   import { isMobileShell, initMobileEnv } from '$lib/mobile/mobileEnv';
-  import { seedMobileQaClips } from '$lib/mobile/mobileSession';
   import { bootStep, bootLogSettle } from '$lib/stores/bootLog';
   import { get } from 'svelte/store';
   import { skipDevSplashReplay } from '$lib/runtime/devBoot';
@@ -159,7 +149,14 @@
     pgmDirector.start();
     startAppLoop();
     stopLifecycle = startLifecycleWatch();
-    installBmxQaHook();
+    if (automated) {
+      try {
+        const { installBmxQaHook } = await import('$lib/qa/bmxQa');
+        installBmxQaHook();
+      } catch (err) {
+        console.error('[QA] installBmxQaHook failed:', err);
+      }
+    }
 
     // Every app load begins unheld. With no song playing, the beat-driven cards
     // remain static; playback advances them on the authoritative audio timeline.
@@ -199,14 +196,26 @@
     if (params.has('qa')) {
       const stepQa = bootStep('Loading song rhythm and test clips');
       try {
+        const qaMedia = await import('$lib/qa/loadQaMedia');
         // The phone has one slot and a clip bank; the rack has ten slots and no
         // bank. Fanning the manifest across slots leaves the phone's grid empty,
         // so each shell seeds itself the way its own import path would.
-        if (get(isMobileShell)) await seedMobileQaClips();
-        else await fetchAndLoadQaMedia({
-          midi: shouldAutoloadQaMidi(window.location.search),
-          arrangerMidi: shouldAutoloadQaArrangerMidi(window.location.search),
+        if (get(isMobileShell)) {
+          const { seedMobileQaClips } = await import('$lib/mobile/mobileSession');
+          await seedMobileQaClips();
+        } else await qaMedia.fetchAndLoadQaMedia({
+          midi: qaMedia.shouldAutoloadQaMidi(window.location.search),
+          arrangerMidi: qaMedia.shouldAutoloadQaArrangerMidi(window.location.search),
         });
+
+        if (qaMedia.shouldAutoloadQaSequencerArm(window.location.search)) {
+          // A session now starts with no cuts; the ARM gate needs some to play.
+          loadDemoArrangement();
+          sequencerArmed.set(true);
+        }
+        if (qaMedia.shouldAutoloadQaLoopRegion(window.location.search)) {
+          arrangementLoopRegion.set(qaMedia.qaLoopRegionForDuration(audioEngine.getState().duration));
+        }
       } catch (err) {
         console.error('[QA] loadQaMedia failed:', err);
         stepQa.note('failed');
@@ -218,14 +227,6 @@
       await audioEngine.waitForRhythmReady();
       await audioEngine.start();
       stepPlay.done();
-    }
-    if (shouldAutoloadQaSequencerArm(window.location.search)) {
-      // A session now starts with no cuts; the ARM gate needs some to play.
-      loadDemoArrangement();
-      sequencerArmed.set(true);
-    }
-    if (shouldAutoloadQaLoopRegion(window.location.search)) {
-      arrangementLoopRegion.set(qaLoopRegionForDuration(audioEngine.getState().duration));
     }
     bootLogSettle();
     if (startupAbort.signal.aborted) return;
@@ -414,13 +415,10 @@
       class="side-panels"
       style="display:flex;flex-shrink:0;width:calc({$fxLibOpen
         ? 'var(--fx-lib-width)'
-        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width) + {$viewMode==='perform'?'0px':$pgmRailOpen
-        ? 'var(--pgm-rail-width)'
-        : 'var(--pgm-rail-collapsed)'})"
+        : 'var(--fx-lib-collapsed)'} + var(--side-rail-width))"
     >
       <SideRail onAssignClip={assignLibraryClip} />
       <ScrewRail side="left" class="hide-on-mobile" />
-      {#if $viewMode!=='perform'}<PgmRail modules={rackModules} />{/if}
     </div>
 
     <div style="width:3px;background:#0d0e0f;flex-shrink:0" class="hide-on-mobile"></div>
@@ -429,14 +427,10 @@
       <MainViewer modules={rackModules} />
       <TimingSections/>
 
-      {#if $viewMode==='perform'}
-        <div class="perform-rack-area">
-          <div class="perform-source-rail" style:width={$pgmRailOpen?'var(--pgm-rail-width)':'var(--pgm-rail-collapsed)'}><PgmRail modules={rackModules}/></div>
-          <div class="perform-rows">{@render rackRows()}</div>
-        </div>
-      {:else}
-        {@render rackRows()}
-      {/if}
+      <div class="source-rack-area">
+        <div class="source-rail" style:width={$pgmRailOpen?'var(--pgm-rail-width)':'var(--pgm-rail-collapsed)'}><PgmRail modules={rackModules}/></div>
+        <div class="source-rows">{@render rackRows()}</div>
+      </div>
       {#if $viewMode==='perform'}<TimingFooter />{/if}
 
       {#if $viewMode==='timing'}<TimingPanel/>{/if}

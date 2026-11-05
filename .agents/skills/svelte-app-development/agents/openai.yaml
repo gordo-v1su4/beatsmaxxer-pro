@@ -1,0 +1,4 @@
+interface:
+  display_name: "Svelte App Development"
+  short_description: "Build, design, and optimize version-aware Svelte apps"
+  default_prompt: "Use the project-aware Svelte workflow to implement or review this frontend change."

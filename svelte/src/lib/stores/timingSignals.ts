@@ -3,7 +3,7 @@ import { audioEngine } from '$lib/audio';
 import { parseMidi } from '$lib/audio/MidiParser';
 import { analysisBeatGrid, analysisOnsets } from './triggerLane';
 import { midiChannels } from './midiChannels';
-import type { TimingChannel, TimingEvent, TimingSignal, TimingTriggerConfig } from '$lib/runtime/timing/triggers';
+import { PERFORMANCE_MIDI_CHANNEL, performanceMidiChannel, type TimingChannel, type TimingEvent, type TimingSignal, type TimingTriggerConfig } from '$lib/runtime/timing/triggers';
 import { normalizeStructureAnalysis } from '$lib/audio/structureNormalize';
 import { applyStructureToArrangement, arrangementStructureStatus } from '$lib/stores/arrangement';
 
@@ -92,6 +92,10 @@ export function resolveTimingSignal(trigger:TimingTriggerConfig,sourceBpm:number
   if(trigger.source==='continuous'||trigger.source==='beat')return signal;
   if(trigger.source==='midi'){
     signal.channels=data?.midi.length?data.midi:get(midiChannels).map(c=>({name:c.name,events:c.notes?c.notes.map(n=>({time:n.time,strength:n.velocity/127})):c.onsets.map(time=>({time,strength:1}))}));
+    if(trigger.channel===PERFORMANCE_MIDI_CHANNEL){
+      const combined=performanceMidiChannel(signal.channels);
+      if(combined)signal.channels=[...signal.channels,combined];
+    }
   }else{
     const feature:Feature=trigger.source.endsWith('activity')?'activity':trigger.source.endsWith('loudness')?'loudness':'onsets';
     const names=trigger.source==='stem-onsets'?Object.keys(data?.features??{}).filter(n=>n!=='mix'):[trigger.source.startsWith('vocals')?'vocals':'mix'];

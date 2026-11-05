@@ -1,8 +1,10 @@
 import { describe, expect, test, vi } from 'vitest';
 import {
   VIDEO_DRIFT_CHECK_INTERVAL_SECONDS,
+  VIDEO_DRIFT_CORRECTION_COOLDOWN_SECONDS,
   timelineMediaDrift,
   timelineMediaTarget,
+  videoDriftCheckPhaseSeconds,
   VideoPool
 } from '$lib/media/VideoPool';
 import type { TimelineFrame } from '$lib/transport';
@@ -122,6 +124,69 @@ describe('VideoPool timeline mapping', () => {
 
     expect(VIDEO_DRIFT_CHECK_INTERVAL_SECONDS).toBeGreaterThanOrEqual(0.5);
     expect(video.seekCount()).toBeLessThanOrEqual(4);
+  });
+
+  test('phases rack drift corrections so lagging decoders do not seek together', () => {
+    const pool = new VideoPool();
+    const first = actuatorVideo();
+    const sixth = actuatorVideo();
+    const videos = (pool as unknown as { videos: Map<string, unknown> }).videos;
+    videos.set('top-0', first);
+    videos.set('top-5', sixth);
+    pool.markFreeRun('top-0');
+    pool.markFreeRun('top-5');
+
+    pool.tick(frame());
+    first.advance(0);
+    sixth.advance(0);
+    pool.tick(frame({
+      frameId: 2,
+      contextTimeSeconds: 0.55,
+      positionSeconds: 0.55,
+      transportSeconds: 0.55
+    }));
+
+    expect(videoDriftCheckPhaseSeconds('top-0')).toBe(0);
+    expect(videoDriftCheckPhaseSeconds('top-5')).toBeGreaterThan(0.2);
+    expect(first.seekCount()).toBe(1);
+    expect(sixth.seekCount()).toBe(0);
+
+    pool.tick(frame({
+      frameId: 3,
+      contextTimeSeconds: 0.75,
+      positionSeconds: 0.75,
+      transportSeconds: 0.75
+    }));
+    expect(sixth.seekCount()).toBe(1);
+  });
+
+  test('backs off after correcting a decoder instead of repeatedly starving it', () => {
+    const pool = new VideoPool();
+    const video = actuatorVideo();
+    (pool as unknown as { videos: Map<string, unknown> }).videos.set('top-0', video);
+    pool.markFreeRun('top-0');
+    pool.tick(frame());
+
+    for (const seconds of [0.55, 1.1, 1.65, 2.1]) {
+      video.advance(0);
+      pool.tick(frame({
+        contextTimeSeconds: seconds,
+        positionSeconds: seconds,
+        transportSeconds: seconds
+      }));
+    }
+    expect(VIDEO_DRIFT_CORRECTION_COOLDOWN_SECONDS).toBeGreaterThan(
+      VIDEO_DRIFT_CHECK_INTERVAL_SECONDS
+    );
+    expect(video.seekCount()).toBe(1);
+
+    video.advance(0);
+    pool.tick(frame({
+      contextTimeSeconds: 2.6,
+      positionSeconds: 2.6,
+      transportSeconds: 2.6
+    }));
+    expect(video.seekCount()).toBe(2);
   });
 
   test('resynchronizes centrally on rate, seek generation, loop wrap, and pause', () => {

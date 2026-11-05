@@ -4,7 +4,7 @@
   import { Upload, Play, Square, Music4, Disc3, Pause, Film, X, Undo2, Redo2, Shuffle, ChevronsDownUp, ChevronsUpDown, ListMusic } from '@lucide/svelte';
   import { audioEngine } from '$lib/audio';
   import { canRedo, canUndo, fxHold, rackBottom, rackTop, redoRackParams, undoRackParams } from '$lib/stores/rack';
-  import { canUndoTiming, canRedoTiming, undoTiming, redoTiming } from '$lib/stores/timing';
+  import { canUndoTiming, canRedoTiming, undoTiming, redoTiming, timingEditorCollapsed } from '$lib/stores/timing';
   import { allModulesCollapsed, midiUiOpen, setMidiUiOpen, setMinimalPerformView, viewMode, fxLibOpen, pgmRailOpen, playbackWorkspace } from '$lib/stores/rackUi';
   import { timingSourcesCompact } from '$lib/stores/timingLayout';
   import { screenFxModules, screenFxViewer } from '$lib/stores/screenFx';
@@ -24,7 +24,6 @@
     type HostedAnalysisPreference
   } from '$lib/audio/hostedAnalysisPreference';
   import { arrangementStructureStatus, loadDemoArrangement } from '$lib/stores/arrangement';
-  import { fetchAndLoadQaMedia } from '$lib/qa/loadQaMedia';
   import { fetchDemoCatalog, loadCompleteDemo, workflowLoadStatus } from '$lib/runtime/demoWorkflow';
   import { downloadWorkflow, loadWorkflowFile } from '$lib/runtime/workflowFile';
   import { cuts } from '$lib/stores/arrangement';
@@ -135,7 +134,10 @@
     try {
       if (id === 'demo-arrangement') loadDemoArrangement();
       else if (id === 'redline-timing' || id === 'redline-originals') await loadCompleteDemo(id === 'redline-timing' ? 'timing' : 'perform');
-      else await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
+      else {
+        const { fetchAndLoadQaMedia } = await import('$lib/qa/loadQaMedia');
+        await fetchAndLoadQaMedia(id === 'song-clips-midi' ? { midi: true, arrangerMidi: true } : undefined);
+      }
     } catch (err) {
       workflowError = err instanceof Error ? err.message : String(err);
       console.error('[workflow]', id, err);
@@ -547,7 +549,7 @@
 
         <TopBtn label={mode.toUpperCase()} accent active={$viewMode===mode} disabled={locked} title={locked ? 'Stop playback before switching between PERFORM and TIMING' : undefined} onclick={()=>{
           viewMode.set(mode as 'perform'|'arrange'|'timing');
-          if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);}
+          if(mode==='timing'){fxLibOpen.set(true);pgmRailOpen.set(true);timingEditorCollapsed.set(false);}
         }}/>
       {/each}
     </div>

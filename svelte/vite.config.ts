@@ -112,7 +112,10 @@ export default defineConfig(({ mode, command }) => {
 			noExternal: ['@lucide/svelte']
 		},
 		build: {
-			assetsInlineLimit: () => true,
+			// Keep large splash layers as cacheable files. Inlining them used to put
+			// ~8.5 MB of PNG data in the route JavaScript, which made mobile Chrome
+			// spend several seconds decoding and parsing the startup module.
+			assetsInlineLimit: 4096,
 			chunkSizeWarningLimit: 100_000_000,
 			// No cssCodeSplit here: SvelteKit derives it from kit.output.bundleStrategy
 			// and overrides whatever we set. Tauri loads svelte/build as a directory,
