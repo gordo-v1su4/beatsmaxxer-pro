@@ -2,10 +2,31 @@ import { isTauriRuntime } from './runtime';
 import { tauriInvoke } from './tauriInvoke';
 
 /** Public, content-addressed demo assets also live on the hosted application. */
-export async function hostedDemoFetch(path: string): Promise<Response> {
-  if (!isTauriRuntime()) return globalThis.fetch(path);
-  const bytes = await tauriInvoke<ArrayBuffer>('hosted_demo_request', { path });
-  return new Response(bytes);
+export async function hostedDemoFetch(path: string, signal?: AbortSignal): Promise<Response> {
+  signal?.throwIfAborted();
+  if (!isTauriRuntime()) return signal ? globalThis.fetch(path, { signal }) : globalThis.fetch(path);
+  try {
+    const pending = tauriInvoke<ArrayBuffer>('hosted_demo_request', { path });
+    const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const abort = () => reject(signal?.reason);
+      signal?.addEventListener('abort', abort, { once: true });
+      pending.then(value => {
+        signal?.removeEventListener('abort', abort); resolve(value);
+      }, error => {
+        signal?.removeEventListener('abort', abort); reject(error);
+      });
+      if (signal?.aborted) abort();
+    });
+    signal?.throwIfAborted();
+    return new Response(bytes);
+  } catch (cause) {
+    // New native binaries classify errors; old binaries only reject with text.
+    const detail = typeof cause === 'object' && cause !== null ? cause as Record<string, unknown> : {};
+    throw Object.assign(new Error(typeof cause === 'string' ? cause : typeof detail.message === 'string' ? detail.message : 'Desktop demo files are unavailable.', { cause }), {
+      ...(typeof detail.retryable === 'boolean' ? { retryable: detail.retryable } : {}),
+      ...(typeof detail.status === 'number' ? { status: detail.status } : {})
+    });
+  }
 }
 
 /** Browser requests stay same-origin; bundled desktop assets use the native session. */

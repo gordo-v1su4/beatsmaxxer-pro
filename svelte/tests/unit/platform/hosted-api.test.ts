@@ -14,6 +14,30 @@ it('downloads desktop demo assets through binary IPC without text conversion',as
   expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
   expect(invoke).toHaveBeenCalledWith('hosted_demo_request',{path:'/demo-media/'+'a'.repeat(64)+'.mp4'});
 });
+it.each([
+  {message:'Not found', retryable:false, status:404},
+  {message:'Server busy', retryable:true, status:503},
+  {message:'Configuration invalid', retryable:false},
+  {message:'Download interrupted', retryable:true},
+])('preserves native demo failure classification: $message', async failure => {
+  invoke.mockRejectedValue(failure);
+  await expect(hostedDemoFetch('/demo-media/manifest.json')).rejects.toMatchObject(failure);
+});
+it.each(['Desktop media service is not configured','Desktop demo download interrupted'])('preserves unclassified legacy failures without inventing retryability: %s', async message => {
+  invoke.mockRejectedValue(message);
+  const error = await hostedDemoFetch('/demo-media/manifest.json').catch(error => error);
+  expect(error).toMatchObject({message,cause:message});
+  expect(error).not.toHaveProperty('retryable');
+});
+it('releases a canceled native demo wait and discards its later binary response', async () => {
+  let complete!:(value:ArrayBuffer)=>void;
+  invoke.mockImplementation(()=>new Promise(resolve=>complete=resolve));
+  const controller=new AbortController();
+  const result=hostedDemoFetch('/demo-media/manifest.json',controller.signal);
+  const assertion=expect(result).rejects.toThrow();
+  controller.abort(); await assertion;
+  complete(new ArrayBuffer(0));
+});
 it('uses native session for access status and PIN, preserving rejection status', async () => {
   invoke.mockResolvedValueOnce({status:200,body:'{"required":true,"unlocked":false}'})
     .mockResolvedValueOnce({status:401,body:'{}'}).mockResolvedValueOnce({status:200,body:'{}'});

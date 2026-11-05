@@ -57,38 +57,108 @@ fn permitted_demo_path(path: &str) -> bool {
         && matches!(extension, "mp4" | "mp3" | "json")
 }
 
-#[tauri::command]
-pub async fn hosted_demo_request(path: String) -> Result<tauri::ipc::Response, String> {
-    if !permitted_demo_path(&path) {
-        return Err("Unsupported desktop demo asset".into());
-    }
-    let origin = configured_origin()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let client = Client::builder()
-            .redirect(Policy::none())
-            .timeout(Duration::from_secs(120))
-            .build()
-            .map_err(|_| "Could not start desktop demo connection")?;
-        let response = client
-            .get(origin.join(&path).map_err(|_| "Invalid demo route")?)
-            .send()
-            .and_then(|response| response.error_for_status())
-            .map_err(|_| {
-                "Demo files are unavailable. Check the desktop media configuration and retry."
-            })?;
-        let limit = 64 * 1024 * 1024;
-        let mut bytes = Vec::new();
-        response
-            .take(limit + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|_| "Desktop demo download interrupted")?;
-        if bytes.len() as u64 > limit {
-            return Err("Desktop demo asset exceeds size limit".into());
+#[derive(Debug, Serialize)]
+pub struct DemoRequestError {
+    message: String,
+    retryable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<u16>,
+}
+
+impl DemoRequestError {
+    fn permanent(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: false,
+            status: None,
         }
-        Ok(tauri::ipc::Response::new(bytes))
-    })
-    .await
-    .map_err(|_| "Desktop demo download interrupted")?
+    }
+
+    fn interrupted(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            retryable: true,
+            status: None,
+        }
+    }
+
+    fn http(status: u16) -> Self {
+        Self {
+            message: format!("Desktop demo request failed (HTTP {status})."),
+            retryable: matches!(status, 408 | 429 | 500..=599),
+            status: Some(status),
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn hosted_demo_request(path: String) -> Result<tauri::ipc::Response, DemoRequestError> {
+    if !permitted_demo_path(&path) {
+        return Err(DemoRequestError::permanent(
+            "Unsupported desktop demo asset",
+        ));
+    }
+    let origin = configured_origin().map_err(DemoRequestError::permanent)?;
+    tauri::async_runtime::spawn_blocking(move || download_demo_asset(origin, path))
+        .await
+        .map_err(|error| {
+            eprintln!("[demo] download task failed: {error}");
+            DemoRequestError::permanent("Desktop demo connection could not complete")
+        })?
+}
+
+fn download_demo_asset(
+    origin: Url,
+    path: String,
+) -> Result<tauri::ipc::Response, DemoRequestError> {
+    let client = Client::builder()
+        .redirect(Policy::none())
+        .timeout(Duration::from_secs(
+            if path == "/demo-media/manifest.json" {
+                8
+            } else {
+                120
+            },
+        ))
+        .build()
+        .map_err(|error| {
+            eprintln!("[demo] client setup failed: {}", error.without_url());
+            DemoRequestError::permanent("Could not start desktop demo connection")
+        })?;
+    let response = client
+        .get(
+            origin
+                .join(&path)
+                .map_err(|_| DemoRequestError::permanent("Invalid demo route"))?,
+        )
+        .send()
+        .map_err(|error| {
+            let retryable = error.is_timeout() || error.is_connect() || error.is_request();
+            eprintln!("[demo] transport failed: {}", error.without_url());
+            DemoRequestError {
+                message: "Desktop demo connection failed.".into(),
+                retryable,
+                status: None,
+            }
+        })?;
+    if !response.status().is_success() {
+        return Err(DemoRequestError::http(response.status().as_u16()));
+    }
+    let limit = 64 * 1024 * 1024;
+    let mut bytes = Vec::new();
+    response
+        .take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            eprintln!("[demo] body download failed: {error}");
+            DemoRequestError::interrupted("Desktop demo download interrupted")
+        })?;
+    if bytes.len() as u64 > limit {
+        return Err(DemoRequestError::permanent(
+            "Desktop demo asset exceeds size limit",
+        ));
+    }
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 fn permitted_route(method: &str, path: &str) -> bool {
@@ -226,6 +296,84 @@ pub async fn hosted_api_request(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn serve_demo_response(response: Option<String>) -> (Url, std::thread::JoinHandle<()>) {
+        use std::{io::Write, net::TcpListener, thread};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let origin = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+        let server = thread::spawn(move || {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        assert!(
+                            std::time::Instant::now() < deadline,
+                            "Demo request did not arrive"
+                        );
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("{error}"),
+                }
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0; 4096];
+            assert!(stream.read(&mut request).unwrap() > 0);
+            if let Some(response) = response {
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        (origin, server)
+    }
+
+    #[test]
+    fn actual_demo_download_preserves_http_failure_classification() {
+        for (status, retryable) in [(302, false), (404, false), (429, true), (503, true)] {
+            let body = "internal fixture detail";
+            let (origin, server) = serve_demo_response(Some(format!("HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())));
+            let result = download_demo_asset(origin, "/demo-media/manifest.json".into());
+            server.join().unwrap();
+            let error = result
+                .err()
+                .expect("HTTP failure must not become a successful IPC response");
+            assert_eq!(error.status, Some(status));
+            assert_eq!(error.retryable, retryable);
+            assert!(!error.message.contains("internal fixture detail"));
+        }
+    }
+
+    #[test]
+    fn actual_demo_download_retries_connection_interruption_before_headers() {
+        let (origin, server) = serve_demo_response(None);
+        let result = download_demo_asset(origin, "/demo-media/manifest.json".into());
+        server.join().unwrap();
+        let error = result.err().expect("Disconnected response must fail");
+        assert!(
+            error.retryable,
+            "An established connection dropping before headers is transient"
+        );
+        assert_eq!(error.status, None);
+    }
+
+    #[test]
+    fn classifies_and_serializes_demo_failures_without_raw_response_content() {
+        for status in [408, 429, 500, 503, 599] {
+            let error = DemoRequestError::http(status);
+            assert!(error.retryable);
+            assert_eq!(serde_json::to_value(error).unwrap()["status"], status);
+        }
+        for status in [301, 401, 403, 404, 422] {
+            assert!(!DemoRequestError::http(status).retryable);
+        }
+        let configuration =
+            serde_json::to_value(DemoRequestError::permanent("Configuration invalid")).unwrap();
+        assert_eq!(configuration["retryable"], false);
+        assert!(configuration.get("status").is_none());
+        assert!(DemoRequestError::interrupted("Download interrupted").retryable);
+    }
+
     #[test]
     fn restricts_origins_and_routes() {
         assert!(permitted_demo_path("/demo-media/manifest.json"));
