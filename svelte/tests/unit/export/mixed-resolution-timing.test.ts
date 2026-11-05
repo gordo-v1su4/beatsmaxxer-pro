@@ -59,22 +59,20 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function take(sizes: Array<[number, number]>) {
+function take(sizes: Array<[number, number]>, output?: {width:number;height:number}) {
   const sources = sizes.map(([width, height], index) => {
     const source = `https://media.example/clip-${index}.mp4`;
     fixture.sources.set(source, {width, height});
     return source;
   });
-  return new NativeTimingVideo(async timestamp => ({source: sources[Math.min(Math.floor(timestamp), sources.length - 1)], seconds: .5}), new AbortController().signal);
+  return new NativeTimingVideo(async timestamp => ({source: sources[Math.min(Math.floor(timestamp), sources.length - 1)], seconds: .5}), new AbortController().signal, output);
 }
 
-describe('mixed-resolution Timing take export characterization', () => {
-  // These document the current implicit policy, not approval of source-order
-  // dependent delivery dimensions. The policy decision remains explicit below.
+describe('mixed-resolution Timing take export sizing', () => {
   test.each([
-    {label: '480p first', sizes: [[854, 480], [1280, 720], [1920, 1080]], expected: [854, 480]},
+    {label: '480p first', sizes: [[854, 480], [1280, 720], [1920, 1080]], expected: [1920, 1080]},
     {label: '1080p first', sizes: [[1920, 1080], [1280, 720], [854, 480]], expected: [1920, 1080]},
-  ])('currently chooses the first source dimensions: $label', async ({sizes, expected}) => {
+  ])('defaults to 1080p regardless of opening source: $label', async ({sizes, expected}) => {
     const video = take(sizes as Array<[number, number]>);
     try {
       await video.prepare();
@@ -109,5 +107,42 @@ describe('mixed-resolution Timing take export characterization', () => {
     } finally { video.dispose(); }
   });
 
-  test.todo('use an explicit take output size so the same mixed-resolution clips export identically after reordering the opening cut');
+  test.each([[854,480], [1280,720], [1920,1080]])('honors an explicit %ix%i output for every source', async (width,height) => {
+    const output={width,height};
+    const video=take([[854,480], [1920,1080], [1280,720]],output);
+    output.width=2;output.height=2;
+    try {
+      await video.prepare();
+      for(const at of [0,1,2]){
+        const frame=await video.frame(at,1/30);
+        expect([frame.displayWidth,frame.displayHeight]).toEqual([width,height]);
+        frame.close();
+      }
+    } finally { video.dispose(); }
+  });
+
+  test('upscales smaller sources to contain the chosen canvas without cropping', async () => {
+    const video=take([[640,480]],{width:1280,height:720});
+    try {
+      await video.prepare();
+      const frame=await video.frame(0,1/24);
+      expect(fixture.samples[1].draw).toHaveBeenCalledExactlyOnceWith(context,160,0,960,720);
+      expect(context.fillRect).toHaveBeenCalledExactlyOnceWith(0,0,1280,720);
+      frame.close();
+    } finally { video.dispose(); }
+  });
+
+  test.each([
+    {width:0,height:720}, {width:1281,height:720}, {width:1280,height:NaN},
+    {width:16384,height:16384}, {width:4_000_000,height:2}, {width:2,height:4_000_000},
+  ])('rejects invalid or unbounded output dimensions before decoding: %j', output => {
+    expect(()=>take([[1920,1080]],output)).toThrow(/export size/i);
+    expect(fixture.samples).toHaveLength(0);
+  });
+
+  test('permits bounded portrait output',async()=>{
+    const video=take([[1080,1920]],{width:2160,height:3840});
+    try{await video.prepare();expect([video.width,video.height]).toEqual([2160,3840]);}
+    finally{video.dispose();}
+  });
 });

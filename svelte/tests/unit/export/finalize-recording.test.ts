@@ -11,16 +11,16 @@ vi.mock('mediabunny',()=>({
 }));
 import {finalizeRecording} from '$lib/export/finalizeRecording';
 
-test('replaces preview pixels with native source frames at every output timestamp, including the audio tail',async()=>{
+test.each([[854,480],[1280,720],[1920,1080]])('finalizes %ix%i native frames at every output timestamp, including the audio tail',async(width,height)=>{
   vi.clearAllMocks();fixture.videoDuration=.08;
   fixture.audioSample={timestamp:.08,duration:.06,close:vi.fn()};
   fixture.init.mockResolvedValue({state:'done',isValid:true,discardedTracks:[],execute:vi.fn(async()=>{}),cancel:vi.fn()});
   const frame=vi.fn(async(timestamp:number,duration:number)=>({timestamp,duration,native:true}));
   try{
     await finalizeRecording(new Blob(['small proxy']),24,{signal:new AbortController().signal,onProgress:()=>{},
-      nativeVideo:{width:1280,height:720,frame} as any});
+      nativeVideo:{width,height,frame} as any});
     const config=fixture.init.mock.calls[0][0];
-    expect(config.video).toMatchObject({processedWidth:1280,processedHeight:720});
+    expect(config.video).toMatchObject({processedWidth:width,processedHeight:height});
     const output=await config.video.process({timestamp:1/24,duration:1/24});
     expect(output.map((sample:any)=>sample.timestamp)).toEqual([0,1/24,2/24,3/24]);
     expect(output.every((sample:any)=>sample.native)).toBe(true);

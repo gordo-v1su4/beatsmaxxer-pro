@@ -27,6 +27,7 @@
     startArrangementExport,
     type ExportRange,
   } from '$lib/export/arrangementExport';
+  import ExportResolutionSelect from './ExportResolutionSelect.svelte';
   import {
     commitTriggerMarksToCuts,
     deleteTriggerMark,
@@ -524,6 +525,7 @@
   let exportOpen = $state(false);
   let exportRange = $state<ExportRange>('song');
   let exportFps = $state<24 | 30 | 60>(24);
+  let exportOutput = $state({width:1920,height:1080});
   let exportResolveTimeline=$state(false);
   let exportStartSeconds = $state(0);
   $effect(() => {
@@ -927,6 +929,7 @@
         </span>
         <span class="arr-secbar-meta">FPS</span>
         {#if $playbackWorkspace==='timing'}
+          <ExportResolutionSelect output={exportOutput} onSelect={output=>exportOutput=output}/>
           <button type="button" class="arr-btn" aria-pressed={exportResolveTimeline} data-active={exportResolveTimeline} onclick={()=>exportResolveTimeline=!exportResolveTimeline} title="Include editable FCPXML, reference video and audio in a ZIP. See HELP → Export to Resolve.">RESOLVE TIMELINE · {exportResolveTimeline?'ON':'OFF'}</button>
         {/if}
         <span class="arr-mode" role="radiogroup" aria-label="Frame rate">
@@ -938,14 +941,14 @@
           type="button"
           class="arr-btn arr-btn-rec"
           disabled={$timingPreparationBlocked}
-          onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps,resolveTimeline:$playbackWorkspace==='timing'&&exportResolveTimeline })}
+          onclick={() => void startArrangementExport({ range: exportRange, fps: exportFps,resolveTimeline:$playbackWorkspace==='timing'&&exportResolveTimeline, output:$playbackWorkspace==='timing'?exportOutput:undefined })}
           title="Plays the range in PLAY mode and records it — takes as long as the range"
         >START EXPORT</button>
         {#if $exportDownload}<a class="arr-btn" href={$exportDownload.url} download={$exportDownload.name}>{$exportDownload.name.endsWith('.zip')?'DOWNLOAD RESOLVE ZIP':'DOWNLOAD LAST VIDEO'}</a>{/if}
         {#if $exportState.status === 'error'}
           <span class="arr-export-error" role="alert">{$exportState.message}</span>
         {/if}
-        <span class="arr-secbar-hint">{$playbackWorkspace==='timing'?'Original source resolution · saved take timing · captured song audio':'Realtime recording · current monitor size'} · {$exportState.status==='error'?'choose settings and retry':'finalizes at selected FPS'} · WebM</span>
+        <span class="arr-secbar-hint">{$playbackWorkspace==='timing'?`${exportOutput.width} × ${exportOutput.height} output · fits source aspect ratio · smaller sources upscale without added detail`:'Realtime recording · current monitor size'} · {$exportState.status==='error'?'choose settings and retry':'finalizes at selected FPS'}</span>
       {/if}
     </div>
   {/if}

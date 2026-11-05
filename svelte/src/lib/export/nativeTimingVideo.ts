@@ -4,19 +4,31 @@ import type {NativeExportVideo} from './finalizeRecording';
 export interface NativeSourceFrame {source:File|string;seconds:number;name?:string;duration?:number;fps?:number;prepared?:boolean}
 export interface NativeTimelineAsset {id:string;name:string;width:number;height:number;fps:number;duration:number;start:number;prepared?:boolean}
 export interface NativeTimelineFrame {at:number;source:string;seconds:number;duration:number}
+export interface TimingExportSize {width:number;height:number}
+export const DEFAULT_TIMING_EXPORT_SIZE:Readonly<TimingExportSize>=Object.freeze({width:1920,height:1080});
+
+/** One delivery canvas per take. Scaling fits originals; it cannot add detail. */
+export function resolveTimingExportSize(output:TimingExportSize=DEFAULT_TIMING_EXPORT_SIZE):TimingExportSize {
+  const {width,height}=output;
+  if(!Number.isSafeInteger(width)||!Number.isSafeInteger(height)||width<2||height<2||width>3840||height>3840||width%2||height%2||width*height>3840*2160)
+    throw new Error('Choose an even-pixel export size no larger than 4K.');
+  return {width,height};
+}
 
 /** Bounded native decode, independent of preview dimensions and GPU proxy banks. */
 export class NativeTimingVideo implements NativeExportVideo {
-  width=0; height=0;
+  readonly width:number; readonly height:number;
   readonly assets=new Map<File|string,NativeTimelineAsset>();
   readonly frames:NativeTimelineFrame[]=[];
   private inputs=new Map<File|string,{input:Input;sink:VideoSampleSink;start:number}>();
   private canvas:OffscreenCanvas|null=null;
-  constructor(private resolve:(timestamp:number)=>Promise<NativeSourceFrame>,private signal:AbortSignal){}
+  constructor(private resolve:(timestamp:number)=>Promise<NativeSourceFrame>,private signal:AbortSignal,output?:TimingExportSize){
+    const size=resolveTimingExportSize(output);this.width=size.width;this.height=size.height;
+  }
 
   async prepare(){
     const first=await this.decode(await this.resolve(0));
-    try{this.width=first.displayWidth;this.height=first.displayHeight;}finally{first.close();}
+    first.close();
   }
 
   private async decode(frame:NativeSourceFrame){

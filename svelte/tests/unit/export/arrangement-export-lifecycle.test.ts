@@ -123,6 +123,28 @@ afterEach(() => {
 });
 
 describe('arrangement export lifecycle', () => {
+  test.each([undefined,{width:854,height:480},{width:1280,height:720}])('passes frozen output dimensions through the active export path: %j',async output=>{
+    const expected=output?{...output}:{width:1920,height:1080};
+    const native={video:{...expected,frame:vi.fn()} as any,release:vi.fn()};
+    vi.mocked(prepareNativeTimingTake).mockResolvedValueOnce(native);
+    const running=startArrangementExport({range:'loop',fps:24,output});
+    if(output){output.width=2;output.height=2;}
+    await vi.advanceTimersByTimeAsync(50);
+    fixture.position=60;await vi.advanceTimersByTimeAsync(50);await running;
+    expect(prepareNativeTimingTake).toHaveBeenCalledWith(30,60,125,1,expect.any(AbortSignal),expected);
+    expect(fixture.finalize).toHaveBeenCalledWith(expect.any(Blob),24,expect.objectContaining({nativeVideo:native.video}));
+    expect(native.release).toHaveBeenCalledOnce();
+    expect(fixture.download).toHaveBeenCalledOnce();
+  });
+
+  test('rejects invalid output before starting capture or transport',async()=>{
+    await startArrangementExport({range:'loop',fps:24,output:{width:1281,height:720}});
+    expect(get(exportState)).toMatchObject({status:'error',message:expect.stringMatching(/export size/i)});
+    expect(fixture.audio.createCaptureStream).not.toHaveBeenCalled();
+    expect(fixture.captureStream).not.toHaveBeenCalled();
+    expect(prepareNativeTimingTake).not.toHaveBeenCalled();
+  });
+
   test('does not stop a loop before its requested end',async()=>{
     const running=startArrangementExport({range:'loop',fps:24});
     try{

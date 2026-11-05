@@ -10,11 +10,12 @@ import {playbackWorkspace} from '$lib/stores/rackUi';
 import {timingCacheCapacity,timingSceneErrors,timingStatus} from '$lib/stores/timing';
 import {timingPreparationBlocked} from '$lib/runtime/timing/readiness';
 import {timingRuntime} from '$lib/runtime/timing/TimingRuntime';
-import {NativeTimingVideo} from './nativeTimingVideo';
+import {NativeTimingVideo,resolveTimingExportSize,type TimingExportSize} from './nativeTimingVideo';
 
 /** Step the same saved take/Timing runtime; the UI's stopped rAF cannot advance it. */
-export async function prepareNativeTimingTake(start:number,end:number,bpm:number,rate:number,signal:AbortSignal){
+export async function prepareNativeTimingTake(start:number,end:number,bpm:number,rate:number,signal:AbortSignal,output?:TimingExportSize){
   if(get(playbackWorkspace)!=='timing')return null;
+  const size=resolveTimingExportSize(output);
   const session=timingRuntime.beginNativeExport();
   const base=audioTimeline.getLastFrame();
   const grid=new BeatGrid(get(analysisBeatGrid),bpm/Math.max(.01,rate));
@@ -43,7 +44,7 @@ export async function prepareNativeTimingTake(start:number,end:number,bpm:number
       positionSeconds:position,transportSeconds:position,playbackRate:rate,playing:true,generation,reason:'seek',
       bpm,fixedStepSeconds:1/60,fixedStepIndex:Math.floor(fixed),fixedStepPhase:fixed-Math.floor(fixed),deterministicSeed:0,events:[]};
     return session.sample(frame,slot);
-  },signal);
+  },signal,size);
   try{await video.prepare();return {video,release:()=>{video.dispose();session.release();}};}
   catch(error){video.dispose();session.release();throw error;}
 }

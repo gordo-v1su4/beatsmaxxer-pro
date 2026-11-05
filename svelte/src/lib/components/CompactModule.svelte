@@ -14,6 +14,8 @@
   import RackBtn from '$lib/components/rack/RackBtn.svelte';
   import HSlider from '$lib/components/rack/HSlider.svelte';
   import MixSection from '$lib/components/rack/MixSection.svelte';
+  import ModuleQuickControls from './rack/ModuleQuickControls.svelte';
+  import ControlDetailToggle from './rack/ControlDetailToggle.svelte';
   import FoldGlyph from '$lib/components/rack/FoldGlyph.svelte';
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import { screenFxModules } from '$lib/stores/screenFx';
@@ -62,6 +64,7 @@
 
   let dragOver = $state(false);
   let dragDepth = $state(0);
+  let advanced = $state(false);
 
   const color = $derived(parseAccentColor(mod.accentColor));
   const slotCanvasId = $derived(canvasId ?? mod.id);
@@ -145,7 +148,7 @@
     <Screw />
   </div>
 
-  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed}>
+  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed && advanced}>
     {#if !collapsed}
       <MediaPatchBay
         color={mod.accentColor}
@@ -160,6 +163,7 @@
         onSetVideos={onVideosUpload}
         {midiLayer}
         midiSupported={midiBehavior !== undefined}
+        showMidiUi={advanced}
         midiReason={midiContract?.consumer ?? 'No timing contract'}
         onSetMidi={midiBehavior
           ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
@@ -170,7 +174,7 @@
         onDensityChange={(value) => updateParam(mod.id, 'density', Math.round(value))}
       />
     {/if}
-    {#if !collapsed && $midiUiOpen}
+    {#if !collapsed && advanced && $midiUiOpen}
       <div class="module-midi-strip">
         {#if midiLayer && midiBehavior}
           <MidiTimeline
@@ -191,7 +195,11 @@
    </div>
   </div>
 
-  {#if !collapsed && spec}
+  {#if !collapsed}
+    <ControlDetailToggle name={mod.name} expanded={advanced} controlsId={`${slotCanvasId}-advanced-controls`} onToggle={()=>advanced=!advanced}/>
+    {#if !advanced}<ModuleQuickControls moduleId={mod.id} {params} color={mod.accentColor} onUpdate={(key,value)=>updateParam(mod.id,key,value)}/>{/if}
+    <div id={`${slotCanvasId}-advanced-controls`} data-control-level="advanced" hidden={!advanced}>
+  {#if advanced && spec}
     <div style="flex:0 0 auto;display:flex;flex-direction:column;gap:3px;padding:3px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div
         style={mod.id === 'mirror'
@@ -263,15 +271,7 @@
         {/each}
       </div>
     </div>
-    <MixSection
-      {params}
-      color={mod.accentColor}
-      moduleId={mod.id}
-      presets={modulePresets}
-      onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
-      onApplyPreset={(values) => updateParams(mod.id, values)}
-    />
-  {:else if !collapsed}
+  {:else if advanced}
     <div style="flex:0 0 auto;padding:3px 7px;overflow:visible;background:linear-gradient(180deg,#111214,#0f1012);border-top:1px solid #0d0e0f">
       <div style="display:flex;flex-direction:column;gap:3px">
         <!-- density has its own control on the MIDI lane; it would otherwise
@@ -291,6 +291,8 @@
           </div>
         {/each}
       </div>
+    </div>
+  {/if}
     </div>
     <MixSection
       {params}

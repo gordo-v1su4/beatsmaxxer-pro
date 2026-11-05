@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { finalizeRecording } from './finalizeRecording';
 import { prepareNativeTimingTake } from './nativeTimingTake';
+import {resolveTimingExportSize,type TimingExportSize} from './nativeTimingVideo';
 import { timingPreparationBlocked } from '$lib/runtime/timing/readiness';
 import { timingStatus, timingCacheCapacity, timingSceneErrors } from '$lib/stores/timing';
 import { applyTakeAt } from '$lib/arrangement/takeSnapshot';
@@ -33,6 +34,8 @@ export interface ExportOptions {
   range: ExportRange;
   fps: 24 | 30 | 60;
   resolveTimeline?:boolean;
+  /** Timing delivery canvas, independent of source order and preview size. */
+  output?:TimingExportSize;
 }
 
 export type ExportStatus =
@@ -99,6 +102,8 @@ export async function startArrangementExport(options: ExportOptions): Promise<vo
   const state=get(exportState);
   if(state.status==='recording'||state.status==='preparing'||state.status==='finalizing')return;
   const fail=(message:string)=>exportState.set({status:'error',message});
+  let output:TimingExportSize;
+  try{output=resolveTimingExportSize(options.output);}catch(error){return fail(error instanceof Error?error.message:'Invalid export size.');}
   if(get(timingPreparationBlocked))return fail('Finish preparing the timing clips before exporting.');
   const previousMode=get(arrangementMode);
   if(previousMode==='rec')return fail('Stop recording before exporting the take.');
@@ -193,7 +198,7 @@ export async function startArrangementExport(options: ExportOptions): Promise<vo
     if(!recording.size)throw new Error('The recorder returned an empty video.');
     finalizationController=new AbortController();
     exportState.set({status:'finalizing',progress:0,fps:options.fps});
-    native=await prepareNativeTimingTake(range.startSeconds,range.endSeconds,display.bpm||120,playbackRate,finalizationController.signal);
+    native=await prepareNativeTimingTake(range.startSeconds,range.endSeconds,display.bpm||120,playbackRate,finalizationController.signal,output);
     if(options.resolveTimeline&&!native)throw new Error('Resolve timeline export is available in Timing only.');
     const blob=await finalizeRecording(recording,options.fps,{signal:finalizationController.signal,
       nativeVideo:native?.video,

@@ -15,6 +15,8 @@
   import ScreenOverlay from '$lib/components/rack/ScreenOverlay.svelte';
   import { screenFxModules } from '$lib/stores/screenFx';
   import MixSection from '$lib/components/rack/MixSection.svelte';
+  import ModuleQuickControls from './rack/ModuleQuickControls.svelte';
+  import ControlDetailToggle from './rack/ControlDetailToggle.svelte';
   import MidiTimeline from '$lib/components/MidiTimeline.svelte';
   import { moduleTriggerSource, setModuleTriggerSource } from '$lib/stores/midiTrigger';
   import { transportDisplay } from '$lib/stores/transportDisplay';
@@ -65,6 +67,7 @@
 
   let dragOver = $state(false);
   let dragDepth = $state(0);
+  let advanced = $state(false);
 
   const color = $derived(parseAccentColor(mod.accentColor));
   const slotCanvasId = $derived(canvasId ?? mod.id);
@@ -142,7 +145,7 @@
     <Screw />
   </div>
 
-  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed}>
+  <div class="module-media-stack" class:midi-ui-open={$midiUiOpen && !collapsed && advanced}>
     {#if !collapsed}
       <MediaPatchBay
         color={mod.accentColor}
@@ -157,6 +160,7 @@
         onSetVideos={onVideosUpload}
         {midiLayer}
         midiSupported={midiBehavior !== undefined}
+        showMidiUi={advanced}
         midiReason={midiContract?.consumer ?? 'No timing contract'}
         onSetMidi={midiBehavior
           ? (file) => (file ? onMidiUpload?.(file) : onClearMidi?.())
@@ -167,7 +171,7 @@
         onDensityChange={(v) => updateParam(mod.id, 'density', Math.round(v))}
       />
     {/if}
-    {#if !collapsed && $midiUiOpen}
+    {#if !collapsed && advanced && $midiUiOpen}
       <div class="module-midi-strip">
         {#if midiLayer && midiBehavior}
           <MidiTimeline
@@ -189,13 +193,17 @@
   </div>
 
   {#if !collapsed}
-    <div style="flex:0 0 auto;display:flex;flex-direction:column;overflow:visible">
+    <ControlDetailToggle name={mod.name} expanded={advanced} controlsId={`${slotCanvasId}-advanced-controls`} onToggle={()=>advanced=!advanced}/>
+    {#if !advanced}<ModuleQuickControls moduleId={mod.id} {params} color={mod.accentColor} onUpdate={(key,value)=>updateParam(mod.id,key,value)}/>{/if}
+    <div id={`${slotCanvasId}-advanced-controls`} data-control-level="advanced" hidden={!advanced}>
+    {#if advanced}
       <ModuleControls
         moduleId={mod.id}
         {params}
         color={mod.accentColor}
         onUpdate={(p, v) => updateParam(mod.id, p, Math.round(v))}
       />
+    {/if}
     </div>
     <MixSection
       {params}

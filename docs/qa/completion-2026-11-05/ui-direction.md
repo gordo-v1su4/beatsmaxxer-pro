@@ -8,6 +8,51 @@ Windows native in-app browser selected Pulse alt during real-media playback and 
 Independent review tightened matching to floating-point noise only: one-unit Mix/mode/accent/feel edits must be Custom.
 Atomic rack and Global/Per-video Timing undo are covered by focused tests. The broader UI pass below remains planned.
 
+### Progressive rack and export candidate
+
+The next candidate is implemented, awaiting root-owned browser acceptance:
+
+- `EffectModule.svelte` and `CompactModule.svelte` start with two existing
+  authored continuous controls, a named preset selector and Mix. The primary
+  controls reuse `mobileSpecForModule()`; no synthetic intensity parameter or
+  enum-to-slider conversion was added.
+- `Edit controls` expands the original detailed control surface. `Done editing`
+  returns to the primary controls. Clip upload, clip status, source preview,
+  named preset, Mix and header bypass remain available in either state. Existing
+  preview-only collapse remains a separate action. MIDI patching/routing and its
+  timeline are disclosed with the detailed controls.
+- Detailed control state is local presentation state. Opening/closing does not
+  write effect parameters, reload clips or move/remount the WebGPU canvas. The
+  canvas remains outside both primary and detailed control conditionals.
+- `ArrangeView.svelte` exposes a Timing-only output size selector: 854×480,
+  1280×720 or 1920×1080, defaulting to 1920×1080. It passes the explicit size to
+  the export engine. The hint distinguishes output size from source detail:
+  sources fit their aspect ratio; smaller sources upscale without adding detail.
+  Perform export retains its monitor-sized capture behavior.
+
+Automation seam: each `.control-detail-toggle` has `aria-expanded`, a button
+label `Edit ${moduleName} controls` or `Close ${moduleName} controls`, and
+`aria-controls="${slotCanvasId}-advanced-controls"`. The corresponding panel
+has `data-control-level="advanced"`; the primary sliders have
+`data-control-level="simple"`. The existing Mix/preset controls remain outside
+those panels. Export resolution is the select named `Export output size`.
+
+Candidate checks:
+
+- `cd svelte && bun run check`: zero errors and warnings.
+- `cd svelte && bun run test -- tests/unit/modules/control-contracts.test.ts tests/unit/modules/preset-selection.test.ts tests/unit/stores/rack-history.test.ts tests/unit/stores/timing-history.test.ts`:
+  68 tests passed across four files. These cover authored control contracts,
+  strict preset/custom matching and atomic rack/Timing history, not rendered
+  disclosure behavior.
+- Svelte autofixer: new quick controls, disclosure toggle, output selector,
+  EffectModule and CompactModule have no issues or suggestions. ArrangeView's
+  unchanged blob download link, unkeyed block and existing effect suggestions
+  remain reported; no automatic changes were applied to those unrelated paths.
+- Subagent browser inventory was empty and `iab` unavailable. Root owns the
+  native in-app before/after screenshot and trusted-click disclosure lifecycle
+  proof, including all twelve canvas/video identities and PGM continuity. Those
+  results must be recorded separately before visual acceptance is claimed.
+
 ## Product job
 
 Start with a musical result. Load the reviewed song/clip workflow, see the clips

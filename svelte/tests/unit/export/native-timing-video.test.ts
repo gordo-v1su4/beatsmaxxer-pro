@@ -12,7 +12,7 @@ beforeEach(()=>{fixture.inputs=[];fixture.requests=[];fixture.abort=null;});
 test('reads original File pixels at requested reverse timestamps, independent of proxy resolution',async()=>{
   const original=new File(['native media'],'original-720.mp4');
   const resolve=vi.fn(async(timestamp:number)=>({source:original,seconds:8-timestamp}));
-  const video=new NativeTimingVideo(resolve,new AbortController().signal);
+  const video=new NativeTimingVideo(resolve,new AbortController().signal,{width:1280,height:720});
   await video.prepare();
   const frame=await video.frame(1.25,1/24);
   expect([video.width,video.height]).toEqual([1280,720]);
@@ -23,7 +23,7 @@ test('reads original File pixels at requested reverse timestamps, independent of
 });
 
 test('bounds source decoders to two and closes them on completion',async()=>{
-  const video=new NativeTimingVideo(async t=>({source:`https://media.example/${t}.mp4`,seconds:0}),new AbortController().signal);
+  const video=new NativeTimingVideo(async t=>({source:`https://media.example/${t}.mp4`,seconds:0}),new AbortController().signal,{width:1280,height:720});
   await video.prepare();
   (await video.frame(1,1/24)).close();(await video.frame(2,1/24)).close();
   expect(fixture.inputs[0].dispose).toHaveBeenCalledOnce();
