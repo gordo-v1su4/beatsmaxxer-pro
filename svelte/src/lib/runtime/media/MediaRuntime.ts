@@ -16,7 +16,7 @@ import {
 import type { DeckFrameHandleRef } from '$lib/engine/contracts';
 import { get } from 'svelte/store';
 import { timingActive, allowTimingClip, RIFE_RAMP_ONLY, clipTiming } from '$lib/stores/timing';
-import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation } from '$lib/runtime/timing/preparation';
+import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation, rampUsesRealtime, originalSlowMotionFile, fallbackSlowMotionFile } from '$lib/runtime/timing/preparation';
 import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 import { PreparedSceneClips, type UpcomingSceneClip } from './PreparedSceneClips';
 
@@ -109,7 +109,8 @@ export class MediaRuntime {
       return Promise.resolve({ status: 'failed', error: String(error), previous: null });
     }
     let target=file;
-    if(this.enforceRackSlots&&get(timingActive)&&clipTiming(sourceId).effect==='ramp'){
+    if(this.enforceRackSlots&&get(timingActive)&&clipTiming(sourceId).effect==='ramp'&&rampUsesRealtime(sourceId,file))target=originalSlowMotionFile(file);
+    else if(this.enforceRackSlots&&get(timingActive)&&clipTiming(sourceId).effect==='ramp'){
       const prepared=preparedSlowMotionFile(file);
       if(!prepared||this.residentFactor?.(prepared)==null)return this.prepareAndRegister(sourceId,file);
       target=prepared;
@@ -148,8 +149,13 @@ export class MediaRuntime {
     }catch(error){
       const message=error instanceof Error?error.message:String(error);
       if(this.isFresh(sourceId,generation)){
-        setClipError(sourceId,message,file.name);
-        slotPreparation.update(s=>({...s,[sourceId]:{...s[sourceId],state:'failed',error:message}}));
+        const entry=get(slotPreparation)[sourceId];
+        const original=fallbackSlowMotionFile(file,error);
+        const result=await this.registerModuleFileClip(sourceId,original);
+        if(result.status==='success'&&this.clipRegistry.get(sourceId)===result.clip){
+          slotPreparation.update(s=>({...s,[sourceId]:{...entry,state:'realtime',name:file.name,original,stage:'realtime',completed:0,total:0,error:message}}));
+        }
+        return result;
       }
       return {status:'failed',error:message,previous};
     }

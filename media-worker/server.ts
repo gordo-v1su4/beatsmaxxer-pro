@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { InterpolationQueue, type InterpolationArtifact, type InterpolationJob } from './queue';
 import { workerToken, validWorkerToken } from './auth';
+import { parsePipelineMessage } from './progress';
 import { mediaGatewayConfigFromEnv, uploadToMediaGateway, fetchGatewayObject, studioChunkObjectKey } from '../api/_lib/mediaGateway';
 
 const gateway=mediaGatewayConfigFromEnv(process.env), token=workerToken(gateway.token);
@@ -66,7 +67,8 @@ async function processJob(job:InterpolationJob){
     let newline:number;
     while((newline=text.indexOf('\n'))>=0){
       const line=text.slice(0,newline);text=text.slice(newline+1);
-      const payload=JSON.parse(line);
+      const payload=parsePipelineMessage(line);
+      if(!payload)continue;
       if(payload.stage){
         if(queue.get(job.id)?.stage!==payload.stage)console.info(JSON.stringify({event:'job-stage',job:job.id,stage:payload.stage}));
         queue.progress(job.id,payload.stage,payload.completed??0,payload.total??0);

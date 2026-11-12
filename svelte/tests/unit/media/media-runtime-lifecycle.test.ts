@@ -3,6 +3,7 @@ import { ClipRegistry } from '$lib/media/ClipRegistry';
 import { MediaRuntime } from '$lib/runtime/media/MediaRuntime';
 import { get } from 'svelte/store';
 import { timingActive, timingSettings, parseTimingSettings, timingClipRestrictions } from '$lib/stores/timing';
+import * as preparation from '$lib/runtime/timing/preparation';
 import * as interpolation from '$lib/runtime/timing/interpolation';
 
 function deferred<T>() {
@@ -411,4 +412,20 @@ describe('MediaRuntime clip transactions', () => {
     expect(pool.prepare).toHaveBeenCalledTimes(2);
     expect(runtime.clipRegistry.get('fx')?.url).toBe('blob:runtime-2');
   });
+  test('a GPU preparation failure attaches the original clip and exposes a nonblocking realtime status',async()=>{
+    const {runtime}=createHarness(async()=>({} as HTMLVideoElement));
+    Reflect.set(runtime,'enforceRackSlots',true);
+    timingActive.set(true);preparation.slotPreparation.set({});
+    const file=new File(['source'],'fallback.mp4');
+    const prepare=vi.spyOn(preparation,'prepareSlowMotionFile').mockRejectedValue(new Error('Decode diagnostic'));
+    try{
+      const result=await runtime.registerModuleFileClip('top-0',file);
+      expect(result.status).toBe('success');
+      expect(runtime.clipRegistry.get('top-0')?.file).toBe(file);
+      expect(get(preparation.slotPreparation)['top-0']).toMatchObject({state:'realtime',error:'Decode diagnostic'});
+      await runtime.registerModuleFileClip('top-0',file);
+      expect(prepare).toHaveBeenCalledOnce();
+    }finally{prepare.mockRestore();await runtime.dispose();timingActive.set(false);preparation.slotPreparation.set({});}
+  });
+
 });
