@@ -90,7 +90,10 @@
   let demoAvailable = $state(false);
   let demoChecking = $state(true);
   let demoCheckError = $state('');
+  let demoCheckInFlight = false;
   async function checkDemoAvailability() {
+    if (demoCheckInFlight) return;
+    demoCheckInFlight = true;
     demoChecking = true;
     demoCheckError = '';
     try {
@@ -101,6 +104,7 @@
       demoCheckError = error instanceof Error ? error.message : String(error);
     } finally {
       demoChecking = false;
+      demoCheckInFlight = false;
     }
   }
   let workflowInput: HTMLInputElement;
@@ -514,8 +518,8 @@
           <p class="workflow-menu-note" role="status" aria-live="polite">
             {#if demoChecking}Checking demo files…
             {:else}{demoCheckError}
-              <button type="button" onclick={() => { void checkDemoAvailability(); }}>Retry</button>
             {/if}
+            <button type="button" aria-disabled={demoChecking} onclick={() => { void checkDemoAvailability(); }}>Retry</button>
           </p>
         {/if}
         <div class="menu-section-label">YOUR WORKFLOW</div>
@@ -761,6 +765,7 @@
 {/if}
 
 <style>
+  .workflow-menu-note button[aria-disabled="true"] { opacity: .5; cursor: wait; }
   .topbar-shell{--top-control-height:22px}
   .clip-order select{height:var(--top-control-height);padding-block:0!important}
   .workflow-menu-note{max-width:300px;padding:8px 12px;margin:0;color:#b2bcc3;font:12px/1.5 system-ui,sans-serif}

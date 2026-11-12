@@ -40,8 +40,13 @@ fn configured_origin() -> Result<Url, String> {
     application_origin(&configured)
 }
 
+// Keep the catalog route and its budget aligned with demoCatalog.ts.
+const DEMO_MANIFEST_PATH: &str = "/demo-media/manifest.json";
+const DEMO_CATALOG_TIMEOUT: Duration = Duration::from_secs(8);
+const DEMO_MEDIA_TIMEOUT: Duration = Duration::from_secs(120);
+
 fn permitted_demo_path(path: &str) -> bool {
-    if path == "/demo-media/manifest.json" {
+    if path == DEMO_MANIFEST_PATH {
         return true;
     }
     let Some(file) = path.strip_prefix("/demo-media/") else {
@@ -85,6 +90,7 @@ impl DemoRequestError {
     fn http(status: u16) -> Self {
         Self {
             message: format!("Desktop demo request failed (HTTP {status})."),
+            // Keep aligned with isRetryableDemoStatus in hostedApi.ts.
             retryable: matches!(status, 408 | 429 | 500..=599),
             status: Some(status),
         }
@@ -113,13 +119,11 @@ fn download_demo_asset(
 ) -> Result<tauri::ipc::Response, DemoRequestError> {
     let client = Client::builder()
         .redirect(Policy::none())
-        .timeout(Duration::from_secs(
-            if path == "/demo-media/manifest.json" {
-                8
-            } else {
-                120
-            },
-        ))
+        .timeout(if path == DEMO_MANIFEST_PATH {
+            DEMO_CATALOG_TIMEOUT
+        } else {
+            DEMO_MEDIA_TIMEOUT
+        })
         .build()
         .map_err(|error| {
             eprintln!("[demo] client setup failed: {}", error.without_url());
@@ -316,6 +320,7 @@ mod tests {
                     Err(error) => panic!("{error}"),
                 }
             };
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();

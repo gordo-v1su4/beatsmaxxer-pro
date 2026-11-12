@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import publishedDemo from '$lib/runtime/publicDemo.json';
 
 const fetcher = vi.hoisted(() => vi.fn());
-vi.mock('$lib/platform/hostedApi', () => ({ hostedDemoFetch:fetcher }));
+vi.mock('$lib/platform/hostedApi', async importOriginal => ({ ...await importOriginal<typeof import('$lib/platform/hostedApi')>(), hostedDemoFetch:fetcher }));
 import { loadDemoCatalog } from '$lib/runtime/demoCatalog';
 
 afterEach(() => { vi.useRealTimers(); fetcher.mockReset(); });
@@ -32,7 +32,7 @@ test('a failed check releases the request so manual retry can succeed', async ()
 
 test('an invalid published bundle fails without retrying validation errors', async () => {
   fetcher.mockResolvedValue(Response.json({...publishedDemo,id:'wrong-bundle'}));
-  await expect(loadDemoCatalog()).rejects.toThrow('out of date');
+  await expect(loadDemoCatalog()).rejects.toMatchObject({message:'Demo files do not match this version of the app. Please try again later.',retryable:false,cause:expect.objectContaining({message:expect.stringContaining('out of date')})});
   expect(fetcher).toHaveBeenCalledOnce();
 });
 

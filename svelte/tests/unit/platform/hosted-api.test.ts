@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const invoke = vi.hoisted(() => vi.fn());
 vi.mock('$lib/platform/tauriInvoke', () => ({ tauriInvoke: invoke }));
-import { hostedApiFetch, hostedDemoFetch } from '$lib/platform/hostedApi';
+import { hostedApiFetch, hostedDemoFetch, isPermanentDemoFailure, isRetryableDemoStatus } from '$lib/platform/hostedApi';
 import { fetchAccessState, submitPin } from '$lib/access/accessGate';
 beforeEach(() => {
   invoke.mockReset();
@@ -79,3 +79,24 @@ it('cancels waiting for native I/O immediately, discarding a later response', as
   abort.abort();await expect(result).rejects.toThrow();
   complete({status:200,body:'{}'});
 });
+
+ it('preserves the exact abort reason for desktop demo cancellation', async () => {
+   invoke.mockImplementation(()=>new Promise(()=>{}));
+   const controller=new AbortController(),reason=new DOMException('Stopped by caller','AbortError');
+   const result=hostedDemoFetch('/demo-media/manifest.json',controller.signal);
+   const assertion=expect(result).rejects.toBe(reason);
+   controller.abort(reason);await assertion;
+ });
+ it('handles an abort occurring synchronously inside native invocation',async()=>{
+   const controller=new AbortController(),reason=new DOMException('Stopped during invocation','AbortError');
+   invoke.mockImplementation(()=>{controller.abort(reason);return new Promise(()=>{});});
+   await expect(hostedDemoFetch('/demo-media/manifest.json',controller.signal)).rejects.toBe(reason);
+ });
+ it.each([408,429,500,503,599])('retries the browser/native contract status %i',status=>expect(isRetryableDemoStatus(status)).toBe(true));
+ it.each([200,302,401,404,499,600])('does not retry contract status %i',status=>expect(isRetryableDemoStatus(status)).toBe(false));
+ it('leaves legacy errors unclassified but recognizes explicit permanent metadata',()=>{
+   expect(isPermanentDemoFailure('Desktop demo download interrupted')).toBe(false);
+   expect(isPermanentDemoFailure(new Error('Legacy failure'))).toBe(false);
+   expect(isPermanentDemoFailure({retryable:false,status:404})).toBe(true);
+   expect(isPermanentDemoFailure({retryable:true,status:503})).toBe(false);
+ });

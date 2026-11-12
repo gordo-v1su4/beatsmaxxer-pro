@@ -57,7 +57,8 @@ jobs:
 
       - name: Review with Prism Flash
         id: primary
-        continue-on-error: true
+        # Beatsmaxxer uses one bounded attempt; other repositories retain their policy.
+        continue-on-error: ${{ github.repository != 'gordo-v1su4/beatsmaxxer-pro' }}
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
           ocr_version: '1.12.11'
@@ -66,16 +67,17 @@ jobs:
           llm_model: prism-flash
           llm_use_anthropic: 'false'
           llm_protocol: openai
-          llm_extra_body: '{"thinking":{"type":"enabled"}}'
-          llm_reasoning_effort: max
-          review_concurrency: '2'
+          llm_extra_body: ${{ github.repository == 'gordo-v1su4/beatsmaxxer-pro' && '{"thinking":{"type":"enabled"},"max_tokens":4096}' || '{"thinking":{"type":"enabled"}}' }}
+          llm_reasoning_effort: ${{ github.repository == 'gordo-v1su4/beatsmaxxer-pro' && 'medium' || 'max' }}
+          review_concurrency: ${{ github.repository == 'gordo-v1su4/beatsmaxxer-pro' && '1' || '2' }}
+          max_tokens_budget: ${{ github.repository == 'gordo-v1su4/beatsmaxxer-pro' && '50000' || '' }}
           sticky_summary: 'true'
           base_ref: ${{ steps.context.outputs.base_ref }}
           head_sha: ${{ steps.context.outputs.head_sha }}
           pr_number: ${{ steps.context.outputs.pr_number }}
 
       - name: Retry with Prism Flash
-        if: ${{ !cancelled() && steps.primary.outcome == 'failure' }}
+        if: ${{ !cancelled() && steps.primary.outcome == 'failure' && github.repository != 'gordo-v1su4/beatsmaxxer-pro' }}
         uses: alibaba/open-code-review@a758d9cbfb689937c7857ad64b2dd66adb58c0c2
         with:
           ocr_version: '1.12.11'
