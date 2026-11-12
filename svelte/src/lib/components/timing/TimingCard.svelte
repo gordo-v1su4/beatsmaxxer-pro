@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { arrangementMode } from '$lib/arrangement/transportMode';
   import { slotIndexForId } from '$lib/modules/rackSlots';
   import WebGpuCanvas from '$lib/components/WebGpuCanvas.svelte';
   import MediaPatchBay from '$lib/components/rack/MediaPatchBay.svelte';
@@ -20,19 +21,21 @@
   const selected = $derived($selectedTimingSlot === slot);
   const preparation=$derived($slotPreparation[slot]);
   async function retry(){if(!preparation)return;try{await retrySlotPreparation(slot,preparation);}catch(error){slotPreparation.update(s=>({...s,[slot]:{...preparation,error:String(error)}}));}}
+  const readyLabel=$derived(`${(status?.interpolationFactor??1)>1?`INTERPOLATED ${status?.interpolationFactor}×`:'REALTIME'} · ${status?.fps?.toFixed(0)} FPS`);
   function select() { selectRackSource(moduleId); }
 </script>
 
 <div class="timing-card" class:is-on-air={onAir} style:--timing-accent={color} data-timing-slot={slot}>
   <div class="timing-card-header module-live-header" data-on-air={onAir} class:is-selected={onAir} style:--module-accent={color}>
     <button class="module-title" onclick={select} aria-label="Edit timing for source {number}" title={`S${number} · ${config.effect==='ramp'?'Speedramp':config.effect==='stutter'?'Stutter':config.effect==='timesampler'?'Timesampler':'Timing off'}${onAir?' · ON AIR':''}`} aria-pressed={$selectedTimingSlot===slot}><span class="source-number">S{number}</span><span class="effect-name">{config.effect==='ramp'?'SPEEDRAMP':config.effect==='stutter'?'STUTTER':config.effect==='timesampler'?'TIMESAMPLER':'OFF'}</span>{#if onAir}<span class="on-air-dot" aria-label="On air">●</span>{/if}</button>
+    {#if config.effect==='ramp'}<button class="interpolation-toggle" disabled={$arrangementMode!=='live'||$timingSettings.gpuInterpolation===false} aria-label={`GPU interpolation for source ${number}`} aria-pressed={$timingSettings.gpuInterpolation!==false && $timingSettings.deckInterpolation?.[slot]!==false} title={$timingSettings.gpuInterpolation===false?'Enable INTERPOLATION in the TIMING header first.':'Turn GPU frame interpolation on or off for this Speedramp. Realtime uses the original clip.'} onclick={()=>timingSettings.update(s=>({...s,deckInterpolation:{...s.deckInterpolation,[slot]:s.deckInterpolation?.[slot]===false}}))}>GPU {$timingSettings.deckInterpolation?.[slot]===false||$timingSettings.gpuInterpolation===false?'OFF':'ON'}</button>{/if}
     <HeaderBtn label="B" active={config.effect==='off'} activeColor="#ef4444" onclick={()=>toggleTimingBypass(slot)}/>
   </div>
   <MediaPatchBay showMidiUi={false} {color} moduleId={slot} videoLayer={$videoLayers[slot]??null} clipStatus={status?.state==='ready'?'ready':status?.state==='error'?'error':$videoLayers[slot]?'loading':'idle'} clipError={status?.message} onSetVideo={(file)=>{if(file)onVideoUpload?.(file);else onClearVideo?.();}} onSetVideos={onVideosUpload}/>
   <div class="timing-preview">
     {#if $timingClipRestrictions[slot]}<div class="clip-restriction" role="alert">{$timingClipRestrictions[slot]}</div>{/if}
     <WebGpuCanvas id={slot} {moduleId} color={parseAccentColor(color)} class="absolute inset-0 w-full h-full" />
-    {#if preparation}
+    {#if preparation && preparation.state!=='realtime'}
       <div class="clip-preparation worker-preparation" role="status">
         {#if preparation.state==='working'}<span class="preparation-spinner" aria-hidden="true"></span>{/if}
         <span>{preparation.state==='failed'?'PROCESSING FAILED':preparation.stage.replaceAll('-',' ').toUpperCase()}</span>
@@ -51,12 +54,13 @@
     {/if}
     <button class="preview-select" onclick={select} aria-label="Select source {number} preview" aria-pressed={selected}></button>
     <div class="preview-badge">
-      <ScreenBadge color={status?.state === 'error' ? '#e49879' : color} text={!$videoLayers[slot] ? 'LOAD A CLIP' : status?.state === 'ready' ? `${status.fps?.toFixed(0)} FPS SOURCE · ${$timingSettings.outputFps} FPS OUT` : status?.state === 'loading' ? `LOADING ${status.frames} / ${status.total}` : status?.state === 'error' ? status.requiredBytes ? 'CAPACITY LIMIT · SEE TIMING PANEL' : 'LOAD FAILED · SELECT TO REVIEW' : 'QUEUED'}/>
+      <ScreenBadge color={status?.state === 'error' ? '#e49879' : color} text={!$videoLayers[slot] ? 'LOAD A CLIP' : status?.state === 'ready' ? readyLabel : status?.state === 'loading' ? `LOADING ${status.frames} / ${status.total}` : status?.state === 'error' ? status.requiredBytes ? 'CAPACITY LIMIT · SEE TIMING PANEL' : 'LOAD FAILED · SELECT TO REVIEW' : 'QUEUED'}/>
     </div>
   </div>
 </div>
 
 <style>
+  .interpolation-toggle{background:#182326;border:1px solid #34484c;color:#b5c8cc;font:7px var(--font-ui);padding:3px;cursor:pointer}
   .clip-preparation.worker-preparation{z-index:4;pointer-events:auto;padding:10px;text-align:center}.worker-preparation button{background:#253331;color:#a6c9bf;border:0;padding:7px;font:8px var(--font-ui)}
   .clip-preparation progress{appearance:none;-webkit-appearance:none;border:0;outline:0;border-radius:0;background:#17332f;overflow:hidden}
   .clip-preparation progress::-webkit-progress-bar{background:#17332f;border:0;border-radius:0}

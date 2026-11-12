@@ -1,6 +1,6 @@
 import { Input, ALL_FORMATS, BlobSource } from 'mediabunny';
-import { writable, derived } from 'svelte/store';
-import { timingActive, timingStatus,timingCacheCapacity,timingSceneErrors } from '$lib/stores/timing';
+import { writable, derived, get } from 'svelte/store';
+import { timingActive, timingStatus,timingCacheCapacity,timingSceneErrors, timingSettings, type TimingSettings } from '$lib/stores/timing';
 import { timingPreparationBlocked } from './readiness';
 import { INTERPOLATION_PROFILE, validInterpolationArtifact, type InterpolationJob, type InterpolationArtifact } from '../../../../../api/_lib/interpolationContract';
 import { rememberGeneratedInterpolation, meetsSlowMotionFrameRate } from './interpolation';
@@ -9,9 +9,9 @@ import { hostedApiFetch } from '$lib/platform/hostedApi';
 const demoHashes = new Set(demoCatalog.clips.map(clip => clip.sha256));
 
 export interface PreparationProgress { stage:string; completed:number; total:number; jobId?:string }
-export interface SlotPreparation extends PreparationProgress { state:'working'|'failed'; name:string; original:File; error?:string }
+export interface SlotPreparation extends PreparationProgress { state:'working'|'failed'|'realtime'; name:string; original:File; error?:string }
 export const slotPreparation=writable<Record<string,SlotPreparation>>({});
-derived([timingActive,slotPreparation,timingStatus,timingCacheCapacity,timingSceneErrors],([active,preparing,status,cache,errors])=>active&&(Object.keys(preparing).length>0||Object.values(status).some(s=>s.state!=='ready')||cache.pending>0||Object.keys(errors).length>0)).subscribe(timingPreparationBlocked.set);
+derived([timingActive,slotPreparation,timingStatus,timingCacheCapacity,timingSceneErrors],([active,preparing,status,cache,errors])=>active&&(Object.values(preparing).some(p=>p.state!=='realtime')||Object.values(status).some(s=>s.state!=='ready')||cache.pending>0||Object.keys(errors).length>0)).subscribe(timingPreparationBlocked.set);
 export function clearSlotPreparation(slot:string){slotPreparation.update(states=>{const next={...states};delete next[slot];return next;});}
 const files=new WeakMap<File,Promise<File>>(), originals=new WeakMap<File,File>();
 const preparedFiles=new WeakMap<File,File>();
@@ -20,6 +20,16 @@ const fileProgress=new WeakMap<File,{progress:PreparationProgress;listeners:Set<
 type Render={blob:Blob;artifact:InterpolationArtifact};
 const renders=new Map<string,{promise:Promise<Render>;progress:PreparationProgress;listeners:Set<(p:PreparationProgress)=>void>}>();
 export const originalSlowMotionFile=(file:File)=>originals.get(file)??file;
+const realtimeFailures=new WeakMap<File,string>();
+export function rampUsesRealtime(slot:string,file?:File,settings:TimingSettings=get(timingSettings)){
+  return settings.gpuInterpolation===false || settings.deckInterpolation?.[slot]===false || !!(file&&realtimeFailures.has(originalSlowMotionFile(file)));
+}
+export function fallbackSlowMotionFile(file:File,error:unknown){
+  const original=originalSlowMotionFile(file);
+  realtimeFailures.set(original,error instanceof Error?error.message:String(error));
+  return original;
+}
+export function clearRealtimeFailure(file:File){realtimeFailures.delete(originalSlowMotionFile(file));}
 const digest=async(bytes:BufferSource)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 async function videoFps(file:File){
   const input=new Input({formats:ALL_FORMATS,source:new BlobSource(file)});
@@ -120,7 +130,9 @@ export async function resumeInterpolationJob(jobId:string){
     }
 }
 export async function retrySlotPreparation(slot:string,entry:SlotPreparation){
+  // Requeue failures without destroying the working realtime fallback.
   if(entry.jobId)await resumeInterpolationJob(entry.jobId);
+  realtimeFailures.delete(originalSlowMotionFile(entry.original));
   const {mediaRuntime}=await import('$lib/runtime/media/MediaRuntime');
   return mediaRuntime.registerModuleFileClip(slot,entry.original);
 }

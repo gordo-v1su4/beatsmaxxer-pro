@@ -5,7 +5,7 @@ playback and export stay in the browser. `runtime/server.ts` serves that build
 and the credential-holding access, analysis, upload and media APIs from one
 origin. The separate GPU worker prepares distinct Speedramp clips and returns
 verified files through RustFS; repeated sections reuse the content-hash cache.
-Only Speedramp assignments require interpolation. The minimum prepared source
+GPU interpolation is optional for Speedramp assignments. The Timing editor has an all-decks switch and each Speedramp card has a per-deck switch. Failed preparation automatically attaches the original through the realtime video path and displays REALTIME; retry remains available. Section clips follow the same fallback policy. The minimum prepared source
 rate is 96 FPS; existing native sources at or above that rate bypass preparation.
 The default playback/output cadence is 24 FPS, and Speedramp spans 0.25× to 2×.
 For a 24 FPS original, fourfold interpolation supplies 96 unique source frames

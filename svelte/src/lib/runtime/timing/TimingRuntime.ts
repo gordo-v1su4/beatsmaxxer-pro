@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { videoLayers, currentRackModuleForSlot, currentRackSlotForModule } from '$lib/stores/rack';
 import { pgmSource, queuedPgmSource, manualCutRequests, PGM_LAUNCH_QUANTIZE_BEATS, commitPgmCut } from '$lib/stores/pgm';
 import { arrangementMode } from '$lib/arrangement/transportMode';
-import { timingSettings, timingStatus, timingLive, timingActive, timingSchedules, timingSceneStatus, timingCacheCapacity, timingSceneErrors, DEFAULT_TIMING_BUDGET_GIB, type TimingLive } from '$lib/stores/timing';
+import { timingSettings, timingStatus, timingLive, timingActive, timingSchedules, timingSceneStatus, timingCacheCapacity, timingSceneErrors, timingSceneFallbacks, DEFAULT_TIMING_BUDGET_GIB, type TimingLive } from '$lib/stores/timing';
 import { arrangement, cuts, type Cut, type SceneClip } from '$lib/stores/arrangement';
 import { resolveTimingSignal, timingInput, timingSignalStatus, timingSignalGrid } from '$lib/stores/timingSignals';
 import { analysisBeatGrid, analysisOnsets } from '$lib/stores/triggerLane';
@@ -26,14 +26,15 @@ import type { TimelineFrame } from '$lib/transport';
 import type { TimingTexture } from './contracts';
 import type { VideoLayer } from '$lib/engine/contracts';
 import { mediaRuntime } from '$lib/runtime/media/MediaRuntime';
-import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile, resumeInterpolationJob } from './preparation';
+import { slotPreparation, prepareSlowMotionFile, originalSlowMotionFile, resumeInterpolationJob, rampUsesRealtime, fallbackSlowMotionFile, clearRealtimeFailure } from './preparation';
 
 /** Owns resident banks; AppLoop owns time and WebGpuEngine owns presentation. */
 type TimingAsset={bank:ResidentFrameBank|StreamingFrameSource;factor:number|null;source:VideoLayer|SceneClip;requiredBytes:number;loading:boolean;error:string|null;retainReady:boolean};
 export class TimingRuntime {
   private assets=new Map<File|string,TimingAsset>();
   private originalAssets=new Map<File|string,TimingAsset>();
-  private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null;jobId?:string}>();
+  private sceneInterpolationWanted=new Set<File>();
+  private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null;fallbackError?:string;jobId?:string}>();
   private stopSections:(()=>void)|null=null;
   private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank|StreamingFrameSource; clock: SpeedRampSourceState | null; factor: number | null }>();
   private normalized = new WeakMap<ClipTiming, ClipTiming>();
@@ -46,6 +47,7 @@ export class TimingRuntime {
   private queue: Promise<void> = Promise.resolve();
   private stopSources: (() => void) | null = null;
   private stopSettings: (() => void) | null = null;
+  private stopPreparation: (() => void) | null = null;
   private lastOutput = -1;
   private lastSettings: unknown;
   private lastTransportGeneration = -1;
@@ -95,6 +97,13 @@ export class TimingRuntime {
     mediaRuntime.setResidentSourceFactor(active&&device?this.sourceResidentFactor:null);
     if (!active || !device) return;
     if (!this.stopSources) this.stopSources = videoLayers.subscribe(() => this.reconcile());
+    if (!this.stopPreparation) {
+      let previous='';
+      this.stopPreparation=slotPreparation.subscribe(states=>{
+        const key=Object.entries(states).map(([slot,p])=>`${slot}:${p.state}`).join(',');
+        if(key!==previous){previous=key;queueMicrotask(()=>{if(this.active)this.reconcile();});}
+      });
+    }
     if (!this.stopSections) this.stopSections = arrangement.subscribe(()=>this.prewarmScenes());
     if (!this.stopSettings) this.stopSettings = timingSettings.subscribe(settings => {
       if (settings.budgetGiB*2**30 !== this.budget.limit || settings.preloadHeight!==this.preloadHeight) {
@@ -109,6 +118,9 @@ export class TimingRuntime {
 
   private reconcile() {
     if (!this.device) return;
+    if(this.active)for(const [slot,p] of Object.entries(get(slotPreparation))){
+      if(p.state==='working'&&rampUsesRealtime(slot,p.original))void mediaRuntime.registerModuleFileClip(slot,originalSlowMotionFile(p.original));
+    }
     const sources = get(videoLayers);
     for (const [slot, current] of this.banks) {
       if (sources[slot] !== current.source) {
@@ -123,14 +135,18 @@ export class TimingRuntime {
       if (!source) continue;
       let current=this.banks.get(slot);
       const effect=effectiveClipTiming(get(timingSettings),slot).effect;
-      const original=effect!=='ramp'&&effect!=='timesampler';
+      const realtime=effect==='ramp'&&rampUsesRealtime(slot,source.file);
+      if(realtime&&source.file&&originalSlowMotionFile(source.file)!==source.file){
+        void mediaRuntime.registerModuleFileClip(slot,originalSlowMotionFile(source.file));continue;
+      }
+      const original=(effect!=='ramp'&&effect!=='timesampler')||realtime;
       const sourceFps=current?.bank.stats.fps;
       if(current&&(current.bank instanceof StreamingFrameSource)!==original){
         videoPool.get(slot)?.pause();
         this.banks.delete(slot);this.selected.delete(slot);current=undefined;
       }
-      if(effect==='ramp'&&get(slotPreparation)[slot]){videoPool.get(slot)?.pause();continue;}
-      if(source.file&&effect==='ramp'&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
+      if(effect==='ramp'&&!realtime&&get(slotPreparation)[slot]?.state==='working'){videoPool.get(slot)?.pause();continue;}
+      if(source.file&&effect==='ramp'&&!realtime&&sourceFps&&!meetsSlowMotionFrameRate(sourceFps)){
         if(!get(slotPreparation)[slot])void mediaRuntime.registerModuleFileClip(slot,source.file);
         continue;
       }
@@ -193,10 +209,10 @@ export class TimingRuntime {
     for(const asset of this.assets.values())asset.retainReady=false;
     for(const [slot,source] of Object.entries(get(videoLayers)))if(source){
       const effect=effectiveClipTiming(get(timingSettings),slot).effect,key=source.file??source.url;
-      (['ramp','timesampler'].includes(effect)?wanted:originalWanted).add(key);
+      (['ramp','timesampler'].includes(effect)&&!(effect==='ramp'&&rampUsesRealtime(slot,source.file))?wanted:originalWanted).add(key);
       const asset=this.assets.get(key);if(asset&&effect==='ramp')asset.retainReady=true;
     }
-    const originals=new Set<File>();
+    const originals=new Set<File>(),gpuOriginals=new Set<File>(),enabledOriginals=new Set<File>();
     for(const section of get(arrangement)){
       // PLAY recalls the recorded snapshot when present; warm that same scene
       // and its own effects rather than the current rack's settings.
@@ -206,7 +222,11 @@ export class TimingRuntime {
       for(const [slot,source] of Object.entries(scene?.slots??{}))if(source&&(source.file||source.url)){
         let variant=source;
         if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp'){
-          const file=source.file;originals.add(file);
+          originals.add(source.file);
+          if(settings.gpuInterpolation!==false&&settings.deckInterpolation?.[slot]!==false)enabledOriginals.add(source.file);
+        }
+        if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp'&&!rampUsesRealtime(slot,source.file,settings)){
+          const file=source.file;gpuOriginals.add(file);
           let entry=this.sceneVariants.get(file);
           if(!entry){
             entry={source:null,loading:true,error:null};this.sceneVariants.set(file,entry);
@@ -219,7 +239,8 @@ export class TimingRuntime {
               this.prewarmScenes();
             }).catch(error=>{
               if(generation!==this.generation||this.sceneVariants.get(file)!==current)return;
-              current.error=error instanceof Error?error.message:String(error);current.loading=false;this.publishCapacity();
+              current.fallbackError=error instanceof Error?error.message:String(error);current.source={...source,file:fallbackSlowMotionFile(file,error)};current.loading=false;
+              this.reconcile();
             });
           }
           if(!entry.source){
@@ -232,12 +253,16 @@ export class TimingRuntime {
           }
           variant=entry.source;
         }
-        const original=!['ramp','timesampler'].includes(effectiveClipTiming(settings,slot).effect);
+        const effect=effectiveClipTiming(settings,slot).effect;
+        const realtime=effect==='ramp'&&rampUsesRealtime(slot,source.file,settings);
+        if(realtime&&source.file)variant={...source,file:originalSlowMotionFile(source.file)};
+        const original=!['ramp','timesampler'].includes(effect)||realtime;
         (original?originalWanted:wanted).add(variant.file??variant.url);
         this.assetFor(variant,original,original||effectiveClipTiming(settings,slot).effect==='ramp');
       }
     }
-    for(const file of this.sceneVariants.keys())if(!originals.has(file))this.sceneVariants.delete(file);
+    this.sceneInterpolationWanted=enabledOriginals;
+    for(const [file,entry] of this.sceneVariants)if(!originals.has(file)||(!gpuOriginals.has(file)&&!entry.fallbackError))this.sceneVariants.delete(file);
     for(const [key,asset] of this.assets)if(!wanted.has(key)){asset.bank.dispose();this.assets.delete(key);}
     for(const [key,asset] of this.originalAssets)if(!originalWanted.has(key)){asset.bank.dispose();this.originalAssets.delete(key);}
     this.publishCapacity();
@@ -248,6 +273,11 @@ export class TimingRuntime {
     timingCacheCapacity.set({usedBytes:this.budget.used,
       requiredBytes:this.budget.used+assets.reduce((total,asset)=>total+asset.requiredBytes,0),
       pending:assets.filter(asset=>asset.loading).length+[...this.sceneVariants.values()].filter(variant=>variant.loading).length});
+    const fallbacks:Record<string,string>={};
+    for(const [file,v] of this.sceneVariants)if(v.fallbackError&&this.sceneInterpolationWanted.has(file)){
+      let name=file.name,index=1;while(name in fallbacks)name=`${file.name} (${++index})`;fallbacks[name]=v.fallbackError;
+    }
+    timingSceneFallbacks.set(fallbacks);
     timingSceneErrors.set(Object.fromEntries([
       ...assets.filter(asset=>asset.error).map(asset=>[asset.source.name,asset.error!]),
       ...[...this.sceneVariants].filter(([,variant])=>variant.error).map(([file,variant])=>[file.name,variant.error!])
@@ -295,14 +325,15 @@ export class TimingRuntime {
         this.banks.delete(slot);this.selected.delete(slot);this.plans.delete(slot);this.programDirty=true;
       }
     }
-    await Promise.all([...this.sceneVariants].filter(([,entry])=>entry.error).map(async([file,entry])=>{
+    await Promise.all([...this.sceneVariants].filter(([,entry])=>entry.error||entry.fallbackError).map(async([file,entry])=>{
       entry.error=null;entry.loading=true;this.publishCapacity();
       try {
         if(entry.jobId)await resumeInterpolationJob(entry.jobId);
+        clearRealtimeFailure(file);
         if(generation===this.generation && this.sceneVariants.get(file)===entry)this.sceneVariants.delete(file);
       } catch(error) {
         if(generation===this.generation && this.sceneVariants.get(file)===entry){
-          entry.error=error instanceof Error?error.message:String(error);entry.loading=false;
+          if(entry.fallbackError)entry.fallbackError=error instanceof Error?error.message:String(error);else entry.error=error instanceof Error?error.message:String(error);entry.loading=false;
         }
       }
     }));
@@ -516,7 +547,7 @@ export class TimingRuntime {
   }
   dispose() {
     mediaRuntime.setResidentSourceFactor(null);
-    this.active=false; this.stopSources?.(); this.stopSources=null; this.stopSettings?.(); this.stopSettings=null;
+    this.active=false; this.stopPreparation?.(); this.stopPreparation=null; this.stopSources?.(); this.stopSources=null; this.stopSettings?.(); this.stopSettings=null;
     this.stopSections?.();this.stopSections=null;
     this.clearBanks(); this.device=null; timingActive.set(false);
   }
