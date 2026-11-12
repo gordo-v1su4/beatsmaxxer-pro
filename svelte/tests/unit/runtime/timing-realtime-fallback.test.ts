@@ -48,3 +48,10 @@ it('persists independent deck switches and falls back without claiming prepared 
   preparation.clearRealtimeFailure(file);
   expect(preparation.rampUsesRealtime('top-1',file)).toBe(false);
 });
+
+ it('honors explicit recorded settings rather than unrelated live interpolation preferences',()=>{
+   timingSettings.set({...parseTimingSettings(null),gpuInterpolation:false});
+   const snapshot={...parseTimingSettings(null),gpuInterpolation:true};
+   expect(preparation.rampUsesRealtime('top-0',undefined,snapshot)).toBe(false);
+   expect(preparation.rampUsesRealtime('top-0')).toBe(true);
+ });

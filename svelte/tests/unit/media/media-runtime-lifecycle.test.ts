@@ -428,4 +428,19 @@ describe('MediaRuntime clip transactions', () => {
     }finally{prepare.mockRestore();await runtime.dispose();timingActive.set(false);preparation.slotPreparation.set({});}
   });
 
+  test.each([true,false])('preserves failure information when original playback succeeds=%s',async(originalWorks)=>{
+    let attempts=0;
+    const {runtime}=createHarness(async()=>{if(++attempts===1||!originalWorks)throw new Error('decoder failed');return {} as HTMLVideoElement;});
+    Reflect.set(runtime,'enforceRackSlots',true);timingActive.set(true);preparation.slotPreparation.set({});
+    const file=new File(['source'],'original.mp4');
+    const prepare=vi.spyOn(preparation,'prepareSlowMotionFile').mockResolvedValue(new File(['render'],'render.mp4'));
+    try{
+      const result=await runtime.registerModuleFileClip('top-0',file);
+      expect(result.status).toBe(originalWorks?'success':'failed');
+      expect(get(preparation.slotPreparation)['top-0']).toMatchObject({state:originalWorks?'realtime':'failed',original:file});
+      expect(get(preparation.slotPreparation)['top-0'].error).toContain('decoder failed');
+      if(originalWorks)expect(runtime.clipRegistry.get('top-0')?.file).toBe(file);
+    }finally{prepare.mockRestore();await runtime.dispose();timingActive.set(false);preparation.slotPreparation.set({});}
+  });
+
 });

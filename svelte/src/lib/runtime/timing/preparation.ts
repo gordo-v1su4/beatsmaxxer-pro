@@ -22,7 +22,7 @@ const renders=new Map<string,{promise:Promise<Render>;progress:PreparationProgre
 export const originalSlowMotionFile=(file:File)=>originals.get(file)??file;
 const realtimeFailures=new WeakMap<File,string>();
 export function rampUsesRealtime(slot:string,file?:File,settings:TimingSettings=get(timingSettings)){
-  return get(timingSettings).gpuInterpolation===false || settings.gpuInterpolation===false || settings.deckInterpolation?.[slot]===false || !!(file&&realtimeFailures.has(originalSlowMotionFile(file)));
+  return settings.gpuInterpolation===false || settings.deckInterpolation?.[slot]===false || !!(file&&realtimeFailures.has(originalSlowMotionFile(file)));
 }
 export function fallbackSlowMotionFile(file:File,error:unknown){
   const original=originalSlowMotionFile(file);
@@ -30,7 +30,6 @@ export function fallbackSlowMotionFile(file:File,error:unknown){
   return original;
 }
 export function clearRealtimeFailure(file:File){realtimeFailures.delete(originalSlowMotionFile(file));}
-export function realtimeFailure(file:File){return realtimeFailures.get(originalSlowMotionFile(file));}
 const digest=async(bytes:BufferSource)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 async function videoFps(file:File){
   const input=new Input({formats:ALL_FORMATS,source:new BlobSource(file)});

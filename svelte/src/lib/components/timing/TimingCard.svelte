@@ -21,13 +21,14 @@
   const selected = $derived($selectedTimingSlot === slot);
   const preparation=$derived($slotPreparation[slot]);
   async function retry(){if(!preparation)return;try{await retrySlotPreparation(slot,preparation);}catch(error){slotPreparation.update(s=>({...s,[slot]:{...preparation,error:String(error)}}));}}
+  const readyLabel=$derived(`${(status?.interpolationFactor??1)>1?`INTERPOLATED ${status?.interpolationFactor}×`:'REALTIME'} · ${status?.fps?.toFixed(0)} FPS`);
   function select() { selectRackSource(moduleId); }
 </script>
 
 <div class="timing-card" class:is-on-air={onAir} style:--timing-accent={color} data-timing-slot={slot}>
   <div class="timing-card-header module-live-header" data-on-air={onAir} class:is-selected={onAir} style:--module-accent={color}>
     <button class="module-title" onclick={select} aria-label="Edit timing for source {number}" title={`S${number} · ${config.effect==='ramp'?'Speedramp':config.effect==='stutter'?'Stutter':config.effect==='timesampler'?'Timesampler':'Timing off'}${onAir?' · ON AIR':''}`} aria-pressed={$selectedTimingSlot===slot}><span class="source-number">S{number}</span><span class="effect-name">{config.effect==='ramp'?'SPEEDRAMP':config.effect==='stutter'?'STUTTER':config.effect==='timesampler'?'TIMESAMPLER':'OFF'}</span>{#if onAir}<span class="on-air-dot" aria-label="On air">●</span>{/if}</button>
-    {#if config.effect==='ramp'}<button class="interpolation-toggle" disabled={$arrangementMode!=='live'} aria-label={`GPU interpolation for source ${number}`} aria-pressed={$timingSettings.gpuInterpolation!==false && $timingSettings.deckInterpolation?.[slot]!==false} title="Turn GPU frame interpolation on or off for this Speedramp. Realtime uses the original clip." onclick={()=>timingSettings.update(s=>({...s,deckInterpolation:{...s.deckInterpolation,[slot]:s.deckInterpolation?.[slot]===false}}))}>GPU {$timingSettings.deckInterpolation?.[slot]===false||$timingSettings.gpuInterpolation===false?'OFF':'ON'}</button>{/if}
+    {#if config.effect==='ramp'}<button class="interpolation-toggle" disabled={$arrangementMode!=='live'||$timingSettings.gpuInterpolation===false} aria-label={`GPU interpolation for source ${number}`} aria-pressed={$timingSettings.gpuInterpolation!==false && $timingSettings.deckInterpolation?.[slot]!==false} title={$timingSettings.gpuInterpolation===false?'Enable INTERPOLATION in the TIMING header first.':'Turn GPU frame interpolation on or off for this Speedramp. Realtime uses the original clip.'} onclick={()=>timingSettings.update(s=>({...s,deckInterpolation:{...s.deckInterpolation,[slot]:s.deckInterpolation?.[slot]===false}}))}>GPU {$timingSettings.deckInterpolation?.[slot]===false||$timingSettings.gpuInterpolation===false?'OFF':'ON'}</button>{/if}
     <HeaderBtn label="B" active={config.effect==='off'} activeColor="#ef4444" onclick={()=>toggleTimingBypass(slot)}/>
   </div>
   <MediaPatchBay showMidiUi={false} {color} moduleId={slot} videoLayer={$videoLayers[slot]??null} clipStatus={status?.state==='ready'?'ready':status?.state==='error'?'error':$videoLayers[slot]?'loading':'idle'} clipError={status?.message} onSetVideo={(file)=>{if(file)onVideoUpload?.(file);else onClearVideo?.();}} onSetVideos={onVideosUpload}/>
@@ -53,7 +54,7 @@
     {/if}
     <button class="preview-select" onclick={select} aria-label="Select source {number} preview" aria-pressed={selected}></button>
     <div class="preview-badge">
-      <ScreenBadge color={status?.state === 'error' ? '#e49879' : color} text={!$videoLayers[slot] ? 'LOAD A CLIP' : status?.state === 'ready' ? `${(status.interpolationFactor??1)>1?`INTERPOLATED ${status.interpolationFactor}×`:'REALTIME'} · ${status.fps?.toFixed(0)} FPS` : status?.state === 'loading' ? `LOADING ${status.frames} / ${status.total}` : status?.state === 'error' ? status.requiredBytes ? 'CAPACITY LIMIT · SEE TIMING PANEL' : 'LOAD FAILED · SELECT TO REVIEW' : 'QUEUED'}/>
+      <ScreenBadge color={status?.state === 'error' ? '#e49879' : color} text={!$videoLayers[slot] ? 'LOAD A CLIP' : status?.state === 'ready' ? readyLabel : status?.state === 'loading' ? `LOADING ${status.frames} / ${status.total}` : status?.state === 'error' ? status.requiredBytes ? 'CAPACITY LIMIT · SEE TIMING PANEL' : 'LOAD FAILED · SELECT TO REVIEW' : 'QUEUED'}/>
     </div>
   </div>
 </div>

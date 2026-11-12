@@ -33,6 +33,7 @@ type TimingAsset={bank:ResidentFrameBank|StreamingFrameSource;factor:number|null
 export class TimingRuntime {
   private assets=new Map<File|string,TimingAsset>();
   private originalAssets=new Map<File|string,TimingAsset>();
+  private sceneInterpolationWanted=new Set<File>();
   private sceneVariants=new Map<File,{source:SceneClip|null;loading:boolean;error:string|null;fallbackError?:string;jobId?:string}>();
   private stopSections:(()=>void)|null=null;
   private banks = new Map<string, { source: VideoLayer; bank: ResidentFrameBank|StreamingFrameSource; clock: SpeedRampSourceState | null; factor: number | null }>();
@@ -99,7 +100,7 @@ export class TimingRuntime {
     if (!this.stopPreparation) {
       let previous='';
       this.stopPreparation=slotPreparation.subscribe(states=>{
-        const key=JSON.stringify(Object.entries(states).map(([slot,p])=>[slot,p.state]));
+        const key=Object.entries(states).map(([slot,p])=>`${slot}:${p.state}`).join(',');
         if(key!==previous){previous=key;queueMicrotask(()=>{if(this.active)this.reconcile();});}
       });
     }
@@ -211,7 +212,7 @@ export class TimingRuntime {
       (['ramp','timesampler'].includes(effect)&&!(effect==='ramp'&&rampUsesRealtime(slot,source.file))?wanted:originalWanted).add(key);
       const asset=this.assets.get(key);if(asset&&effect==='ramp')asset.retainReady=true;
     }
-    const originals=new Set<File>(),gpuOriginals=new Set<File>();
+    const originals=new Set<File>(),gpuOriginals=new Set<File>(),enabledOriginals=new Set<File>();
     for(const section of get(arrangement)){
       // PLAY recalls the recorded snapshot when present; warm that same scene
       // and its own effects rather than the current rack's settings.
@@ -220,7 +221,10 @@ export class TimingRuntime {
       const settings=replay?section.deckSnapshot?.timing??get(timingSettings):get(timingSettings);
       for(const [slot,source] of Object.entries(scene?.slots??{}))if(source&&(source.file||source.url)){
         let variant=source;
-        if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp')originals.add(source.file);
+        if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp'){
+          originals.add(source.file);
+          if(settings.gpuInterpolation!==false&&settings.deckInterpolation?.[slot]!==false)enabledOriginals.add(source.file);
+        }
         if(source.file&&effectiveClipTiming(settings,slot).effect==='ramp'&&!rampUsesRealtime(slot,source.file,settings)){
           const file=source.file;gpuOriginals.add(file);
           let entry=this.sceneVariants.get(file);
@@ -257,6 +261,7 @@ export class TimingRuntime {
         this.assetFor(variant,original,original||effectiveClipTiming(settings,slot).effect==='ramp');
       }
     }
+    this.sceneInterpolationWanted=enabledOriginals;
     for(const [file,entry] of this.sceneVariants)if(!originals.has(file)||(!gpuOriginals.has(file)&&!entry.fallbackError))this.sceneVariants.delete(file);
     for(const [key,asset] of this.assets)if(!wanted.has(key)){asset.bank.dispose();this.assets.delete(key);}
     for(const [key,asset] of this.originalAssets)if(!originalWanted.has(key)){asset.bank.dispose();this.originalAssets.delete(key);}
@@ -268,7 +273,11 @@ export class TimingRuntime {
     timingCacheCapacity.set({usedBytes:this.budget.used,
       requiredBytes:this.budget.used+assets.reduce((total,asset)=>total+asset.requiredBytes,0),
       pending:assets.filter(asset=>asset.loading).length+[...this.sceneVariants.values()].filter(variant=>variant.loading).length});
-    timingSceneFallbacks.set(Object.fromEntries([...this.sceneVariants].filter(([,v])=>v.fallbackError).map(([file,v])=>[file.name,v.fallbackError!])));
+    const fallbacks:Record<string,string>={};
+    for(const [file,v] of this.sceneVariants)if(v.fallbackError&&this.sceneInterpolationWanted.has(file)){
+      let name=file.name,index=1;while(name in fallbacks)name=`${file.name} (${++index})`;fallbacks[name]=v.fallbackError;
+    }
+    timingSceneFallbacks.set(fallbacks);
     timingSceneErrors.set(Object.fromEntries([
       ...assets.filter(asset=>asset.error).map(asset=>[asset.source.name,asset.error!]),
       ...[...this.sceneVariants].filter(([,variant])=>variant.error).map(([file,variant])=>[file.name,variant.error!])
