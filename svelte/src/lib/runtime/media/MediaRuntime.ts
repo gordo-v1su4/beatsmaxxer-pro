@@ -16,7 +16,7 @@ import {
 import type { DeckFrameHandleRef } from '$lib/engine/contracts';
 import { get } from 'svelte/store';
 import { timingActive, allowTimingClip, RIFE_RAMP_ONLY, clipTiming } from '$lib/stores/timing';
-import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation } from '$lib/runtime/timing/preparation';
+import { prepareSlowMotionFile, preparedSlowMotionFile, slotPreparation, clearSlotPreparation, rampUsesRealtime, originalSlowMotionFile, fallbackSlowMotionFile } from '$lib/runtime/timing/preparation';
 import { identifyInterpolation } from '$lib/runtime/timing/interpolation';
 import { PreparedSceneClips, type UpcomingSceneClip } from './PreparedSceneClips';
 
@@ -110,9 +110,12 @@ export class MediaRuntime {
     }
     let target=file;
     if(this.enforceRackSlots&&get(timingActive)&&clipTiming(sourceId).effect==='ramp'){
-      const prepared=preparedSlowMotionFile(file);
-      if(!prepared||this.residentFactor?.(prepared)==null)return this.prepareAndRegister(sourceId,file);
-      target=prepared;
+      if(rampUsesRealtime(sourceId,file))target=originalSlowMotionFile(file);
+      else{
+        const prepared=preparedSlowMotionFile(file);
+        if(!prepared||this.residentFactor?.(prepared)==null)return this.prepareAndRegister(sourceId,file);
+        target=prepared;
+      }
     }
     const current=this.clipRegistry.get(sourceId),factor=this.residentFactor?.(target);
     if(current?.file===target&&this.poolClips.get(sourceId)===current&&factor!=null&&(!get(timingActive)||allowTimingClip(sourceId,factor))){
@@ -137,22 +140,34 @@ export class MediaRuntime {
         if(this.isFresh(sourceId,generation))slotPreparation.update(s=>({...s,[sourceId]:{...p,state:'working',name:file.name,original:file}}));
       });
       if(!this.isFresh(sourceId,generation))return {status:'superseded',previous};
-      const operation=this.registerStaged(sourceId,file.name,()=>this.clipRegistry.stageFile(sourceId,prepared));
+      const target=rampUsesRealtime(sourceId,file)?originalSlowMotionFile(file):prepared;
+      const operation=this.registerStaged(sourceId,file.name,()=>this.clipRegistry.stageFile(sourceId,target));
       const attachedGeneration=this.generations.get(sourceId);
       const result=await operation;
       if(this.generations.get(sourceId)===attachedGeneration){
-        if(result.status==='failed')slotPreparation.update(s=>({...s,[sourceId]:{...s[sourceId],state:'failed',error:result.error}}));
+        if(result.status==='failed')return this.registerRealtimeFallback(sourceId,file,result.error);
         else clearSlotPreparation(sourceId);
       }
       return result;
     }catch(error){
       const message=error instanceof Error?error.message:String(error);
       if(this.isFresh(sourceId,generation)){
-        setClipError(sourceId,message,file.name);
-        slotPreparation.update(s=>({...s,[sourceId]:{...s[sourceId],state:'failed',error:message}}));
+        return this.registerRealtimeFallback(sourceId,file,message);
       }
       return {status:'failed',error:message,previous};
     }
+  }
+
+  private async registerRealtimeFallback(sourceId:string,file:File,message:string){
+    // Pin this source to realtime until explicit retry, without letting a late
+    // fallback result overwrite a newer clip assignment or its error status.
+    const entry=get(slotPreparation)[sourceId],original=fallbackSlowMotionFile(file,message);
+    const operation=this.registerModuleFileClip(sourceId,original),generation=this.generations.get(sourceId);
+    const result=await operation;
+    if(this.generations.get(sourceId)===generation&&result.status!=='superseded'){
+      slotPreparation.update(s=>({...s,[sourceId]:{...entry,state:result.status==='success'?'realtime':'failed',name:file.name,original,stage:'realtime',completed:0,total:0,error:result.status==='failed'?`${message} · Realtime clip: ${result.error}`:message}}));
+    }
+    return result;
   }
 
   /** URL clips are supported for bundled/QA media; file URLs are always created by ClipRegistry. */

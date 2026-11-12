@@ -35,6 +35,8 @@ Deploy with `docker compose -f media-worker/docker-compose.yml build` and `docke
 
 App-owned renders use `<upload-prefix>/<year>/<month_day>/<job-id>/original.mp4`, `rife4.mp4`, and `interpolation.json`. Input chunks use the separate `source-video/chunks/<upload-id>/` staging layout. Job metadata persists in `/work/jobs.sqlite`; preserve that named volume during deployment. Do not remove other applications' objects or GPU locks.
 
-The browser displays upload, queue, GPU, download and local frame preparation stages. PLAY, arrangement REC/PLAY and export remain blocked while required work is pending or failed. Retry is available after failures. Finished renders are downloaded and content-hash/frame-rate verified once, then played from local Blob URLs and resident GPU frames; cuts do not fetch frames from the server.
+The browser displays upload, queue, GPU, download and local frame preparation stages. PLAY, arrangement REC/PLAY and export wait while required work is pending. Failed interpolation falls back to the original clip in the browser and is visibly labeled REALTIME, with retry available. Interpolation can be disabled for all Speedramp decks or individually. Source decoding failures still report an error. Finished renders are downloaded and content-hash/frame-rate verified once, then played from local Blob URLs and resident GPU frames; cuts do not fetch frames from the server.
 
 Current limits: source up to 1 GiB, video duration up to 120 seconds, source FPS 6–96 for interpolation, processing dimensions capped at 1280×720. GPU-lock wait and interpolation execution have bounded timeouts. Sources with at least 96 FPS bypass interpolation. Non-24 FPS clips choose an integer factor of at least four to reach at least 96 FPS.
+
+Native codec diagnostics may appear alongside JSON progress on stdout. The worker skips non-JSON diagnostic lines, then requires a successful process exit and verified artifact before completing a job.

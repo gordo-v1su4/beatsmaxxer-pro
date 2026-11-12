@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { InterpolationQueue, type InterpolationArtifact, type InterpolationJob } from './queue';
 import { workerToken, validWorkerToken } from './auth';
+import { parsePipelineMessage } from './progress';
+import { validInterpolationArtifact } from '../api/_lib/interpolationContract';
 import { mediaGatewayConfigFromEnv, uploadToMediaGateway, fetchGatewayObject, studioChunkObjectKey } from '../api/_lib/mediaGateway';
 
 const gateway=mediaGatewayConfigFromEnv(process.env), token=workerToken(gateway.token);
@@ -66,13 +68,14 @@ async function processJob(job:InterpolationJob){
     let newline:number;
     while((newline=text.indexOf('\n'))>=0){
       const line=text.slice(0,newline);text=text.slice(newline+1);
-      const payload=JSON.parse(line);
-      if(payload.stage){
+      const payload=parsePipelineMessage(line);
+      if(!payload){if(line.trimStart().startsWith('{'))console.warn(JSON.stringify({event:'pipeline-line-unparsed',job:job.id}));continue;}
+      if(typeof payload.stage==='string'){
         if(queue.get(job.id)?.stage!==payload.stage)console.info(JSON.stringify({event:'job-stage',job:job.id,stage:payload.stage}));
-        queue.progress(job.id,payload.stage,payload.completed??0,payload.total??0);
+        queue.progress(job.id,payload.stage,typeof payload.completed==='number'?payload.completed:0,typeof payload.total==='number'?payload.total:0);
       }
-      if(payload.artifact)artifact=payload.artifact;
-      if(payload.error)error=payload.error;
+      if(payload.artifact&&typeof payload.artifact==='object'&&validInterpolationArtifact({...payload.artifact,objectKey:'pipeline',url:'pipeline'}))artifact=payload.artifact as Omit<InterpolationArtifact,'objectKey'|'url'>;
+      if(typeof payload.error==='string')error=payload.error;
     }
   }
   const exit=await active.exited,stderr=await stderrPromise;active=undefined;

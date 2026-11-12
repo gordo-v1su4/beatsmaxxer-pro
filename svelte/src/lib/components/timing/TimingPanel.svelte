@@ -16,7 +16,7 @@
   import { defaultClipTiming, type ClipTiming, type Snap, type CurveShape } from '$lib/runtime/timing/envelope';
   import { timingRuntime } from '$lib/runtime/timing/TimingRuntime';
   import { undoTiming, redoTiming } from '$lib/stores/timing';
-  import { TIMING_BUDGET_OPTIONS, timingCacheCapacity } from '$lib/stores/timing';
+  import { TIMING_BUDGET_OPTIONS, timingCacheCapacity, timingSceneFallbacks } from '$lib/stores/timing';
   import { timingEffectAccent } from './presentation';
   import TimingFooter from './TimingFooter.svelte';
   import { saveTimingPreset,loadTimingPreset,timingPresetStatus } from '$lib/stores/timing';
@@ -65,14 +65,18 @@
 <svelte:window onkeydown={shortcut}/>
 {#each Object.entries($slotPreparation) as [slot,preparing] (slot)}
   <div class="processing-notice" role="status">
-    <span>{preparing.name} · {preparing.state==='failed'?'PROCESSING FAILED':preparing.stage.replaceAll('-',' ').toUpperCase()}{preparing.total>0?` · ${preparing.completed} / ${preparing.total}`:''} · Playback waits for preparation</span>
+    <span>{preparing.name} · {preparing.state==='realtime'?'REALTIME · GPU PROCESSING FAILED':preparing.state==='failed'?'PROCESSING FAILED':preparing.stage.replaceAll('-',' ').toUpperCase()}{preparing.total>0?` · ${preparing.completed} / ${preparing.total}`:''} · {preparing.state==='realtime'?'Playing original clip':'Playback waits for preparation'}</span>
     {#if preparing.error}<span>{preparing.error}</span><button onclick={()=>void retrySlotPreparation(slot,preparing).catch(error=>slotPreparation.update(s=>({...s,[slot]:{...preparing,error:String(error)}})))}>RETRY GPU PROCESSING</button>{/if}
   </div>
+{/each}
+{#each Object.entries($timingSceneFallbacks) as [name,error] (name)}
+  <div class="processing-notice" role="status"><span>{name} · REALTIME · {error}</span><button onclick={()=>void timingRuntime.retryScenes()}>RETRY SECTION INTERPOLATION</button></div>
 {/each}
 <section class="timing-panel" class:is-collapsed={$timingEditorCollapsed} aria-label="Timing editor" style:--timing-accent={timingEffectAccent($timingEditorTab)}>
   <fieldset disabled={$arrangementMode!=='live'} style="border:0;padding:0;margin:0;min-width:0">
   <header>
     <button class="timing-collapse" onclick={()=>timingEditorCollapsed.update(v=>!v)} aria-expanded={!$timingEditorCollapsed} aria-label="Toggle timing editor">{$timingEditorCollapsed?'▸':'▾'} TIMING</button>
+    <button aria-label="GPU interpolation for all Speedramp decks" aria-pressed={$timingSettings.gpuInterpolation!==false} title="Optional GPU preparation to at least 96 FPS. Off plays original clips in realtime; processing failures automatically fall back." onclick={()=>timingSettings.update(s=>({...s,gpuInterpolation:s.gpuInterpolation===false}))}>INTERPOLATION {$timingSettings.gpuInterpolation===false?'OFF · REALTIME':'ON · AUTO FALLBACK'}</button>
     <button class="follow-on-air" aria-pressed={followOnAir} onclick={()=>followOnAir=!followOnAir} title="Follow the on-air clip in this editor. Off keeps your selected clip open.">FOLLOW ON AIR</button>
     <button class="scope" aria-label="Timing settings scope" title="Scope for the entire TIMING workspace. GLOBAL shares ramp, stutter and trigger settings; each video keeps its assigned effect. MODULAR edits each video separately. PERFORM is unaffected." onclick={()=>setTimingScope($timingSettings.scope==='deck'?'global':'deck')}>{$timingSettings.scope==='deck'?'MODULAR · PER VIDEO':'GLOBAL · ALL VIDEOS'}</button><span class="clip">S{number} · {$videoLayers[$selectedTimingSlot]?.name??'SELECT / LOAD A CLIP'}</span>
     <span class="live">{live?.rate.toFixed(2)??'1.00'}× · SRC {live?.sourceSeconds.toFixed(2)??'0.00'}s</span>

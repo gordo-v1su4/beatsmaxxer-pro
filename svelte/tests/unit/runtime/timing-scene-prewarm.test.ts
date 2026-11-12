@@ -1,12 +1,13 @@
 import {expect,test,vi} from 'vitest';
 import {get} from 'svelte/store';
 import {TimingRuntime} from '$lib/runtime/timing/TimingRuntime';
+import {StreamingFrameSource} from '$lib/runtime/timing/StreamingFrameSource';
 import {ResidentFrameBank} from '$lib/runtime/timing/ResidentFrameBank';
 import * as preparation from '$lib/runtime/timing/preparation';
 import * as interpolation from '$lib/runtime/timing/interpolation';
 import {arrangement} from '$lib/stores/arrangement';
 import {videoLayers} from '$lib/stores/rack';
-import {parseTimingSettings,timingSettings,timingCacheCapacity,timingStatus,timingSceneErrors} from '$lib/stores/timing';
+import {parseTimingSettings,timingSettings,timingCacheCapacity,timingStatus,timingSceneErrors,timingSceneFallbacks} from '$lib/stores/timing';
 
 test('prewarms the actual ramp derivative and retains it when its scene is off air',async()=>{
   const original=new File(['original'],'future.mp4'),prepared=new File(['96fps'],'future.mp4');
@@ -39,6 +40,8 @@ test.each(['failed','ready'])('retries an off-air section with a %s worker job',
   const prepare=vi.spyOn(preparation,'prepareSlowMotionFile')
     .mockImplementationOnce(async(_file,notify)=>{notify({stage:'failed',completed:0,total:0,jobId});throw new Error('temporary worker failure');})
     .mockResolvedValue(prepared);
+  vi.spyOn(StreamingFrameSource.prototype,'load').mockResolvedValue();
+  vi.spyOn(StreamingFrameSource.prototype,'stats','get').mockReturnValue({ready:true,frames:1,bytes:0,width:1,height:1,fps:24,duration:1,decoderDisposed:false,metadataDisposed:true,decodedFrames:0,uploadedFrames:0,loadMs:0});
   const fetcher=vi.fn().mockResolvedValue(new Response(JSON.stringify({id:jobId,state}),{status:200}));
   vi.stubGlobal('fetch',fetcher);
   vi.spyOn(ResidentFrameBank.prototype,'load').mockResolvedValue();
@@ -48,7 +51,8 @@ test.each(['failed','ready'])('retries an off-air section with a %s worker job',
   arrangement.set([{id:'future-retry',name:'Future',bars:1,deckSnapshot:{timing:settings,scene:{slots:{'top-0':{name:original.name,file:original,url:'blob:original'}}}}}] as never);
   try{
     runtime.setActive(true,{} as GPUDevice);
-    await vi.waitFor(()=>expect(get(timingSceneErrors)[original.name]).toBe('temporary worker failure'));
+    await vi.waitFor(()=>expect(get(timingSceneFallbacks)[original.name]).toBe('temporary worker failure'));
+    expect(get(timingSceneErrors)).toEqual({});
     await runtime.retryScenes();
     await vi.waitFor(()=>{expect(get(timingSceneErrors)).toEqual({});expect(get(timingCacheCapacity).pending).toBe(0);});
     expect(prepare).toHaveBeenCalledTimes(2);

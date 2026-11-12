@@ -12,7 +12,7 @@ const transientQa = import.meta.env.DEV && typeof window !== 'undefined' && new 
 const slotPattern = /^(top|bottom)-[0-5]$/;
 export const DEFAULT_TIMING_BUDGET_GIB = 12;
 export const TIMING_BUDGET_OPTIONS = [.25,1,2,4,8,12,20,24,32];
-export interface TimingSettings { version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; cutOrder?:'balanced'|'random'; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }
+export interface TimingSettings { gpuInterpolation?: boolean; deckInterpolation?: Record<string, boolean>; version: 1; capacityRevision: 1; clips: Record<string, ClipTiming>; budgetGiB: number; outputFps: number; preloadHeight:number; trigger: TimingTriggerConfig; cutOrder?:'balanced'|'random'; scope?: 'global'|'deck'; master?: ClipTiming; deckTriggers?: Record<string,TimingTriggerConfig> }
 const initial = (): TimingSettings => ({ version: 1, capacityRevision: 1, clips: {}, budgetGiB: DEFAULT_TIMING_BUDGET_GIB, outputFps: 24, preloadHeight:0, trigger:defaultTimingTrigger(),scope:'global',master:defaultClipTiming('top-0') });
 const finite = (n: unknown, fallback: number, min: number, max: number) => typeof n === 'number' && Number.isFinite(n) ? Math.max(min,Math.min(max,n)) : fallback;
 
@@ -21,6 +21,8 @@ export function parseTimingSettings(raw: string | null): TimingSettings {
   try {
     const value = JSON.parse(raw || 'null');
     if (value?.version !== 1) return result;
+    result.gpuInterpolation=value.gpuInterpolation!==false;
+    result.deckInterpolation=Object.fromEntries(Object.entries(value.deckInterpolation??{}).filter(([slot,on])=>slotPattern.test(slot)&&typeof on==='boolean')) as Record<string,boolean>;
     result.cutOrder=value.cutOrder==='random'?'random':'balanced';
     result.scope=value.scope==='global'?'global':'deck';
     if(value.master)result.master=parseTimingSettings(JSON.stringify({version:1,clips:{'top-0':value.master}})).clips['top-0'];
@@ -253,6 +255,7 @@ export interface TimingSlotStatus {
 export const timingStatus = writable<Record<string, TimingSlotStatus>>({});
 /** Actual resident allocations include shared clips and cached song sections. */
 export const timingCacheCapacity = writable({ usedBytes: 0, requiredBytes: 0, pending: 0 });
+export const timingSceneFallbacks=writable<Record<string,string>>({});
 export const timingSceneErrors=writable<Record<string,string>>({});
 export interface TimingLive { samplerQueuedAt?: number|null; samplerNormal?: number; samplerTrace?: readonly {normal:number;source:number}[]; sourceDurationSeconds?: number; sourceTimelineSeconds?: number; phase: number; rate: number; sourceSeconds: number; pts: number; state?: 'waiting'|'burst'|'gap'|'continuous'; triggerTime?: number|null; burstEnd?: number|null; time?:number; beat?:number }
 export const timingLive = writable<Record<string, TimingLive>>({});
