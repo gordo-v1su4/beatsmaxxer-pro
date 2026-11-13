@@ -3,6 +3,7 @@ use tauri::{LogicalSize, Manager, WebviewWindow};
 mod env;
 mod essentia;
 mod hosted_api;
+mod sentinel;
 
 /// Open at a consistent share of whichever monitor owns the window. Monitor
 /// dimensions are converted to logical pixels first, so Windows DPI scaling
@@ -55,9 +56,13 @@ fn fit_window_to_display(window: &WebviewWindow) {
 pub fn run() {
     env::load_repo_dotenv();
     env::log_essentia_startup();
+    // Keep the music/control clock responsive while the operator views Sentinel.
+    let flags=std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+    std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",format!("{flags} --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows"));
 
     tauri::Builder::default()
         .manage(hosted_api::HostedApiSession::default())
+        .manage(sentinel::SentinelSender::default())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
@@ -100,6 +105,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            sentinel::sentinel_send,
             essentia::essentia_configured,
             essentia::submit_studio_analysis,
             essentia::poll_studio_analysis,

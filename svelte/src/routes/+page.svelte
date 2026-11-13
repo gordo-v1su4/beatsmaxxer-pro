@@ -1,6 +1,7 @@
 <script lang="ts">
   import { requireHostedAccess, serviceUnlockRequested } from '$lib/access/accessGate';
   import TimingPanel from '$lib/components/timing/TimingPanel.svelte';
+  import SentinelConnection from '$lib/components/SentinelConnection.svelte';
   import { timingSourcesCompact } from '$lib/stores/timingLayout';
   import TimingSections from '$lib/components/timing/TimingSections.svelte';
   import TimingFooter from '$lib/components/timing/TimingFooter.svelte';
@@ -405,6 +406,7 @@
     {loadedClipCount}
     clipSlotCount={activeClipSlotCount}
   />
+  <SentinelConnection />
 
   <!-- Two screens, not two panes. Programming wants ten lanes across a whole
        song; performing wants the picture. Stacked in one window each made the
