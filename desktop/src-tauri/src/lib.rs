@@ -101,7 +101,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             essentia::essentia_configured,
-            essentia::analyze_rhythm,
+            essentia::submit_studio_analysis,
+            essentia::poll_studio_analysis,
             hosted_api::hosted_api_request,
             hosted_api::hosted_demo_request
         ])

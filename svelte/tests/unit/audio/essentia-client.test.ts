@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { planAudioUpload } from "$lib/audio/hostedAnalysisDecision";
 import {
   createHostedAnalysisEndpoint,
   createHostedStudioJobEndpoint,
@@ -7,6 +8,15 @@ import {
 } from "$lib/audio/essentia";
 
 describe("hosted analysis client boundary", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("offers desktop analysis independently of the web proxy build flag", () => {
+    vi.stubGlobal("window", { __TAURI_INTERNALS__: {} });
+    expect(planAudioUpload("analyze", isHostedAnalysisEnabled())).toEqual({
+      action: "load", hostedAnalysis: true,
+    });
+  });
+
   it("uses only same-origin analysis endpoints", () => {
     expect(createHostedAnalysisEndpoint("rhythm", "https://app.example").toString()).toBe(
       "https://app.example/__api/analyze/rhythm",

@@ -28,7 +28,7 @@ describe('hosted analysis consent boundary', () => {
     expect(preparation).toContain('STUDIO_UPLOAD_MAX_BYTES');
   });
 
-  test('legacy rhythm preparation still re-encodes for desktop', () => {
+  test('legacy rhythm preparation remains available for compatibility', () => {
     const preparation = source('audio/prepareAnalysisUpload.ts');
 
     expect(preparation).not.toContain('return file;');

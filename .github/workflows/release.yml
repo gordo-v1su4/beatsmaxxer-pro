@@ -1,6 +1,7 @@
 name: Release
 
-# Push a version tag to cut a release:
+# Every push to main publishes a signed, versioned desktop update.
+# Push a version tag to publish a stable updater release:
 #   git tag v0.2.0 && git push origin v0.2.0
 # The job builds the installers and attaches them to a public GitHub release.
 #
@@ -8,9 +9,15 @@ name: Release
 # publishing anything — useful for checking a build before tagging.
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -31,6 +38,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Assign desktop update version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
+            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" 2> release-error.txt
+            if ($LASTEXITCODE -eq 0) {
+              $env:LATEST_DESKTOP_TAG = ($release | ConvertFrom-Json).tag_name
+            } elseif ((Get-Content release-error.txt -Raw) -notmatch 'HTTP 404') {
+              throw 'Could not read the latest desktop release; refusing to reuse a version.'
+            }
+          }
+          bun scripts/desktop-release-version.ts
+          if ($LASTEXITCODE -ne 0) { throw 'Could not assign desktop version.' }
+
       - name: Verify desktop release version
         shell: pwsh
         run: |
@@ -47,10 +75,6 @@ jobs:
             throw "Release tag must be v$version."
           }
           Write-Output "Desktop release version: $version"
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -70,6 +94,11 @@ jobs:
           bun install
           bun install --cwd desktop
 
+      - name: Verify shared application and desktop bridge
+        run: |
+          bun run test
+          cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
+
       # The frontend is NOT built here: tauri.conf.json's beforeBuildCommand
       # runs `build:desktop-frontend` itself, so CI and local builds go through
       # exactly one path. Building it here too would just double the work.
@@ -82,8 +111,9 @@ jobs:
           projectPath: desktop
           tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: Beatsmaxxer Pro ${{ github.ref_name }}
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: Beatsmaxxer Pro ${{ steps.version.outputs.version }}
           releaseBody: |
             Download the Windows installer below.
 

@@ -1,5 +1,6 @@
 /** Matches api/analyze/policy.ts ANALYSIS_MAX_REQUEST_BYTES. */
 export const STUDIO_UPLOAD_MAX_BYTES = 12_000_000;
+export const DESKTOP_STUDIO_UPLOAD_MAX_BYTES = 256 * 1024 * 1024;
 /** Safe under Vercel Hobby incoming body limit; larger files use chunked staging. */
 export const STUDIO_DIRECT_UPLOAD_MAX_BYTES = 4_000_000;
 
@@ -8,6 +9,16 @@ export function isStudioMp3File(file: File): boolean {
   if (name.endsWith(".mp3")) return true;
   const type = file.type.trim().toLowerCase();
   return type === "audio/mpeg" || type === "audio/mp3";
+}
+
+/** Native transport sends original audio directly, without the web proxy's body limit. */
+export function prepareDesktopStudioUpload(file: File): File {
+  const wav = /\.wav(e)?$/i.test(file.name.trim()) ||
+    ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'].includes(file.type.toLowerCase());
+  if (!wav && !isStudioMp3File(file)) throw new Error('Desktop Studio analysis supports WAV and MP3 uploads.');
+  if (file.size <= 0) throw new Error('Audio file is empty.');
+  if (file.size > DESKTOP_STUDIO_UPLOAD_MAX_BYTES) throw new Error('Audio exceeds the 256 MiB desktop Studio limit.');
+  return file;
 }
 
 /**

@@ -3,7 +3,6 @@ import {
   fetchLegacySyncAnalysis,
   normalizeLegacySyncAnalysis,
 } from "$lib/analysis/adapters/legacySync";
-import { prepareAnalysisUpload } from "$lib/audio/prepareAnalysisUpload";
 import { fetchEssentiaStudioAnalysis } from "$lib/audio/studioJobs";
 import {
   normalizeStructureAnalysis,
@@ -11,7 +10,7 @@ import {
   type EssentiaStructureSection,
 } from "$lib/audio/structureNormalize";
 import { isTauriRuntime } from "$lib/platform/runtime";
-import { isDesktopEssentiaConfigured, tauriInvoke } from "$lib/platform/tauriInvoke";
+import { isDesktopEssentiaConfigured } from "$lib/platform/tauriInvoke";
 import { songAnalysisHash, cachedSongAnalysis, saveSongAnalysis } from './analysisCache';
 
 export type { EssentiaStructureSection, EssentiaStructureAnalysis };
@@ -39,11 +38,9 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
     const configured = await isDesktopEssentiaConfigured();
     if (!configured) {
       throw new Error(
-        "Essentia is not configured for desktop. Set ESSENTIA_API_BASE_URL and ESSENTIA_API_KEY in .env, then restart bun run dev:desktop."
+        "Essentia is not configured for desktop. Set ESSENTIA_API_BASE_URL and ESSENTIA_API_KEY in the desktop application configuration .env, then restart the app."
       );
     }
-    const analysisFile = await prepareAnalysisUpload(file);
-    return fetchEssentiaViaTauri(analysisFile);
   }
   if (!isHostedAnalysisEnabled()) {
     throw new Error("Hosted analysis is disabled. Local playback and realtime analysis remain available.");
@@ -55,17 +52,8 @@ export async function fetchEssentiaRhythmAnalysis(file: File): Promise<EssentiaR
   return result;
 }
 
-async function fetchEssentiaViaTauri(analysisFile: File): Promise<EssentiaRhythmAnalysis> {
-  const bytes = new Uint8Array(await analysisFile.arrayBuffer());
-  const payload = await tauriInvoke<string>("analyze_rhythm", {
-    fileName: analysisFile.name,
-    bytes,
-  });
-  return normalizeRhythmAnalysis(JSON.parse(payload));
-}
-
 export function isHostedAnalysisEnabled() {
-  return typeof __APP_ESSENTIA_ANALYSIS_ENABLED__ === "boolean" && __APP_ESSENTIA_ANALYSIS_ENABLED__;
+  return isTauriRuntime() || (typeof __APP_ESSENTIA_ANALYSIS_ENABLED__ === "boolean" && __APP_ESSENTIA_ANALYSIS_ENABLED__);
 }
 
 export function createHostedAnalysisEndpoint(
