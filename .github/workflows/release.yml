@@ -44,13 +44,23 @@ jobs:
         with:
           bun-version: 1.4.4
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Restore before version stamping so automatic version bumps reuse dependencies.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.target }}
+
       - name: Assign desktop update version
         id: version
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and ($env:GITHUB_REF -eq 'refs/heads/main' -or $env:GITHUB_REF_TYPE -eq 'tag')) {
             $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> release-error.txt
             if ($LASTEXITCODE -eq 0) {
               $env:LATEST_DESKTOP_TAG = $release
@@ -77,17 +87,6 @@ jobs:
             throw "Release tag must be v$version."
           }
           Write-Output "Desktop release version: $version"
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      # Keyed on the lockfile so the cache invalidates when dependencies move.
-      # Without this every run recompiles the full Tauri dependency tree.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri -> target
-          key: ${{ matrix.target }}
 
       # Root postinstall also installs svelte/. The desktop install provides
       # @tauri-apps/cli so `bunx tauri` does not fetch it at build time.

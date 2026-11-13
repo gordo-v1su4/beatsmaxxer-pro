@@ -20,15 +20,30 @@ export function nextDesktopVersion(repositoryVersion: string, latestTag?: string
   return next.join('.');
 }
 
+export function desktopReleasePlan(repositoryVersion: string, environment: Record<string, string | undefined>) {
+  const push = environment.GITHUB_EVENT_NAME === 'push';
+  const automatic = push && environment.GITHUB_REF === 'refs/heads/main';
+  const tag = environment.GITHUB_REF_TYPE === 'tag' ? environment.GITHUB_REF_NAME : undefined;
+  let version = repositoryVersion;
+  if (automatic) version = nextDesktopVersion(repositoryVersion, environment.LATEST_DESKTOP_TAG);
+  else if (tag) version = parseVersion(tag).join('.');
+  const publish = push && (automatic || !!tag);
+  if (publish) {
+    const chosen = parseVersion(version);
+    for (const minimum of [repositoryVersion, environment.LATEST_DESKTOP_TAG].filter(Boolean)) {
+      const baseline = parseVersion(minimum!);
+      const difference = chosen[0]! - baseline[0]! || chosen[1]! - baseline[1]! || chosen[2]! - baseline[2]!;
+      if (difference < 0) throw new Error('Refusing to publish an older desktop updater version');
+    }
+  }
+  return { version, tag: publish ? `v${version}` : '' };
+}
+
 if (import.meta.main) {
   const configPath = 'desktop/src-tauri/tauri.conf.json';
   const config = JSON.parse(readFileSync(configPath, 'utf8'));
-  const automatic = process.env.GITHUB_EVENT_NAME === 'push' && process.env.GITHUB_REF === 'refs/heads/main';
-  const tag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : undefined;
-  const version = automatic
-    ? nextDesktopVersion(config.version, process.env.LATEST_DESKTOP_TAG)
-    : tag ? parseVersion(tag).join('.') : config.version;
-  if (automatic || tag) {
+  const { version, tag } = desktopReleasePlan(config.version, process.env);
+  if (version !== config.version) {
     for (const path of [configPath, 'desktop/package.json']) {
       const manifest = JSON.parse(readFileSync(path, 'utf8'));
       manifest.version = version;
@@ -42,7 +57,7 @@ if (import.meta.main) {
     ));
   }
   if (process.env.GITHUB_OUTPUT) {
-    appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=${automatic || tag ? `v${version}` : ''}\n`);
+    appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=${tag}\n`);
   }
   console.log(`Desktop build version: ${version}`);
 }

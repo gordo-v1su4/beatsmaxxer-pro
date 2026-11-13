@@ -25,7 +25,7 @@ pub struct AnalysisResponse {
 }
 
 fn connection() -> Result<(Client, String, String), String> {
-    static CLIENT: OnceLock<Client> = OnceLock::new();
+    static CLIENT: OnceLock<Result<Client, String>> = OnceLock::new();
     let base_url = std::env::var("ESSENTIA_API_BASE_URL")
         .map_err(|_| "ESSENTIA_API_BASE_URL is not set".to_string())?
         .trim()
@@ -34,15 +34,13 @@ fn connection() -> Result<(Client, String, String), String> {
     let api_key =
         std::env::var("ESSENTIA_API_KEY").map_err(|_| "ESSENTIA_API_KEY is not set".to_string())?;
 
-    if CLIENT.get().is_none() {
-        let client = Client::builder()
+    let client = CLIENT.get_or_init(|| {
+        Client::builder()
             .redirect(Policy::none())
             .connect_timeout(Duration::from_secs(15))
             .build()
-            .map_err(|_| "Could not start desktop Studio connection")?;
-        let _ = CLIENT.set(client);
-    }
-    let client = CLIENT.get().ok_or("Desktop Studio connection unavailable")?.clone();
+            .map_err(|_| "Could not start desktop Studio connection".to_owned())
+    }).as_ref().map_err(Clone::clone)?.clone();
     if base_url.is_empty() || api_key.trim().is_empty() {
         return Err("Desktop Essentia configuration is empty".into());
     }
@@ -78,10 +76,6 @@ fn valid_job_id(id: &str) -> bool {
 pub async fn submit_studio_analysis(
     request: tauri::ipc::Request<'_>,
 ) -> Result<AnalysisResponse, String> {
-    let bytes = match request.body() {
-        tauri::ipc::InvokeBody::Raw(bytes) if !bytes.is_empty() && bytes.len() <= 256 * 1024 * 1024 => bytes.clone(),
-        _ => return Err("Studio audio upload is empty or exceeds the 256 MiB limit".into()),
-    };
     let format = request.headers().get("x-analysis-format").and_then(|value| value.to_str().ok()).unwrap_or_default();
     let mime = match format {
         "mp3" => "audio/mpeg",
@@ -94,6 +88,10 @@ pub async fn submit_studio_analysis(
     if !valid_job_id(&idempotency_key) {
         return Err("Invalid Studio request id".into());
     }
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) if !bytes.is_empty() && bytes.len() <= 256 * 1024 * 1024 => bytes.clone(),
+        _ => return Err("Studio audio upload is empty or exceeds the 256 MiB limit".into()),
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let (client, base, key) = connection()?;
         let part = multipart::Part::bytes(bytes).file_name(file_name)
