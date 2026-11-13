@@ -168,10 +168,10 @@ async function pollStudioJob(
     const response = nativeResponse
       ? new Response(nativeResponse.body, { status: nativeResponse.status })
       : await fetch(studioJobPollUrl(jobId).toString(), {
-      method: "GET",
-      cache: "no-store",
-      signal: AbortSignal.timeout(STUDIO_POLL_REQUEST_TIMEOUT_MS),
-    });
+          method: "GET",
+          cache: "no-store",
+          signal: AbortSignal.timeout(STUDIO_POLL_REQUEST_TIMEOUT_MS),
+        });
     const payload = await readJson(response);
     if (!response.ok) {
       throw new Error(jobErrorMessage(payload, response.status));

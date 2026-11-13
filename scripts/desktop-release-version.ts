@@ -30,8 +30,9 @@ if (import.meta.main) {
     : tag ? parseVersion(tag).join('.') : config.version;
   if (automatic || tag) {
     for (const path of [configPath, 'desktop/package.json']) {
-      const source = readFileSync(path, 'utf8');
-      writeFileSync(path, source.replace(/("version"\s*:\s*")[^"]+/, `$1${version}`));
+      const manifest = JSON.parse(readFileSync(path, 'utf8'));
+      manifest.version = version;
+      writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
     }
     const manifest = 'desktop/src-tauri/Cargo.toml';
     writeFileSync(manifest, readFileSync(manifest, 'utf8').replace(/^version = "[^"]+"/m, `version = "${version}"`));

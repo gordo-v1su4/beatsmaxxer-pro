@@ -31,6 +31,7 @@ jobs:
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
 
     permissions:
       contents: write
@@ -40,7 +41,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.4
 
       - name: Assign desktop update version
         id: version
@@ -49,9 +50,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ($env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main') {
-            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" 2> release-error.txt
+            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> release-error.txt
             if ($LASTEXITCODE -eq 0) {
-              $env:LATEST_DESKTOP_TAG = ($release | ConvertFrom-Json).tag_name
+              $env:LATEST_DESKTOP_TAG = $release
             } elseif ((Get-Content release-error.txt -Raw) -notmatch 'HTTP 404') {
               throw 'Could not read the latest desktop release; refusing to reuse a version.'
             }

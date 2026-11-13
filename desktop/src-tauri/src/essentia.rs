@@ -1,4 +1,4 @@
-use std::{io::Read, time::Duration};
+use std::{io::Read, sync::OnceLock, time::Duration};
 
 use reqwest::blocking::multipart;
 use reqwest::blocking::Client;
@@ -24,7 +24,8 @@ pub struct AnalysisResponse {
     body: String,
 }
 
-fn connection(timeout: u64) -> Result<(Client, String, String), String> {
+fn connection() -> Result<(Client, String, String), String> {
+    static CLIENT: OnceLock<Client> = OnceLock::new();
     let base_url = std::env::var("ESSENTIA_API_BASE_URL")
         .map_err(|_| "ESSENTIA_API_BASE_URL is not set".to_string())?
         .trim()
@@ -33,15 +34,26 @@ fn connection(timeout: u64) -> Result<(Client, String, String), String> {
     let api_key =
         std::env::var("ESSENTIA_API_KEY").map_err(|_| "ESSENTIA_API_KEY is not set".to_string())?;
 
-    let client = Client::builder()
-        .redirect(Policy::none())
-        .timeout(Duration::from_secs(timeout))
-        .build()
-        .map_err(|_| "Could not start desktop Studio connection")?;
+    if CLIENT.get().is_none() {
+        let client = Client::builder()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|_| "Could not start desktop Studio connection")?;
+        let _ = CLIENT.set(client);
+    }
+    let client = CLIENT.get().ok_or("Desktop Studio connection unavailable")?.clone();
     if base_url.is_empty() || api_key.trim().is_empty() {
         return Err("Desktop Essentia configuration is empty".into());
     }
     Ok((client, base_url, api_key))
+}
+
+fn connection_error(stage: &str, error: reqwest::Error) -> String {
+    let reason = if error.is_timeout() { "timed out" }
+        else if error.is_connect() { "could not connect" }
+        else { "connection interrupted" };
+    format!("Studio {stage} {reason}. Check the connection and retry.")
 }
 
 fn read_response(response: Response) -> Result<AnalysisResponse, String> {
@@ -83,13 +95,14 @@ pub async fn submit_studio_analysis(
         return Err("Invalid Studio request id".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let (client, base, key) = connection(120)?;
+        let (client, base, key) = connection()?;
         let part = multipart::Part::bytes(bytes).file_name(file_name)
             .mime_str(mime).map_err(|_| "Invalid Studio upload type")?;
         let response = client.post(format!("{base}/analyze/studio/jobs"))
+            .timeout(Duration::from_secs(120))
             .header("X-API-Key", key).header("Idempotency-Key", idempotency_key)
             .multipart(multipart::Form::new().part("file", part)).send()
-            .map_err(|_| "Studio submission failed. Check the connection and retry.")?;
+            .map_err(|error| connection_error("submission", error))?;
         read_response(response)
     }).await.map_err(|_| "Desktop Studio submission interrupted")?
 }
@@ -100,10 +113,11 @@ pub async fn poll_studio_analysis(job_id: String) -> Result<AnalysisResponse, St
         return Err("Invalid Studio job id".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let (client, base, key) = connection(60)?;
+        let (client, base, key) = connection()?;
         let response = client.get(format!("{base}/analyze/studio/jobs/{job_id}"))
+            .timeout(Duration::from_secs(60))
             .header("X-API-Key", key).send()
-            .map_err(|_| "Studio polling failed. Check the connection and retry.")?;
+            .map_err(|error| connection_error("polling", error))?;
         read_response(response)
     }).await.map_err(|_| "Desktop Studio polling interrupted")?
 }
@@ -115,6 +129,7 @@ mod tests {
     #[test]
     fn restrict_polling_to_one_job() {
         assert!(valid_job_id("job-123_abc"));
+        assert!(valid_job_id(&"a".repeat(128)));
         for id in ["", "../health", "job/other", "job?key=x", "job#fragment", "%2e%2e"] {
             assert!(!valid_job_id(id));
         }
