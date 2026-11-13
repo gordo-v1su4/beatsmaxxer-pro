@@ -5,7 +5,7 @@ web target ships, running in a Tauri window instead of a browser tab: identical
 controls, rack model, and HTMLVideo → WebGPU playback path.
 
 The shell adds things the browser cannot do — reading `.env` from disk,
-calling the Essentia analysis host directly from Rust (bypassing CORS), and
+calling Essentia Studio directly from Rust (bypassing CORS), and
 checking, downloading, and installing signed desktop updates.
 
 ## Fresh machine setup (Windows)
@@ -26,6 +26,13 @@ Release build: `bun run build:desktop` — output lands in
 
 ## Windows updates and releases
 
+Every push to `main` publishes signed Windows installers and an in-app updater
+release. CI assigns a version higher than both the repository version and the
+latest published version, updating the build's manifests without a manual source
+version bump. Builds include the current shared web UI and need no analysis
+enable flag. Manual workflow runs build artifacts without publishing. Version
+tags can still publish a specific version.
+
 Version 0.2.0 is the first updater-enabled build. A 0.1.0 installation must be
 upgraded once with the published `x64-setup.exe`; later releases can be applied
 from the update control in the desktop top bar. The control checks on startup,
@@ -38,9 +45,8 @@ still show a Windows SmartScreen reputation warning.
 
 Release automation lives in
 [`release.yml`](../.github/workflows/release.yml). A `v*` tag builds the Windows
-NSIS and MSI installers, their updater signatures, and `latest.json` as a draft
-GitHub release. Inspect the assets before publishing the draft: the updater
-endpoint only follows the latest **published** release.
+NSIS and MSI installers, their updater signatures, and `latest.json` as a
+published GitHub release. The updater endpoint follows the latest published release.
 
 The signing material is intentionally outside this repository:
 
@@ -75,10 +81,17 @@ Set before `bun run dev:desktop` (or in `.env`):
 | Variable | Required | Notes |
 |----------|----------|-------|
 | `ESSENTIA_API_BASE_URL` | For ANALYZE | Set in repo-root `.env` / `.env.local` (git-ignored); base URL for your hosted analysis API |
-| `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust `analyze_rhythm` command uses it |
+| `ESSENTIA_API_KEY` | For ANALYZE | Server-side key; Rust Studio submit/poll commands use it |
 | `BMX_API_BASE_URL` | For Speedramp preparation | Canonical HTTPS origin of the hosted application, without a path; never the worker URL |
 
 `ESSENTIA_ANALYSIS_ENABLED` is for the **web** Vite proxy only. Desktop Tauri reads `ESSENTIA_API_*` directly in Rust.
+
+Installed builds read these variables from
+`%APPDATA%\dev.beatsmaxxer.pro.desktop\.env`. Restart after changes. Desktop
+uses the same full-song Studio result contract as the web: beat grid, onsets,
+energy and song sections. Desktop sends original WAV or MP3 audio directly,
+up to 256 MiB, through binary IPC and Rust. It does not truncate or re-encode
+the song. The web upload path currently accepts MP3 up to 12,000,000 bytes.
 
 **`.env` location:** repo root (`beatsmaxxer-pro/.env`), not `svelte/.env`. Restart after edits.
 
@@ -128,7 +141,8 @@ rendering path to keep in sync.
 | Command | Purpose |
 |---------|---------|
 | `essentia_configured` | Report whether both Essentia env vars are set |
-| `analyze_rhythm` | Upload audio to the Essentia host from Rust (no CORS) |
+| `submit_studio_analysis` | Upload the original full WAV or MP3 to Studio from Rust (no CORS) |
+| `poll_studio_analysis` | Poll the submitted Studio job and return the shared result contract |
 | `hosted_api_request` | Allowlisted gate/media requests through the configured application origin; session remains in Rust |
 | `hosted_demo_request` | Read-only, bounded binary downloads of the public demo manifest and content-addressed media |
 

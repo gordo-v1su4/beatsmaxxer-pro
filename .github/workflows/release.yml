@@ -1,6 +1,7 @@
 name: Release
 
-# Push a version tag to cut a release:
+# Every push to main publishes a signed, versioned desktop update.
+# Push a version tag to publish a stable updater release:
 #   git tag v0.2.0 && git push origin v0.2.0
 # The job builds the installers and attaches them to a public GitHub release.
 #
@@ -8,9 +9,16 @@ name: Release
 # publishing anything — useful for checking a build before tagging.
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
+
+concurrency:
+  group: desktop-release
+  queue: max
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -24,12 +32,44 @@ jobs:
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 90
 
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Restore before version stamping so automatic version bumps reuse dependencies.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+          key: ${{ matrix.target }}
+
+      - name: Assign desktop update version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ($env:GITHUB_EVENT_NAME -eq 'push' -and ($env:GITHUB_REF -eq 'refs/heads/main' -or $env:GITHUB_REF_TYPE -eq 'tag')) {
+            $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2> release-error.txt
+            if ($LASTEXITCODE -eq 0) {
+              $env:LATEST_DESKTOP_TAG = $release
+            } elseif ((Get-Content release-error.txt -Raw) -notmatch 'HTTP 404') {
+              throw 'Could not read the latest desktop release; refusing to reuse a version.'
+            }
+          }
+          bun scripts/desktop-release-version.ts
+          if ($LASTEXITCODE -ne 0) { throw 'Could not assign desktop version.' }
 
       - name: Verify desktop release version
         shell: pwsh
@@ -48,27 +88,19 @@ jobs:
           }
           Write-Output "Desktop release version: $version"
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      # Keyed on the lockfile so the cache invalidates when dependencies move.
-      # Without this every run recompiles the full Tauri dependency tree.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri -> target
-          key: ${{ matrix.target }}
-
       # Root postinstall also installs svelte/. The desktop install provides
       # @tauri-apps/cli so `bunx tauri` does not fetch it at build time.
       - name: Install dependencies
-        run: |
-          bun install
-          bun install --cwd desktop
+        run: bun install
+
+      - name: Install desktop dependencies
+        run: bun install --cwd desktop
+
+      - name: Verify shared application
+        run: bun run test
+
+      - name: Verify desktop bridge
+        run: cargo test --manifest-path desktop/src-tauri/Cargo.toml --lib
 
       # The frontend is NOT built here: tauri.conf.json's beforeBuildCommand
       # runs `build:desktop-frontend` itself, so CI and local builds go through
@@ -82,8 +114,9 @@ jobs:
           projectPath: desktop
           tauriScript: bunx tauri
           args: --target ${{ matrix.target }}
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: Beatsmaxxer Pro ${{ github.ref_name }}
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseCommitish: ${{ github.sha }}
+          releaseName: Beatsmaxxer Pro ${{ steps.version.outputs.version }}
           releaseBody: |
             Download the Windows installer below.
 

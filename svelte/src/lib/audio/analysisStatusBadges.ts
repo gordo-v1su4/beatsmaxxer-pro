@@ -50,7 +50,7 @@ export function rhythmStatusBadge(input: {
         label: 'RHY·RT',
         color: COLORS.fallback,
         tone: 'fallback',
-        title: 'Following the beat in real time — hosted rhythm analysis was not used or failed',
+        title: input.analysisError?.trim() || 'Following the beat in real time — hosted rhythm analysis was not used or failed',
       };
     case 'error':
       return {

@@ -6,6 +6,10 @@ import {
 } from '$lib/audio/analysisStatusBadges';
 
 describe('analysis status badges', () => {
+  it('explains why realtime fallback was selected', () => {
+    expect(rhythmStatusBadge({ analysisStatus: 'fallback', usingUploadedTrack: true,
+      analysisError: 'Studio submission failed' }).title).toBe('Studio submission failed');
+  });
   it('keeps rhythm and arrangement badges visible with idle grey before a song loads', () => {
     const rhythm = rhythmStatusBadge({ analysisStatus: 'idle', usingUploadedTrack: false });
     const arrangement = arrangementStatusBadge({

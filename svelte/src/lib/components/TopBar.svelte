@@ -16,6 +16,7 @@
   import { workflowHelpOpen, openWorkflowHelp } from '$lib/stores/workflowHelp';
   import { autoRandom, linearOrder, setClipOrder, type ClipOrder } from '$lib/stores/pgm';
   import { isHostedAnalysisEnabled } from '$lib/audio/essentia';
+  import { isTauriRuntime } from '$lib/platform/runtime';
   import { planAudioUpload } from '$lib/audio/hostedAnalysisDecision';
   import { AUDIO_FILE_ACCEPT } from '$lib/media/filePickerAccept';
   import {
@@ -70,6 +71,7 @@
   let rememberChoice = $state(false);
   let analysisPreference = $state<HostedAnalysisPreference>('ask');
   const hostedAnalysisAvailable = isHostedAnalysisEnabled();
+  const nativeAnalysis = isTauriRuntime();
 
   $effect(() => {
     analysisPreference = readHostedAnalysisPreference();
@@ -731,9 +733,14 @@
     >
       <h2 id="analysis-consent-title">Analyze this upload?</h2>
       <p id="analysis-consent-description">
-        Analyze uploads the full MP3 to the hosted Studio service (rhythm + song structure on GPU).
-        Other audio formats are not supported for analysis yet. Local-only playback can use any audio
-        format your browser decodes.
+        {#if nativeAnalysis}
+          Analyze uploads the full WAV or MP3 to the hosted Studio service (rhythm + song structure on GPU).
+          The original audio stays unchanged for playback. Desktop uploads support up to 256 MiB.
+        {:else}
+          Analyze uploads the full MP3 to the hosted Studio service (rhythm + song structure on GPU).
+          Other audio formats are not supported for analysis yet.
+        {/if}
+        Local-only playback can use any audio format your browser decodes.
       </p>
       <p class="analysis-consent-file">{pendingAudioFile.name}</p>
       <label class="analysis-consent-remember">

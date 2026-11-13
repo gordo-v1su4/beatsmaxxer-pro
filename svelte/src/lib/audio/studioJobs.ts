@@ -4,7 +4,9 @@ import {
   type AnalysisResultV1,
 } from "$lib/analysis/contracts";
 import type { EssentiaRhythmAnalysis } from "$lib/audio/essentia";
-import { prepareStudioUpload } from "$lib/audio/prepareStudioUpload";
+import { prepareStudioUpload, prepareDesktopStudioUpload, isStudioMp3File } from "$lib/audio/prepareStudioUpload";
+import { isTauriRuntime } from "$lib/platform/runtime";
+import { tauriInvoke } from "$lib/platform/tauriInvoke";
 import {
   shouldUseChunkedStudioUpload,
   uploadStudioChunks,
@@ -97,11 +99,20 @@ function jobErrorMessage(payload: unknown, status: number): string {
 }
 
 export async function fetchEssentiaStudioAnalysis(file: File): Promise<EssentiaRhythmAnalysis> {
-  const uploadFile = prepareStudioUpload(file);
+  const native = isTauriRuntime();
+  const uploadFile = native ? prepareDesktopStudioUpload(file) : prepareStudioUpload(file);
   const idempotencyKey = crypto.randomUUID();
 
   let submitResponse: Response;
-  if (shouldUseChunkedStudioUpload(uploadFile.size)) {
+  if (native) {
+    const response = await tauriInvoke<{ status: number; body: string }>("submit_studio_analysis", await uploadFile.arrayBuffer(), {
+      headers: {
+        'x-analysis-format': isStudioMp3File(uploadFile) ? 'mp3' : 'wav',
+        'x-idempotency-key': idempotencyKey,
+      },
+    });
+    submitResponse = new Response(response.body, { status: response.status });
+  } else if (shouldUseChunkedStudioUpload(uploadFile.size)) {
     const manifest = await uploadStudioChunks(uploadFile, {
       onProgress: (uploaded, total) => {
         if (import.meta.env.DEV) {
@@ -151,11 +162,16 @@ async function pollStudioJob(
 ): Promise<StudioAudioV1> {
   const deadline = Date.now() + STUDIO_POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    const response = await fetch(studioJobPollUrl(jobId).toString(), {
-      method: "GET",
-      cache: "no-store",
-      signal: AbortSignal.timeout(STUDIO_POLL_REQUEST_TIMEOUT_MS),
-    });
+    const nativeResponse = isTauriRuntime()
+      ? await tauriInvoke<{ status: number; body: string }>("poll_studio_analysis", { jobId })
+      : null;
+    const response = nativeResponse
+      ? new Response(nativeResponse.body, { status: nativeResponse.status })
+      : await fetch(studioJobPollUrl(jobId).toString(), {
+          method: "GET",
+          cache: "no-store",
+          signal: AbortSignal.timeout(STUDIO_POLL_REQUEST_TIMEOUT_MS),
+        });
     const payload = await readJson(response);
     if (!response.ok) {
       throw new Error(jobErrorMessage(payload, response.status));
